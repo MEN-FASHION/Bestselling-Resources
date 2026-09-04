@@ -55,7 +55,7 @@
       <div class="panel-card" id="upload-card">
         <h2>① 上传图片</h2>
         <div class="row">
-          <label class="field">分类（选已有或输入新建）</label>
+          <label class="field">分类（常用类目优先，可输入新建）</label>
           <div class="cat-input-row">
             <select id="cat-select" class="input"></select>
             <input id="cat-new" class="input" placeholder="新建分类名">
@@ -74,9 +74,29 @@
         <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
       </div>
 
+      <!-- 我的常用类目 -->
+      <div class="panel-card" id="fav-card">
+        <h2>② 我的常用类目 <span class="hint-inline">（上传时优先出现，仅自己可见）</span></h2>
+        <p class="hint">从候选中勾选你常用的类目，上传时分类下拉会把这些排在最前面。</p>
+        <div id="fav-list" class="check-list"></div>
+        <button id="fav-save" class="btn-primary" disabled>保存我的常用类目</button>
+      </div>
+
+      <!-- 前台类目管理 -->
+      <div class="panel-card" id="cat-mgmt-card">
+        <h2>③ 前台类目（勾选后前台左侧显示）</h2>
+        <p class="hint">只有被勾选 == 添加进"前台类目"的类目，才在前台左侧菜单显示；且该类目下必须有图才会显示。</p>
+        <div id="cat-mgmt-list" class="check-list"></div>
+        <div class="row">
+          <input id="cat-mgmt-new" class="input" placeholder="自定义新增类目名">
+          <button id="cat-mgmt-add" class="btn-ghost">新增</button>
+        </div>
+        <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
+      </div>
+
       <!-- 图片管理区 -->
       <div class="panel-card" id="manage-card">
-        <h2>② 图片管理</h2>
+        <h2>④ 图片管理</h2>
         <div class="manage-head">
           <select id="manage-cat" class="input"></select>
           <button id="refresh-btn" class="btn-ghost">刷新</button>
