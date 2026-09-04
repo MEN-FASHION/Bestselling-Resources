@@ -113,11 +113,57 @@ img { display: block; }
 .cat-tab.active { background: linear-gradient(135deg, var(--gold), var(--gold2)); color: #20170a; border-color: transparent; font-weight: 600; }
 
 .grid-wrap { max-width: 1200px; margin: 0 auto; padding: 30px 20px 60px; }
+
+/* 左侧菜单布局内：右侧内容区不再居中，占满网格列 */
+.gallery-layout .grid-wrap { max-width: none; margin: 0; padding: 0; }
+
+/* ---------- 前台左右布局：左侧类目菜单 + 右侧图片 ---------- */
+.gallery-layout {
+  max-width: 1280px; margin: 0 auto; padding: 20px;
+  display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: start;
+}
+.sidebar {
+  position: sticky; top: 78px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 12px; max-height: calc(100vh - 100px); overflow-y: auto;
+}
+.side-head {
+  font-size: 14px; color: var(--gold); font-weight: 600; letter-spacing: 1px;
+  padding: 4px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.cat-menu { display: flex; flex-direction: column; gap: 4px; }
+.cat-menu-item {
+  display: block; width: 100%; text-align: left; padding: 9px 12px;
+  background: transparent; color: var(--sub); border: none; border-radius: 8px;
+  cursor: pointer; font-size: 14px; transition: .2s;
+}
+.cat-menu-item:hover { background: var(--card); color: var(--txt); }
+.cat-menu-item.active {
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #20170a; font-weight: 600;
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 18px;
 }
+
+/* ---------- 后台：类目/常用类目勾选清单 ---------- */
+.check-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px; max-height: 320px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px; margin-bottom: 16px;
+}
+.check-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--sub); cursor: pointer; padding: 6px 8px; border-radius: 6px;
+  transition: background .15s;
+}
+.check-item:hover { background: var(--card); color: var(--txt); }
+.check-item input { accent-color: var(--gold); width: 15px; height: 15px; cursor: pointer; }
+.hint-inline { font-size: 12px; color: var(--sub); font-weight: 400; letter-spacing: 0; }
+#fav-save, #cat-mgmt-save { max-width: 260px; }
 .cell {
   cursor: zoom-in; border-radius: 12px; overflow: hidden;
   background: var(--card); border: 1px solid var(--line);
@@ -228,6 +274,17 @@ select.input {
 .m-info b { color: var(--txt); }
 
 /* ---------- 响应式 ---------- */
+@media (max-width: 900px) {
+  .gallery-layout { grid-template-columns: 1fr; }
+  .sidebar {
+    position: static; max-height: none;
+    /* 手机上水平滚动菜单 */
+    padding: 10px; overflow-x: auto;
+  }
+  .side-head { display: none; }
+  .cat-menu { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+  .cat-menu-item { white-space: nowrap; }
+}
 @media (max-width: 640px) {
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .topbar-inner { gap: 10px; }
@@ -237,4 +294,6 @@ select.input {
   .lb-nav { width: 42px; height: 42px; font-size: 34px; }
   .lb-prev { left: 8px; }
   .lb-next { right: 8px; }
+  .gallery-layout { padding: 12px; gap: 12px; }
+  .check-list { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
