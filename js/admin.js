@@ -14,12 +14,46 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
+    bindAdminNav();
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
       if (session) enterPanel();
     });
   });
+
+  // ================= 后台侧边菜单 =================
+  function bindAdminNav() {
+    document.querySelectorAll("#admin-panel .nav-item").forEach(item => {
+      item.addEventListener("click", () => switchPanel(item.dataset.target));
+    });
+  }
+  function switchPanel(target) {
+    const cards = ["manage-card", "upload-card", "fav-card", "cat-mgmt-card", "access-card", "no-perm"];
+    cards.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
+    const show = document.getElementById(target);
+    if (show) show.classList.remove("hidden");
+    // 高亮当前菜单
+    document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
+      n.classList.toggle("active", n.dataset.target === target);
+    });
+  }
+  async function saveCatOrder() {
+    const rows = [...document.querySelectorAll("#cat-order-box .cat-order-item")];
+    if (!rows.length) { sbToast("没有需要保存的类目", false); return; }
+    try {
+      for (const row of rows) {
+        const id = row.dataset.id;
+        const num = parseInt(row.querySelector(".order-num").value, 10);
+        await SB.setCategoryOrder(id, (Number.isFinite(num) && num >= 1) ? num : 1);
+      }
+      currentCatOrder = await SB.listActiveCatsWithOrder();
+      renderCatOrder();
+      sbToast("展示顺序已保存");
+      const btn = $("#cat-order-save");
+      if (btn) btn.disabled = true;
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+  }
 
   // 顶部显示当前用户与角色
   async function refreshUserBadge() {
@@ -33,9 +67,14 @@
       ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card"].forEach(s => $(s)?.classList.add("hidden"));
       $("#manage-card").classList.toggle("hidden", false);
       $("#no-perm").classList.remove("hidden");
+      // 非管理员侧边只保留“图片管理”
+      document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
+        n.classList.toggle("hidden", n.dataset.target !== "manage-card");
+      });
     } else {
       ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card"].forEach(s => $(s)?.classList.remove("hidden"));
       $("#no-perm").classList.add("hidden");
+      document.querySelectorAll("#admin-panel .nav-item").forEach(n => n.classList.remove("hidden"));
     }
   }
 
@@ -58,6 +97,8 @@
     $("#admin-panel").classList.remove("hidden");
     loadCats(); loadManage(); loadAccess();
     if (currentRole === "admin") { loadFavCats(); loadCatMgmt(); }
+    // 默认显示“图片管理”
+    switchPanel("manage-card");
   }
 
   // ================= 登录 / 注册引导 =================
@@ -212,6 +253,7 @@
   // ================= 前台类目管理 =================
   function bindCatMgmt() {
     $("#cat-mgmt-save").onclick = saveCatMgmt;
+    $("#cat-order-save").onclick = saveCatOrder;
     $("#cat-mgmt-add").onclick = () => {
       const v = $("#cat-mgmt-new").value.trim();
       if (!v) { sbToast("请输入类目名", false); return; }
@@ -257,6 +299,7 @@
     box.innerHTML = "";
     if (!currentCatOrder.length) {
       box.innerHTML = '<p class="hint">暂无已添加的类目，勾选上方类目并保存后，可在此调整展示顺序。</p>';
+      const b5 = $("#cat-order-save"); if (b5) b5.disabled = true;
       return;
     }
     currentCatOrder.forEach((c, i) => {
@@ -270,7 +313,8 @@
         <button type="button" class="order-down" title="下移">↓</button>`;
       row.querySelector(".order-up").onclick = () => moveCatOrder(i, -1);
       row.querySelector(".order-down").onclick = () => moveCatOrder(i, 1);
-      row.querySelector(".order-num").onchange = () => { $("#cat-mgmt-save").disabled = false; };
+      const enableSave = () => { const b = $("#cat-order-save"); if (b) b.disabled = false; };
+      row.querySelector(".order-num").onchange = enableSave;
       box.appendChild(row);
     });
   }
@@ -281,7 +325,7 @@
     [arr[idx], arr[to]] = [arr[to], arr[idx]];
     currentCatOrder = arr;
     renderCatOrder();
-    $("#cat-mgmt-save").disabled = false;
+    const sb2 = $("#cat-order-save"); if (sb2) sb2.disabled = false;
   }
   async function saveCatMgmt() {
     const picked = [...document.querySelectorAll("#cat-mgmt-list input:checked")].map(i => i.value);
