@@ -184,16 +184,19 @@
     fillManageCat(imgs);
     box.innerHTML = "";
     if (!imgs.length) { box.innerHTML = "<p class='hint'>暂无图片</p>"; return; }
-    imgs.forEach(img => {
+    // 一次性取当前登录令牌，给缩略图地址加上
+    const adminToken = await SB.currentToken();
+    for (const img of imgs) {
+      const thumb = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (adminToken ? "?token=" + encodeURIComponent(adminToken) : "");
       const row = document.createElement("div");
       row.className = "m-row";
       row.innerHTML = `
-        <img src="${SB.imageUrl(img)}" class="m-thumb" alt="">
+        <img src="${thumb}" class="m-thumb" alt="">
         <div class="m-info"><b>${img.name}</b><br><span>${img.category}</span></div>
         <button class="btn-danger" data-id="${img.id}">删除</button>`;
       row.querySelector(".btn-danger").onclick = () => removeImage(img, row);
       box.appendChild(row);
-    });
+    }
   }
   async function fillManageCat(imgs) {
     const sel = $("#manage-cat");

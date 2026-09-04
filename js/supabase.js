@@ -36,6 +36,11 @@ const SB = (() => {
       const { data } = await client.auth.getSession();
       return data.session;
     },
+    // 暴露当前登录令牌
+    async currentToken() {
+      const s = await client.auth.getSession();
+      return s?.data?.session?.access_token || "";
+    },
     onAuth(cb) {
       client.auth.onAuthStateChange((_event, session) => cb(session));
     },
@@ -60,6 +65,14 @@ const SB = (() => {
     imageUrl(img) {
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       return base + "/" + img.path;
+    },
+
+    // 带当前登录令牌的图片访问 URL（给 <img> 标签用，令牌走 query 参数）
+    async imageUrlWithToken(img) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/" + img.path;
+      return base + "/" + img.path + "?token=" + encodeURIComponent(token);
     },
 
     // 管理员上传：通过 Worker 写入 R2，返回存储 path

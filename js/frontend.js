@@ -68,7 +68,12 @@
     } catch (e) { Auth.toast("读取图片失败", false); }
     $("#empty-tip").classList.toggle("hidden", imgs.length > 0);
     catalog = imgs;
-    lightboxList = imgs.map(i => SB.imageUrl(i));
+    // 一次性取当前登录令牌，避免每个图片都重复请求
+    const guestToken = await SB.currentToken();
+    lightboxList = imgs.map(i => {
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+    });
 
     imgs.forEach((img, idx) => {
       const cell = document.createElement("div");
@@ -76,7 +81,7 @@
       const holder = document.createElement("div");
       holder.className = "holder";
       const imgEl = document.createElement("img");
-      imgEl.dataset.src = SB.imageUrl(img);
+      imgEl.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
       imgEl.alt = img.name || "";
       imgEl.loading = "lazy";
       holder.appendChild(imgEl);
