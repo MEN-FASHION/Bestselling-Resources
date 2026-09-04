@@ -10,9 +10,10 @@
   let currentRole = null;
   let currentFavCats = [];   // 当前管理员常用类目
   let currentActiveCats = []; // 前台类目（categories 表）
+  let currentCatOrder = [];   // 前台类目顺序 [{id,name,sort_order}]
 
   document.addEventListener("DOMContentLoaded", () => {
-    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt();
+    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
@@ -29,11 +30,11 @@
     el.classList.toggle("bad", currentRole !== "admin");
     if (currentRole !== "admin" && currentUser) {
       // 非管理员：隐藏上传区，只显示只读提示
-      ["#upload-card", "#fav-card", "#cat-mgmt-card"].forEach(s => $(s)?.classList.add("hidden"));
+      ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card"].forEach(s => $(s)?.classList.add("hidden"));
       $("#manage-card").classList.toggle("hidden", false);
       $("#no-perm").classList.remove("hidden");
     } else {
-      ["#upload-card", "#fav-card", "#cat-mgmt-card"].forEach(s => $(s)?.classList.remove("hidden"));
+      ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card"].forEach(s => $(s)?.classList.remove("hidden"));
       $("#no-perm").classList.add("hidden");
     }
   }
@@ -55,7 +56,7 @@
   function enterPanel() {
     $("#admin-login").classList.add("hidden");
     $("#admin-panel").classList.remove("hidden");
-    loadCats(); loadManage();
+    loadCats(); loadManage(); loadAccess();
     if (currentRole === "admin") { loadFavCats(); loadCatMgmt(); }
   }
 
@@ -219,7 +220,10 @@
     };
   }
   async function loadCatMgmt() {
-    try { currentActiveCats = await SB.listActiveCats(); } catch (e) { currentActiveCats = []; }
+    try {
+      currentActiveCats = await SB.listActiveCats();
+      currentCatOrder = await SB.listActiveCatsWithOrder();
+    } catch (e) { currentActiveCats = []; currentCatOrder = []; }
     const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats));
     const box = $("#cat-mgmt-list");
     box.innerHTML = "";
@@ -231,6 +235,7 @@
       label.querySelector("input").onchange = () => { $("#cat-mgmt-save").disabled = false; };
       box.appendChild(label);
     });
+    renderCatOrder();
     $("#cat-mgmt-save").disabled = true;
   }
   function addOptionToCatMgmt(name) {
@@ -244,6 +249,40 @@
     box.appendChild(label);
     $("#cat-mgmt-save").disabled = false;
   }
+  // ---------- 前台类目展示顺序 ----------
+  // 顺序区只显示"已添加"的类目，数字越小越靠前，支持上下调整
+  function renderCatOrder() {
+    const box = $("#cat-order-box");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!currentCatOrder.length) {
+      box.innerHTML = '<p class="hint">暂无已添加的类目，勾选上方类目并保存后，可在此调整展示顺序。</p>';
+      return;
+    }
+    currentCatOrder.forEach((c, i) => {
+      const row = document.createElement("div");
+      row.className = "cat-order-item";
+      row.dataset.id = c.id;
+      row.innerHTML = `
+        <input type="number" class="order-num" min="1" step="1" value="${i + 1}" title="显示在第几位">
+        <span class="order-name">${escHtml(c.name)}</span>
+        <button type="button" class="order-up" title="上移">↑</button>
+        <button type="button" class="order-down" title="下移">↓</button>`;
+      row.querySelector(".order-up").onclick = () => moveCatOrder(i, -1);
+      row.querySelector(".order-down").onclick = () => moveCatOrder(i, 1);
+      row.querySelector(".order-num").onchange = () => { $("#cat-mgmt-save").disabled = false; };
+      box.appendChild(row);
+    });
+  }
+  function moveCatOrder(idx, dir) {
+    const to = idx + dir;
+    if (to < 0 || to >= currentCatOrder.length) return;
+    const arr = currentCatOrder.slice();
+    [arr[idx], arr[to]] = [arr[to], arr[idx]];
+    currentCatOrder = arr;
+    renderCatOrder();
+    $("#cat-mgmt-save").disabled = false;
+  }
   async function saveCatMgmt() {
     const picked = [...document.querySelectorAll("#cat-mgmt-list input:checked")].map(i => i.value);
     // 同步差异：新增不在 categories 里的；删除未勾选的
@@ -252,60 +291,189 @@
     try {
       for (const c of toAdd) await SB.addCategory(c);
       for (const c of toDel) await SB.removeCategory(c);
-      currentActiveCats = picked;
+      // 重新读取最新顺序（含新增类目）
+      currentActiveCats = await SB.listActiveCats();
+      currentCatOrder = await SB.listActiveCatsWithOrder();
+      // 应用界面上调整过的顺序（含新增项末尾追加）
+      const orderRows = [...document.querySelectorAll("#cat-order-box .cat-order-item")];
+      if (orderRows.length) {
+        const newOrder = orderRows.map((row) => {
+          const num = parseInt(row.querySelector(".order-num").value, 10);
+          return { id: row.dataset.id, sort_order: (Number.isFinite(num) && num >= 1) ? num : 1 };
+        });
+        for (const c of newOrder) await SB.setCategoryOrder(c.id, c.sort_order);
+        currentCatOrder = await SB.listActiveCatsWithOrder();
+        renderCatOrder();
+      }
       sbToast("前台类目已保存");
       $("#cat-mgmt-save").disabled = true;
       await loadCats(); await loadFavCats(); await loadManage();
     } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
 
-  // ================= 图片管理（删除） =================
   function bindManage() {
-    $("#refresh-btn").onclick = async () => { await loadManage(); };
-    $("#manage-cat").onchange = () => loadManage();
+    $("#select-all-btn").onclick = toggleSelectAll;
+    $("#batch-del-btn").onclick = batchDelete;
   }
   async function loadManage() {
-    const box = $("#manage-list");
-    box.innerHTML = "<p class='hint'>加载中…</p>";
-    let imgs = [];
+    const grid = $("#manage-grid");
+    const menu = $("#manage-menu");
+    // 先并行取全部图片 + 有图类目
+    let allImgs = [];
     try {
-      const catVal = $("#manage-cat").value;
-      imgs = await SB.listImages(catVal === "全部" ? null : (catVal || null));
-    } catch (e) { box.innerHTML = "<p class='hint'>读取失败</p>"; return; }
-    // 重新填充分类筛选下拉
-    fillManageCat(imgs);
-    box.innerHTML = "";
-    if (!imgs.length) { box.innerHTML = "<p class='hint'>暂无图片</p>"; return; }
-    // 一次性取当前登录令牌，给缩略图地址加上
-    const adminToken = await SB.currentToken();
-    for (const img of imgs) {
-      const thumb = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (adminToken ? "?token=" + encodeURIComponent(adminToken) : "");
-      const row = document.createElement("div");
-      row.className = "m-row";
-      row.innerHTML = `
-        <img src="${thumb}" class="m-thumb" alt="" draggable="false">
-        <div class="m-info"><b>${escHtml(img.name || "")}</b><br><span>${escHtml(img.category || "")}</span></div>
-        <button class="btn-danger" data-id="${img.id}">删除</button>`;
-      row.querySelector(".btn-danger").onclick = () => removeImage(img, row);
-      box.appendChild(row);
+      allImgs = await SB.listImages(null);
+    } catch (e) {
+      grid.innerHTML = "<p class='hint'>读取失败</p>";
+      return;
     }
+    // 有图的类目（去重，拼音排序）
+    const usedCats = [...new Set(allImgs.map(i => i.category))].sort((a, b) => a.localeCompare(b, "zh"));
+
+    // 渲染左侧类目菜单
+    menu.innerHTML = "";
+    ["全部"].concat(usedCats).forEach(c => {
+      const b = document.createElement("button");
+      b.className = "cat-menu-item" + (c === currentManageCat ? " active" : "");
+      b.textContent = c + "（" + (c === "全部" ? allImgs.length : allImgs.filter(i => i.category === c).length) + "）";
+      b.onclick = () => { currentManageCat = c; renderManageGrid(allImgs, usedCats); };
+      menu.appendChild(b);
+    });
+
+    renderManageGrid(allImgs, usedCats);
   }
-  async function fillManageCat(imgs) {
-    const sel = $("#manage-cat");
-    const prev = sel.value;
-    const cats = ["全部"].concat(imgs ? [...new Set(imgs.map(i => i.category))] : []);
-    sel.innerHTML = "";
-    cats.forEach(c => { const o = new Option(c, c); sel.add(o); });
-    if (cats.includes(prev)) sel.value = prev; else sel.value = "全部";
+
+  async function renderManageGrid(allImgs, usedCats) {
+    const grid = $("#manage-grid");
+    const imgList = currentManageCat === "全部" ? allImgs : allImgs.filter(i => i.category === currentManageCat);
+    // 勾选集合只保留当前列表里仍存在的项
+    const validIds = new Set(imgList.map(i => i.id));
+    selectedImages = new Set([...selectedImages].filter(id => validIds.has(id)));
+    updateBatchBtn();
+
+    grid.innerHTML = "";
+    $("#manage-empty").classList.toggle("hidden", imgList.length > 0);
+    if (!imgList.length) return;
+    // 一次性取当前登录令牌
+    const adminToken = await SB.currentToken();
+    for (const img of imgList) {
+      const thumb = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (adminToken ? "?token=" + encodeURIComponent(adminToken) : "");
+      const cell = document.createElement("div");
+      cell.className = "cell mgr-cell";
+
+      const holder = document.createElement("div");
+      holder.className = "holder";
+      const imgEl = document.createElement("img");
+      imgEl.dataset.src = thumb;
+      imgEl.alt = img.name || "";
+      imgEl.loading = "lazy";
+      imgEl.draggable = false;
+      imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
+      holder.appendChild(imgEl);
+
+      const cap = document.createElement("div");
+      cap.className = "cell-cap";
+      cap.textContent = (img.name || "") + " · " + (img.category || "");
+
+      // 勾选框
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "mgr-check";
+      cb.dataset.id = img.id;
+      cb.checked = selectedImages.has(img.id);
+      cb.onchange = () => {
+        if (cb.checked) selectedImages.add(img.id); else selectedImages.delete(img.id);
+        cell.classList.toggle("selected", cb.checked);
+        updateBatchBtn();
+      };
+      if (cb.checked) cell.classList.add("selected");
+
+      // 单个删除按钮
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-danger mgr-del";
+      delBtn.textContent = "删";
+      delBtn.onclick = (e) => { e.stopPropagation(); removeImage(img); };
+
+      cell.appendChild(cb);
+      cell.appendChild(holder);
+      cell.appendChild(cap);
+      cell.appendChild(delBtn);
+      grid.appendChild(cell);
+
+      // 懒加载缩略图
+      if ("IntersectionObserver" in window) {
+        const io = new IntersectionObserver((entries, obs) => {
+          entries.forEach(en => {
+            if (en.isIntersecting) {
+              en.target.src = en.target.dataset.src;
+              en.target.onload = () => en.target.classList.add("loaded");
+              obs.unobserve(en.target);
+            }
+          });
+        }, { rootMargin: "200px" });
+        io.observe(imgEl);
+      } else {
+        imgEl.src = imgEl.dataset.src;
+        imgEl.classList.add("loaded");
+      }
+    }
+    $("#manage-count").textContent = "共 " + imgList.length + " 张 · " + (currentManageCat === "全部" ? "全部类目" : "类目「" + currentManageCat + "」");
   }
-  async function removeImage(img, row) {
+
+  // 更新批量删除按钮计数
+  function updateBatchBtn() {
+    $("#batch-del-btn").textContent = "批量删除（" + selectedImages.size + "）";
+    $("#batch-del-btn").disabled = selectedImages.size === 0;
+  }
+
+  // 全选 / 取消全选（仅当前网格显示的）
+  function toggleSelectAll() {
+    const boxes = [...document.querySelectorAll("#manage-grid .mgr-check")];
+    // 若当前已全选则取消，否则全选
+    const allChecked = boxes.every(b => b.checked);
+    boxes.forEach(b => {
+      b.checked = !allChecked;
+      const cell = b.closest(".cell");
+      if (b.checked) { selectedImages.add(b.dataset.id); cell.classList.add("selected"); }
+      else { selectedImages.delete(b.dataset.id); cell.classList.remove("selected"); }
+    });
+    updateBatchBtn();
+  }
+
+  // 批量删除
+  async function batchDelete() {
+    if (!selectedImages.size) return;
+    if (!confirm("确认删除选中的 " + selectedImages.size + " 张图片？此操作不可恢复。")) return;
+    // 拿当前网格对应的完整图片记录
+    let allImgs = [];
+    try { allImgs = await SB.listImages(null); } catch (e) {}
+    const targets = allImgs.filter(i => selectedImages.has(i.id));
+    if (!targets.length) { sbToast("未找到对应图片记录", false); return; }
+
+    $("#batch-del-btn").disabled = true;
+    let ok = 0, fail = 0;
+    for (const img of targets) {
+      try {
+        if (img.path) await SB.deleteImage(img.path);
+        await SB.removeImageRecord(img.id);
+        ok++;
+      } catch (e) { fail++; }
+    }
+    sbToast("批量删除完成：成功 " + ok + "，失败 " + fail);
+    selectedImages = new Set();
+    updateBatchBtn();
+    // 删除可能影响类目，刷新整套
+    await loadCats(); await loadCatMgmt(); await loadFavCats(); await loadManage();
+  }
+
+  // 单个删除
+  async function removeImage(img) {
     if (!confirm("确认删除该图片？")) return;
     try {
       if (img.path) await SB.deleteImage(img.path);
       await SB.removeImageRecord(img.id);
+      selectedImages.delete(img.id);
       sbToast("已删除");
-      row.remove();
-      // 删除后刷新类目（前台类目若没图了会自动不展示）
+      // 删除后刷新类目与网格
       await loadCats(); await loadCatMgmt(); await loadFavCats(); await loadManage();
     } catch (e) { sbToast("删除失败，请重试", false); }
   }
@@ -323,5 +491,31 @@
     t.classList.add("show");
     clearTimeout(t._timer);
     t._timer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
+  // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
+  async function loadAccess() {
+    if (!document.querySelector("#access-card")) return;
+    try {
+      const pub = await SB.getPublicAccess();
+      document.querySelector("#public-access-toggle").checked = !!pub;
+      document.querySelector("#access-save").disabled = true;
+    } catch (e) { /* 忽略读取失败 */ }
+  }
+  function bindAccess() {
+    const toggle = document.querySelector("#public-access-toggle");
+    const save = document.querySelector("#access-save");
+    if (!toggle || !save) return;
+    toggle.addEventListener("change", () => { save.disabled = false; });
+    save.addEventListener("click", async () => {
+      const val = toggle.checked;
+      try {
+        await SB.setPublicAccess(val);
+        sbToast(val ? "已开启公开浏览，前台免登录可见" : "已关闭公开浏览，前台需登录可见");
+        save.disabled = true;
+      } catch (e) {
+        sbToast("保存失败：" + (e.message || ""), false);
+      }
+    });
   }
 })();

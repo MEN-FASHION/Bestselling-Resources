@@ -23,10 +23,21 @@
       $("#auth-toggle-link").classList.remove("hidden");
     }
 
+    // ===== 前台访问模式：公开浏览（免登录）或 必须登录 =====
+    // 先读一次开关，公开模式且未登录时直接进画廊
+    SB.getPublicAccess().then((pub) => {
+      window.__publicAccess = !!pub;
+      refreshAuthUI();
+    }).catch(() => { window.__publicAccess = false; refreshAuthUI(); });
+
     // 恢复登录态
     SB.onAuth((session) => {
-      if (session) showGallery(); else showLogin();
+      if (session) { window.__loggedIn = true; refreshAuthUI(); }
+      else { window.__loggedIn = false; refreshAuthUI(); }
     });
+
+    // 顶栏登录按钮（公开模式下显示，点击回到登录页）
+    $("#login-btn").onclick = () => showLogin();
 
     // ===== 全局防下载 =====
     setupAntiDownload();
@@ -61,11 +72,28 @@
     });
   }
 
+  // 根据 登录态 + 公开模式 决定显示登录页还是画廊
+  function refreshAuthUI() {
+    if (window.__loggedIn) { showGallery(); return; }
+    if (window.__publicAccess) {
+      // 公开模式：未登录直接看图，顶栏显示"登录"按钮
+      $("#login-btn").classList.remove("hidden");
+      $("#logout-btn").classList.add("hidden");
+      $("#gallery-view").classList.remove("hidden");
+      $("#login-view").classList.add("hidden");
+      return;
+    }
+    showLogin();
+  }
   function showLogin() {
+    $("#login-btn").classList.add("hidden");
+    $("#logout-btn").classList.add("hidden");
     $("#gallery-view").classList.add("hidden");
     $("#login-view").classList.remove("hidden");
   }
   function showGallery() {
+    $("#login-btn").classList.add("hidden");
+    $("#logout-btn").classList.remove("hidden");
     $("#login-view").classList.add("hidden");
     $("#gallery-view").classList.remove("hidden");
     loadGallery();
@@ -207,5 +235,5 @@
   };
 
   // ---------- 退出 ----------
-  $("#logout-btn").onclick = async () => { await SB.signOut(); showLogin(); };
+  $("#logout-btn").onclick = async () => { await SB.signOut(); refreshAuthUI(); };
 })();

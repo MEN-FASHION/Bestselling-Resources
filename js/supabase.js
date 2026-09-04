@@ -117,11 +117,22 @@ const SB = (() => {
     },
 
     // ============ 类目清单（categories 表） ============
-    // 管理员显式添加的类目（前台菜单用）
+    // 管理员显式添加的类目（前台菜单用，按 sort_order 排序，数字小在前）
     async listActiveCats() {
-      const { data, error } = await client.from("categories").select("name").order("name");
+      const { data, error } = await client.from("categories").select("name, sort_order").order("sort_order").order("name");
       if (error) throw new Error(error.message || "读取失败");
       return (data || []).map(d => d.name);
+    },
+    // 前台排序用途：返回 id/name/sort_order，供设置类目顺序
+    async listActiveCatsWithOrder() {
+      const { data, error } = await client.from("categories").select("id, name, sort_order").order("sort_order").order("name");
+      if (error) throw new Error(error.message || "读取失败");
+      return data || [];
+    },
+    // 设置单个类目的展示顺序
+    async setCategoryOrder(id, order) {
+      const { error } = await client.from("categories").update({ sort_order: order }).eq("id", id);
+      if (error) throw new Error(error.message || "保存顺序失败");
     },
     // 实际上有图片的类目（从 images 表）
     async listUsedCats() {
@@ -177,6 +188,20 @@ const SB = (() => {
     async removeImageRecord(id) {
       const { error } = await client.from("images").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除失败");
+    },
+
+    // ============ 前台访问模式开关 ============
+    // public_access=true：前台免登录公开浏览（Worker 图片也放行）；false：必须登录可见
+    async getPublicAccess() {
+      const { data, error } = await client
+        .from("site_settings").select("public_access").eq("id", 1).maybeSingle();
+      if (error || !data) return false;
+      return !!data.public_access;
+    },
+    async setPublicAccess(v) {
+      const { error } = await client
+        .from("site_settings").update({ public_access: !!v, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
     },
   };
 })();
