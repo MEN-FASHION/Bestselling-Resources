@@ -144,8 +144,8 @@ img { display: block; }
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 /* ---------- 后台：类目/常用类目勾选清单 ---------- */
