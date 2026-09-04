@@ -1,5 +1,5 @@
 /* ============================================================
- * 后台逻辑：Supabase 登录 + 管理员角色校验 + 传图到 Storage + 管理
+ * 后台逻辑：Supabase 登录 + 管理员角色校验 + 传图 + 类目/常用类目管理 + 删除
  * ============================================================ */
 (function () {
   const $ = (sel) => document.querySelector(sel);
@@ -8,9 +8,11 @@
   let uploading = false;
   let currentUser = null;
   let currentRole = null;
+  let currentFavCats = [];   // 当前管理员常用类目
+  let currentActiveCats = []; // 前台类目（categories 表）
 
   document.addEventListener("DOMContentLoaded", () => {
-    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage();
+    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt();
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
@@ -27,11 +29,11 @@
     el.classList.toggle("bad", currentRole !== "admin");
     if (currentRole !== "admin" && currentUser) {
       // 非管理员：隐藏上传区，只显示只读提示
-      $("#upload-card").classList.toggle("hidden", true);
+      ["#upload-card", "#fav-card", "#cat-mgmt-card"].forEach(s => $(s)?.classList.add("hidden"));
       $("#manage-card").classList.toggle("hidden", false);
       $("#no-perm").classList.remove("hidden");
     } else {
-      $("#upload-card").classList.remove("hidden");
+      ["#upload-card", "#fav-card", "#cat-mgmt-card"].forEach(s => $(s)?.classList.remove("hidden"));
       $("#no-perm").classList.add("hidden");
     }
   }
@@ -54,6 +56,7 @@
     $("#admin-login").classList.add("hidden");
     $("#admin-panel").classList.remove("hidden");
     loadCats(); loadManage();
+    if (currentRole === "admin") { loadFavCats(); loadCatMgmt(); }
   }
 
   // ================= 登录 / 注册引导 =================
@@ -116,7 +119,7 @@
     return Math.max(1, Math.round(n / 1024)) + " KB";
   }
 
-  // ================= 上传主流程（写入 Storage + DB） =================
+  // ================= 上传主流程（写入 R2 + DB） =================
   async function doUpload() {
     if (!pendingFiles.length || uploading) return;
     if (currentRole !== "admin") { sbToast("无权限：只有管理员可上传", false); return; }
@@ -157,14 +160,103 @@
     await loadCats(); await loadManage();
   }
 
-  // ================= 分类下拉 =================
+  // ================= 分类下拉（常用类目优先） =================
   async function loadCats() {
     let cats = [];
-    try { cats = await SB.listCategories(); } catch (e) {}
+    try { cats = await SB.listActiveCats(); } catch (e) {}
     const sel = $("#cat-select");
     sel.innerHTML = "";
-    if (cats.length) cats.forEach(c => sel.add(new Option(c, c)));
+    // 常用类目排前面
+    if (currentFavCats.length) {
+      currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
+      sel.add(new Option("──────────", ""));
+      sel.value = "";
+    }
+    cats.forEach(c => sel.add(new Option(c, c)));
     sel.add(new Option("＋ 新建分类", "__new__"));
+  }
+
+  // ================= 我的常用类目 =================
+  function bindFavCats() {
+    $("#fav-save").onclick = saveFavCats;
+  }
+  async function loadFavCats() {
+    try { currentFavCats = await SB.myFavCats(); } catch (e) { currentFavCats = []; }
+    // 候选 = 配置里的候选清单 + 已添加的前台类目 + 已有常用类目
+    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats).concat(currentFavCats));
+    const box = $("#fav-list");
+    box.innerHTML = "";
+    [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
+      const label = document.createElement("label");
+      label.className = "check-item";
+      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span>${escHtml(name)}</span>`;
+      label.querySelector("input").checked = currentFavCats.includes(name);
+      label.querySelector("input").onchange = () => {
+        $("#fav-save").disabled = false;
+      };
+      box.appendChild(label);
+    });
+    $("#fav-save").disabled = true;
+  }
+  async function saveFavCats() {
+    const picked = [...document.querySelectorAll("#fav-list input:checked")].map(i => i.value);
+    try {
+      currentFavCats = await SB.updateFavCats(picked);
+      sbToast("常用类目已保存");
+      $("#fav-save").disabled = true;
+      await loadCats();
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+  }
+
+  // ================= 前台类目管理 =================
+  function bindCatMgmt() {
+    $("#cat-mgmt-save").onclick = saveCatMgmt;
+    $("#cat-mgmt-add").onclick = () => {
+      const v = $("#cat-mgmt-new").value.trim();
+      if (!v) { sbToast("请输入类目名", false); return; }
+      addOptionToCatMgmt(v);
+      $("#cat-mgmt-new").value = "";
+    };
+  }
+  async function loadCatMgmt() {
+    try { currentActiveCats = await SB.listActiveCats(); } catch (e) { currentActiveCats = []; }
+    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats));
+    const box = $("#cat-mgmt-list");
+    box.innerHTML = "";
+    [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
+      const label = document.createElement("label");
+      label.className = "check-item";
+      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span>${escHtml(name)}</span>`;
+      label.querySelector("input").checked = currentActiveCats.includes(name);
+      label.querySelector("input").onchange = () => { $("#cat-mgmt-save").disabled = false; };
+      box.appendChild(label);
+    });
+    $("#cat-mgmt-save").disabled = true;
+  }
+  function addOptionToCatMgmt(name) {
+    // 若已存在则忽略；否则添加到勾选列表并标记待保存
+    const box = $("#cat-mgmt-list");
+    if (box.querySelector(`input[value="${CSS.escape(name)}"]`)) return;
+    const label = document.createElement("label");
+    label.className = "check-item";
+    label.innerHTML = `<input type="checkbox" value="${escAttr(name)}" checked> <span>${escHtml(name)}</span>`;
+    label.querySelector("input").onchange = () => { $("#cat-mgmt-save").disabled = false; };
+    box.appendChild(label);
+    $("#cat-mgmt-save").disabled = false;
+  }
+  async function saveCatMgmt() {
+    const picked = [...document.querySelectorAll("#cat-mgmt-list input:checked")].map(i => i.value);
+    // 同步差异：新增不在 categories 里的；删除未勾选的
+    const toAdd = picked.filter(c => !currentActiveCats.includes(c));
+    const toDel = currentActiveCats.filter(c => !picked.includes(c));
+    try {
+      for (const c of toAdd) await SB.addCategory(c);
+      for (const c of toDel) await SB.removeCategory(c);
+      currentActiveCats = picked;
+      sbToast("前台类目已保存");
+      $("#cat-mgmt-save").disabled = true;
+      await loadCats(); await loadFavCats(); await loadManage();
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
 
   // ================= 图片管理（删除） =================
@@ -191,8 +283,8 @@
       const row = document.createElement("div");
       row.className = "m-row";
       row.innerHTML = `
-        <img src="${thumb}" class="m-thumb" alt="">
-        <div class="m-info"><b>${img.name}</b><br><span>${img.category}</span></div>
+        <img src="${thumb}" class="m-thumb" alt="" draggable="false">
+        <div class="m-info"><b>${escHtml(img.name || "")}</b><br><span>${escHtml(img.category || "")}</span></div>
         <button class="btn-danger" data-id="${img.id}">删除</button>`;
       row.querySelector(".btn-danger").onclick = () => removeImage(img, row);
       box.appendChild(row);
@@ -213,8 +305,14 @@
       await SB.removeImageRecord(img.id);
       sbToast("已删除");
       row.remove();
+      // 删除后刷新类目（前台类目若没图了会自动不展示）
+      await loadCats(); await loadCatMgmt(); await loadFavCats(); await loadManage();
     } catch (e) { sbToast("删除失败，请重试", false); }
   }
+
+  // ================= 工具 =================
+  function escHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function escAttr(s) { return escHtml(s); }
 
   // ================= 提示 =================
   function sbToast(msg, ok = true) {

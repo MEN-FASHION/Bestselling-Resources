@@ -115,6 +115,56 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return [...new Set((data || []).map(d => d.category))];
     },
+
+    // ============ 类目清单（categories 表） ============
+    // 管理员显式添加的类目（前台菜单用）
+    async listActiveCats() {
+      const { data, error } = await client.from("categories").select("name").order("name");
+      if (error) throw new Error(error.message || "读取失败");
+      return (data || []).map(d => d.name);
+    },
+    // 实际上有图片的类目（从 images 表）
+    async listUsedCats() {
+      const { data, error } = await client.from("images").select("category").order("category");
+      if (error) throw new Error(error.message || "读取失败");
+      return [...new Set((data || []).map(d => d.category))];
+    },
+    // 管理员新增类目
+    async addCategory(name) {
+      const n = (name || "").trim();
+      if (!n) throw new Error("类目名不能为空");
+      const { error } = await client.from("categories").insert({ name: n });
+      if (error) throw new Error(error.message === "duplicate key value violates unique constraint \"categories_name_key\"" || (error.code === "23505") ? "该类目已存在" : (error.message || "新增失败"));
+    },
+    // 管理员删除类目（仅从清单移除，不影响已上传图片）
+    async removeCategory(name) {
+      const { error } = await client.from("categories").delete().eq("name", name);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+
+    // ============ 常用类目（当前用户 profiles.favorite_categories） ============
+    async myFavCats() {
+      const session = await this.getSession();
+      if (!session) return [];
+      const { data, error } = await client
+        .from("profiles")
+        .select("favorite_categories")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (error || !data) return [];
+      return data.favorite_categories || [];
+    },
+    async updateFavCats(arr) {
+      const session = await this.getSession();
+      if (!session) throw new Error("未登录");
+      const list = [...new Set((arr || []).map(x => (x || "").trim()).filter(Boolean))];
+      const { error } = await client
+        .from("profiles")
+        .update({ favorite_categories: list })
+        .eq("user_id", session.user.id);
+      if (error) throw new Error(error.message || "保存失败");
+      return list;
+    },
     async addImageRecord({ category, name, path }) {
       const token = await currentToken();
       const s = await client.auth.getSession();

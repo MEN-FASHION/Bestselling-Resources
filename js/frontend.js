@@ -1,5 +1,5 @@
 /* ============================================================
- * 前台逻辑：Supabase 登录/注册 + 分类画廊 + 灯箱大图
+ * 前台逻辑：Supabase 登录/注册 + 左侧类目菜单 + 图片网格 + 灯箱大图 + 防下载
  * ============================================================ */
 (function () {
   const $ = (sel) => document.querySelector(sel);
@@ -8,6 +8,10 @@
   let lightboxList = [];
   let lightboxIdx = 0;
   let catalog = [];      // 当前分类下的图片
+
+  // 前台展示的类目 = 管理员显式添加的类目 ∩ 实际有图的类目
+  let activeCats = [];   // categories 表（管理员显式添加）
+  let usedCats = [];     // images 表去重（有图）
 
   document.addEventListener("DOMContentLoaded", () => {
     $("#site-title").textContent = CONFIG.siteTitle;
@@ -23,7 +27,39 @@
     SB.onAuth((session) => {
       if (session) showGallery(); else showLogin();
     });
+
+    // ===== 全局防下载 =====
+    setupAntiDownload();
   });
+
+  // ---------- 防下载：禁右键/拖拽/长按/选中 ----------
+  function setupAntiDownload() {
+    document.addEventListener("contextmenu", (e) => {
+      if (e.target.tagName === "IMG") e.preventDefault();
+    });
+    document.addEventListener("dragstart", (e) => {
+      if (e.target.tagName === "IMG") e.preventDefault();
+    });
+    // 长按保存（移动端）阻止
+    let longPress = null;
+    document.addEventListener("touchstart", (e) => {
+      if (e.target.tagName === "IMG") {
+        longPress = setTimeout(() => e.preventDefault(), 400);
+      }
+    }, { passive: false });
+    document.addEventListener("touchend", () => clearTimeout(longPress));
+    document.addEventListener("touchmove", () => clearTimeout(longPress));
+    // 禁止选中图片文本
+    document.addEventListener("selectstart", (e) => {
+      if (e.target.tagName === "IMG") e.preventDefault();
+    });
+    // 禁止 Ctrl/Command + S 直接保存页面（尽力而为）
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+      }
+    });
+  }
 
   function showLogin() {
     $("#gallery-view").classList.add("hidden");
@@ -36,25 +72,32 @@
   }
   async function loadGallery() {
     try {
-      const cats = await SB.listCategories();
-      renderCats(cats);
+      // 并行取：显式添加的类目 + 实际有图的类目
+      const [active, used] = await Promise.all([
+        SB.listActiveCats().catch(() => []),
+        SB.listUsedCats().catch(() => []),
+      ]);
+      activeCats = active;
+      usedCats = used;
+      // 交集，并按字母/拼音顺序
+      const shown = activeCats.filter(c => usedCats.includes(c));
+      renderCatMenu(shown);
       await renderGrid(currentCat);
     } catch (e) {
       Auth.toast("加载失败，请检查网络或配置", false);
     }
   }
 
-  // ---------- 分类 tab ----------
-  function renderCats(cats) {
-    const tabs = $("#cat-tabs");
-    tabs.innerHTML = "";
-    const all = ["全部"].concat(cats);
-    all.forEach(c => {
+  // ---------- 左侧类目菜单 ----------
+  function renderCatMenu(cats) {
+    const menu = $("#cat-menu");
+    menu.innerHTML = "";
+    ["全部"].concat(cats).forEach(c => {
       const b = document.createElement("button");
-      b.className = "cat-tab" + (c === currentCat ? " active" : "");
+      b.className = "cat-menu-item" + (c === currentCat ? " active" : "");
       b.textContent = c;
-      b.onclick = () => { currentCat = c; renderCats(cats); renderGrid(c); };
-      tabs.appendChild(b);
+      b.onclick = () => { currentCat = c; renderCatMenu(cats); renderGrid(c); };
+      menu.appendChild(b);
     });
   }
 
@@ -84,6 +127,8 @@
       imgEl.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
       imgEl.alt = img.name || "";
       imgEl.loading = "lazy";
+      imgEl.draggable = false;
+      imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
       holder.appendChild(imgEl);
       const cap = document.createElement("div");
       cap.className = "cell-cap";
