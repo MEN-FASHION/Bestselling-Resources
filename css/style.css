@@ -119,8 +119,8 @@ img { display: block; }
 
 /* ---------- 前台左右布局：左侧类目菜单 + 右侧图片 ---------- */
 .gallery-layout {
-  max-width: 1280px; margin: 0 auto; padding: 20px;
-  display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: start;
+  max-width: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 210px 1fr; gap: 14px; align-items: start;
 }
 .sidebar {
   position: sticky; top: 78px;
@@ -144,8 +144,8 @@ img { display: block; }
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
 }
 
 /* ---------- 后台：类目/常用类目勾选清单 ---------- */
@@ -165,11 +165,11 @@ img { display: block; }
 .hint-inline { font-size: 12px; color: var(--sub); font-weight: 400; letter-spacing: 0; }
 #fav-save, #cat-mgmt-save { max-width: 260px; }
 .cell {
-  cursor: zoom-in; border-radius: 12px; overflow: hidden;
+  cursor: zoom-in; border-radius: 6px; overflow: hidden;
   background: var(--card); border: 1px solid var(--line);
-  transition: transform .25s, box-shadow .25s;
+  transition: transform .2s, box-shadow .2s;
 }
-.cell:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+.cell:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
 .holder { aspect-ratio: 1 / 1; overflow: hidden; position: relative; background: var(--shade); }
 .holder img {
   width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .5s;
@@ -177,7 +177,7 @@ img { display: block; }
 .holder img.loaded { opacity: 1; }
 .holder img.lazy-fallback { opacity: 1; }
 .cell-cap {
-  padding: 10px 14px; font-size: 13px; color: var(--sub);
+  padding: 5px 8px; font-size: 12px; color: var(--sub);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .empty-tip { text-align: center; color: var(--sub); padding: 80px 0; font-size: 15px; }
@@ -294,6 +294,6 @@ select.input {
   .lb-nav { width: 42px; height: 42px; font-size: 34px; }
   .lb-prev { left: 8px; }
   .lb-next { right: 8px; }
-  .gallery-layout { padding: 12px; gap: 12px; }
+  .gallery-layout { padding: 0; gap: 12px; }
   .check-list { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
