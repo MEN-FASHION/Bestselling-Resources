@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片图鉴 · 后台管理</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="admin">
+  <div id="toast" class="toast"></div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="admin-login" class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <h1>后台管理</h1>
+        <p class="subtitle">管理员登录</p>
+      </div>
+      <form id="admin-login-form" class="auth-form">
+        <h2 class="form-title">管理员登录</h2>
+        <label>邮箱</label>
+        <input type="email" id="admin-email" placeholder="you@example.com" autocomplete="email" required>
+        <label>密码</label>
+        <input type="password" id="admin-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="admin-login-btn">进入后台</button>
+        <button type="button" class="btn-ghost btn-block" id="admin-signup-btn" style="margin-top:10px;">暂无账号？注册一个</button>
+        <div class="auth-links">
+          <a href="#" id="admin-toggle">→ 如何成为管理员</a>
+          <span class="auth-sep">·</span>
+          <a href="index.html">返回前台</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 后台主体 ================= -->
+  <section id="admin-panel" class="admin-panel hidden">
+    <header class="admin-head">
+      <div class="brand-sm"><span>◆</span> 后台管理</div>
+      <div>
+        <span class="ghost-chip" id="token-status">令牌：未配置</span>
+        <button id="admin-logout" class="btn-ghost">退出</button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <!-- 无权限提示 -->
+      <div id="no-perm" class="panel-card hidden">
+        <h2>仅管理员可上传</h2>
+        <p class="hint">当前账号为访客角色，只能查看，不能上传或删除图片。如需成为管理员，请在 README 中查看设置方法。</p>
+      </div>
+
+      <!-- 上传区 -->
+      <div class="panel-card" id="upload-card">
+        <h2>① 上传图片</h2>
+        <div class="row">
+          <label class="field">分类（选已有或输入新建）</label>
+          <div class="cat-input-row">
+            <select id="cat-select" class="input"></select>
+            <input id="cat-new" class="input" placeholder="新建分类名">
+          </div>
+        </div>
+        <div id="dropzone" class="dropzone">
+          <div class="dz-inner">
+            <span class="dz-icon">＋</span>
+            <p>拖拽图片到这里，或 <em>点击选择文件</em></p>
+            <p class="dz-sub">支持 jpg / png / webp / gif，可多选</p>
+          </div>
+          <input type="file" id="file-input" accept="image/*" multiple hidden>
+        </div>
+        <div id="pending-list" class="pending-list"></div>
+        <button id="upload-btn" class="btn-primary" disabled>上传所选（0）</button>
+        <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
+      </div>
+
+      <!-- 图片管理区 -->
+      <div class="panel-card" id="manage-card">
+        <h2>② 图片管理</h2>
+        <div class="manage-head">
+          <select id="manage-cat" class="input"></select>
+          <button id="refresh-btn" class="btn-ghost">刷新</button>
+        </div>
+        <div id="manage-list" class="manage-list"></div>
+      </div>
+    </main>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

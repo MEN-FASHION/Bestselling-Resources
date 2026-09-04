@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片图鉴 · 前台</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="front">
+  <!-- 提示条 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="login-view" class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <h1 id="site-title"></h1>
+        <p class="subtitle"></p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <h2 class="form-title" id="auth-title">访客登录</h2>
+        <label>邮箱</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" required>
+        <label>密码</label>
+        <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="auth-submit">进入图鉴</button>
+        <div class="auth-links">
+          <a href="#" id="auth-toggle-link" class="hidden">没有账号？注册一个</a>
+          <span class="auth-sep">·</span>
+          <a href="admin.html">管理员入口 →</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 画廊 ================= -->
+  <section id="gallery-view" class="gallery-view hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span>◆</span> <span id="top-title"></span></div>
+        <nav id="cat-tabs" class="cats"></nav>
+        <button id="logout-btn" class="btn-ghost">退出</button>
+      </div>
+    </header>
+
+    <main class="grid-wrap">
+      <p id="empty-tip" class="empty-tip hidden">暂无可浏览的图片，请等待管理员上传。</p>
+      <div id="grid" class="grid"></div>
+    </main>
+  </section>
+
+  <!-- ================= 灯箱 ================= -->
+  <div id="lightbox" class="lightbox hidden">
+    <button class="lb-close" id="lb-close">×</button>
+    <button class="lb-nav lb-prev" id="lb-prev">‹</button>
+    <img id="lb-img" src="" alt="">
+    <button class="lb-nav lb-next" id="lb-next">›</button>
+    <div id="lb-caption" class="lb-caption"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/frontend.js"></script>
+</body>
+</html>
