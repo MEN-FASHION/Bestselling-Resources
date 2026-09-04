@@ -44,6 +44,17 @@
       </div>
     </header>
 
+    <div class="admin-body">
+      <!-- 左侧菜单 -->
+      <aside class="admin-side">
+        <nav class="admin-nav">
+          <a class="nav-item" data-target="upload-card">① 上传图片</a>
+          <a class="nav-item" data-target="fav-card">② 我的常用类目</a>
+          <a class="nav-item" data-target="cat-mgmt-card">③ 前台类目</a>
+          <a class="nav-item" data-target="manage-card">④ 图片管理</a>
+          <a class="nav-item" data-target="access-card">⑤ 前台访问设置</a>
+        </nav>
+      </aside>
     <main class="admin-main">
       <!-- 无权限提示 -->
       <div id="no-perm" class="panel-card hidden">
@@ -94,8 +105,9 @@
         <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
         <!-- 展示顺序：数字越小越靠前，也可用上下箭头调整 -->
         <div class="order-block">
-          <h3 class="order-title">展示顺序（数字越小越靠前，改完记得保存）</h3>
+          <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）</h3>
           <div id="cat-order-box" class="cat-order-box"></div>
+          <button id="cat-order-save" class="btn-primary" disabled>保存展示顺序</button>
         </div>
       </div>
 
@@ -132,6 +144,7 @@
         </div>
       </div>
     </main>
+    </div>
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
