@@ -1,1 +1,116 @@
-# Bestselling-Resources
+# 图片图鉴站（前台浏览 + 后台传图 · 真私密版）
+
+一个部署在 **GitHub Pages** 的图片站：
+
+- **前台**（`index.html`）：用户用 **邮箱+密码** 登录后，按分类浏览图片（缩略图懒加载、点击看大图）。
+- **后台**（`admin.html`）：**管理员**登录后，可 **网页拖拽上传/删除图片**。
+
+**图片真正私密**：所有图片存放在 Cloudflare R2 私有桶中，任何图片请求都必须携带登录令牌、经 Cloudflare Worker 校验后才放行 —— **未登录的人连图片网址都打不开**。
+
+---
+
+## 一、架构说明
+
+```
+GitHub Pages（静态页面）
+   ├── 前台 index.html ──┐
+   └── 后台 admin.html ──┤
+                        ├──► Supabase（只做登录验证 + 图片清单）
+                        │       ├── Auth      邮箱密码登录/会话
+                        │       └── Database  profiles 角色表 + images 清单表
+                        │
+                        └──► Cloudflare Worker（图片"守门员"，免费）
+                                ├── 校验令牌（问 Supabase：登录了吗？是管理员吗？）
+                                ├── 通过才从 R2 私有桶取图/存图/删图
+                                └── R2 私有桶（图片文件，任何人无法直接访问）
+```
+
+- **Supabase** 只承担 **登录验证 + 数据库清单**（不存图片，不占它的 1GB 存储/5GB 流量）
+- **图片文件** 全部放 **R2 私有桶**（免费 10GB、出口流量不收费），由 Worker 鉴权代理
+
+---
+
+## 二、部署步骤
+
+### 第 1 步：准备好 Supabase 项目（只做登录）
+1. 登录 supabase.com，新建项目。
+2. 记下 **Project URL** 与 **anon public key**（Project Settings → API）。
+3. 填入 `js/config.js` 的 `SUPABASE.url` 和 `SUPABASE.anonKey`。
+
+### 第 2 步：执行数据库初始化
+1. 项目 → **SQL Editor** → New query。
+2. 打开 `tools/setup.sql`，全选复制运行。
+3. 自动创建：`profiles` 表（角色）、`images` 表（清单）、安全策略、注册自动建档。
+
+### 第 3 步：开启邮箱登录
+- 项目 → **Authentication → Providers → Email** 开启，建议关闭 Confirm email。
+
+### 第 4 步：创建管理员
+1. 访问站点 `admin.html` → “暂无账号？注册一个”，用你的邮箱注册。
+2. 回 Supabase → **SQL Editor** 执行（换成你的邮箱）：
+   ```sql
+   update public.profiles set role = 'admin'
+     where email = '你的邮箱@example.com';
+   ```
+3. 回站点刷新重新登录，上传功能即开放。
+
+### 第 5 步：创建 Cloudflare R2 桶（图片仓库）
+1. 注册/登录 **Cloudflare**（免费）→ 左侧 **R2 Object Storage**。
+2. **Create bucket**：桶名填 `images`，**不要选"允许公开访问"**（保持私有）。
+3. 记下桶名。
+
+### 第 6 步：部署 Cloudflare Worker（守门员）
+1. 左侧 **Workers & Pages** → **Create** → **Worker** → 随便起个名字（如 `gallery-api`）→ Deploy。
+2. 进入该 Worker → **Settings → Variables**：
+   - 添加 `SUPABASE_URL` = 你的 Supabase Project URL
+   - 添加 `SUPABASE_ANON_KEY` = 你的 anon public key
+3. **Settings → Bindings** → Add → **R2 Bucket**：
+   - 变量名填 `IMAGES`，选择你刚创建的 `images` 桶。
+4. 回到 Worker **Edit code**，把本目录 `worker/worker.js` 的**全部内容覆盖**粘贴进去 → Deploy。
+5. 记下 Worker 访问地址（形如 `https://gallery-api.你的子域.workers.dev`），填入 `js/config.js` 的 `WORKER_URL`。
+
+### 第 7 步：部署到 GitHub Pages
+1. 把 `gallery-site` 目录所有文件推送到 GitHub 仓库。
+2. 仓库 → **Settings → Pages** → Deploy from a branch，分支 `main`，目录 `/ (root)`。
+
+---
+
+## 三、使用说明
+
+**前台（访客）**
+- 打开站点，邮箱注册/登录后进入画廊；顶部切换分类，点击图片看大图。
+
+**后台（管理员）**
+- 打开 `admin.html`，管理员账号登录。
+- **① 上传**：选择/新建分类 → 拖拽多张图片 → 点“上传所选”。图片经 Worker 写入 R2，清单记录进数据库，前台立即可见。
+- **② 管理**：按分类查看、删除图片（同时删 R2 文件与清单）。
+
+**为访客建号**
+- 默认开放自助注册（`config.js` 的 `enableSignup` 控制）。要改为仅管理员建号：设 `false`，在 Supabase **Authentication → Users** 手动 Add user。
+
+---
+
+## 四、常见问题
+
+- **登录提示 Invalid login credentials**：密码错误，或邮箱未在 Auth 用户里。
+- **看图 401**：登录态过期，重新登录即可（Worker 会校验令牌）。
+- **上传提示无管理员权限**：确认当前账号已在 SQL 里升级为 admin。
+- **上传/看图报 404**：Worker 的 R2 Binding 变量名必须叫 `IMAGES`，且绑定到 `images` 桶。
+- **为什么要 Worker 而不是直接放桶**：R2 桶保持私有，任何请求都要 Worker 校验令牌，未登录无法拿到图片，实现”真私密”。
+
+---
+
+## 五、文件清单
+```
+gallery-site/
+├── index.html           前台（登录 + 画廊）
+├── admin.html           后台（登录 + 上传/管理）
+├── css/style.css        样式
+├── js/
+│   ├── config.js        ★ 配置（Supabase URL/anon key + Worker 地址）
+│   ├── supabase.js      登录 + 清单 + Worker 通道封装
+│   ├── frontend.js      前台逻辑
+│   └── admin.js         后台逻辑
+├── worker/worker.js     Cloudflare Worker 源码（部署到 Cloudflare）
+└── tools/setup.sql      Supabase 数据库初始化
+```
