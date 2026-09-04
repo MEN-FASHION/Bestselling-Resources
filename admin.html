@@ -92,16 +92,44 @@
           <button id="cat-mgmt-add" class="btn-ghost">新增</button>
         </div>
         <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
+        <!-- 展示顺序：数字越小越靠前，也可用上下箭头调整 -->
+        <div class="order-block">
+          <h3 class="order-title">展示顺序（数字越小越靠前，改完记得保存）</h3>
+          <div id="cat-order-box" class="cat-order-box"></div>
+        </div>
       </div>
 
-      <!-- 图片管理区 -->
+      <!-- 前台访问设置 -->
+      <div class="panel-card" id="access-card">
+        <h2>⑤ 前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h2>
+        <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
+        <label class="switch-row">
+          <input type="checkbox" id="public-access-toggle">
+          <span id="public-access-label">前台公开浏览（所有人可见）</span>
+        </label>
+        <button id="access-save" class="btn-primary" disabled>保存设置</button>
+      </div>
+
+      <!-- 图片管理区（与前台同款布局：左侧类目菜单 + 右侧网格，支持批量删除） -->
       <div class="panel-card" id="manage-card">
-        <h2>④ 图片管理</h2>
-        <div class="manage-head">
-          <select id="manage-cat" class="input"></select>
-          <button id="refresh-btn" class="btn-ghost">刷新</button>
+        <h2>④ 图片管理 <span class="hint-inline">（前台同款布局，便于按类目定位）</span></h2>
+        <div class="manage-toolbar">
+          <span id="manage-count" class="hint-inline">加载中…</span>
+          <button id="select-all-btn" class="btn-ghost">全选</button>
+          <button id="batch-del-btn" class="btn-danger">批量删除（0）</button>
         </div>
-        <div id="manage-list" class="manage-list"></div>
+        <div class="manage-layout gallery-layout">
+          <!-- 左侧：类目菜单（有图的类目） -->
+          <aside class="sidebar">
+            <div class="side-head">图片类目</div>
+            <nav id="manage-menu" class="cat-menu"></nav>
+          </aside>
+          <!-- 右侧：图片网格 -->
+          <main class="grid-wrap">
+            <p id="manage-empty" class="empty-tip hidden">暂无图片</p>
+            <div id="manage-grid" class="grid"></div>
+          </main>
+        </div>
       </div>
     </main>
   </section>
