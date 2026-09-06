@@ -98,7 +98,18 @@
     });
   }
   function bindLogout() {
-    $("#admin-logout").onclick = async () => { await SB.signOut(); location.reload(); };
+    const logBtn = $("#admin-logout");
+    if (!logBtn) return;
+    logBtn.onclick = async () => {
+      try {
+        await SB.signOut();
+        location.reload();
+      } catch (e) {
+        // 登出请求失败时给出提示并强制刷新，避免"点了没反应"
+        sbToast("退出失败，请重试", false);
+        location.reload();
+      }
+    };
   }
   function enterPanel() {
     $("#admin-login").classList.add("hidden");
@@ -795,6 +806,14 @@
   // ================= 提示 =================
   function sbToast(msg, ok = true) {
     const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
 // ================= 智能打标（拖拽池：左=已打，右=未打） =================
   let smartDim = "style";          // 当前维度: style / element / channel
   let smartTag = "";               // 当前选中标签
@@ -988,13 +1007,6 @@
     const closeBtn = document.querySelector("#smart-close");
     if (closeBtn) closeBtn.addEventListener("click", closeSmartModal);
     bindSmartDrop();
-  }
-    if (!t) return;
-    t.textContent = msg;
-    t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
-    t.classList.add("show");
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => t.classList.remove("show"), 2600);
   }
 
   // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
