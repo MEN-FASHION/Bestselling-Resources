@@ -175,7 +175,19 @@ async function isPublicAccess(env) {
     await env.IMAGES.put(key, file.stream(), {
       httpMetadata: { contentType: "application/pdf" },
     });
-    return json({ ok: true, path: key }, 200, CORS);
+
+    // 可选封面图：存 trends_covers/ 目录，同样受控代理，不暴露直链
+    let coverPath = "";
+    const coverFile = form.get("cover");
+    if (coverFile && coverFile.size > 0) {
+      if (!/^image\//i.test(coverFile.type || "")) return json({ error: "封面仅支持图片" }, 400, CORS);
+      const cName = (coverFile.name || "cover.jpg").replace(/[^\w.\-]/g, "_");
+      coverPath = "trends_covers/" + stamp + "_" + cName;
+      await env.IMAGES.put(coverPath, coverFile.stream(), {
+        httpMetadata: { contentType: coverFile.type || "image/jpeg" },
+      });
+    }
+    return json({ ok: true, path: key, cover: coverPath }, 200, CORS);
   }
 
   // 4.2 GET /trend/preview?path=trends/xxx   受控预览：必须登录，返回 PDF 内联，防下载/防另存
@@ -199,7 +211,25 @@ async function isPublicAccess(env) {
     return new Response(object.body, { headers });
   }
 
-  // 4.3 DELETE /trend/delete?path=trends/xxx  删除趋势文件（管理员）
+  // 4.3 GET /trend/cover?path=trends_covers/xxx  受控封面图：必须登录，内联展示，防下载
+  if (method === "GET" && path === "trend/cover") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p.startsWith("trends_covers/")) return json({ error: "参数错误" }, 400, CORS);
+    const object = await env.IMAGES.get(p);
+    if (!object) return json({ error: "文件不存在" }, 404, CORS);
+    const headers = new Headers(CORS);
+    headers.set("Content-Type", object.httpMetadata?.contentType || "image/jpeg");
+    headers.set("Content-Disposition", "inline");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    return new Response(object.body, { headers });
+  }
+
+  // 4.4 DELETE /trend/delete?path=trends/xxx&cover=trends_covers/xxx  删除趋势文件（管理员）
   if (method === "DELETE" && path === "trend/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
@@ -207,6 +237,8 @@ async function isPublicAccess(env) {
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
+    const coverParam = url.searchParams.get("cover") || "";
+    if (coverParam.startsWith("trends_covers/")) await env.IMAGES.delete(coverParam).catch(() => {});
     return json({ ok: true }, 200, CORS);
   }
 

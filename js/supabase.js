@@ -235,19 +235,32 @@ const SB = (() => {
     },
 
     // ============ 趋势专区（趋势文件：R2 存本体 + trends 表存清单） ============
-    // 上传趋势文件（经 Worker -> R2，返回存储 path）
-    async uploadTrendFile(file) {
+    // 上传趋势文件（经 Worker -> R2，返回 { path, cover }）
+    async uploadTrendFile(file, cover) {
+      return await this.uploadTrendFileXHR(file, cover, null);
+    },
+    // 带进度上传（XHR 支持 progress；onProgress 回调 0-100 百分比）
+    async uploadTrendFileXHR(file, cover, onProgress) {
       const token = await currentToken();
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(window.CONFIG.WORKER_URL + "/trend/upload", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + token },
-        body: fd,
+      if (cover) fd.append("cover", cover);
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", window.CONFIG.WORKER_URL + "/trend/upload");
+        xhr.setRequestHeader("Authorization", "Bearer " + token);
+        xhr.upload.onprogress = (e) => {
+          if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          let j = {};
+          try { j = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+          if (xhr.status >= 200 && xhr.status < 300 && j.ok) resolve({ path: j.path, cover: j.cover || "" });
+          else reject(new Error(j.error || "上传失败"));
+        };
+        xhr.onerror = () => reject(new Error("网络异常，上传失败"));
+        xhr.send(fd);
       });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "上传失败");
-      return j.path;
     },
     // 受控预览 URL（需登录令牌，经 Worker 鉴权，防下载）
     async trendPreviewUrl(path) {
@@ -256,15 +269,24 @@ const SB = (() => {
       if (!token) return base + "/trend/preview?path=" + encodeURIComponent(path);
       return base + "/trend/preview?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
     },
-    // 删除趋势文件（经 Worker 从 R2 删除）
-    async deleteTrendFile(path) {
+    // 删除趋势文件（经 Worker 从 R2 删除；若带封面 path 一并删除）
+    async deleteTrendFile(path, cover) {
       const token = await currentToken();
-      const res = await fetch(window.CONFIG.WORKER_URL + "/trend/delete?path=" + encodeURIComponent(path), {
+      let q = "/trend/delete?path=" + encodeURIComponent(path);
+      if (cover) q += "&cover=" + encodeURIComponent(cover);
+      const res = await fetch(window.CONFIG.WORKER_URL + q, {
         method: "DELETE",
         headers: { Authorization: "Bearer " + token },
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "删除失败");
+    },
+    // 受控封面图 URL（需登录令牌，经 Worker 鉴权，防下载）
+    async trendCoverUrl(coverPath) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/trend/cover?path=" + encodeURIComponent(coverPath);
+      return base + "/trend/cover?path=" + encodeURIComponent(coverPath) + "&token=" + encodeURIComponent(token);
     },
     // 读取趋势清单（trends 表，登录用户可读）
     async listTrends() {
@@ -273,10 +295,11 @@ const SB = (() => {
       return data || [];
     },
     // 新增趋势清单记录
-    async addTrendRecord({ title, tag, path, category, file_type }) {
+    async addTrendRecord({ title, tag, path, category, file_type, cover, description }) {
       const s = await client.auth.getSession();
       const { error } = await client.from("trends").insert({
         title, tag, path, category: category || "", file_type: file_type || "pdf",
+        cover: cover || "", description: description || "",
         uploaded_by: s?.data?.session?.user?.id || null,
       });
       if (error) throw new Error(error.message || "写入趋势失败");

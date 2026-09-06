@@ -192,8 +192,32 @@
             </div>
           </div>
           <div class="row">
-            <label class="field">选填 · 具体类目（当选择「类目」时可填）</label>
-            <input id="trend-category" class="input" placeholder="例如：T恤 / 卫衣（可选）">
+            <label class="field">选择类目（复用视觉专区类目）</label>
+            <div class="cat-picker">
+              <input id="trend-cat-search" class="input" placeholder="输入关键词搜索已有类目…" autocomplete="off">
+              <div id="trend-cat-results" class="cat-results hidden"></div>
+              <div id="trend-cat-chosen" class="cat-chosen"></div>
+              <div class="cat-picker-actions">
+                <button id="trend-cat-add-btn" class="btn-ghost" type="button">＋ 自定义添加类目</button>
+              </div>
+              <div id="trend-cat-tip" class="hint"></div>
+            </div>
+          </div>
+          <div class="row">
+            <label class="field">选填 · 封面图（前台卡片展示）</label>
+            <div id="trend-cover-dropzone" class="dropzone">
+              <div class="dz-inner">
+                <span class="dz-icon">＋</span>
+                <p>拖拽封面图到这里，或 <em>点击选择文件</em></p>
+                <p class="dz-sub">支持 JPG / PNG，可选</p>
+              </div>
+              <input type="file" id="trend-cover-input" accept="image/*" hidden>
+            </div>
+            <div id="trend-cover-pick" class="hint hidden" style="margin-top:8px;"></div>
+          </div>
+          <div class="row">
+            <label class="field">选填 · 简介/介绍</label>
+            <textarea id="trend-description" class="input" rows="2" placeholder="一句话介绍该趋势文件的内容，前台卡片会展示"></textarea>
           </div>
           <div id="trend-dropzone" class="dropzone">
             <div class="dz-inner">
@@ -204,6 +228,10 @@
             <input type="file" id="trend-file-input" accept=".pdf,application/pdf" hidden>
           </div>
           <div id="trend-pick" class="hint hidden" style="margin-top:8px;"></div>
+          <div id="trend-progress-wrap" class="progress-wrap hidden">
+            <div class="progress-bar"><div id="trend-progress-bar" class="progress-fill" style="width:0%"></div></div>
+            <span id="trend-progress-text">0%</span>
+          </div>
           <button id="trend-upload-btn" class="btn-primary" disabled>上传趋势文件</button>
         </div>
         <hr class="tag-sub-hr">

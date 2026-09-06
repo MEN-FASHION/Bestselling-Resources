@@ -1054,7 +1054,10 @@
 
   // ================= 趋势专区管理（上传 / 列表 / 删除） =================
   let trendPickedFile = null;
+  let trendPickedCover = null;
   let trendList = [];
+  let trendCategory = "";        // 已选类目（引用视觉专区类目）
+  let trendCatOptions = [];      // 可选类目候选
 
   function bindTrend() {
     const dropzone = document.querySelector("#trend-dropzone");
@@ -1077,34 +1080,152 @@
       if (!/\.pdf$/i.test(f.name) && !/pdf/i.test(f.type)) { sbToast("仅支持 PDF 文件", false); return; }
       trendPickedFile = f;
       if (pick) { pick.textContent = "已选择：" + f.name; pick.classList.remove("hidden"); }
-      if (upBtn) upBtn.disabled = false;
+      if (upBtn) upBtn.disabled = !(title && title.value.trim());
     }
+    // 封面（可选）
+    const coverDz = document.querySelector("#trend-cover-dropzone");
+    const coverInput = document.querySelector("#trend-cover-input");
+    const coverPick = document.querySelector("#trend-cover-pick");
+    if (coverDz && coverInput) {
+      coverDz.addEventListener("click", () => coverInput.click());
+      coverDz.addEventListener("dragover", (e) => { e.preventDefault(); });
+      coverDz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files ? e.dataTransfer.files[0] : null;
+        if (f) setTrendCover(f);
+      });
+      coverInput.addEventListener("change", () => { if (coverInput.files && coverInput.files[0]) setTrendCover(coverInput.files[0]); });
+    }
+    function setTrendCover(f) {
+      if (!/^image\//i.test(f.type || "") && !/\.(jpe?g|png|webp)$/i.test(f.name || "")) { sbToast("封面仅支持图片", false); return; }
+      trendPickedCover = f;
+      if (coverPick) { coverPick.textContent = "封面：" + f.name; coverPick.classList.remove("hidden"); }
+    }
+    // 类目选择（复用视觉专区类目：搜索 / 点选 / 自定义添加）
+    const catSearch = document.querySelector("#trend-cat-search");
+    const catResults = document.querySelector("#trend-cat-results");
+    const catAddBtn = document.querySelector("#trend-cat-add-btn");
+    loadTrendCatOptions();
+    renderTrendCategoryChosen();
+    if (catSearch) catSearch.addEventListener("input", renderCatResults);
+    catSearch.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); renderCatResults(); } });
+    if (catResults) catResults.addEventListener("click", (e) => {
+      const btn = e.target.closest(".cat-option");
+      if (btn) chooseCategory(btn.dataset.cat);
+    });
+    if (catAddBtn) catAddBtn.addEventListener("click", customAddCategory);
     if (upBtn) upBtn.addEventListener("click", () => doUploadTrend(title.value.trim()));
     if (refresh) refresh.addEventListener("click", loadTrendList);
     if (title) title.addEventListener("input", () => { if (upBtn) upBtn.disabled = !(title.value.trim() && trendPickedFile); });
+  }
+  async function loadTrendCatOptions() {
+    try {
+      const cats = await SB.listActiveCats().catch(() => []);
+      trendCatOptions = (cats || []).map(c => (typeof c === "string" ? c : (c && c.name) || ""));
+      renderCatResults();
+    } catch (e) {}
+  }
+  function renderCatResults() {
+    const catSearch = document.querySelector("#trend-cat-search");
+    const catResults = document.querySelector("#trend-cat-results");
+    if (!catSearch || !catResults) return;
+    const kw = (catSearch.value || "").trim().toLowerCase();
+    let list = trendCatOptions.filter(c => c && c !== trendCategory);
+    if (kw) list = list.filter(c => c.toLowerCase().indexOf(kw) >= 0);
+    list = list.slice(0, 12);
+    if (!list.length) { catResults.classList.add("hidden"); catResults.innerHTML = ""; return; }
+    catResults.innerHTML = "";
+    list.forEach(c => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cat-option";
+      b.dataset.cat = c;
+      b.textContent = c;
+      catResults.appendChild(b);
+    });
+    catResults.classList.remove("hidden");
+  }
+  function chooseCategory(c) {
+    trendCategory = c;
+    renderTrendCategoryChosen();
+    const catSearch = document.querySelector("#trend-cat-search");
+    const catResults = document.querySelector("#trend-cat-results");
+    if (catSearch) catSearch.value = "";
+    if (catResults) { catResults.innerHTML = ""; catResults.classList.add("hidden"); }
+  }
+  function renderTrendCategoryChosen() {
+    const box = document.querySelector("#trend-cat-chosen");
+    const tip = document.querySelector("#trend-cat-tip");
+    if (!box) return;
+    box.innerHTML = "";
+    if (trendCategory) {
+      const chip = document.createElement("span");
+      chip.className = "cat-chip";
+      chip.innerHTML = '<span class="cc-name"></span><button type="button" class="cc-x" title="移除">×</button>';
+      chip.querySelector(".cc-name").textContent = trendCategory;
+      chip.querySelector(".cc-x").onclick = () => { trendCategory = ""; renderTrendCategoryChosen(); };
+      box.appendChild(chip);
+    }
+    if (tip) tip.textContent = trendCategory
+      ? "已选择：视觉专区类目「" + trendCategory + "」"
+      : "搜索已有类目点选，或点下方按钮自定义添加新类目。";
+  }
+  async function customAddCategory() {
+    const catSearch = document.querySelector("#trend-cat-search");
+    const name = (catSearch ? catSearch.value : "").trim();
+    if (!name) { sbToast("请先在搜索框输入新类目名", false); return; }
+    try {
+      await SB.addCategory(name);
+      if (!trendCatOptions.includes(name)) trendCatOptions = trendCatOptions.concat([name]);
+      chooseCategory(name);
+      sbToast("已添加类目「" + name + "」");
+    } catch (e) {
+      sbToast("添加类目失败（可能已存在）：" + (e.message || ""), false);
+    }
   }
 
   async function doUploadTrend(t) {
     if (!trendPickedFile) return sbToast("请先选择 PDF 文件", false);
     if (!t) return sbToast("请填写文件标题", false);
     const tag = (document.querySelector('input[name="trend-tag"]:checked') || {}).value || "类目";
-    const category = (document.querySelector("#trend-category")?.value || "").trim();
+    const description = (document.querySelector("#trend-description")?.value || "").trim();
     const upBtn = document.querySelector("#trend-upload-btn");
+    const pw = document.querySelector("#trend-progress-wrap");
+    const pb = document.querySelector("#trend-progress-bar");
+    const pt = document.querySelector("#trend-progress-text");
     try {
       if (upBtn) upBtn.disabled = true;
-      const path = await SB.uploadTrendFile(trendPickedFile);
-      await SB.addTrendRecord({ title: t, tag, path, category, file_type: "pdf" });
+      if (pw) pw.classList.remove("hidden");
+      if (pb) pb.style.width = "0%";
+      if (pt) pt.textContent = "0%";
+      const onP = (p) => { if (pb) pb.style.width = p + "%"; if (pt) pt.textContent = p + "%"; };
+      const res = await SB.uploadTrendFileXHR(trendPickedFile, trendPickedCover, onP);
+      await SB.addTrendRecord({
+        title: t, tag, path: res.path, cover: res.cover || "",
+        category: trendCategory, description, file_type: "pdf",
+      });
       trendPickedFile = null;
+      trendPickedCover = null;
+      trendCategory = "";
       const fileInput = document.querySelector("#trend-file-input");
       if (fileInput) fileInput.value = "";
+      const coverInput = document.querySelector("#trend-cover-input");
+      if (coverInput) coverInput.value = "";
       const pick = document.querySelector("#trend-pick");
       if (pick) { pick.classList.add("hidden"); pick.textContent = ""; }
-      const title = document.querySelector("#trend-title");
-      if (title) title.value = "";
+      const coverPick = document.querySelector("#trend-cover-pick");
+      if (coverPick) { coverPick.classList.add("hidden"); coverPick.textContent = ""; }
+      const titleEl = document.querySelector("#trend-title");
+      if (titleEl) titleEl.value = "";
+      const desc = document.querySelector("#trend-description");
+      if (desc) desc.value = "";
+      renderTrendCategoryChosen();
+      if (pw) pw.classList.add("hidden");
       if (upBtn) upBtn.disabled = true;
       sbToast("趋势文件上传成功");
       loadTrendList();
     } catch (e) {
+      if (pw) pw.classList.add("hidden");
       sbToast("上传失败：" + (e.message || ""), false);
       if (upBtn) upBtn.disabled = false;
     }
@@ -1132,16 +1253,30 @@
     trendList.forEach(t => {
       const row = document.createElement("div");
       row.className = "trend-admin-row";
-      const tagText = t.tag ? ("[" + t.tag + (t.category ? " " + t.category : "") + "]") : "";
+      const catTxt = t.category ? (" · " + t.category) : "";
       row.innerHTML =
+        '<div class="trend-cov"></div>' +
         '<div class="trend-admin-info">' +
           '<div class="trend-admin-title"></div>' +
-          '<div class="trend-admin-meta">' + escapeHtml(tagText + " · " + (t.file_type || "pdf").toUpperCase()) + '</div>' +
+          '<div class="trend-admin-meta"></div>' +
+          '<div class="trend-admin-desc hidden2"></div>' +
         '</div>' +
         '<div class="trend-admin-ops">' +
           '<button class="btn-ghost trend-del">删除</button>' +
         '</div>';
+      const cov = row.querySelector(".trend-cov");
+      if (t.cover) {
+        cov.classList.add("has");
+        SB.trendCoverUrl(t.cover).then(u => {
+          if (cov && !cov.dataset.loaded) { cov.style.backgroundImage = "url('" + u + "')"; cov.dataset.loaded = "1"; }
+        }).catch(() => {});
+      } else {
+        cov.innerHTML = '<span class="tcov-ic">PDF</span>';
+      }
       row.querySelector(".trend-admin-title").textContent = t.title || "未命名";
+      row.querySelector(".trend-admin-meta").textContent = "[" + (t.tag || "") + catTxt + "] · " + (t.file_type || "pdf").toUpperCase();
+      const d = row.querySelector(".trend-admin-desc");
+      if (t.description) { d.textContent = t.description; d.classList.remove("hidden2"); }
       row.querySelector(".trend-del").addEventListener("click", () => confirmDeleteTrend(t));
       box.appendChild(row);
     });
@@ -1150,9 +1285,9 @@
     return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
   async function confirmDeleteTrend(t) {
-    if (!confirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件。")) return;
+    if (!confirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件与封面。")) return;
     try {
-      await SB.deleteTrendFile(t.path);
+      await SB.deleteTrendFile(t.path, t.cover || "");
       await SB.removeTrendRecord(t.id);
       sbToast("已删除");
       loadTrendList();

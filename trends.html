@@ -39,21 +39,31 @@
       <div class="topbar-inner">
         <div class="brand-sm"><span>◆</span> 趋势专区</div>
         <div class="topbar-actions">
+          <a href="index.html" class="btn-ghost">← 返回视觉专区</a>
           <button id="logout-btn" class="btn-ghost hidden">退出</button>
         </div>
       </div>
     </header>
 
-    <!-- 吸顶标签筛选（类目/月度/周度） -->
-    <div class="trend-filter">
-      <button class="trend-filter-btn active" data-tag="全部">全部</button>
-      <button class="trend-filter-btn" data-tag="类目">类目</button>
-      <button class="trend-filter-btn" data-tag="月度">月度</button>
-      <button class="trend-filter-btn" data-tag="周度">周度</button>
-    </div>
+    <div class="gallery-layout">
+      <!-- 左侧：类目菜单（复用视觉专区类目，仅显示有趋势文件的类目） -->
+      <aside id="sidebar" class="sidebar">
+        <div class="side-head">趋势类目</div>
+        <nav id="cat-menu" class="cat-menu"></nav>
+      </aside>
 
-    <div class="trend-list" id="trend-list"></div>
-    <p id="trend-empty" class="empty-tip hidden">该分类暂无趋势文件。</p>
+      <!-- 右侧：标签筛选（吸顶）+ 趋势文件卡片网格 -->
+      <main class="grid-wrap">
+        <div class="trend-filter" id="trend-filter">
+          <button class="trend-filter-btn active" data-tag="全部">全部</button>
+          <button class="trend-filter-btn" data-tag="类目">类目</button>
+          <button class="trend-filter-btn" data-tag="月度">月度</button>
+          <button class="trend-filter-btn" data-tag="周度">周度</button>
+        </div>
+        <p id="trend-empty" class="empty-tip hidden">该分类暂无趋势文件。</p>
+        <div class="trend-grid" id="trend-list"></div>
+      </main>
+    </div>
   </section>
 
   <!-- ================= PDF 预览弹层（受控鉴权，防下载） ================= -->

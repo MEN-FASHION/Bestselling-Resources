@@ -282,12 +282,18 @@ create table if not exists public.trends (
   title text not null,              -- 文件标题/说明
   tag text not null check (tag in ('类目','月度','周度')),  -- 三种标签，单选
   path text not null,               -- R2 路径，如 trends/xxx.pdf
-  category text default '',         -- 选填：当 tag=类目 时的具体类目名
+  category text default '',         -- 类目名（复用视觉专区的 categories 表，前台按类目筛选）
   file_type text default 'pdf',
+  cover text default '',            -- 封面图 R2 路径，如 trends_covers/xxx.jpg（可空，前台卡片显示封面）
+  description text default '',      -- 简介/说明（可空，前台卡片展示）
   uploaded_by uuid references auth.users (id) on delete set null
 );
 
 alter table public.trends enable row level security;
+
+-- （幂等）已建库补充封面与介绍列
+alter table public.trends add column if not exists cover text default '';
+alter table public.trends add column if not exists description text default '';
 
 -- 登录用户可读取清单（趋势专区始终需登录可见）
 drop policy if exists "authenticated read trends" on public.trends;

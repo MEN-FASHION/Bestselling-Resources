@@ -5,7 +5,9 @@
   const $ = (sel) => document.querySelector(sel);
 
   let curTag = "全部";
+  let curCat = "全部";
   let trends = [];
+  let shownCats = [];
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -51,10 +53,21 @@
       if (e.target.tagName === "IMG" || e.target.tagName === "IFRAME") e.preventDefault();
     });
     document.addEventListener("dragstart", (e) => {
+      if (e.target.tagName === "IMG" || e.target.tagName === "IFRAME") e.preventDefault();
+    });
+    let lp = null;
+    document.addEventListener("touchstart", (e) => {
+      if (e.target.tagName === "IMG") lp = setTimeout(() => e.preventDefault(), 400);
+    }, { passive: false });
+    document.addEventListener("touchend", () => clearTimeout(lp));
+    document.addEventListener("touchmove", () => clearTimeout(lp));
+    document.addEventListener("selectstart", (e) => {
       if (e.target.tagName === "IMG") e.preventDefault();
     });
     document.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault();
+      const k = (e.key || "").toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && ["s", "p", "u"].includes(k)) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "s") e.preventDefault();
     });
   }
 
@@ -103,30 +116,79 @@
   async function loadTrends() {
     try {
       trends = await SB.listTrends();
+      const active = await SB.listActiveCats().catch(() => []);
+      const activeArr = (active || []).map(c => (typeof c === "string" ? c : (c && c.name) || ""));
+      const used = [...new Set(trends.map(t => t.category || "").filter(Boolean))];
+      shownCats = activeArr.filter(c => used.includes(c));
+      renderCatMenu();
       renderList();
     } catch (e) {
       toast("加载趋势失败，请检查网络", false);
     }
   }
 
+  function renderCatMenu() {
+    const menu = $("#cat-menu");
+    if (!menu) return;
+    menu.innerHTML = "";
+    ["全部"].concat(shownCats).forEach(c => {
+      const b = document.createElement("button");
+      b.className = "cat-menu-item" + (c === curCat ? " active" : "");
+      b.textContent = c;
+      b.onclick = () => { curCat = c; renderCatMenu(); renderList(); };
+      menu.appendChild(b);
+    });
+  }
+
   function renderList() {
-    const list = trends.filter(t => curTag === "全部" || t.tag === curTag);
+    const list = trends.filter(t =>
+      (curTag === "全部" || t.tag === curTag) &&
+      (curCat === "全部" || !curCat || t.category === curCat)
+    );
     const box = $("#trend-list");
+    if (!box) return;
     box.innerHTML = "";
     $("#trend-empty").classList.toggle("hidden", list.length > 0);
     list.forEach(t => {
       const card = document.createElement("div");
-      card.className = "trend-card";
-      const icon = t.file_type === "pdf" ? "PDF" : "DOC";
-      card.innerHTML =
-        '<div class="trend-card-icon">' + icon + '</div>' +
-        '<div class="trend-card-body">' +
-          '<div class="trend-card-title"></div>' +
-          '<div class="trend-card-meta"><span class="trend-tag">' + escapeHtml(t.tag || "") + '</span></div>' +
-        '</div>' +
-        '<button class="btn-ghost trend-open">预览</button>';
-      card.querySelector(".trend-card-title").textContent = t.title || "未命名";
-      card.querySelector(".trend-open").addEventListener("click", () => openPdf(t));
+      card.className = "trend-card tc-grid";
+      const cov = document.createElement("div");
+      cov.className = "trend-card-cover";
+      if (t.cover) {
+        cov.classList.add("img");
+        SB.trendCoverUrl(t.cover).then(u => {
+          const im = document.createElement("img");
+          im.src = u; im.alt = ""; im.draggable = false; im.loading = "lazy";
+          im.addEventListener("contextmenu", (e) => e.preventDefault());
+          cov.appendChild(im);
+        }).catch(() => {});
+      } else {
+        cov.innerHTML = '<span class="tcov-ic">PDF</span>';
+      }
+      const body = document.createElement("div");
+      body.className = "trend-card-body";
+      const title = document.createElement("div");
+      title.className = "trend-card-title";
+      title.textContent = t.title || "未命名";
+      const meta = document.createElement("div");
+      meta.className = "trend-card-meta";
+      meta.innerHTML = '<span class="trend-tag">' + escapeHtml(t.tag || "") + '</span>' +
+        (t.category ? '<span class="trend-tag trend-cat">' + escapeHtml(t.category) + '</span>' : '');
+      body.appendChild(title);
+      if (t.description) {
+        const d = document.createElement("div");
+        d.className = "trend-card-desc";
+        d.textContent = t.description;
+        body.appendChild(d);
+      }
+      body.appendChild(meta);
+      const open = document.createElement("button");
+      open.className = "btn-ghost trend-open";
+      open.textContent = "预览";
+      open.addEventListener("click", () => openPdf(t));
+      card.appendChild(cov);
+      card.appendChild(body);
+      card.appendChild(open);
       box.appendChild(card);
     });
   }
