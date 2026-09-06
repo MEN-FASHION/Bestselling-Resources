@@ -210,12 +210,12 @@ img { display: block; }
   background: rgba(14,15,17,.85); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
   display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 24px;
+  padding: 12px 20px;
 }
 .admin-head .btn-ghost { margin-left: 10px; }
 .ghost-chip { padding: 6px 12px; border-radius: 999px; font-size: 12px; background: var(--card); border: 1px solid var(--line); color: var(--sub); }
 .ghost-chip.bad { color: var(--danger); border-color: rgba(207,90,87,.4); }
-.admin-body { display: flex; gap: 22px; align-items: flex-start; max-width: 1280px; margin: 0 auto; padding: 24px 20px 80px; }
+.admin-body { display: flex; gap: 18px; align-items: flex-start; max-width: none; margin: 0 auto; padding: 18px 14px 70px; }
 .admin-side {
   flex: 0 0 210px; position: sticky; top: 70px;
   background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
@@ -233,7 +233,7 @@ img { display: block; }
 .admin-main { flex: 1; min-width: 0; display: grid; gap: 26px; }
 .admin-main .panel-card { margin-bottom: 0; }
 .panel-card {
-  background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 18px;
 }
 .panel-card h2 { font-size: 16px; margin-bottom: 8px; letter-spacing: 1px; color: var(--txt); }
 .panel-card h2::before { content: "— "; color: var(--gold); }
