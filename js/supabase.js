@@ -36,6 +36,11 @@ const SB = (() => {
       const { data } = await client.auth.getSession();
       return data.session;
     },
+    // 暴露当前登录令牌
+    async currentToken() {
+      const s = await client.auth.getSession();
+      return s?.data?.session?.access_token || "";
+    },
     onAuth(cb) {
       client.auth.onAuthStateChange((_event, session) => cb(session));
     },
@@ -60,6 +65,14 @@ const SB = (() => {
     imageUrl(img) {
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       return base + "/" + img.path;
+    },
+
+    // 带当前登录令牌的图片访问 URL（给 <img> 标签用，令牌走 query 参数）
+    async imageUrlWithToken(img) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/" + img.path;
+      return base + "/" + img.path + "?token=" + encodeURIComponent(token);
     },
 
     // 管理员上传：通过 Worker 写入 R2，返回存储 path
@@ -102,6 +115,67 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return [...new Set((data || []).map(d => d.category))];
     },
+
+    // ============ 类目清单（categories 表） ============
+    // 管理员显式添加的类目（前台菜单用，按 sort_order 排序，数字小在前）
+    async listActiveCats() {
+      const { data, error } = await client.from("categories").select("name, sort_order").order("sort_order").order("name");
+      if (error) throw new Error(error.message || "读取失败");
+      return (data || []).map(d => d.name);
+    },
+    // 前台排序用途：返回 id/name/sort_order，供设置类目顺序
+    async listActiveCatsWithOrder() {
+      const { data, error } = await client.from("categories").select("id, name, sort_order").order("sort_order").order("name");
+      if (error) throw new Error(error.message || "读取失败");
+      return data || [];
+    },
+    // 设置单个类目的展示顺序
+    async setCategoryOrder(id, order) {
+      const { error } = await client.from("categories").update({ sort_order: order }).eq("id", id);
+      if (error) throw new Error(error.message || "保存顺序失败");
+    },
+    // 实际上有图片的类目（从 images 表）
+    async listUsedCats() {
+      const { data, error } = await client.from("images").select("category").order("category");
+      if (error) throw new Error(error.message || "读取失败");
+      return [...new Set((data || []).map(d => d.category))];
+    },
+    // 管理员新增类目
+    async addCategory(name) {
+      const n = (name || "").trim();
+      if (!n) throw new Error("类目名不能为空");
+      const { error } = await client.from("categories").insert({ name: n });
+      if (error) throw new Error(error.message === "duplicate key value violates unique constraint \"categories_name_key\"" || (error.code === "23505") ? "该类目已存在" : (error.message || "新增失败"));
+    },
+    // 管理员删除类目（仅从清单移除，不影响已上传图片）
+    async removeCategory(name) {
+      const { error } = await client.from("categories").delete().eq("name", name);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+
+    // ============ 常用类目（当前用户 profiles.favorite_categories） ============
+    async myFavCats() {
+      const session = await this.getSession();
+      if (!session) return [];
+      const { data, error } = await client
+        .from("profiles")
+        .select("favorite_categories")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (error || !data) return [];
+      return data.favorite_categories || [];
+    },
+    async updateFavCats(arr) {
+      const session = await this.getSession();
+      if (!session) throw new Error("未登录");
+      const list = [...new Set((arr || []).map(x => (x || "").trim()).filter(Boolean))];
+      const { error } = await client
+        .from("profiles")
+        .update({ favorite_categories: list })
+        .eq("user_id", session.user.id);
+      if (error) throw new Error(error.message || "保存失败");
+      return list;
+    },
     async addImageRecord({ category, name, path }) {
       const token = await currentToken();
       const s = await client.auth.getSession();
@@ -114,6 +188,64 @@ const SB = (() => {
     async removeImageRecord(id) {
       const { error } = await client.from("images").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除失败");
+    },
+    // 给单张图片设置指定字段的标签（覆盖式写入，去重、过滤空值）
+    // field 传入单元格名：tags(渠道) / style_tags(风格) / element_tags(元素)
+    async updateImageField(id, field, tags) {
+      const arr = [...new Set((tags || []).map(x => String(x).trim()).filter(Boolean))];
+      const { error } = await client.from("images").update({ [field]: arr }).eq("id", id);
+      if (error) throw new Error(error.message || "打标失败");
+      return arr;
+    },
+    // 给单张图片设置渠道标签（兼容旧调用）
+    async updateImageTags(id, tags) {
+      return this.updateImageField(id, "tags", tags);
+    },
+    // 清空一批图片的指定字段标签
+    async clearImageFields(ids, fields) {
+      if (!ids || !ids.length) return;
+      const patch = {};
+      (fields || []).forEach(f => { patch[f] = []; });
+      const { error } = await client.from("images").update(patch).in("id", ids);
+      if (error) throw new Error(error.message || "清除标签失败");
+    },
+    // 清空一批图片的渠道标签（兼容旧调用）
+    async clearImageTags(ids) {
+      return this.clearImageFields(ids, ["tags"]);
+    },
+
+    // ---------- 标签定义表（风格/元素自定义标签） ----------
+    async listTagDefs(type) {
+      let q = client.from("tag_defs").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+      if (type) q = q.eq("type", type);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message || "读取标签失败");
+      return data || [];
+    },
+    async addTagDef(type, name) {
+      const n = String(name || "").trim();
+      if (!n) throw new Error("标签名不能为空");
+      const { data, error } = await client.from("tag_defs").insert({ type, name: n }).select();
+      if (error) throw new Error(error.message || "新增标签失败");
+      return data && data[0];
+    },
+    async deleteTagDef(id) {
+      const { error } = await client.from("tag_defs").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除标签失败");
+    },
+
+    // ============ 前台访问模式开关 ============
+    // public_access=true：前台免登录公开浏览（Worker 图片也放行）；false：必须登录可见
+    async getPublicAccess() {
+      const { data, error } = await client
+        .from("site_settings").select("public_access").eq("id", 1).maybeSingle();
+      if (error || !data) return false;
+      return !!data.public_access;
+    },
+    async setPublicAccess(v) {
+      const { error } = await client
+        .from("site_settings").update({ public_access: !!v, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
     },
   };
 })();

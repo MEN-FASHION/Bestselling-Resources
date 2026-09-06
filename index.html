@@ -39,22 +39,34 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand-sm"><span>◆</span> <span id="top-title"></span></div>
-        <nav id="cat-tabs" class="cats"></nav>
-        <button id="logout-btn" class="btn-ghost">退出</button>
+        <div class="topbar-actions">
+          <button id="login-btn" class="btn-ghost hidden">登录</button>
+          <button id="logout-btn" class="btn-ghost hidden">退出</button>
+        </div>
       </div>
     </header>
 
-    <main class="grid-wrap">
-      <p id="empty-tip" class="empty-tip hidden">暂无可浏览的图片，请等待管理员上传。</p>
-      <div id="grid" class="grid"></div>
-    </main>
+    <div class="gallery-layout">
+      <!-- ===== 左侧：类目菜单栏 ===== -->
+      <aside id="sidebar" class="sidebar">
+        <div class="side-head">服装类目</div>
+        <nav id="cat-menu" class="cat-menu"></nav>
+      </aside>
+
+      <!-- ===== 右侧：渠道/风格/元素 标签筛选（吸顶）+ 图片网格 ===== -->
+      <main class="grid-wrap">
+        <div id="tag-filter" class="tag-filter"></div>
+        <p id="empty-tip" class="empty-tip hidden">该分类暂无可浏览的图片。</p>
+        <div id="grid" class="grid"></div>
+      </main>
+    </div>
   </section>
 
   <!-- ================= 灯箱 ================= -->
   <div id="lightbox" class="lightbox hidden">
     <button class="lb-close" id="lb-close">×</button>
     <button class="lb-nav lb-prev" id="lb-prev">‹</button>
-    <img id="lb-img" src="" alt="">
+    <img id="lb-img" src="" alt="" draggable="false" ondragstart="return false;">
     <button class="lb-nav lb-next" id="lb-next">›</button>
     <div id="lb-caption" class="lb-caption"></div>
   </div>
