@@ -17,6 +17,8 @@
 
   let activeCats = [];
   let usedCats = [];
+  let shownCats = [];   // 有图且管理员展示的类目（用于顶栏类目筛选）
+  let catCounts = {};   // 各类目图片数（类目筛选计数）
 
   const Auth = {
     toast(msg, ok = true) {
@@ -111,8 +113,8 @@
       usedCats = used;
       styleDefs = defs.filter(d => d.type === "style").map(d => d.name);
       elementDefs = defs.filter(d => d.type === "element").map(d => d.name);
-      const shown = activeCats.filter(c => usedCats.includes(c));
-      renderCatMenu(shown);
+      shownCats = activeCats.filter(c => usedCats.includes(c));
+      renderCatMenu(shownCats);
       await renderGrid(currentCat);
     } catch (e) {
       Auth.toast("加载失败，请检查网络或配置", false);
@@ -131,15 +133,16 @@
     });
   }
 
-  // 单张图片是否命中三个维度的组合筛选
+  // 单张图片是否命中「类目 + 三个标签维度」的组合筛选
   function _match(img) {
+    if (currentCat && currentCat !== "全部" && img.category !== currentCat) return false;
     if (curChannel && !(Array.isArray(img.tags) && img.tags.includes(curChannel))) return false;
     if (curStyle && !(Array.isArray(img.style_tags) && img.style_tags.includes(curStyle))) return false;
     if (curElement && !(Array.isArray(img.element_tags) && img.element_tags.includes(curElement))) return false;
     return true;
   }
 
-  // 标签筛选栏（吸顶）：渠道/风格/元素 三组，每组可单选，三维组合过滤
+  // 标签筛选栏（吸顶）：类目/渠道/风格/元素 四组，每组可单选，四维组合过滤
   function renderTagBar(list) {
     const bar = $("#tag-filter");
     if (!bar) return;
@@ -159,19 +162,22 @@
       b.appendChild(nm);
       b.appendChild(cnt);
       b.onclick = () => {
-        if (groupKey === "channel") curChannel = value;
+        if (groupKey === "category") { currentCat = value || "全部"; renderCatMenu(shownCats); }
+        else if (groupKey === "channel") curChannel = value;
         else if (groupKey === "style") curStyle = value;
-        else curElement = value;
+        else if (groupKey === "element") curElement = value;
+        else { curElement = value; }
         renderTagBar(list);
-        renderGrid(currentCat);
+        renderGrid();
       };
       return b;
     };
 
     const grpMeta = [
-      { key: "channel", label: "渠道", items: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), cur: curChannel, field: "tags" },
-      { key: "style", label: "风格", items: styleDefs, cur: curStyle, field: "style_tags" },
-      { key: "element", label: "元素", items: elementDefs, cur: curElement, field: "element_tags" }
+      { key: "category", label: "类目", items: shownCats, cur: (v) => currentCat === (v || "全部"), field: null, catIdx: true },
+      { key: "channel", label: "渠道", items: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), cur: (v) => curChannel === v, field: "tags" },
+      { key: "style", label: "风格", items: styleDefs, cur: (v) => curStyle === v, field: "style_tags" },
+      { key: "element", label: "元素", items: elementDefs, cur: (v) => curElement === v, field: "element_tags" }
     ];
 
     grpMeta.forEach(g => {
@@ -183,30 +189,38 @@
       wrap.appendChild(gName);
       const chips = document.createElement("div");
       chips.className = "tag-chips";
-      chips.appendChild(mkChip(g.key, "", "全部", list.length, g.cur === ""));
+      // 「全部」选项
+      const allActive = g.key === "category" ? (currentCat === "全部") : (g.cur(""));
+      chips.appendChild(mkChip(g.key, "", "全部", list.length, allActive));
       g.items.forEach(t => {
-        const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
-        chips.appendChild(mkChip(g.key, t, t, cnt, g.cur === t));
+        const active = g.key === "category" ? (currentCat === t) : g.cur(t);
+        const cnt = list.filter(i => g.key === "category"
+          ? (i.category === t)
+          : (Array.isArray(i[g.field]) && i[g.field].includes(t))).length;
+        chips.appendChild(mkChip(g.key, t, t, cnt, active));
       });
       wrap.appendChild(chips);
       bar.appendChild(wrap);
     });
   }
 
-  async function renderGrid(cat) {
+  async function renderGrid(setCat) {
+    if (setCat) currentCat = setCat;
     const grid = $("#grid");
     grid.innerHTML = "";
     let imgs = [];
     try {
-      imgs = await SB.listImages(cat);
+      imgs = await SB.listImages("全部");
     } catch (e) { Auth.toast("读取图片失败", false); }
     const catImgs = imgs.slice();
+    catCounts = {};
+    imgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
     imgs = imgs.filter(_match);
     renderTagBar(catImgs);
 
-    const hasFilter = curChannel || curStyle || curElement;
+    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement;
     $("#empty-tip").textContent = hasFilter
-      ? "该分类下没有同时满足所选标签的图片。"
+      ? "没有同时满足所选类目与标签的图片。"
       : "该分类暂无可浏览的图片。";
     $("#empty-tip").classList.toggle("hidden", imgs.length > 0);
     catalog = imgs;

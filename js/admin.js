@@ -14,7 +14,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
-    bindTagDefs(); bindDashboard(); bindAdminNav();
+    bindTagDefs(); bindDashboard(); bindAdminNav(); bindSmartModal();
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
@@ -486,7 +486,8 @@
     const tagBtn = $("#batch-tag-btn");
     if (tagBtn) {
       tagBtn.textContent = "批量打标签（" + selectedImages.size + "）";
-      tagBtn.disabled = selectedImages.size === 0;
+      // 保持可点击，未勾选时在弹窗内提示
+      tagBtn.disabled = false;
     }
   }
 
@@ -509,7 +510,7 @@
   }
 
   function openTagModal() {
-    if (!selectedImages.size) return;
+    if (!selectedImages.size) { sbToast("请先勾选要打标签的图片", false); return; }
     getTagGroups().then(groups => {
       const box = document.getElementById("tag-modal-groups");
       box.innerHTML = "";
@@ -789,6 +790,200 @@
   // ================= 提示 =================
   function sbToast(msg, ok = true) {
     const t = document.getElementById("toast");
+// ================= 智能打标（拖拽池：左=已打，右=未打） =================
+  let smartDim = "style";          // 当前维度: style / element / channel
+  let smartTag = "";               // 当前选中标签
+  let smartAll = [];               // 全量图片缓存
+  let smartDragging = null;        // 正在拖拽的图片对象
+  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags" };
+
+  function openSmartModal() {
+    if (!document.querySelector("#smart-modal")) return;
+    document.querySelector("#smart-modal").classList.remove("hidden");
+    smartDim = "style"; smartTag = "";
+    renderSmartDims();
+    Promise.resolve().then(loadSmartAll);
+  }
+  function closeSmartModal() {
+    const m = document.querySelector("#smart-modal");
+    if (m) m.classList.add("hidden");
+  }
+  function renderSmartDims() {
+    const box = document.querySelector("#smart-dims");
+    if (!box) return;
+    const dims = [
+      { key: "style", label: "风格" },
+      { key: "element", label: "元素" },
+      { key: "channel", label: "渠道" }
+    ];
+    box.innerHTML = "";
+    dims.forEach(d => {
+      const b = document.createElement("button");
+      b.className = "smart-dim" + (d.key === smartDim ? " active" : "");
+      b.textContent = d.label;
+      b.onclick = async () => {
+        smartDim = d.key; smartTag = ""; smartAll = [];
+        renderSmartDims();
+        renderSmartTags([]);
+        renderSmartPools([]);
+        await loadSmartAll();
+      };
+      box.appendChild(b);
+    });
+  }
+  async function loadSmartAll() {
+    try { smartAll = await SB.listImages(null); }
+    catch (e) { sbToast("读取图片失败", false); return; }
+    // 渲染该维度的标签选择条（渠道用固定清单，风格/元素用 tag_defs）
+    if (smartDim === "channel") {
+      const list = (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []);
+      renderSmartTags([...new Set(list)]);
+      return;
+    }
+    try {
+      const defs = await SB.listTagDefs();
+      const list = (defs || []).filter(d => d.type === smartDim).map(d => d.name);
+      renderSmartTags([...new Set(list)]);
+    } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
+  }
+  function renderSmartTags(list) {
+    const box = document.querySelector("#smart-tags");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!list.length) {
+      const t = document.createElement("span");
+      t.className = "smart-tag-empty";
+      t.textContent = smartDim === "channel"
+        ? "暂无渠道标签（请在 config.js 维护 CHANNEL_TAGS）"
+        : "暂无" + ({ style: "风格", element: "元素" }[smartDim] || "") + "标签，请到「⑥ 标签管理」新增";
+      box.appendChild(t);
+      return;
+    }
+    list.forEach(tag => {
+      const b = document.createElement("button");
+      b.className = "smart-tag" + (tag === smartTag ? " active" : "");
+      b.textContent = tag;
+      b.onclick = () => {
+        smartTag = tag;
+        renderSmartTags(list);
+        renderSmartPools(smartAll);
+      };
+      box.appendChild(b);
+    });
+  }
+  function renderSmartPools() {
+    const doneGrid = document.querySelector("#smart-grid-done");
+    const undoneGrid = document.querySelector("#smart-grid-undone");
+    if (!doneGrid || !undoneGrid) return;
+    doneGrid.innerHTML = "";
+    undoneGrid.innerHTML = "";
+    document.querySelector("#smart-cnt-done").textContent = "0";
+    document.querySelector("#smart-cnt-undone").textContent = "0";
+    if (!smartTag) return;
+    const field = smartFieldMap[smartDim];
+    const tarId = smartTag;
+    const doneList = [], undoneList = [];
+    smartAll.forEach(img => {
+      const has = Array.isArray(img[field]) && img[field].includes(tarId);
+      (has ? doneList : undoneList).push(img);
+    });
+    document.querySelector("#smart-cnt-done").textContent = doneList.length;
+    document.querySelector("#smart-cnt-undone").textContent = undoneList.length;
+    doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
+    undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+  }
+  function makeSmartCard(img, isDone) {
+    const card = document.createElement("div");
+    card.className = "smart-card";
+    card.draggable = true;
+    card.dataset.id = img.id;
+    const wrap = document.createElement("div");
+    wrap.className = "holder";
+    const im = document.createElement("img");
+    im.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path;
+    // 缩略图懒加载
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((es, ob) => {
+        es.forEach(en => {
+          if (en.isIntersecting) { en.target.src = en.target.dataset.src; ob.unobserve(en.target); }
+        });
+      }, { root: document.querySelector("#smart-modal") });
+      io.observe(im);
+    } else { im.src = im.dataset.src; }
+    wrap.appendChild(im);
+    const cap = document.createElement("div");
+    cap.className = "smart-cap";
+    const lbl = document.createElement("span");
+    lbl.className = "smart-cap-name";
+    lbl.textContent = img.name || img.id;
+    lbl.title = (img.name || img.id) + "　" + (img.category || "");
+    const btn = document.createElement("button");
+    btn.className = "smart-move";
+    btn.textContent = isDone ? "←" : "→";
+    btn.title = isDone ? "移除「" + smartTag + "」标签" : "打上「" + smartTag + "」标签";
+    btn.onclick = (e) => { e.stopPropagation(); moveSmart(img.id, !isDone); };
+    cap.appendChild(lbl);
+    cap.appendChild(btn);
+    card.appendChild(wrap);
+    card.appendChild(cap);
+
+    // 拖拽
+    card.addEventListener("dragstart", (e) => {
+      smartDragging = img;
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", img.id); } catch (err) {}
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      smartDragging = null;
+    });
+    return card;
+  }
+  function bindSmartDrop() {
+    const doneGrid = document.querySelector("#smart-grid-done");
+    const undoneGrid = document.querySelector("#smart-grid-undone");
+    if (!doneGrid || !undoneGrid) return;
+    const setup = (el, toDone) => {
+      el.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; el.classList.add("drop-over"); });
+      el.addEventListener("dragleave", () => el.classList.remove("drop-over"));
+      el.addEventListener("drop", (e) => {
+        e.preventDefault();
+        el.classList.remove("drop-over");
+        const id = smartDragging ? smartDragging.id : null;
+        if (!id) return;
+        moveSmart(id, toDone);
+      });
+    };
+    setup(doneGrid, true);
+    setup(undoneGrid, false);
+  }
+  async function moveSmart(id, toDone) {
+    if (!smartTag) { sbToast("请先在中间选择一个标签", false); return; }
+    const field = smartFieldMap[smartDim];
+    const img = smartAll.find(i => i.id === id);
+    if (!img) return;
+    const cur = Array.isArray(img[field]) ? img[field] : [];
+    let next;
+    if (toDone) next = [...new Set(cur.concat([smartTag]))];
+    else next = cur.filter(t => t !== smartTag);
+    try {
+      await SB.updateImageField(img.id, field, next);
+      img[field] = next;
+      sbToast(toDone ? "已为图片打上「" + smartTag + "」标签" : "已移除「" + smartTag + "」标签");
+      // 重新划分两池（保持已选标签高亮）
+      renderSmartPools();
+    } catch (e) {
+      sbToast("操作失败：" + (e.message || ""), false);
+    }
+  }
+  function bindSmartModal() {
+    const openBtn = document.querySelector("#smart-tag-btn");
+    if (openBtn) openBtn.addEventListener("click", openSmartModal);
+    const closeBtn = document.querySelector("#smart-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeSmartModal);
+    bindSmartDrop();
+  }
     if (!t) return;
     t.textContent = msg;
     t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
