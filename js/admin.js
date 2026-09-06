@@ -11,6 +11,8 @@
   let currentFavCats = [];   // 当前管理员常用类目
   let currentActiveCats = []; // 前台类目（categories 表）
   let currentCatOrder = [];   // 前台类目顺序 [{id,name,sort_order}]
+  let currentManageCat = "全部"; // 图片管理当前选中类目（"全部" = 显示全部）
+  let selectedImages = new Set();  // 图片管理勾选集合
 
   document.addEventListener("DOMContentLoaded", () => {
     bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
