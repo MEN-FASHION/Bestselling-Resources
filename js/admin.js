@@ -15,13 +15,16 @@
   let selectedImages = new Set();  // 图片管理勾选集合
 
   document.addEventListener("DOMContentLoaded", () => {
-    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
-    bindTagDefs(); bindDashboard(); bindAdminNav(); bindSmartModal();
+    // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
       if (session) enterPanel();
     });
+    // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
+    [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal]
+      .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
   // ================= 后台侧边菜单 =================
