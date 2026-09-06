@@ -49,12 +49,10 @@
       <aside class="admin-side">
         <nav class="admin-nav">
           <a class="nav-item" data-target="upload-card">① 上传图片</a>
-          <a class="nav-item" data-target="fav-card">② 我的常用类目</a>
-          <a class="nav-item" data-target="cat-mgmt-card">③ 前台类目</a>
-          <a class="nav-item" data-target="manage-card">④ 图片管理</a>
-          <a class="nav-item" data-target="access-card">⑤ 前台访问设置</a>
-          <a class="nav-item" data-target="tag-card">⑥ 标签管理</a>
-          <a class="nav-item" data-target="dash-card">⑦ 数据看板</a>
+          <a class="nav-item" data-target="manage-card">② 图片管理</a>
+          <a class="nav-item" data-target="access-card">③ 前台访问设置</a>
+          <a class="nav-item" data-target="tag-card">④ 标签管理</a>
+          <a class="nav-item" data-target="dash-card">⑤ 数据看板</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -85,32 +83,6 @@
         <div id="pending-list" class="pending-list"></div>
         <button id="upload-btn" class="btn-primary" disabled>上传所选（0）</button>
         <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
-      </div>
-
-      <!-- 我的常用类目 -->
-      <div class="panel-card" id="fav-card">
-        <h2>② 我的常用类目 <span class="hint-inline">（上传时优先出现，仅自己可见）</span></h2>
-        <p class="hint">从候选中勾选你常用的类目，上传时分类下拉会把这些排在最前面。</p>
-        <div id="fav-list" class="check-list"></div>
-        <button id="fav-save" class="btn-primary" disabled>保存我的常用类目</button>
-      </div>
-
-      <!-- 前台类目管理 -->
-      <div class="panel-card" id="cat-mgmt-card">
-        <h2>③ 前台类目（勾选后前台左侧显示）</h2>
-        <p class="hint">只有被勾选 == 添加进"前台类目"的类目，才在前台左侧菜单显示；且该类目下必须有图才会显示。</p>
-        <div id="cat-mgmt-list" class="check-list"></div>
-        <div class="row">
-          <input id="cat-mgmt-new" class="input" placeholder="自定义新增类目名">
-          <button id="cat-mgmt-add" class="btn-ghost">新增</button>
-        </div>
-        <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
-        <!-- 展示顺序：数字越小越靠前，也可用上下箭头调整 -->
-        <div class="order-block">
-          <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）</h3>
-          <div id="cat-order-box" class="cat-order-box"></div>
-          <button id="cat-order-save" class="btn-primary" disabled>保存展示顺序</button>
-        </div>
       </div>
 
       <!-- 前台访问设置 -->
@@ -149,25 +121,54 @@
         </div>
       </div>
 
-      <!-- 标签管理（风格/元素自定义增删） -->
+      <!-- 标签管理（综合：常用类目 / 前台类目 / 风格·元素标签） -->
       <div class="panel-card" id="tag-card">
-        <h2>⑥ 标签管理 <span class="hint-inline">（风格/元素可自定义增删；渠道为固定清单）</span></h2>
-        <p class="hint">此处管理「风格」与「元素」两类标签，可在下方新增或删除。删除标签时，会同步移除所有图片上的该标签。</p>
-        <div class="tag-mgmt-grid">
-          <div class="tag-mgmt-col">
-            <h3 class="tg-col-title">风格标签（自定义）</h3>
-            <div id="style-tag-list" class="tag-mgmt-list"></div>
-            <div class="tag-mgmt-add">
-              <input id="style-tag-new" class="input" placeholder="新增风格标签，如：复古美式">
-              <button id="style-tag-add" class="btn-ghost">添加</button>
-            </div>
+        <h2>④ 标签管理 <span class="hint-inline">（常用类目 / 前台类目 / 风格·元素标签）</span></h2>
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">我的常用类目 <span class="hint-inline">（上传时优先出现，仅自己可见）</span></h3>
+          <p class="hint">从候选中勾选你常用的类目，上传时分类下拉会把这些排在最前面。</p>
+          <div id="fav-list" class="check-list"></div>
+          <button id="fav-save" class="btn-primary" disabled>保存我的常用类目</button>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">前台类目（勾选后前台左侧显示）</h3>
+          <p class="hint">只有被勾选 == 添加进"前台类目"的类目，才在前台左侧菜单显示；且该类目下必须有图才会显示。</p>
+          <div id="cat-mgmt-list" class="check-list"></div>
+          <div class="row">
+            <input id="cat-mgmt-new" class="input" placeholder="自定义新增类目名">
+            <button id="cat-mgmt-add" class="btn-ghost">新增</button>
           </div>
-          <div class="tag-mgmt-col">
-            <h3 class="tg-col-title">元素标签（自定义）</h3>
-            <div id="element-tag-list" class="tag-mgmt-list"></div>
-            <div class="tag-mgmt-add">
-              <input id="element-tag-new" class="input" placeholder="新增元素标签，如：条纹、格纹">
-              <button id="element-tag-add" class="btn-ghost">添加</button>
+          <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
+          <div class="order-block">
+            <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）</h3>
+            <div id="cat-order-box" class="cat-order-box"></div>
+            <button id="cat-order-save" class="btn-primary" disabled>保存展示顺序</button>
+          </div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">风格 · 元素标签（自定义增删）</h3>
+          <p class="hint">删除标签时，会同步移除所有图片上的该标签。</p>
+          <div class="tag-mgmt-grid">
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">风格标签（自定义）</h3>
+              <div id="style-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="style-tag-new" class="input" placeholder="新增风格标签，如：复古美式">
+                <button id="style-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">元素标签（自定义）</h3>
+              <div id="element-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="element-tag-new" class="input" placeholder="新增元素标签，如：条纹、格纹">
+                <button id="element-tag-add" class="btn-ghost">添加</button>
+              </div>
             </div>
           </div>
         </div>
@@ -175,11 +176,15 @@
 
       <!-- 数据看板（各类标签统计图表） -->
       <div class="panel-card" id="dash-card">
-        <h2>⑦ 数据看板 <span class="hint-inline">（各类标签图片数量统计）</span></h2>
+        <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
           <span id="dash-meta" class="hint-inline">加载中…</span>
+          <label class="dash-cat-filter">类目
+            <select id="dash-cat-filter" title="按类目筛选后，下方占比与覆盖率只统计该类目"><option value="">全部类目</option></select>
+          </label>
           <button id="dash-refresh" class="btn-ghost">刷新数据</button>
         </div>
+        <p class="hint">选择某个类目后，各标签的数量、占比与打标覆盖率都只统计该类目下的图片。每条标签的「覆盖率」= 该类目下打了该标签的图片数 ÷ 该类目图片总数。</p>
         <div id="dash-overview" class="dash-overview"></div>
         <div class="dash-charts">
           <div class="dash-card">
