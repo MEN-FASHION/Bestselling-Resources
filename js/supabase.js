@@ -234,6 +234,59 @@ const SB = (() => {
       if (error) throw new Error(error.message || "删除标签失败");
     },
 
+    // ============ 趋势专区（趋势文件：R2 存本体 + trends 表存清单） ============
+    // 上传趋势文件（经 Worker -> R2，返回存储 path）
+    async uploadTrendFile(file) {
+      const token = await currentToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/trend/upload", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "上传失败");
+      return j.path;
+    },
+    // 受控预览 URL（需登录令牌，经 Worker 鉴权，防下载）
+    async trendPreviewUrl(path) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/trend/preview?path=" + encodeURIComponent(path);
+      return base + "/trend/preview?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
+    },
+    // 删除趋势文件（经 Worker 从 R2 删除）
+    async deleteTrendFile(path) {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/trend/delete?path=" + encodeURIComponent(path), {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "删除失败");
+    },
+    // 读取趋势清单（trends 表，登录用户可读）
+    async listTrends() {
+      const { data, error } = await client.from("trends").select("*").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message || "读取趋势失败");
+      return data || [];
+    },
+    // 新增趋势清单记录
+    async addTrendRecord({ title, tag, path, category, file_type }) {
+      const s = await client.auth.getSession();
+      const { error } = await client.from("trends").insert({
+        title, tag, path, category: category || "", file_type: file_type || "pdf",
+        uploaded_by: s?.data?.session?.user?.id || null,
+      });
+      if (error) throw new Error(error.message || "写入趋势失败");
+    },
+    // 删除趋势清单记录
+    async removeTrendRecord(id) {
+      const { error } = await client.from("trends").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除趋势失败");
+    },
+
     // ============ 前台访问模式开关 ============
     // public_access=true：前台免登录公开浏览（Worker 图片也放行）；false：必须登录可见
     async getPublicAccess() {

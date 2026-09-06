@@ -271,3 +271,59 @@ on conflict (type, name) do nothing;
 -- 先注册一个邮箱，然后把这行里的邮箱换成你自己的，重新执行即可
 -- update public.profiles set role = 'admin'
 --   where email = '你的管理员邮箱@example.com';
+-- ============================================================
+-- 趋势专区：趋势文件清单表
+-- 趋势文件本体存 R2（路径 trends/...），此处仅存清单
+-- tag 限定三种：类目 / 月度 / 周度（单选）
+-- ============================================================
+create table if not exists public.trends (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  title text not null,              -- 文件标题/说明
+  tag text not null check (tag in ('类目','月度','周度')),  -- 三种标签，单选
+  path text not null,               -- R2 路径，如 trends/xxx.pdf
+  category text default '',         -- 选填：当 tag=类目 时的具体类目名
+  file_type text default 'pdf',
+  uploaded_by uuid references auth.users (id) on delete set null
+);
+
+alter table public.trends enable row level security;
+
+-- 登录用户可读取清单（趋势专区始终需登录可见）
+drop policy if exists "authenticated read trends" on public.trends;
+create policy "authenticated read trends"
+  on public.trends for select
+  to authenticated
+  using (true);
+
+-- 仅管理员可增/删/改趋势文件清单
+drop policy if exists "admin insert trends" on public.trends;
+create policy "admin insert trends"
+  on public.trends for insert
+  to authenticated
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+drop policy if exists "admin update trends" on public.trends;
+create policy "admin update trends"
+  on public.trends for update
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  )
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+drop policy if exists "admin delete trends" on public.trends;
+create policy "admin delete trends"
+  on public.trends for delete
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );

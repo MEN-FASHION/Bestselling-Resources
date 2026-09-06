@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趋势专区 · 图片图鉴</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="front">
+  <div id="toast" class="toast"></div>
+
+  <!-- ================= 登录页（趋势专区始终需登录） ================= -->
+  <section id="login-view" class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <h1 id="site-title"></h1>
+        <p class="subtitle">趋势专区 · 登录后查看</p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <h2 class="form-title">趋势专区登录</h2>
+        <label>邮箱</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" required>
+        <label>密码</label>
+        <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="auth-submit">进入趋势专区</button>
+        <div class="auth-links">
+          <a href="index.html">← 返回视觉专区</a>
+          <span class="auth-sep">·</span>
+          <a href="admin.html">管理员入口 →</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 趋势专区 ================= -->
+  <section id="trend-view" class="gallery-view hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span>◆</span> 趋势专区</div>
+        <div class="topbar-actions">
+          <button id="logout-btn" class="btn-ghost hidden">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 吸顶标签筛选（类目/月度/周度） -->
+    <div class="trend-filter">
+      <button class="trend-filter-btn active" data-tag="全部">全部</button>
+      <button class="trend-filter-btn" data-tag="类目">类目</button>
+      <button class="trend-filter-btn" data-tag="月度">月度</button>
+      <button class="trend-filter-btn" data-tag="周度">周度</button>
+    </div>
+
+    <div class="trend-list" id="trend-list"></div>
+    <p id="trend-empty" class="empty-tip hidden">该分类暂无趋势文件。</p>
+  </section>
+
+  <!-- ================= PDF 预览弹层（受控鉴权，防下载） ================= -->
+  <div id="pdf-modal" class="modal-mask hidden">
+    <div class="modal pdf-modal-box">
+      <div class="pdf-modal-head">
+        <span id="pdf-title">预览</span>
+        <button id="pdf-close" class="btn-ghost">关闭</button>
+      </div>
+      <iframe id="pdf-frame" class="pdf-frame" src="" title="趋势文件预览"></iframe>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js?v=20260906TREND"></script>
+  <script src="js/supabase.js?v=20260906TREND"></script>
+  <script src="js/trends.js?v=20260906TREND"></script>
+</body>
+</html>

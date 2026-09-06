@@ -2,8 +2,9 @@
 
 一个部署在 **GitHub Pages** 的图片站：
 
-- **前台**（`index.html`）：用户用 **邮箱+密码** 登录后，按分类浏览图片（缩略图懒加载、点击看大图）。
-- **后台**（`admin.html`）：**管理员**登录后，可 **网页拖拽上传/删除图片**。
+- **前台**（`index.html`）：用户用 **邮箱+密码** 登录后，按分类浏览图片（缩略图懒加载、点击看大图）。近期新增 **趋势专区入口**（`trends.html`）。
+- **后台**（`admin.html`）：**管理员**登录后，可 **网页拖拽上传/删除图片**，并管理 **趋势专区** 文件。
+- **趋势专区**（`trends.html`）：登录后按 类目 / 月度 / 周度 标签浏览、在线预览趋势 PDF（受控鉴权、防下载）。
 
 **图片真正私密**：所有图片存放在 Cloudflare R2 私有桶中，任何图片请求都必须携带登录令牌、经 Cloudflare Worker 校验后才放行 —— **未登录的人连图片网址都打不开**。
 
@@ -69,6 +70,8 @@ GitHub Pages（静态页面）
 4. 回到 Worker **Edit code**，把本目录 `worker/worker.js` 的**全部内容覆盖**粘贴进去 → Deploy。
 5. 记下 Worker 访问地址（形如 `https://gallery-api.你的子域.workers.dev`），填入 `js/config.js` 的 `WORKER_URL`。
 
+> **趋势专区依赖**：新版 `worker/worker.js` 额外提供了趋势文件的上传 / 删除 / 受控预览（`/trend/...`）端点。请务必用最新版 `worker/worker.js`（与趋势相关）整体覆盖部署，否则趋势上传与前台预览会失败。
+
 ### 第 7 步：部署到 GitHub Pages
 1. 把 `gallery-site` 目录所有文件推送到 GitHub 仓库。
 2. 仓库 → **Settings → Pages** → Deploy from a branch，分支 `main`，目录 `/ (root)`。
@@ -112,14 +115,16 @@ GitHub Pages（静态页面）
 ## 五、文件清单
 ```
 gallery-site/
-├── index.html           前台（登录 + 画廊）
-├── admin.html           后台（登录 + 上传/管理）
+├── index.html           前台 · 视觉专区（登录 + 画廊 + 趋势入口）
+├── trends.html          前台 · 趋势专区（三标签筛选 + PDF 受控预览）
+├── admin.html           后台（登录 + 上传/管理 + 趋势专区管理）
 ├── css/style.css        样式
 ├── js/
-│   ├── config.js        ★ 配置（Supabase URL/anon key + Worker 地址）
-│   ├── supabase.js      登录 + 清单 + Worker 通道封装
-│   ├── frontend.js      前台逻辑
-│   └── admin.js         后台逻辑
-├── worker/worker.js     Cloudflare Worker 源码（部署到 Cloudflare）
-└── tools/setup.sql      Supabase 数据库初始化
+│   ├── config.js        ★ 配置（Supabase URL/anon key + Worker 地址 + 标签/类别清单）
+│   ├── supabase.js      登录 + 清单 + Worker 通道封装 + 趋势通道封装
+│   ├── frontend.js      前台视觉专区逻辑
+│   ├── trends.js        前台趋势专区逻辑
+│   └── admin.js         后台逻辑（含趋势专区管理）
+├── worker/worker.js     Cloudflare Worker 源码（部署到 Cloudflare，含趋势端点）
+└── tools/setup.sql      Supabase 数据库初始化（含 trends 表）
 ```

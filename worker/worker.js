@@ -153,6 +153,63 @@ async function isPublicAccess(env) {
     return json({ ok: true }, 200, CORS);
   }
 
+  // ---------- 4. 趋势专区（趋势文件存 R2，由本 Worker 受控代理，不暴露直链） ----------
+
+  // 4.1 POST /trend/upload 上传趋势文件（管理员）→ 返回 R2 path
+  if (method === "POST" && path === "trend/upload") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!file) return json({ error: "缺少文件" }, 400, CORS);
+    // 仅允许 pdf（可放宽为常见文档，但预览窗口为 pdf）
+    const isPdf = /pdf/i.test(file.type) || /\.pdf$/i.test(file.name || "");
+    if (!isPdf) return json({ error: "暂仅支持 PDF" }, 400, CORS);
+
+    // 唯一文件名：英文/数字/下划线/点，避免中文 URL 编码问题
+    const cleanName = (file.name || "trend.pdf").replace(/[^\w.\-]/g, "_");
+    const stamp = Date.now() + "_" + Math.floor(Math.random() * 1e4);
+    const key = "trends/" + stamp + "_" + cleanName;
+    await env.IMAGES.put(key, file.stream(), {
+      httpMetadata: { contentType: "application/pdf" },
+    });
+    return json({ ok: true, path: key }, 200, CORS);
+  }
+
+  // 4.2 GET /trend/preview?path=trends/xxx   受控预览：必须登录，返回 PDF 内联，防下载/防另存
+  if (method === "GET" && path === "trend/preview") {
+    // 趋势专区始终需登录可见（不受公开浏览开关影响）
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
+    const object = await env.IMAGES.get(p);
+    if (!object) return json({ error: "文件不存在" }, 404, CORS);
+    const headers = new Headers(CORS);
+    headers.set("Content-Type", "application/pdf");
+    // 内联打开，而非附件下载；明确禁止浏览器把它当可下载附件
+    headers.set("Content-Disposition", "inline");
+    // 防下载/防另存：禁止嗅探、禁止被外站直链引用、不缓存原始字节（避免留痕便于另存）
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    return new Response(object.body, { headers });
+  }
+
+  // 4.3 DELETE /trend/delete?path=trends/xxx  删除趋势文件（管理员）
+  if (method === "DELETE" && path === "trend/delete") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
+    await env.IMAGES.delete(p).catch(() => {});
+    return json({ ok: true }, 200, CORS);
+  }
+
   return json({ error: "未知请求" }, 404, CORS);
 }
 

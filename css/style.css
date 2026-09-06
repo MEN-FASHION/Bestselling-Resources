@@ -210,12 +210,12 @@ img { display: block; }
   background: rgba(14,15,17,.85); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
   display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 24px;
+  padding: 12px 20px;
 }
 .admin-head .btn-ghost { margin-left: 10px; }
 .ghost-chip { padding: 6px 12px; border-radius: 999px; font-size: 12px; background: var(--card); border: 1px solid var(--line); color: var(--sub); }
 .ghost-chip.bad { color: var(--danger); border-color: rgba(207,90,87,.4); }
-.admin-body { display: flex; gap: 22px; align-items: flex-start; max-width: 1280px; margin: 0 auto; padding: 24px 20px 80px; }
+.admin-body { display: flex; gap: 18px; align-items: flex-start; max-width: none; margin: 0 auto; padding: 18px 14px 70px; }
 .admin-side {
   flex: 0 0 210px; position: sticky; top: 70px;
   background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
@@ -233,7 +233,7 @@ img { display: block; }
 .admin-main { flex: 1; min-width: 0; display: grid; gap: 26px; }
 .admin-main .panel-card { margin-bottom: 0; }
 .panel-card {
-  background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 18px;
 }
 .panel-card h2 { font-size: 16px; margin-bottom: 8px; letter-spacing: 1px; color: var(--txt); }
 .panel-card h2::before { content: "— "; color: var(--gold); }
@@ -568,3 +568,80 @@ select.input {
 .smart-cap-name { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .smart-move { font-size: 13px; line-height: 1; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--txt); cursor: pointer; }
 .smart-move:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ========== 标签管理综合页（常用类目/前台类目/风格·元素标签） ========== */
+.tag-sub { display: flex; flex-direction: column; gap: 12px; }
+.tag-sub + .tag-sub { margin-top: 4px; }
+.tbs-title { font-size: 14px; color: var(--gold2); margin: 0; }
+.tag-sub-hr { border: none; border-top: 1px dashed var(--line); margin: 4px 0 14px; }
+
+/* ========== 数据看板 · 类目筛选 ========== */
+.dash-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.dash-cat-filter { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
+.dash-cat-filter select {
+  background: var(--card); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; max-width: 260px; cursor: pointer;
+}
+.dash-cat-filter select:hover, .dash-cat-filter select:focus { border-color: var(--gold); outline: none; }
+.hbar-num i { font-style: normal; font-size: 11px; color: var(--gold); margin-left: 8px; }
+
+/* ========== 前台 · 顶部趋势专区入口 ========== */
+.trend-entry { text-decoration: none; }
+
+/* ========== 趋势专区前台：筛选栏 + 文件列表 ========== */
+.trend-filter {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 14px; background: rgba(16,16,18,.92);
+  backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
+}
+.trend-filter-btn {
+  background: transparent; color: var(--sub); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 16px; font-size: 13px; cursor: pointer; transition: all .15s;
+}
+.trend-filter-btn:hover { border-color: var(--gold); color: var(--txt); }
+.trend-filter-btn.active { background: var(--gold); border-color: var(--gold); color: #101012; font-weight: 600; }
+.trend-list { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.trend-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+}
+.trend-card:hover { border-color: var(--gold); }
+.trend-card-icon {
+  width: 46px; height: 46px; flex: none; border-radius: 10px;
+  background: linear-gradient(135deg, #e0562b, #b7341c); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; letter-spacing: 1px;
+}
+.trend-card-body { flex: 1; min-width: 0; }
+.trend-card-title { font-size: 14px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trend-card-meta { margin-top: 4px; }
+.trend-tag {
+  display: inline-block; background: rgba(228,171,96,.14); color: var(--gold);
+  border: 1px solid rgba(228,171,96,.3); border-radius: 999px; padding: 2px 10px; font-size: 12px;
+}
+.trend-open { flex: none; text-decoration: none; }
+
+/* ========== 趋势 PDF 预览弹层 ========== */
+.pdf-modal-box { width: min(1100px, 96vw); height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.pdf-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.pdf-modal-head span { font-size: 14px; font-weight: 600; color: var(--txt); }
+.pdf-frame { flex: 1; width: 100%; border: none; background: #2b2b2b; }
+
+/* ========== 后台 · 趋势专区管理 ========== */
+.trend-upload { display: flex; flex-direction: column; gap: 12px; }
+.trend-tag-select { display: flex; gap: 16px; flex-wrap: wrap; }
+.trend-tag-select .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--txt); cursor: pointer; }
+.trend-tag-select input[type="radio"] { accent-color: var(--gold); width: 15px; height: 15px; }
+.trend-manage-head { display: flex; align-items: baseline; gap: 12px; }
+.trend-admin-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.trend-admin-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+}
+.trend-admin-row:hover { border-color: var(--gold); }
+.trend-admin-info { min-width: 0; }
+.trend-admin-title { font-size: 14px; color: var(--txt); }
+.trend-admin-meta { font-size: 12px; color: var(--sub); margin-top: 3px; }
+.trend-admin-ops { flex: none; }
+.trend-admin-ops .btn-ghost { font-size: 12px; padding: 5px 12px; }

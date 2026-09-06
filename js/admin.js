@@ -11,15 +11,20 @@
   let currentFavCats = [];   // 当前管理员常用类目
   let currentActiveCats = []; // 前台类目（categories 表）
   let currentCatOrder = [];   // 前台类目顺序 [{id,name,sort_order}]
+  let currentManageCat = "全部"; // 图片管理当前选中类目（"全部" = 显示全部）
+  let selectedImages = new Set();  // 图片管理勾选集合
 
   document.addEventListener("DOMContentLoaded", () => {
-    bindLogin(); bindLogout(); bindToken(); bindUpload(); bindManage(); bindFavCats(); bindCatMgmt(); bindAccess();
-    bindTagDefs(); bindDashboard(); bindAdminNav(); bindSmartModal();
+    // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
       if (session) enterPanel();
     });
+    // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
+    [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend]
+      .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
   // ================= 后台侧边菜单 =================
@@ -29,7 +34,7 @@
     });
   }
   function switchPanel(target) {
-    const cards = ["manage-card", "upload-card", "fav-card", "cat-mgmt-card", "access-card", "tag-card", "dash-card", "no-perm"];
+    const cards = ["manage-card", "upload-card", "access-card", "tag-card", "dash-card", "trend-card", "no-perm"];
     cards.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
     const show = document.getElementById(target);
     if (show) show.classList.remove("hidden");
@@ -38,8 +43,9 @@
       n.classList.toggle("active", n.dataset.target === target);
     });
     // 进入看板/标签管理时动态加载数据
-    if (target === "dash-card") loadDashboard();
-    if (target === "tag-card") loadTagDefs();
+    if (target === "dash-card") { buildDashCatFilter(); loadDashboard(); }
+    if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
+    if (target === "trend-card") { loadTrendList(); }
   }
   async function saveCatOrder() {
     const rows = [...document.querySelectorAll("#cat-order-box .cat-order-item")];
@@ -67,7 +73,7 @@
     el.classList.toggle("bad", currentRole !== "admin");
     if (currentRole !== "admin" && currentUser) {
       // 非管理员：隐藏上传区，只显示只读提示
-      ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.add("hidden"));
+      ["#upload-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.add("hidden"));
       $("#manage-card").classList.toggle("hidden", false);
       $("#no-perm").classList.remove("hidden");
       // 非管理员侧边只保留“图片管理”
@@ -75,7 +81,7 @@
         n.classList.toggle("hidden", n.dataset.target !== "manage-card");
       });
     } else {
-      ["#upload-card", "#fav-card", "#cat-mgmt-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.remove("hidden"));
+      ["#upload-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.remove("hidden"));
       $("#no-perm").classList.add("hidden");
       document.querySelectorAll("#admin-panel .nav-item").forEach(n => n.classList.remove("hidden"));
     }
@@ -93,7 +99,18 @@
     });
   }
   function bindLogout() {
-    $("#admin-logout").onclick = async () => { await SB.signOut(); location.reload(); };
+    const logBtn = $("#admin-logout");
+    if (!logBtn) return;
+    logBtn.onclick = async () => {
+      try {
+        await SB.signOut();
+        location.reload();
+      } catch (e) {
+        // 登出请求失败时给出提示并强制刷新，避免"点了没反应"
+        sbToast("退出失败，请重试", false);
+        location.reload();
+      }
+    };
   }
   function enterPanel() {
     $("#admin-login").classList.add("hidden");
@@ -667,6 +684,17 @@
   // ================= 数据看板（各类标签统计） =================
   function bindDashboard() {
     $("#dash-refresh").onclick = () => loadDashboard();
+    const sel = document.getElementById("dash-cat-filter");
+    if (sel) sel.onchange = () => loadDashboard();
+  }
+  function buildDashCatFilter(imgs) {
+    const sel = document.getElementById("dash-cat-filter");
+    if (!sel) return;
+    const cur = sel.value;
+    const cats = [...new Set((imgs || []).map(i => i.category))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh"));
+    if (!cats.length) { sel.innerHTML = '<option value="">全部类目</option>'; return; }
+    sel.innerHTML = '<option value="">全部类目</option>' + cats.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join("");
+    if (cur && cats.includes(cur)) sel.value = cur; else sel.value = "";
   }
   async function loadDashboard() {
     const meta = $("#dash-meta");
@@ -675,7 +703,12 @@
     try {
       [imgs, defs] = await Promise.all([SB.listImages(null), SB.listTagDefs()]);
     } catch (e) { meta.textContent = "统计失败，请点击刷新重试"; return; }
-    meta.textContent = "共 " + imgs.length + " 张图片 · 更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    buildDashCatFilter(imgs);
+    const sel = document.getElementById("dash-cat-filter");
+    const cat = sel && sel.value ? sel.value : "";
+    if (cat) imgs = imgs.filter(i => i.category === cat);
+    const catLabel = cat || "全部类目";
+    meta.textContent = "类目「" + catLabel + "」共 " + imgs.length + " 张图片 · 更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
 
     // 总览卡
     const cats = new Set(imgs.map(i => i.category));
@@ -725,7 +758,7 @@
       row.innerHTML = `
         <div class="hbar-name" title="${escAttr(r.name)}">${escHtml(r.name)}</div>
         <div class="hbar-track"><div class="hbar-fill" style="width:${Math.round(r.count / max * 100)}%;background:${color}"></div></div>
-        <div class="hbar-num">${r.count}<i>${pct}%</i></div>`;
+        <div class="hbar-num"><b>${r.count}</b><i>覆盖率 ${pct}%</i></div>`;
       el.appendChild(row);
     });
   }
@@ -790,6 +823,14 @@
   // ================= 提示 =================
   function sbToast(msg, ok = true) {
     const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
 // ================= 智能打标（拖拽池：左=已打，右=未打） =================
   let smartDim = "style";          // 当前维度: style / element / channel
   let smartTag = "";               // 当前选中标签
@@ -984,13 +1025,6 @@
     if (closeBtn) closeBtn.addEventListener("click", closeSmartModal);
     bindSmartDrop();
   }
-    if (!t) return;
-    t.textContent = msg;
-    t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
-    t.classList.add("show");
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => t.classList.remove("show"), 2600);
-  }
 
   // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
   async function loadAccess() {
@@ -1016,5 +1050,114 @@
         sbToast("保存失败：" + (e.message || ""), false);
       }
     });
+  }
+
+  // ================= 趋势专区管理（上传 / 列表 / 删除） =================
+  let trendPickedFile = null;
+  let trendList = [];
+
+  function bindTrend() {
+    const dropzone = document.querySelector("#trend-dropzone");
+    const fileInput = document.querySelector("#trend-file-input");
+    const title = document.querySelector("#trend-title");
+    const pick = document.querySelector("#trend-pick");
+    const upBtn = document.querySelector("#trend-upload-btn");
+    const refresh = document.querySelector("#trend-refresh");
+    if (dropzone && fileInput) {
+      dropzone.addEventListener("click", () => fileInput.click());
+      dropzone.addEventListener("dragover", (e) => { e.preventDefault(); });
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files ? e.dataTransfer.files[0] : null;
+        if (f) setTrendFile(f);
+      });
+      fileInput.addEventListener("change", () => { if (fileInput.files && fileInput.files[0]) setTrendFile(fileInput.files[0]); });
+    }
+    function setTrendFile(f) {
+      if (!/\.pdf$/i.test(f.name) && !/pdf/i.test(f.type)) { sbToast("仅支持 PDF 文件", false); return; }
+      trendPickedFile = f;
+      if (pick) { pick.textContent = "已选择：" + f.name; pick.classList.remove("hidden"); }
+      if (upBtn) upBtn.disabled = false;
+    }
+    if (upBtn) upBtn.addEventListener("click", () => doUploadTrend(title.value.trim()));
+    if (refresh) refresh.addEventListener("click", loadTrendList);
+    if (title) title.addEventListener("input", () => { if (upBtn) upBtn.disabled = !(title.value.trim() && trendPickedFile); });
+  }
+
+  async function doUploadTrend(t) {
+    if (!trendPickedFile) return sbToast("请先选择 PDF 文件", false);
+    if (!t) return sbToast("请填写文件标题", false);
+    const tag = (document.querySelector('input[name="trend-tag"]:checked') || {}).value || "类目";
+    const category = (document.querySelector("#trend-category")?.value || "").trim();
+    const upBtn = document.querySelector("#trend-upload-btn");
+    try {
+      if (upBtn) upBtn.disabled = true;
+      const path = await SB.uploadTrendFile(trendPickedFile);
+      await SB.addTrendRecord({ title: t, tag, path, category, file_type: "pdf" });
+      trendPickedFile = null;
+      const fileInput = document.querySelector("#trend-file-input");
+      if (fileInput) fileInput.value = "";
+      const pick = document.querySelector("#trend-pick");
+      if (pick) { pick.classList.add("hidden"); pick.textContent = ""; }
+      const title = document.querySelector("#trend-title");
+      if (title) title.value = "";
+      if (upBtn) upBtn.disabled = true;
+      sbToast("趋势文件上传成功");
+      loadTrendList();
+    } catch (e) {
+      sbToast("上传失败：" + (e.message || ""), false);
+      if (upBtn) upBtn.disabled = false;
+    }
+  }
+
+  async function loadTrendList() {
+    if (!document.querySelector("#trend-list")) return;
+    try {
+      trendList = await SB.listTrends();
+      renderTrendList();
+    } catch (e) {
+      sbToast("加载趋势列表失败", false);
+    }
+  }
+  function renderTrendList() {
+    const box = document.querySelector("#trend-list");
+    const cnt = document.querySelector("#trend-count");
+    if (!box) return;
+    if (cnt) cnt.textContent = trendList.length + " 个文件";
+    box.innerHTML = "";
+    if (!trendList.length) {
+      box.innerHTML = '<p class="hint">暂无趋势文件，先在上方上传一个 PDF。</p>';
+      return;
+    }
+    trendList.forEach(t => {
+      const row = document.createElement("div");
+      row.className = "trend-admin-row";
+      const tagText = t.tag ? ("[" + t.tag + (t.category ? " " + t.category : "") + "]") : "";
+      row.innerHTML =
+        '<div class="trend-admin-info">' +
+          '<div class="trend-admin-title"></div>' +
+          '<div class="trend-admin-meta">' + escapeHtml(tagText + " · " + (t.file_type || "pdf").toUpperCase()) + '</div>' +
+        '</div>' +
+        '<div class="trend-admin-ops">' +
+          '<button class="btn-ghost trend-del">删除</button>' +
+        '</div>';
+      row.querySelector(".trend-admin-title").textContent = t.title || "未命名";
+      row.querySelector(".trend-del").addEventListener("click", () => confirmDeleteTrend(t));
+      box.appendChild(row);
+    });
+  }
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  async function confirmDeleteTrend(t) {
+    if (!confirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件。")) return;
+    try {
+      await SB.deleteTrendFile(t.path);
+      await SB.removeTrendRecord(t.id);
+      sbToast("已删除");
+      loadTrendList();
+    } catch (e) {
+      sbToast("删除失败：" + (e.message || ""), false);
+    }
   }
 })();
