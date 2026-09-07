@@ -38,8 +38,11 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand-sm"><span>◆</span> 趋势专区</div>
+        <nav class="top-tabs">
+          <a href="index.html" class="tab-link">视觉专区</a>
+          <a href="trends.html" class="tab-link active">趋势专区</a>
+        </nav>
         <div class="topbar-actions">
-          <a href="index.html" class="btn-ghost">← 返回视觉专区</a>
           <button id="logout-btn" class="btn-ghost hidden">退出</button>
         </div>
       </div>
@@ -71,15 +74,29 @@
     <div class="modal pdf-modal-box">
       <div class="pdf-modal-head">
         <span id="pdf-title">预览</span>
-        <button id="pdf-close" class="btn-ghost">关闭</button>
+        <div class="pdf-modal-tools">
+          <button id="pdf-prev" class="btn-ghost" type="button">‹ 上一页</button>
+          <span id="pdf-page" class="pdf-pageno">1 / 1</span>
+          <button id="pdf-next" class="btn-ghost" type="button">下一页 ›</button>
+          <span class="pdf-sep">|</span>
+          <button id="pdf-zoom-out" class="btn-ghost" type="button">−</button>
+          <span id="pdf-zoom" class="pdf-pageno">100%</span>
+          <button id="pdf-zoom-in" class="btn-ghost" type="button">＋</button>
+          <button id="pdf-close" class="btn-ghost">关闭</button>
+        </div>
       </div>
-      <iframe id="pdf-frame" class="pdf-frame" src="" title="趋势文件预览"></iframe>
+      <div class="pdf-stage" id="pdf-stage">
+        <canvas id="pdf-canvas" class="pdf-canvas" width="800" height="1100" style="display:none;"></canvas>
+        <p id="pdf-loading" class="pdf-loading">正在加载预览…</p>
+      </div>
+      <div class="pdf-tip">· 仅凭角色的在线预览许可查看本文件，禁止下载、打印与传播 ·</div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260906TREND"></script>
-  <script src="js/supabase.js?v=20260906TREND"></script>
-  <script src="js/trends.js?v=20260906TREND"></script>
+  <script src="js/config.js?v=20260907TAB"></script>
+  <script src="js/supabase.js?v=20260907TAB"></script>
+  <script src="js/trends.js?v=20260907TAB"></script>
 </body>
 </html>

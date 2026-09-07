@@ -8,6 +8,8 @@
   let curCat = "全部";
   let trends = [];
   let shownCats = [];
+  // PDF 自绘预览状态
+  let pdfDoc = null, pdfPage = 1, pdfScale = 1.0, pdfRendering = false;
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -22,6 +24,9 @@
   document.addEventListener("DOMContentLoaded", () => {
     $("#site-title").textContent = CONFIG.siteTitle || "图片图鉴";
     document.title = (CONFIG.siteTitle || "图片图鉴") + " · 趋势专区";
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    }
 
     // 趋势专区始终需登录 —— 监听登录态
     SB.onAuth((session) => {
@@ -32,7 +37,19 @@
     $("#login-form").addEventListener("submit", onLogin);
     $("#logout-btn").onclick = onLogout;
     $("#pdf-close").onclick = closePdf;
+    $("#pdf-prev").onclick = () => goPage(-1);
+    $("#pdf-next").onclick = () => goPage(1);
+    $("#pdf-zoom-out").onclick = () => setPdfZoom(pdfScale - 0.1);
+    $("#pdf-zoom-in").onclick = () => setPdfZoom(pdfScale + 0.1);
     $("#pdf-modal").addEventListener("click", (e) => { if (e.target.id === "pdf-modal") closePdf(); });
+    window.addEventListener("keydown", (e) => {
+      const m = $("#pdf-modal");
+      if (m && !m.classList.contains("hidden")) {
+        if (e.key === "Escape") closePdf();
+        else if (e.key === "ArrowRight") goPage(1);
+        else if (e.key === "ArrowLeft") goPage(-1);
+      }
+    });
 
     // 标签筛选
     document.querySelectorAll(".trend-filter-btn").forEach(btn => {
@@ -50,19 +67,19 @@
 
   function setupAntiDownload() {
     document.addEventListener("contextmenu", (e) => {
-      if (e.target.tagName === "IMG" || e.target.tagName === "IFRAME") e.preventDefault();
+      if (["IMG", "CANVAS", "IFRAME"].includes(e.target.tagName)) e.preventDefault();
     });
     document.addEventListener("dragstart", (e) => {
-      if (e.target.tagName === "IMG" || e.target.tagName === "IFRAME") e.preventDefault();
+      if (["IMG", "CANVAS", "IFRAME"].includes(e.target.tagName)) e.preventDefault();
     });
     let lp = null;
     document.addEventListener("touchstart", (e) => {
-      if (e.target.tagName === "IMG") lp = setTimeout(() => e.preventDefault(), 400);
+      if (["IMG", "CANVAS"].includes(e.target.tagName)) lp = setTimeout(() => e.preventDefault(), 400);
     }, { passive: false });
     document.addEventListener("touchend", () => clearTimeout(lp));
     document.addEventListener("touchmove", () => clearTimeout(lp));
     document.addEventListener("selectstart", (e) => {
-      if (e.target.tagName === "IMG") e.preventDefault();
+      if (["IMG", "CANVAS"].includes(e.target.tagName)) e.preventDefault();
     });
     document.addEventListener("keydown", (e) => {
       const k = (e.key || "").toLowerCase();
@@ -197,22 +214,76 @@
     return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // 受控预览：带上当前登录令牌，由 Worker 鉴权后内联返回 PDF，不暴露 R2 直链，防下载
+  // 受控预览：登录后经 Worker 取 PDF 二进制，用 pdf.js 自绘渲染（无任何下载/打印按钮），防下载
   async function openPdf(t) {
     try {
-      const frame = $("#pdf-frame");
-      frame.src = "";
+      if (!window.pdfjsLib) { toast("预览组件未就绪，请刷新重试", false); return; }
+      closePdf();
       $("#pdf-title").textContent = t.title || "预览";
       $("#pdf-modal").classList.remove("hidden");
+      const loading = $("#pdf-loading");
+      loading.textContent = "正在加载预览…";
+      loading.classList.remove("hidden");
       const url = await SB.trendPreviewUrl(t.path);
-      frame.src = url;
-      toast("正在打开预览…");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("load");
+      const buf = await res.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      pdfDoc = pdf;
+      pdfPage = 1;
+      pdfScale = 1.0;
+      await renderPdfPage();
+      loading.classList.add("hidden");
     } catch (e) {
+      const loading = $("#pdf-loading");
+      if (loading) { loading.textContent = "预览加载失败，请稍后重试"; loading.classList.remove("hidden"); }
       toast("预览打开失败", false);
     }
   }
+
+  async function renderPdfPage() {
+    if (!pdfDoc || pdfRendering) return;
+    pdfRendering = true;
+    try {
+      const page = await pdfDoc.getPage(pdfPage);
+      const vp1 = page.getViewport({ scale: 1 });
+      const base = Math.min(1.4, 900 / vp1.width);
+      const vp = page.getViewport({ scale: pdfScale * base });
+      const canvas = $("#pdf-canvas");
+      canvas.width = vp.width;
+      canvas.height = vp.height;
+      canvas.style.display = "block";
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      $("#pdf-page").textContent = pdfPage + " / " + pdfDoc.numPages;
+      $("#pdf-zoom").textContent = Math.round(pdfScale * 100) + "%";
+      const prev = $("#pdf-prev"), next = $("#pdf-next");
+      if (prev) prev.disabled = pdfPage <= 1;
+      if (next) next.disabled = pdfPage >= pdfDoc.numPages;
+    } finally {
+      pdfRendering = false;
+    }
+  }
+
+  function goPage(d) {
+    if (!pdfDoc) return;
+    const n = pdfPage + d;
+    if (n < 1 || n > pdfDoc.numPages) return;
+    pdfPage = n;
+    renderPdfPage();
+  }
+
+  function setPdfZoom(z) {
+    if (!pdfDoc) return;
+    pdfScale = Math.min(3, Math.max(0.5, z));
+    renderPdfPage();
+  }
+
   function closePdf() {
     $("#pdf-modal").classList.add("hidden");
-    $("#pdf-frame").src = "";
+    if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} }
+    pdfDoc = null;
+    const canvas = $("#pdf-canvas");
+    if (canvas) canvas.style.display = "none";
   }
 })();

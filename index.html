@@ -39,8 +39,11 @@
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand-sm"><span>◆</span> <span id="top-title"></span></div>
+        <nav class="top-tabs">
+          <a href="index.html" class="tab-link active">视觉专区</a>
+          <a href="trends.html" class="tab-link">趋势专区</a>
+        </nav>
         <div class="topbar-actions">
-          <a href="trends.html" class="btn-ghost trend-entry">趋势专区 →</a>
           <button id="login-btn" class="btn-ghost hidden">登录</button>
           <button id="logout-btn" class="btn-ghost hidden">退出</button>
         </div>
@@ -56,7 +59,16 @@
 
       <!-- ===== 右侧：渠道/风格/元素 标签筛选（吸顶）+ 图片网格 ===== -->
       <main class="grid-wrap">
-        <div id="tag-filter" class="tag-filter"></div>
+        <div id="tag-filter" class="tag-filter">
+          <div class="tf-trigger">
+            <span class="tf-t">筛选</span>
+            <span class="tf-s" id="tf-summary">类目·渠道·风格·元素</span>
+            <span class="tf-arrow">▾</span>
+          </div>
+          <div class="tf-body">
+            <div class="tf-groups" id="tf-groups"></div>
+          </div>
+        </div>
         <p id="empty-tip" class="empty-tip hidden">该分类暂无可浏览的图片。</p>
         <div id="grid" class="grid"></div>
       </main>
@@ -73,8 +85,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260906"></script>
-  <script src="js/supabase.js?v=20260906"></script>
-  <script src="js/frontend.js?v=20260906"></script>
+  <script src="js/config.js?v=20260907FOLD"></script>
+  <script src="js/supabase.js?v=20260907FOLD"></script>
+  <script src="js/frontend.js?v=20260907FOLD"></script>
 </body>
 </html>

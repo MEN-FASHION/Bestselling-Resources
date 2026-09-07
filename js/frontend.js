@@ -144,9 +144,9 @@
 
   // 标签筛选栏（吸顶）：类目/渠道/风格/元素 四组，每组可单选，四维组合过滤
   function renderTagBar(list) {
-    const bar = $("#tag-filter");
-    if (!bar) return;
-    bar.innerHTML = "";
+    const groupsBox = $("#tf-groups");
+    if (!groupsBox) return;
+    groupsBox.innerHTML = "";
 
     const mkChip = (groupKey, value, label, count, active) => {
       const b = document.createElement("button");
@@ -200,8 +200,22 @@
         chips.appendChild(mkChip(g.key, t, t, cnt, active));
       });
       wrap.appendChild(chips);
-      bar.appendChild(wrap);
+      groupsBox.appendChild(wrap);
     });
+
+    updateTagSummary();
+  }
+
+  // 更新折叠条的当前筛选摘要
+  function updateTagSummary() {
+    const el = $("#tf-summary");
+    if (!el) return;
+    const parts = [];
+    if (currentCat && currentCat !== "全部") parts.push("类目:" + currentCat);
+    if (curChannel) parts.push("渠道:" + curChannel);
+    if (curStyle) parts.push("风格:" + curStyle);
+    if (curElement) parts.push("元素:" + curElement);
+    el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素";
   }
 
   async function renderGrid(setCat) {
