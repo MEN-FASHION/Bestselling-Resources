@@ -1585,6 +1585,25 @@ let recruitTasks = [];
   let recruitFilter = "";     // "" | published | submitted | bound
   let recruitSelected = new Set();  // 卡片勾选
 
+  function renderRecruitPre() {
+    const pre = document.querySelector("#recruit-upload-preview");
+    if (!pre) return;
+    if (!recruitImgFiles.length) { pre.classList.add("hidden"); pre.innerHTML = ""; return; }
+    pre.classList.remove("hidden");
+    pre.innerHTML = "";
+    recruitImgFiles.forEach((f, i) => {
+      const cell = document.createElement("div");
+      cell.className = "recruit-pre-cell";
+      const im = document.createElement("img");
+      im.src = URL.createObjectURL(f);
+      const rm = document.createElement("button");
+      rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
+      rm.onclick = () => { recruitImgFiles.splice(i, 1); renderRecruitPre(); };
+      cell.appendChild(im); cell.appendChild(rm);
+      pre.appendChild(cell);
+    });
+  }
+
   function bindRecruit() {
     const upBtn = document.querySelector("#recruit-save");
     const refresh = document.querySelector("#recruit-refresh");
@@ -1611,23 +1630,6 @@ let recruitTasks = [];
       const names = new Set(recruitImgFiles.map(x => x.name));
       ok.forEach(f => { if (!names.has(f.name)) { recruitImgFiles.push(f); names.add(f.name); } });
       renderRecruitPre();
-    }
-    function renderRecruitPre() {
-      if (!pre) return;
-      if (!recruitImgFiles.length) { pre.classList.add("hidden"); pre.innerHTML = ""; return; }
-      pre.classList.remove("hidden");
-      pre.innerHTML = "";
-      recruitImgFiles.forEach((f, i) => {
-        const cell = document.createElement("div");
-        cell.className = "recruit-pre-cell";
-        const im = document.createElement("img");
-        im.src = URL.createObjectURL(f);
-        const rm = document.createElement("button");
-        rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
-        rm.onclick = () => { recruitImgFiles.splice(i, 1); renderRecruitPre(); };
-        cell.appendChild(im); cell.appendChild(rm);
-        pre.appendChild(cell);
-      });
     }
     if (upBtn) upBtn.addEventListener("click", saveRecruitTasks);
     if (refresh) refresh.addEventListener("click", loadRecruitList);
@@ -1744,7 +1746,6 @@ let recruitTasks = [];
             '<input type="text" class="rcac-tid-input" placeholder="任务ID" value="">' +
             '<button class="btn-ghost small rcac-pub">' + (t.status === "published" ? "取消发布" : "发布") + '</button>' +
             '<button class="btn-ghost small rcac-bound">' + (t.bound ? "取消绑定" : "标已绑定") + '</button>' +
-            '<button class="btn-ghost small rcac-tag">打标签</button>' +
             '<button class="btn-ghost small rcac-copy">复制SPU</button>' +
           '</div>' +
         '</div>';
@@ -1771,8 +1772,6 @@ let recruitTasks = [];
       card.querySelector(".rcac-pub").onclick = () => setRecruitStatus(t, t.status === "published" ? "draft" : "published");
       // 绑定切换
       card.querySelector(".rcac-bound").onclick = () => setRecruitBound(t, !t.bound);
-      // 打标签
-      card.querySelector(".rcac-tag").onclick = () => editRecruitTags(t);
       // 复制SPU
       card.querySelector(".rcac-copy").onclick = () => copyRecruitSps(t, spuList);
       // 任务ID 编辑
@@ -1782,27 +1781,21 @@ let recruitTasks = [];
         const v = tidInput.value.trim();
         SB.updateRecruitTask(t.id, { task_id: v }).then(() => sbToast("任务ID已更新")).catch(e => sbToast("更新失败", false));
       });
-      // 标签区渲染
-      renderRecruitTags(card, t);
+      // 已传SPU 状态区
+      renderRecruitSpsStatus(card, spuList.length);
       box.appendChild(card);
     });
   }
 
-  function renderRecruitTags(card, t) {
+  // 已传SPU 状态标记：商家中已有提交 → 显示「已传SPU · 已上传」
+  function renderRecruitSpsStatus(card, hasSubs) {
     const el = card.querySelector("[data-tags]");
     if (!el) return;
-    const tags = Array.isArray(t.tags) ? t.tags : [];
     el.innerHTML = "";
-    if (!tags.length) { el.innerHTML = '<span class="rcac-tag-empty">未打标签</span>'; return; }
-    tags.forEach(tg => { const s = document.createElement("span"); s.className = "rcac-tag-chip"; s.textContent = tg; el.appendChild(s); });
-  }
-
-  function editRecruitTags(t) {
-    const cur = (Array.isArray(t.tags) ? t.tags : []).join("，");
-    const input = prompt("为该招品任务设置标签（多个用英文逗号分隔）：", cur);
-    if (input === null) return;
-    const tags = input.split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
-    SB.updateRecruitTask(t.id, { tags }).then(() => { t.tags = tags; renderRecruitList(); sbToast("标签已更新"); }).catch(e => sbToast("更新失败", false));
+    const s = document.createElement("span");
+    if (hasSubs) { s.className = "rcac-tag-chip rcac-sub-up"; s.textContent = "已传SPU · 已上传"; }
+    else { s.className = "rcac-tag-empty"; s.textContent = "未传SPU"; }
+    el.appendChild(s);
   }
 
   async function setRecruitStatus(t, st) {

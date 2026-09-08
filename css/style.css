@@ -909,6 +909,7 @@ select.input {
 .recruit-acard-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:18px}
 .rcac-tag-empty{font-size:12px;color:#7c7461}
 .rcac-tag-chip{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(217,168,73,.15);color:#e6c07a;border:1px solid rgba(217,168,73,.35)}
+.rcac-sub-up{background:rgba(74,180,106,.16)!important;color:#5fd28a!important;border:1px solid rgba(74,180,106,.4)!important}
 .recruit-acard-actions{display:flex;flex-wrap:wrap;gap:6px}
 .recruit-acard-actions .btn-ghost.small,.recruit-acard-actions .rcac-tid-input{font-size:12px;padding:4px 9px}
 .rcac-tid-input{flex:1 1 100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#eee;border-radius:7px;font-size:12px;padding:5px 8px}
