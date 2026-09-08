@@ -23,7 +23,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -34,7 +34,7 @@
     });
   }
   function switchPanel(target) {
-    const cards = ["manage-card", "upload-card", "access-card", "tag-card", "dash-card", "trend-card", "no-perm"];
+    const cards = ["manage-card", "upload-card", "access-card", "tag-card", "dash-card", "trend-card", "notice-card", "recruit-card", "no-perm"];
     cards.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
     const show = document.getElementById(target);
     if (show) show.classList.remove("hidden");
@@ -46,6 +46,7 @@
     if (target === "dash-card") { buildDashCatFilter(); loadDashboard(); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
     if (target === "trend-card") { loadTrendList(); }
+    if (target === "recruit-card") { loadRecruitList(); }
   }
   async function saveCatOrder() {
     const rows = [...document.querySelectorAll("#cat-order-box .cat-order-item")];
@@ -1299,17 +1300,55 @@
   // ================= 公告管理：编辑/发布/下架/删除 + 图文 =================
   let noticeImages = [];      // 已上传图片路径数组（R2 notices/）
   let noticeEditingId = null;
+  let noticeQuill = null;     // 富文本编辑器实例
 
   function bindNotice() {
     const titleEl = document.querySelector("#notice-title");
-    const contentEl = document.querySelector("#notice-content");
     const pubEl = document.querySelector("#notice-published");
     const saveBtn = document.querySelector("#notice-save");
     const resetBtn = document.querySelector("#notice-reset");
 
+    // 初始化富文本编辑器（Quill）
+    const editorEl = document.querySelector("#notice-content-editor");
+    if (editorEl && typeof window.Quill !== "undefined") {
+      noticeQuill = new window.Quill(editorEl, {
+        theme: "snow",
+        placeholder: "公告正文：可编辑格式、插入图片…",
+        modules: {
+          toolbar: {
+            container: "#notice-toolbar",
+            handlers: {
+              image: function () {
+                const inp = document.createElement("input");
+                inp.type = "file";
+                inp.accept = "image/*";
+                inp.multiple = true;
+                inp.onchange = () => {
+                  const files = Array.from(inp.files || []);
+                  const range = noticeQuill.getSelection(true);
+                  files.forEach((f, i) => {
+                    uploadNoticeImage(f).then(path => {
+                      if (!path) return;
+                      const idx = (range && range.index != null && i === 0) ? range.index : noticeQuill.getLength() - 1;
+                      noticeQuill.insertEmbed(idx, "image", SB.noticeImageUrl(path), "user");
+                      noticeQuill.setSelection(idx + 1, 0);
+                    });
+                  });
+                };
+                inp.click();
+              }
+            }
+          }
+        }
+      });
+      // 图片上传成功后用于编辑器插入的额外通知
+    } else if (editorEl) {
+      noticeQuill = null;
+    }
+
     if (titleEl) titleEl.addEventListener("input", () => { if (saveBtn) saveBtn.disabled = !titleEl.value.trim(); });
 
-    // 图片选择/上传
+    // 图片选择/上传（正文下方额外图片）
     const pickBtn = document.querySelector("#notice-img-pick");
     const imgInput = document.querySelector("#notice-img-input");
     if (pickBtn && imgInput) {
@@ -1317,27 +1356,33 @@
       imgInput.addEventListener("change", () => {
         const files = Array.from(imgInput.files || []);
         imgInput.value = "";
-        files.forEach(f => uploadNoticeImage(f));
+        files.forEach(f => uploadNoticeImage(f, false));
       });
     }
     renderNoticeThumbs();
 
-    if (saveBtn) saveBtn.addEventListener("click", () => doSaveNotice(titleEl, contentEl, pubEl));
-    if (resetBtn) resetBtn.addEventListener("click", () => resetNoticeForm(titleEl, contentEl, pubEl));
+    if (saveBtn) saveBtn.addEventListener("click", () => doSaveNotice(titleEl, pubEl));
+    if (resetBtn) resetBtn.addEventListener("click", () => resetNoticeForm(titleEl, pubEl));
 
     loadNoticeAdminList();
   }
 
-  async function uploadNoticeImage(file) {
-    if (file.type && file.type.indexOf("image/") !== 0) return sbToast("仅支持图片文件", false);
-    sbToast("图片上传中…");
+  async function uploadNoticeImage(file, toList) {
+    if (file.type && file.type.indexOf("image/") !== 0) {
+      sbToast("仅支持图片文件", false);
+      return null;
+    }
     try {
       const path = await SB.uploadNoticeImage(file);
-      noticeImages.push(path);
-      renderNoticeThumbs();
+      if (toList !== false) {
+        noticeImages.push(path);
+        renderNoticeThumbs();
+      }
       sbToast("图片已添加");
+      return path;
     } catch (e) {
       sbToast("图片上传失败：" + (e.message || ""), false);
+      return null;
     }
   }
 
@@ -1366,9 +1411,9 @@
     });
   }
 
-  function resetNoticeForm(titleEl, contentEl, pubEl, keepImages) {
+  function resetNoticeForm(titleEl, pubEl, keepImages) {
     if (titleEl) titleEl.value = "";
-    if (contentEl) contentEl.value = "";
+    if (noticeQuill && noticeQuill.root) noticeQuill.root.innerHTML = "";
     if (pubEl) pubEl.checked = true;
     if (!keepImages) noticeImages = [];
     noticeEditingId = null;
@@ -1376,10 +1421,16 @@
     if (titleEl) titleEl.dispatchEvent(new Event("input"));
   }
 
-  async function doSaveNotice(titleEl, contentEl, pubEl) {
+  async function doSaveNotice(titleEl, pubEl) {
     const title = (titleEl && titleEl.value || "").trim();
     if (!title) return sbToast("请填写公告标题", false);
-    const content = (contentEl && contentEl.value || "").trim();
+    // 富文本正文：保留管理员编辑的 HTML（加粗/列表/插图等），空白时退回纯文本
+    let content = "";
+    if (noticeQuill && noticeQuill.root) {
+      content = noticeQuill.root.innerHTML.trim();
+      // 去掉仅剩的空段落
+      if (/^(<p><br><\/p>|&nbsp;|\s)*$/.test(content)) content = "";
+    }
     const published = !pubEl ? true : pubEl.checked;
     try {
       if (noticeEditingId) {
@@ -1389,7 +1440,7 @@
         await SB.addAnnouncement({ title, content, published, images: noticeImages });
         sbToast("公告已发布");
       }
-      resetNoticeForm(titleEl, contentEl, pubEl, false);
+      resetNoticeForm(titleEl, pubEl, false);
       loadNoticeAdminList();
     } catch (e) {
       sbToast("保存失败：" + (e.message || ""), false);
@@ -1447,11 +1498,13 @@
 
   function editNotice(a) {
     const titleEl = document.querySelector("#notice-title");
-    const contentEl = document.querySelector("#notice-content");
     const pubEl = document.querySelector("#notice-published");
     if (titleEl) titleEl.value = a.title || "";
-    if (contentEl) contentEl.value = a.content || "";
     if (pubEl) pubEl.checked = a.published !== false;
+    if (noticeQuill && noticeQuill.root) {
+      const raw = (a.content || "");
+      noticeQuill.root.innerHTML = /^<(p|h\d|div|ul|ol|blockquote|img|table)/i.test(raw.trim()) ? raw : (raw ? "<p>" + escapeHtml(raw) + "</p>" : "");
+    }
     noticeImages = (a.images || []).slice();
     noticeEditingId = a.id;
     renderNoticeThumbs();
@@ -1487,5 +1540,180 @@
       const p = n => String(n).padStart(2, "0");
       return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
     } catch (e) { return ""; }
+  }
+
+  // ================= 招品回品专区：后台管理 =================
+  let recruitTasks = [];
+  let recruitAllSubs = [];
+  let recruitImgFile = null;
+  let recruitEditingId = null;
+
+  function bindRecruit() {
+    const upBtn = document.querySelector("#recruit-save");
+    const refresh = document.querySelector("#recruit-refresh");
+    const imgDz = document.querySelector("#recruit-img-dropzone");
+    const imgInput = document.querySelector("#recruit-img-input");
+    const imgPick = document.querySelector("#recruit-img-pick");
+    const taskEl = document.querySelector("#recruit-taskid");
+    if (imgDz && imgInput) {
+      imgDz.addEventListener("click", () => imgInput.click());
+      imgDz.addEventListener("dragover", (e) => e.preventDefault());
+      imgDz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files ? e.dataTransfer.files[0] : null;
+        if (f) setRecruitImg(f);
+      });
+      imgInput.addEventListener("change", () => { if (imgInput.files && imgInput.files[0]) setRecruitImg(imgInput.files[0]); });
+    }
+    function setRecruitImg(f) {
+      if (!/^image\//i.test(f.type || "") && !/\.(jpe?g|png|webp)$/i.test(f.name || "")) { sbToast("仅支持图片", false); return; }
+      recruitImgFile = f;
+      if (imgPick) { imgPick.textContent = "已选择：" + f.name; imgPick.classList.remove("hidden"); }
+      refreshRecruitSave();
+    }
+    function refreshRecruitSave() {
+      const t = (taskEl ? taskEl.value : "").trim();
+      if (upBtn) upBtn.disabled = !t;
+    }
+    if (taskEl) taskEl.addEventListener("input", refreshRecruitSave);
+    if (upBtn) upBtn.addEventListener("click", saveRecruitTask);
+    if (refresh) refresh.addEventListener("click", loadRecruitList);
+    const exportBtn = document.querySelector("#recruit-export");
+    if (exportBtn) exportBtn.addEventListener("click", exportRecruitExcel);
+  }
+
+  async function saveRecruitTask() {
+    const title = (document.querySelector("#recruit-title")?.value || "").trim();
+    const taskId = (document.querySelector("#recruit-taskid")?.value || "").trim();
+    const sortNo = parseInt((document.querySelector("#recruit-sort")?.value || "0"), 10) || 0;
+    if (!taskId) return sbToast("请填写任务ID", false);
+    try {
+      let imagePath = "";
+      if (recruitImgFile) imagePath = await SB.uploadRecruitImage(recruitImgFile);
+      if (recruitEditingId) {
+        await SB.updateRecruitTask(recruitEditingId, { title, task_id: taskId, sort_no: sortNo });
+        sbToast("已更新招品任务");
+      } else {
+        await SB.addRecruitTask({ title, task_id: taskId, sort_no: sortNo, image_path: imagePath });
+        sbToast("招品任务已发布");
+      }
+      resetRecruitForm();
+      loadRecruitList();
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+  }
+
+  function resetRecruitForm() {
+    recruitImgFile = null;
+    recruitEditingId = null;
+    ["#recruit-title", "#recruit-taskid", "#recruit-sort"].forEach(sel => { const el = document.querySelector(sel); if (el) el.value = ""; });
+    const imgInput = document.querySelector("#recruit-img-input"); if (imgInput) imgInput.value = "";
+    const imgPick = document.querySelector("#recruit-img-pick"); if (imgPick) { imgPick.classList.add("hidden"); imgPick.textContent = ""; }
+    const upBtn = document.querySelector("#recruit-save"); if (upBtn) upBtn.disabled = true;
+  }
+
+  async function loadRecruitList() {
+    if (!document.querySelector("#recruit-list")) return;
+    try {
+      recruitTasks = await SB.listRecruitTasks();
+      recruitAllSubs = await SB.listAllRecruitSubmissions().catch(() => []);
+      renderRecruitList();
+    } catch (e) { sbToast("加载招品列表失败", false); }
+  }
+  function recruitSubsFor(taskId) {
+    return recruitAllSubs.filter(s => s.recruit_task_id === taskId);
+  }
+  function renderRecruitList() {
+    const box = document.querySelector("#recruit-list");
+    const cnt = document.querySelector("#recruit-count");
+    if (!box) return;
+    if (cnt) cnt.textContent = recruitTasks.length + " 个任务";
+    box.innerHTML = "";
+    if (!recruitTasks.length) {
+      box.innerHTML = '<p class="hint">暂无招品任务，先在上方上传一张招品图片。</p>';
+      return;
+    }
+    recruitTasks.forEach(t => {
+      const subs = recruitSubsFor(t.id);
+      const spuList = [];
+      subs.forEach(s => { (s.spus || []).forEach(sp => { if (sp && spuList.indexOf(sp) < 0) spuList.push(sp); }); });
+      const row = document.createElement("div");
+      row.className = "recruit-admin-row";
+      row.innerHTML =
+        '<div class="recruit-img"></div>' +
+        '<div class="recruit-admin-info">' +
+          '<div class="recruit-admin-title"></div>' +
+          '<div class="recruit-admin-meta"></div>' +
+          '<div class="recruit-admin-sub hidden2"></div>' +
+        '</div>' +
+        '<div class="recruit-admin-ops">' +
+          '<button class="btn-ghost rec-copy">复制SPU</button>' +
+          '<button class="btn-ghost rec-edit">编辑</button>' +
+          '<button class="btn-danger rec-del">删除</button>' +
+        '</div>';
+      const img = row.querySelector(".recruit-img");
+      if (t.image_path) {
+        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => {});
+      } else {
+        img.innerHTML = '<span class="tcov-ic">图</span>';
+      }
+      row.querySelector(".recruit-admin-title").textContent = (t.title || "未命名") + "　任务ID：" + t.task_id;
+      row.querySelector(".recruit-admin-meta").textContent = "序号 #" + t.sort_no + " · 已提交 " + subs.length + " 人 / " + spuList.length + " 个SPU";
+      const subEl = row.querySelector(".recruit-admin-sub");
+      if (spuList.length) { subEl.textContent = "已提交SPU：" + spuList.join("，"); subEl.classList.remove("hidden2"); }
+      const tip = spuList.length ? ("该任务已提交货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
+      row.querySelector(".recruit-img").title = tip;
+      row.querySelector(".recruit-admin-title").title = tip;
+      row.querySelector(".rec-copy").addEventListener("click", () => copyRecruitSps(t, spuList));
+      row.querySelector(".rec-edit").addEventListener("click", () => editRecruitTask(t));
+      row.querySelector(".rec-del").addEventListener("click", () => confirmDeleteRecruit(t));
+      box.appendChild(row);
+    });
+  }
+
+  async function copyRecruitSps(t, spuList) {
+    if (!spuList.length) return sbToast("该任务暂无SPU可复制", false);
+    try {
+      await navigator.clipboard.writeText(spuList.join(","));
+      sbToast("已复制 " + spuList.length + " 个SPU");
+    } catch (e) { sbToast("复制失败", false); }
+  }
+
+  function editRecruitTask(t) {
+    recruitEditingId = t.id;
+    document.querySelector("#recruit-title").value = t.title || "";
+    document.querySelector("#recruit-taskid").value = t.task_id || "";
+    document.querySelector("#recruit-sort").value = t.sort_no || 0;
+    recruitImgFile = null;
+    const imgInput = document.querySelector("#recruit-img-input"); if (imgInput) imgInput.value = "";
+    document.querySelector("#recruit-save").disabled = false;
+    sbToast("正在编辑任务ID：" + t.task_id);
+  }
+
+  async function confirmDeleteRecruit(t) {
+    if (!confirm("确认删除招品任务ID「" + t.task_id + "」？其图片与商家提交记录会一并移除。")) return;
+    try {
+      if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {});
+      await SB.removeRecruitTask(t.id);
+      sbToast("已删除");
+      loadRecruitList();
+    } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+  }
+
+  function exportRecruitExcel() {
+    if (!recruitTasks.length) return sbToast("暂无招品任务可导出", false);
+    if (typeof XLSX === "undefined") return sbToast("导出组件未加载，请联网后重试", false);
+    const rows = [];
+    recruitTasks.forEach(t => {
+      const subs = recruitSubsFor(t.id);
+      subs.forEach(s => {
+        rows.push({ 任务ID: t.task_id, 前台序号: t.sort_no, 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(",") });
+      });
+    });
+    if (!rows.length) return sbToast("暂无商家提交数据可导出", false);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "招品SPU汇总");
+    XLSX.writeFile(wb, "招品回品SPU汇总.xlsx");
+    sbToast("已导出 " + rows.length + " 行");
   }
 })();

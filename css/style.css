@@ -784,3 +784,90 @@ select.input {
 .notice-admin-meta { font-size: 12px; color: var(--sub); margin-top: 3px; }
 .notice-admin-ops { display: flex; gap: 6px; flex: none; }
 .notice-admin-ops .btn-ghost, .notice-admin-ops .btn-danger { padding: 6px 12px; font-size: 13px; }
+
+/* ============ 公告富文本编辑器（Word 式） ============ */
+.notice-editor-wrap { margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+.notice-editor-wrap .notice-toolbar { border-bottom: 1px solid var(--line); }
+.notice-editor-wrap .notice-toolbar .ql-header select { max-width: 70px; }
+#notice-content-editor { min-height: 220px; max-height: 460px; overflow-y: auto; font-size: 15px; color: var(--txt); }
+#notice-content-editor .ql-editor { min-height: 220px; }
+#notice-content-editor .ql-editor p { margin: 0 0 8px; }
+#notice-content-editor .ql-editor h1, #notice-content-editor .ql-editor h2,
+#notice-content-editor .ql-editor h3, #notice-content-editor .ql-editor h4 { margin: 12px 0 8px; line-height: 1.4; }
+#notice-content-editor .ql-editor img { max-width: 100%; border-radius: 8px; }
+#notice-content-editor .ql-editor ul, #notice-content-editor .ql-editor ol { padding-left: 22px; }
+#notice-content-editor .ql-editor blockquote { border-left: 3px solid var(--gold); padding-left: 12px; color: var(--sub); }
+
+/* ============ 公告放大阅读层（点击查看全文） ============ */
+#notice-reader { display: flex; }
+#notice-reader.hidden { display: none; }
+.notice-reader-dialog {
+  position: relative; width: min(760px, 92vw); max-height: 88vh; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 16px; padding: 26px 30px 30px;
+  overflow-y: auto; box-shadow: 0 18px 60px rgba(0,0,0,.45);
+}
+.notice-reader-title { font-size: 22px; font-weight: 700; color: var(--txt); line-height: 1.4; margin: 0 30px 6px 0; }
+.notice-reader-meta { font-size: 13px; color: var(--sub); margin-bottom: 16px; }
+.notice-reader-body { border-top: 1px solid var(--line); padding-top: 16px; }
+.notice-rich { font-size: 15px; color: var(--txt); line-height: 1.8; word-break: break-word; }
+.notice-rich p { margin: 0 0 12px; }
+.notice-rich h1, .notice-rich h2, .notice-rich h3, .notice-rich h4 { margin: 16px 0 10px; line-height: 1.4; }
+.notice-rich ul, .notice-rich ol { padding-left: 24px; margin: 0 0 12px; }
+.notice-rich li { margin-bottom: 4px; }
+.notice-rich blockquote { border-left: 3px solid var(--gold); padding-left: 14px; color: var(--sub); margin: 0 0 12px; }
+.notice-rich img { max-width: 100%; border-radius: 10px; margin: 8px 0; display: block; }
+.notice-rich a { color: var(--gold); text-decoration: underline; }
+.notice-rich table { border-collapse: collapse; width: 100%; margin: 0 0 12px; }
+.notice-rich table td, .notice-rich table th { border: 1px solid var(--line); padding: 6px 10px; }
+.notice-rich strong, .notice-rich b { color: var(--txt); }
+.reader-imgs { margin-top: 8px; }
+.reader-imgs img { max-height: 320px; border-radius: 10px; cursor: zoom-in; }
+@media (max-width: 600px) {
+  .notice-reader-dialog { padding: 18px 16px 22px; }
+  .notice-reader-title { font-size: 18px; }
+}
+
+/* ===================== 招品回品专区 ===================== */
+/* 前台：招品回品视图布局 */
+.recruit-wrap { padding: 20px 22px 30px; }
+.recruit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+.recruit-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform .2s, border-color .2s, box-shadow .2s; display: flex; flex-direction: column; }
+.recruit-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: var(--shadow); }
+.recruit-img { width: 100%; aspect-ratio: 3 / 4; background: linear-gradient(160deg,#1b1f2b 0%,#0f1117 100%); background-size: cover; background-position: center; position: relative; }
+.recruit-no { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.62); color: var(--gold); font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 20px; z-index: 2; }
+.recruit-body { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.recruit-taskid { font-size: 12px; color: var(--gold); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recruit-title { font-size: 15px; font-weight: 600; color: var(--txt); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 36px; }
+.recruit-spu-sub { font-size: 12px; color: var(--sub); }
+.recruit-form { margin-top: auto; display: flex; gap: 8px; }
+.recruit-spu-input { flex: 1; min-width: 0; background: var(--input-bg); border: 1px solid var(--line); border-radius: 8px; color: var(--txt); font-size: 13px; padding: 8px 10px; }
+.recruit-spu-input:focus { outline: none; border-color: var(--gold); }
+.recruit-form .btn-primary { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.rtip { color: var(--gold); font-weight: 700; font-size: 26px; letter-spacing: 2px; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+/* 前台：公告角标沿用 notice-badge；topbar 共享 */
+.top-tabs .tab-link.active { color: var(--gold); }
+
+/* 后台：招品上传与管理 */
+.recruit-upload { display: flex; flex-direction: column; gap: 12px; }
+.rg-row { display: flex; flex-direction: column; }
+.rg-row .input { max-width: 480px; }
+.recruit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.recruit-head .hint-inline { margin: 0; }
+.recruit-admin-list { width: 100%; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+.recruit-admin-row { display: flex; align-items: center; gap: 14px; padding: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.recruit-admin-row:last-child { border-bottom: none; }
+.recruit-admin-row:hover { background: rgba(216,169,79,.04); }
+.recruit-img { width: 74px; height: 92px; border-radius: 8px; background-size: cover; background-position: center; flex-shrink: 0; position: relative; background: linear-gradient(160deg,#1b1f2b,#0f1117); }
+.recruit-admin-info { flex: 1; min-width: 220px; }
+.recruit-admin-title { font-size: 14px; font-weight: 600; color: var(--txt); }
+.recruit-admin-meta { font-size: 12px; color: var(--sub); margin-top: 4px; }
+.recruit-admin-sub { font-size: 12px; color: var(--sub); margin-top: 4px; word-break: break-all; }
+.recruit-admin-sub.hidden2 { display: none; }
+.recruit-admin-ops { display: flex; gap: 8px; flex-shrink: 0; }
+.recruit-admin-ops .btn-ghost, .recruit-admin-ops .btn-danger { padding: 6px 12px; font-size: 13px; }
+
+@media (max-width: 640px) {
+  .recruit-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .recruit-wrap { padding: 14px 12px 24px; }
+}

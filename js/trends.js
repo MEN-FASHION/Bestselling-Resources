@@ -10,6 +10,8 @@
   let shownCats = [];
   // PDF 自绘预览状态
   let pdfDoc = null, pdfPage = 1, pdfScale = 1.0, pdfRendering = false;
+  let recruitTasks = [];   // 招品任务清单
+  let recruitSubs = [];    // 全部提交（前台悬浮显示用）
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -65,6 +67,12 @@
     SB.getSession().then(s => { window.__loggedIn = !!s; refreshUI(); }).catch(() => refreshUI());
 
     // ===== 公告弹窗事件 =====
+    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => {
+      if (a.dataset.viewtab === "recruit") a.addEventListener("click", goRecruit);
+      else if (a.dataset.viewtab === "trend") a.addEventListener("click", goTrend);
+    });
+    window.addEventListener("hashchange", () => showMain());
+
     $("#notice-tab").addEventListener("click", function (e) {
       e.preventDefault();
       noticeTabActive = noticeUnreadList.length === 0 ? "history" : "unread";
@@ -73,6 +81,12 @@
     $("#notice-close").addEventListener("click", closeNoticeModal);
     $("#notice-modal").addEventListener("click", (e) => {
       if (e.target && e.target.id === "notice-modal") closeNoticeModal();
+    });
+    const readerClose = document.getElementById("notice-reader-close");
+    if (readerClose) readerClose.addEventListener("click", closeNoticeReader);
+    const readerWrap = document.getElementById("notice-reader");
+    if (readerWrap) readerWrap.addEventListener("click", (e) => {
+      if (e.target && e.target.id === "notice-reader") closeNoticeReader();
     });
     document.querySelectorAll(".notice-tab-btn").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -155,34 +169,12 @@
     const head = document.createElement("button");
     head.type = "button";
     head.className = "notice-card-head";
-    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>▾</span>";
+    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>↗</span>";
     head.querySelector(".notice-card-title").textContent = a.title || "公告";
     head.querySelector(".notice-card-time").textContent = fmtTime(a.created_at);
-    const body = document.createElement("div");
-    body.className = "notice-card-body";
-    body.style.display = "none";
-    const imgs = a.images || [];
-    if (imgs.length) {
-      const fig = document.createElement("div");
-      fig.className = "notice-card-imgs";
-      imgs.forEach(p => {
-        const im = document.createElement("img");
-        im.alt = "";
-        im.src = SB.noticeImageUrl(p);
-        im.loading = "lazy";
-        fig.appendChild(im);
-      });
-      body.appendChild(fig);
-    }
-    const txt = document.createElement("div");
-    txt.className = "notice-card-text";
-    txt.textContent = a.content || "";
-    body.appendChild(txt);
     head.onclick = async () => {
-      const open = body.style.display !== "none";
-      body.style.display = open ? "none" : "block";
-      head.classList.toggle("open", !open);
-      if (!open && isUnread) {
+      openNoticeReader(a);
+      if (isUnread) {
         card.classList.remove("unread");
         try {
           await SB.markAnnouncementRead(a.id);
@@ -192,8 +184,55 @@
       }
     };
     card.appendChild(head);
-    card.appendChild(body);
     return card;
+  }
+
+  function openNoticeReader(a) {
+    const wrap = document.getElementById("notice-reader");
+    if (!wrap) return;
+    const titleEl = document.getElementById("notice-reader-title");
+    const metaEl = document.getElementById("notice-reader-meta");
+    const bodyEl = document.getElementById("notice-reader-body");
+    if (titleEl) titleEl.textContent = a.title || "公告";
+    if (metaEl) metaEl.textContent = "发布于 " + fmtTime(a.created_at);
+    if (bodyEl) {
+      bodyEl.innerHTML = "";
+      const raw = (a.content || "");
+      const txt = document.createElement("div");
+      txt.className = "notice-rich";
+      if (/^<(p|h\d|div|ul|ol|blockquote|img|table|span|strong|em|u|s|b|br)/i.test(raw.trim())) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = raw;
+        tmp.querySelectorAll("img").forEach(im => {
+          const s = im.getAttribute("src") || "";
+          if (s && s.indexOf("http") !== 0) im.src = SB.noticeImageUrl(s);
+          im.loading = "lazy";
+        });
+        txt.appendChild(tmp);
+      } else {
+        txt.textContent = raw;
+      }
+      bodyEl.appendChild(txt);
+      const imgs = a.images || [];
+      if (imgs.length) {
+        const fig = document.createElement("div");
+        fig.className = "notice-card-imgs reader-imgs";
+        imgs.forEach(p => {
+          const im = document.createElement("img");
+          im.alt = "";
+          im.src = SB.noticeImageUrl(p);
+          im.loading = "lazy";
+          fig.appendChild(im);
+        });
+        bodyEl.appendChild(fig);
+      }
+    }
+    wrap.classList.remove("hidden");
+  }
+
+  function closeNoticeReader() {
+    const wrap = document.getElementById("notice-reader");
+    if (wrap) wrap.classList.add("hidden");
   }
   function fmtTime(iso) {
     if (!iso) return "";
@@ -235,11 +274,28 @@
     $("#trend-view").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
   }
-  function showTrend() {
+  function showMain() {
     $("#login-view").classList.add("hidden");
-    $("#trend-view").classList.remove("hidden");
     $("#logout-btn").classList.remove("hidden");
-    loadTrends();
+    const rec = location.hash === "#recruit";
+    $("#trend-view").classList.toggle("hidden", rec);
+    $("#recruit-view").classList.toggle("hidden", !rec);
+    const brand = $("#front-brand");
+    if (brand) brand.textContent = (CONFIG.siteTitle || "图片图鉴") + (rec ? " · 招品回品" : " · 趋势专区");
+    document.title = (CONFIG.siteTitle || "图片图鉴") + (rec ? " · 招品回品" : " · 趋势专区");
+    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", (a.dataset.viewtab === "trend") !== rec));
+    if (rec) loadRecruitView(); else loadTrends();
+  }
+  function showTrend() { showMain(); }
+  function goRecruit(e) {
+    if (e) { e.preventDefault(); }
+    location.hash = "recruit";
+    showMain();
+  }
+  function goTrend(e) {
+    if (e) { e.preventDefault(); }
+    location.hash = "";
+    showMain();
   }
 
   async function onLogin(e) {
@@ -347,6 +403,77 @@
       card.appendChild(open);
       box.appendChild(card);
     });
+  }
+
+  async function loadRecruitView() {
+    try {
+      recruitTasks = await SB.listRecruitTasks();
+      recruitSubs = await SB.listAllRecruitSubmissions().catch(() => []);
+      renderRecruitCards();
+    } catch (e) {
+      toast("加载招品失败", false);
+    }
+  }
+  function recruitSubsFor(taskId) {
+    return recruitSubs.filter(s => s.recruit_task_id === taskId);
+  }
+  function renderRecruitCards() {
+    const box = $("#recruit-list");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!recruitTasks.length) {
+      box.innerHTML = '<p class="empty-tip">暂无招品任务。</p>';
+      return;
+    }
+    recruitTasks.forEach(t => {
+      const subs = recruitSubsFor(t.id);
+      const spuList = [];
+      subs.forEach(s => { (s.spus || []).forEach(sp => { if (sp && spuList.indexOf(sp) < 0) spuList.push(sp); }); });
+      const card = document.createElement("div");
+      card.className = "recruit-card";
+      card.innerHTML =
+        '<div class="recruit-img"><span class="recruit-no"></span></div>' +
+        '<div class="recruit-body">' +
+          '<div class="recruit-taskid"></div>' +
+          '<div class="recruit-title"></div>' +
+          '<div class="recruit-spu-sub"></div>' +
+          '<div class="recruit-form">' +
+            '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
+            '<button type="button" class="btn-primary rec-save">保存SPU</button>' +
+          '</div>' +
+        '</div>';
+      const img = card.querySelector(".recruit-img");
+      card.querySelector(".recruit-no").textContent = "#" + (t.sort_no == null ? "" : t.sort_no);
+      if (t.image_path) {
+        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => { img.innerHTML = '<span class="rtip">图</span>'; });
+      } else {
+        img.innerHTML = '<span class="rtip">图</span>';
+      }
+      card.querySelector(".recruit-taskid").textContent = "任务ID：" + t.task_id;
+      card.querySelector(".recruit-title").textContent = t.title || "未命名";
+      const subEl = card.querySelector(".recruit-spu-sub");
+      if (spuList.length) { subEl.textContent = "已提交 " + spuList.length + " 个SPU"; } else { subEl.textContent = "暂无商家提交"; }
+      const tip = spuList.length ? ("该任务已提交的货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
+      img.title = tip;
+      card.querySelector(".recruit-taskid").title = tip;
+      card.querySelector(".rec-save").addEventListener("click", () => saveMySpu(t, card));
+      box.appendChild(card);
+    });
+  }
+  async function saveMySpu(t, card) {
+    const inp = card.querySelector(".recruit-spu-input");
+    const raw = inp ? inp.value.trim() : "";
+    if (!raw) return toast("请填写货品SPU", false);
+    const spus = raw.split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
+    if (!spus.length) return toast("请填写货品SPU", false);
+    try {
+      await SB.upsertRecruitSubmission(t.id, spus);
+      toast("已保存 " + spus.length + " 个SPU");
+      inp.value = "";
+      loadRecruitView();
+    } catch (e) {
+      toast("保存失败：" + (e.message || ""), false);
+    }
   }
 
   function escapeHtml(s) {

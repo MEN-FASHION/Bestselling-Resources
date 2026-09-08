@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>趋势专区 · 图片图鉴</title>
-<link rel="stylesheet" href="css/style.css?v=20260908NOT">
+<link rel="stylesheet" href="css/style.css?v=20261010RC">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
@@ -34,21 +34,22 @@
   </section>
 
   <!-- ================= 趋势专区 ================= -->
-  <section id="trend-view" class="gallery-view hidden">
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="brand-sm"><span>◆</span> 趋势专区</div>
-        <nav class="top-tabs">
-          <a href="index.html" class="tab-link">视觉专区</a>
-          <a href="trends.html" class="tab-link active">趋势专区</a>
-          <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
-        </nav>
-        <div class="topbar-actions">
-          <button id="logout-btn" class="btn-ghost hidden">退出</button>
-        </div>
+  <header class="topbar" id="front-topbar">
+    <div class="topbar-inner">
+      <div class="brand-sm"><span>◆</span> <span id="front-brand">图片图鉴</span></div>
+      <nav class="top-tabs">
+        <a href="index.html" class="tab-link">视觉专区</a>
+        <a href="trends.html" class="tab-link" data-viewtab="trend">趋势专区</a>
+        <a href="trends.html#recruit" class="tab-link" data-viewtab="recruit">招品回品</a>
+        <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
+      </nav>
+      <div class="topbar-actions">
+        <button id="logout-btn" class="btn-ghost hidden">退出</button>
       </div>
-    </header>
+    </div>
+  </header>
 
+  <section id="trend-view" class="gallery-view hidden">
     <div class="gallery-layout">
       <!-- 左侧：类目菜单（复用视觉专区类目，仅显示有趋势文件的类目） -->
       <aside id="sidebar" class="sidebar">
@@ -70,6 +71,14 @@
     </div>
   </section>
 
+  <!-- ================= 招品回品 ================= -->
+  <section id="recruit-view" class="gallery-view hidden">
+    <div class="recruit-wrap">
+      <p id="recruit-tip" class="hint">在货品SPU框内填写递交的货品SPU（多个用英文逗号分隔）并保存；鼠标悬浮任务ID或图片可见该任务已提交的所有货品SPU。</p>
+      <div class="recruit-grid" id="recruit-list"></div>
+    </div>
+  </section>
+
   <!-- ================= PDF 预览弹层（受控鉴权，防下载） ================= -->
   <!-- ================= 公告弹窗：未读 + 历史记录 ================= -->
   <div id="notice-modal" class="modal hidden">
@@ -85,6 +94,16 @@
         </div>
       </div>
       <div id="notice-modal-body" class="notice-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ 公告放大阅读层（点击查看全文） ============ -->
+  <div id="notice-reader" class="modal hidden">
+    <div class="notice-reader-dialog">
+      <button type="button" class="notice-close" id="notice-reader-close">×</button>
+      <h3 id="notice-reader-title" class="notice-reader-title"></h3>
+      <div id="notice-reader-meta" class="notice-reader-meta"></div>
+      <div id="notice-reader-body" class="notice-reader-body"></div>
     </div>
   </div>
 
@@ -113,8 +132,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260908NOT"></script>
-  <script src="js/supabase.js?v=20260908NOT"></script>
-  <script src="js/trends.js?v=20260908NOT"></script>
+  <script src="js/config.js?v=20261010RC"></script>
+  <script src="js/supabase.js?v=20261010RC"></script>
+  <script src="js/trends.js?v=20261010RC"></script>
 </body>
 </html>

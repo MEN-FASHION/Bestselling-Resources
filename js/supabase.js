@@ -406,5 +406,92 @@ const SB = (() => {
       if (!token) return base + "/notice/img?path=" + encodeURIComponent(path);
       return base + "/notice/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
     },
+    // ============ 招品回品专区（招品图片存 R2 受控代理 + 任务表 + 提交表） ============
+    // 后台：上传招品图片（经 Worker 存 R2，返回 recruits/ 相对路径）
+    async uploadRecruitImage(file) {
+      const token = await currentToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/recruit/upload", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "图片上传失败");
+      return j.path;
+    },
+    // 前台/后台：招品图片受控 URL（需登录、经 Worker 鉴权、防下载）
+    async recruitImageUrl(path) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/recruit/img?path=" + encodeURIComponent(path);
+      return base + "/recruit/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
+    },
+    // 后台：删除招品图片（经 Worker 从 R2 删除）
+    async deleteRecruitImage(path) {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/recruit/delete?path=" + encodeURIComponent(path), {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "删除失败");
+    },
+    // 读取招品任务清单（登录可见）
+    async listRecruitTasks() {
+      const { data, error } = await client.from("recruit_tasks").select("*").order("sort_no", { ascending: true }).order("created_at", { ascending: true });
+      if (error) throw new Error(error.message || "读取招品任务失败");
+      return data || [];
+    },
+    // 后台：新增招品任务
+    async addRecruitTask({ title, task_id, sort_no, image_path }) {
+      const s = await client.auth.getSession();
+      const { error } = await client.from("recruit_tasks").insert({
+        title: title || "", task_id: String(task_id || "").trim(),
+        sort_no: Number.isFinite(Number(sort_no)) ? Number(sort_no) : 0,
+        image_path: image_path || "",
+        uploaded_by: s?.data?.session?.user?.id || null,
+      });
+      if (error) throw new Error(error.message || "保存招品任务失败");
+    },
+    // 后台：更新招品任务
+    async updateRecruitTask(id, patch) {
+      const { error } = await client.from("recruit_tasks").update(Object.assign({}, patch)).eq("id", id);
+      if (error) throw new Error(error.message || "更新招品任务失败");
+    },
+    // 后台：删除招品任务（连带提交记录 cascade）
+    async removeRecruitTask(id) {
+      const { error } = await client.from("recruit_tasks").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除招品任务失败");
+    },
+    // 后台：读取全部提交（含 user_id，供看所有用户SPU/导出）
+    async listAllRecruitSubmissions() {
+      const { data, error } = await client.from("recruit_submissions").select("*").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message || "读取提交失败");
+      return data || [];
+    },
+    // 前台：当前用户对某任务的提交记录
+    async myRecruitSubmission(taskId) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return null;
+      const { data, error } = await client.from("recruit_submissions").select("*").eq("recruit_task_id", taskId).eq("user_id", uid).maybeSingle();
+      if (error) return null;
+      return data || null;
+    },
+    // 前台：当前用户保存某任务的货品SPU（upsert，一个任务一条）
+    async upsertRecruitSubmission(taskId, spus) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) throw new Error("未登录");
+      const arr = [...new Set((spus || []).map(x => String(x).trim()).filter(Boolean))];
+      const { error } = await client.from("recruit_submissions").upsert(
+        { recruit_task_id: taskId, user_id: uid, spus: arr, updated_at: new Date().toISOString() },
+        { onConflict: "recruit_task_id,user_id" }
+      );
+      if (error) throw new Error(error.message || "保存SPU失败");
+      return arr;
+    },
   };
 })();

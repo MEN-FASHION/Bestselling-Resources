@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 前台</title>
-<link rel="stylesheet" href="css/style.css?v=20260908NOT">
+<link rel="stylesheet" href="css/style.css?v=20261010RC">
 </head>
 <body class="front">
   <!-- 提示条 -->
@@ -42,6 +42,7 @@
         <nav class="top-tabs">
           <a href="index.html" class="tab-link active">视觉专区</a>
           <a href="trends.html" class="tab-link">趋势专区</a>
+          <a href="trends.html#recruit" class="tab-link">招品回品</a>
           <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
         </nav>
         <div class="topbar-actions">
@@ -93,6 +94,16 @@
     </div>
   </div>
 
+  <!-- ============ 公告放大阅读层（点击查看全文） ============ -->
+  <div id="notice-reader" class="modal hidden">
+    <div class="notice-reader-dialog">
+      <button type="button" class="notice-close" id="notice-reader-close">×</button>
+      <h3 id="notice-reader-title" class="notice-reader-title"></h3>
+      <div id="notice-reader-meta" class="notice-reader-meta"></div>
+      <div id="notice-reader-body" class="notice-reader-body"></div>
+    </div>
+  </div>
+
   <!-- ================= 灯箱 ================= -->
   <div id="lightbox" class="lightbox hidden">
     <button class="lb-close" id="lb-close">×</button>
@@ -103,8 +114,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260908NOT"></script>
-  <script src="js/supabase.js?v=20260908NOT"></script>
-  <script src="js/frontend.js?v=20260908NOT"></script>
+  <script src="js/config.js?v=20261010RC"></script>
+  <script src="js/supabase.js?v=20261010RC"></script>
+  <script src="js/frontend.js?v=20261010RC"></script>
 </body>
 </html>

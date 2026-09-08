@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 后台管理</title>
-<link rel="stylesheet" href="css/style.css?v=20260908NOT">
+<link rel="stylesheet" href="css/style.css?v=20261010RC">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 </head>
 <body class="admin">
   <div id="toast" class="toast"></div>
@@ -55,6 +56,7 @@
           <a class="nav-item" data-target="dash-card">⑤ 数据看板</a>
           <a class="nav-item" data-target="trend-card">⑥ 趋势专区</a>
           <a class="nav-item" data-target="notice-card">⑦ 公告管理</a>
+          <a class="nav-item" data-target="recruit-card">⑧ 招品回品</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -250,11 +252,38 @@
         <h2>⑦ 公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h2>
         <div class="notice-form-box">
           <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
-          <textarea id="notice-content" class="input" rows="4" placeholder="公告内容（支持多行文字）" style="margin-top:8px;"></textarea>
+          <div class="notice-editor-wrap">
+            <div id="notice-toolbar" class="notice-toolbar">
+              <span class="ql-formats">
+                <select class="ql-header">
+                  <option value="1"></option><option value="2"></option><option value="3"></option>
+                  <option value="4"></option><option value="5"></option><option selected></option>
+                </select>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-bold"></button><button class="ql-italic"></button>
+                <button class="ql-underline"></button><button class="ql-strike"></button>
+              </span>
+              <span class="ql-formats">
+                <select class="ql-color"></select><select class="ql-background"></select>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-list" value="ordered"></button><button class="ql-list" value="bullet"></button>
+                <button class="ql-indent" value="-1"></button><button class="ql-indent" value="+1"></button>
+                <button class="ql-align" value=""></button><button class="ql-align" value="center"></button>
+                <button class="ql-align" value="right"></button>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-image"></button><button class="ql-link"></button>
+                <button class="ql-clean"></button>
+              </span>
+            </div>
+            <div id="notice-content-editor"></div>
+          </div>
           <div class="notice-img-box" style="margin-top:8px;">
             <button id="notice-img-pick" class="btn-ghost" type="button">+ 添加图片（可多张）</button>
             <input id="notice-img-input" type="file" accept="image/*" multiple style="display:none;">
-            <span class="hint-inline">上传后展示于公告正文上方，前台受控查看不可下载。</span>
+            <span class="hint-inline">额外图片会在公告正文下方一并展示（受控查看不可下载）。也可在编辑器内直接插图。</span>
             <div id="notice-img-thumbs" class="notice-img-thumbs"></div>
           </div>
           <div class="notice-form-actions">
@@ -266,6 +295,32 @@
         <div id="notice-list-box" class="notice-list-box">
           <p class="hint">点击「编辑」可回填到上方表单修改；「发布/下架」切换状态；「删除」移除公告。</p>
         </div>
+      </div>
+
+      <div class="panel-card" id="recruit-card">
+        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span></h2>
+        <div class="recruit-upload">
+          <div class="rg-row"><label class="field">任务标题（选填）</label><input id="recruit-title" class="input" placeholder="例如：秋季主推款招品"></div>
+          <div class="rg-row"><label class="field">任务ID（必填，商家需据此填写）</label><input id="recruit-taskid" class="input" placeholder="例如：RC2026001"></div>
+          <div class="rg-row"><label class="field">前台序号（数字越小越靠前，显示在图片右上角）</label><input id="recruit-sort" class="input" type="number" placeholder="例如：1"></div>
+          <div class="rg-row"><label class="field">招品图片</label>
+            <div id="recruit-img-dropzone" class="dropzone">
+              <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽招品图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG</p></div>
+              <input type="file" id="recruit-img-input" accept="image/*" hidden>
+            </div>
+            <div id="recruit-img-pick" class="hint hidden" style="margin-top:8px;"></div>
+          </div>
+          <button id="recruit-save" class="btn-primary" disabled>保存招品任务</button>
+        </div>
+        <hr class="tag-sub-hr">
+        <div class="recruit-head">
+          <h3 class="tbs-title">招品任务列表</h3>
+          <span id="recruit-count" class="hint-inline">加载中…</span>
+          <button id="recruit-export" class="btn-primary" type="button">导出 Excel</button>
+        </div>
+        <p class="hint">鼠标悬浮任务ID或图片可查看已上传的货品SPU；点「复制SPU」一键复制该任务下所有SPU；右上角「导出Excel」汇总所有任务。</p>
+        <div id="recruit-list" class="recruit-admin-list"></div>
+        <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
       </div>
 
       <div class="panel-card" id="dash-card">
@@ -343,8 +398,10 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260908NOT"></script>
-  <script src="js/supabase.js?v=20260908NOT"></script>
-  <script src="js/admin.js?v=20260908NOT"></script>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="js/config.js?v=20261010RC"></script>
+  <script src="js/supabase.js?v=20261010RC"></script>
+  <script src="js/admin.js?v=20261010RC"></script>
 </body>
 </html>

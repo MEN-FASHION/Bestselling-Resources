@@ -429,3 +429,100 @@ create policy "insert own announcement reads"
   on public.announcement_reads for insert
   to authenticated
   with check (auth.uid() = user_id);
+
+-- ============================================================
+-- 招品回品专区：招品任务表 + 商家提交货品SPU表
+-- 后台：⑧ 招品回品，管理员上传招品图片（配任务ID、前台序号sort_no）
+-- 前台：显示招品图片+序号映射，商家填写货品SPU并保存
+-- ============================================================
+create table if not exists public.recruit_tasks (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  title text default '',            -- 招品任务标题/说明（可空）
+  task_id text not null,            -- 管理员定义的任务ID（商家据此关联，需唯一）
+  sort_no int default 0,            -- 前台序号映射（数字小越靠前）
+  image_path text default '',       -- 招品图片 R2 路径，如 recruits/xxx.jpg
+  uploaded_by uuid references auth.users (id) on delete set null
+);
+alter table public.recruit_tasks enable row level security;
+
+-- 登录用户可读招品任务清单（前台商家浏览；后台管理员也经此读取）
+drop policy if exists "authenticated read recruit_tasks" on public.recruit_tasks;
+create policy "authenticated read recruit_tasks"
+  on public.recruit_tasks for select
+  to authenticated
+  using (true);
+
+-- 仅管理员可增/改/删招品任务
+drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
+create policy "admin insert recruit_tasks"
+  on public.recruit_tasks for insert
+  to authenticated
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
+
+drop policy if exists "admin update recruit_tasks" on public.recruit_tasks;
+create policy "admin update recruit_tasks"
+  on public.recruit_tasks for update
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
+
+drop policy if exists "admin delete recruit_tasks" on public.recruit_tasks;
+create policy "admin delete recruit_tasks"
+  on public.recruit_tasks for delete
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
+
+-- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
+create table if not exists public.recruit_submissions (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  recruit_task_id uuid not null references public.recruit_tasks (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  spus text[] default '{}',         -- 商家提交的货品SPU（可多个）
+  unique (recruit_task_id, user_id)
+);
+alter table public.recruit_submissions enable row level security;
+
+-- 用户可读取自己的提交（前台回显自己已传的SPU）
+drop policy if exists "select own recruit submissions" on public.recruit_submissions;
+create policy "select own recruit submissions"
+  on public.recruit_submissions for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- 管理员可读取全部提交（后台查看所有用户上传的SPU、导出）
+drop policy if exists "admin read all recruit submissions" on public.recruit_submissions;
+create policy "admin read all recruit submissions"
+  on public.recruit_submissions for select
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
+
+-- 用户可提交/更新自己的记录
+drop policy if exists "upsert own recruit submissions" on public.recruit_submissions;
+create policy "upsert own recruit submissions"
+  on public.recruit_submissions for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "update own recruit submissions" on public.recruit_submissions;
+create policy "update own recruit submissions"
+  on public.recruit_submissions for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- 仅管理员可删除提交记录
+drop policy if exists "admin delete recruit submissions" on public.recruit_submissions;
+create policy "admin delete recruit submissions"
+  on public.recruit_submissions for delete
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
+
+-- 所有登录商家可读取全部提交（前台悬浮任务ID/图片时显示已提交的货品SPU，避免重复提交）
+drop policy if exists "authenticated read all recruit submissions" on public.recruit_submissions;
+create policy "authenticated read all recruit submissions"
+  on public.recruit_submissions for select
+  to authenticated
+  using (true);

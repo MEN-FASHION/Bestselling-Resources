@@ -66,6 +66,13 @@
     $("#notice-modal").addEventListener("click", (e) => {
       if (e.target && e.target.id === "notice-modal") closeNoticeModal();
     });
+    // 公告放大阅读层关闭
+    const readerClose = document.getElementById("notice-reader-close");
+    if (readerClose) readerClose.addEventListener("click", closeNoticeReader);
+    const readerWrap = document.getElementById("notice-reader");
+    if (readerWrap) readerWrap.addEventListener("click", (e) => {
+      if (e.target && e.target.id === "notice-reader") closeNoticeReader();
+    });
     document.querySelectorAll(".notice-tab-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         noticeTabActive = btn.getAttribute("data-ntab") || "unread";
@@ -206,35 +213,13 @@
     const head = document.createElement("button");
     head.type = "button";
     head.className = "notice-card-head";
-    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>▾</span>";
+    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>↗</span>";
     head.querySelector(".notice-card-title").textContent = a.title || "公告";
     head.querySelector(".notice-card-time").textContent = fmtTime(a.created_at);
-    const body = document.createElement("div");
-    body.className = "notice-card-body";
-    body.style.display = "none";
-    // 图片（受控 URL，不可下载）
-    const imgs = a.images || [];
-    if (imgs.length) {
-      const fig = document.createElement("div");
-      fig.className = "notice-card-imgs";
-      imgs.forEach(p => {
-        const im = document.createElement("img");
-        im.alt = "";
-        im.src = SB.noticeImageUrl(p);
-        im.loading = "lazy";
-        fig.appendChild(im);
-      });
-      body.appendChild(fig);
-    }
-    const txt = document.createElement("div");
-    txt.className = "notice-card-text";
-    txt.textContent = a.content || "";
-    body.appendChild(txt);
+    // 点击卡片 → 中央放大展示全文
     head.onclick = async () => {
-      const open = body.style.display !== "none";
-      body.style.display = open ? "none" : "block";
-      head.classList.toggle("open", !open);
-      if (!open && isUnread) {
+      openNoticeReader(a);
+      if (isUnread) {
         card.classList.remove("unread");
         try {
           await SB.markAnnouncementRead(a.id);
@@ -244,8 +229,58 @@
       }
     };
     card.appendChild(head);
-    card.appendChild(body);
     return card;
+  }
+
+  // 中央放大展示公告全文（标题 + 富文本正文 + 附加图片）
+  function openNoticeReader(a) {
+    const wrap = document.getElementById("notice-reader");
+    if (!wrap) return;
+    const titleEl = document.getElementById("notice-reader-title");
+    const metaEl = document.getElementById("notice-reader-meta");
+    const bodyEl = document.getElementById("notice-reader-body");
+    if (titleEl) titleEl.textContent = a.title || "公告";
+    if (metaEl) metaEl.textContent = "发布于 " + fmtTime(a.created_at);
+    if (bodyEl) {
+      bodyEl.innerHTML = "";
+      const raw = (a.content || "");
+      const txt = document.createElement("div");
+      txt.className = "notice-rich";
+      if (/^<(p|h\d|div|ul|ol|blockquote|img|table|span|strong|em|u|s|b|br)/i.test(raw.trim())) {
+        // 富文本：保留格式渲染，统一图片为受控 URL
+        const tmp = document.createElement("div");
+        tmp.innerHTML = raw;
+        tmp.querySelectorAll("img").forEach(im => {
+          const s = im.getAttribute("src") || "";
+          if (s && s.indexOf("http") !== 0) im.src = SB.noticeImageUrl(s);
+          im.loading = "lazy";
+        });
+        txt.appendChild(tmp);
+      } else {
+        txt.textContent = raw;
+      }
+      bodyEl.appendChild(txt);
+      // 附加图片（正文下方）
+      const imgs = a.images || [];
+      if (imgs.length) {
+        const fig = document.createElement("div");
+        fig.className = "notice-card-imgs reader-imgs";
+        imgs.forEach(p => {
+          const im = document.createElement("img");
+          im.alt = "";
+          im.src = SB.noticeImageUrl(p);
+          im.loading = "lazy";
+          fig.appendChild(im);
+        });
+        bodyEl.appendChild(fig);
+      }
+    }
+    wrap.classList.remove("hidden");
+  }
+
+  function closeNoticeReader() {
+    const wrap = document.getElementById("notice-reader");
+    if (wrap) wrap.classList.add("hidden");
   }
   function fmtTime(iso) {
     if (!iso) return "";
