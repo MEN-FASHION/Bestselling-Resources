@@ -434,8 +434,6 @@
       card.innerHTML =
         '<div class="recruit-img"><span class="recruit-no"></span></div>' +
         '<div class="recruit-body">' +
-          '<div class="recruit-taskid"></div>' +
-          '<div class="recruit-title"></div>' +
           '<div class="recruit-spu-sub"></div>' +
           '<div class="recruit-form">' +
             '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
@@ -449,13 +447,10 @@
       } else {
         img.innerHTML = '<span class="rtip">图</span>';
       }
-      card.querySelector(".recruit-taskid").textContent = "任务ID：" + t.task_id;
-      card.querySelector(".recruit-title").textContent = t.title || "未命名";
       const subEl = card.querySelector(".recruit-spu-sub");
       if (spuList.length) { subEl.textContent = "已提交 " + spuList.length + " 个SPU"; } else { subEl.textContent = "暂无商家提交"; }
       const tip = spuList.length ? ("该任务已提交的货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
       img.title = tip;
-      card.querySelector(".recruit-taskid").title = tip;
       card.querySelector(".rec-save").addEventListener("click", () => saveMySpu(t, card));
       box.appendChild(card);
     });

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 后台管理</title>
-<link rel="stylesheet" href="css/style.css?v=20261010RC">
+<link rel="stylesheet" href="css/style.css?v=20261012UI">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 </head>
 <body class="admin">
@@ -49,14 +49,14 @@
       <!-- 左侧菜单 -->
       <aside class="admin-side">
         <nav class="admin-nav">
-          <a class="nav-item" data-target="upload-card">① 上传图片</a>
-          <a class="nav-item" data-target="manage-card">② 图片管理</a>
-          <a class="nav-item" data-target="access-card">③ 前台访问设置</a>
-          <a class="nav-item" data-target="tag-card">④ 标签管理</a>
-          <a class="nav-item" data-target="dash-card">⑤ 数据看板</a>
-          <a class="nav-item" data-target="trend-card">⑥ 趋势专区</a>
-          <a class="nav-item" data-target="notice-card">⑦ 公告管理</a>
-          <a class="nav-item" data-target="recruit-card">⑧ 招品回品</a>
+          <a class="nav-item" data-target="upload-card">上传图片</a>
+          <a class="nav-item" data-target="manage-card">图片管理</a>
+          <a class="nav-item" data-target="access-card">前台访问设置</a>
+          <a class="nav-item" data-target="tag-card">标签管理</a>
+          <a class="nav-item" data-target="dash-card">数据看板</a>
+          <a class="nav-item" data-target="trend-card">趋势专区</a>
+          <a class="nav-item" data-target="notice-card">公告管理</a>
+          <a class="nav-item" data-target="recruit-card">招品回品</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -300,9 +300,8 @@
       <div class="panel-card" id="recruit-card">
         <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span></h2>
         <div class="recruit-upload">
-          <div class="rg-row"><label class="field">任务标题（选填）</label><input id="recruit-title" class="input" placeholder="例如：秋季主推款招品"></div>
           <div class="rg-row"><label class="field">任务ID（必填，商家需据此填写）</label><input id="recruit-taskid" class="input" placeholder="例如：RC2026001"></div>
-          <div class="rg-row"><label class="field">前台序号（数字越小越靠前，显示在图片右上角）</label><input id="recruit-sort" class="input" type="number" placeholder="例如：1"></div>
+          <div class="rg-row"><label class="field">前台序号（数字越小越靠前，显示在图片左上角）</label><input id="recruit-sort" class="input" type="number" placeholder="例如：1"></div>
           <div class="rg-row"><label class="field">招品图片</label>
             <div id="recruit-img-dropzone" class="dropzone">
               <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽招品图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG</p></div>
@@ -400,8 +399,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20261010RC"></script>
-  <script src="js/supabase.js?v=20261010RC"></script>
-  <script src="js/admin.js?v=20261010RC"></script>
+  <script src="js/config.js?v=20261012UI"></script>
+  <script src="js/supabase.js?v=20261012UI"></script>
+  <script src="js/admin.js?v=20261012UI"></script>
 </body>
 </html>

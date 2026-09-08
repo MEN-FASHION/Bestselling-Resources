@@ -72,22 +72,27 @@ img { display: block; }
 .btn-block { width: 100%; }
 
 .btn-primary {
-  width: 100%; padding: 13px; border: none; border-radius: 10px;
+  padding: 8px 16px; border: none; border-radius: 8px;
   background: linear-gradient(135deg, var(--gold), var(--gold2));
-  color: #20170a; font-weight: 600; font-size: 16px; cursor: pointer;
+  color: #20170a; font-weight: 500; font-size: 13px; line-height: 1; cursor: pointer;
+  letter-spacing: .3px; white-space: nowrap;
   transition: transform .15s, box-shadow .2s, filter .2s;
 }
-.btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 10px 24px rgba(216,169,79,.25); }
+.btn-primary:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(216,169,79,.22); }
 .btn-primary:disabled { filter: grayscale(.6); cursor: not-allowed; transform: none; box-shadow: none; }
+/* 登录框按钮仍保持全宽成熟样式 */
+.auth-form .btn-primary { width: 100%; padding: 13px; border-radius: 10px; font-size: 15px; font-weight: 600; }
 
 .btn-ghost {
-  padding: 8px 16px; background: transparent; color: var(--sub);
-  border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13px; transition: .2s;
+  padding: 7px 14px; background: transparent; color: var(--sub);
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12.5px; line-height: 1;
+  letter-spacing: .3px; white-space: nowrap; transition: .2s;
 }
 .btn-ghost:hover { color: var(--gold); border-color: var(--gold); }
 .btn-danger {
   padding: 7px 14px; background: transparent; color: var(--danger);
-  border: 1px solid rgba(207,90,87,.5); border-radius: 8px; cursor: pointer; font-size: 13px; transition: .2s;
+  border: 1px solid rgba(207,90,87,.5); border-radius: 7px; cursor: pointer; font-size: 12.5px; line-height: 1;
+  letter-spacing: .3px; white-space: nowrap; transition: .2s;
 }
 .btn-danger:hover { background: rgba(207,90,87,.15); }
 
@@ -830,15 +835,14 @@ select.input {
 /* ===================== 招品回品专区 ===================== */
 /* 前台：招品回品视图布局 */
 .recruit-wrap { padding: 20px 22px 30px; }
-.recruit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
-.recruit-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform .2s, border-color .2s, box-shadow .2s; display: flex; flex-direction: column; }
-.recruit-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: var(--shadow); }
-.recruit-img { width: 100%; aspect-ratio: 3 / 4; background: linear-gradient(160deg,#1b1f2b 0%,#0f1117 100%); background-size: cover; background-position: center; position: relative; }
-.recruit-no { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.62); color: var(--gold); font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 20px; z-index: 2; }
-.recruit-body { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
-.recruit-taskid { font-size: 12px; color: var(--gold); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recruit-title { font-size: 15px; font-weight: 600; color: var(--txt); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 36px; }
-.recruit-spu-sub { font-size: 12px; color: var(--sub); }
+.recruit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.recruit-card { position: relative; background: linear-gradient(165deg,#4a2f28 0%,#3a241e 100%); border: 1px solid #5a3a30; border-radius: 10px; overflow: hidden; transition: transform .2s, box-shadow .2s, border-color .2s; display: flex; flex-direction: column; box-shadow: 0 3px 12px rgba(0,0,0,.35); }
+.recruit-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+.recruit-img { position: relative; width: 100%; aspect-ratio: 1 / 1; background: linear-gradient(160deg,#2a1c17 0%,#1a100c 100%); background-size: cover; background-position: center; }
+.recruit-no { position: absolute; top: 10px; left: 10px; width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #ffe27a 0%, #f4b400 70%); color: #3a241e; font-weight: 800; font-size: 17px; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 8px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.5); z-index: 2; }
+.recruit-body { padding: 11px 12px; display: flex; flex-direction: column; gap: 7px; }
+.recruit-taskid { font-size: 13px; color: #ffd680; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recruit-spu-sub { font-size: 12px; color: #b79b8a; }
 .recruit-form { margin-top: auto; display: flex; gap: 8px; }
 .recruit-spu-input { flex: 1; min-width: 0; background: var(--input-bg); border: 1px solid var(--line); border-radius: 8px; color: var(--txt); font-size: 13px; padding: 8px 10px; }
 .recruit-spu-input:focus { outline: none; border-color: var(--gold); }
@@ -858,7 +862,7 @@ select.input {
 .recruit-admin-row { display: flex; align-items: center; gap: 14px; padding: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .recruit-admin-row:last-child { border-bottom: none; }
 .recruit-admin-row:hover { background: rgba(216,169,79,.04); }
-.recruit-img { width: 74px; height: 92px; border-radius: 8px; background-size: cover; background-position: center; flex-shrink: 0; position: relative; background: linear-gradient(160deg,#1b1f2b,#0f1117); }
+.recruit-admin-row .recruit-img { width: 74px; height: 80px; border-radius: 8px; background-size: cover; background-position: center; flex-shrink: 0; position: relative; background: linear-gradient(160deg,#1b1f2b,#0f1117); }
 .recruit-admin-info { flex: 1; min-width: 220px; }
 .recruit-admin-title { font-size: 14px; font-weight: 600; color: var(--txt); }
 .recruit-admin-meta { font-size: 12px; color: var(--sub); margin-top: 4px; }

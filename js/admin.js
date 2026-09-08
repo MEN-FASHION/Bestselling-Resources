@@ -1583,18 +1583,18 @@
   }
 
   async function saveRecruitTask() {
-    const title = (document.querySelector("#recruit-title")?.value || "").trim();
     const taskId = (document.querySelector("#recruit-taskid")?.value || "").trim();
     const sortNo = parseInt((document.querySelector("#recruit-sort")?.value || "0"), 10) || 0;
+    if (!taskId) return sbToast("请填写任务ID", false);
     if (!taskId) return sbToast("请填写任务ID", false);
     try {
       let imagePath = "";
       if (recruitImgFile) imagePath = await SB.uploadRecruitImage(recruitImgFile);
       if (recruitEditingId) {
-        await SB.updateRecruitTask(recruitEditingId, { title, task_id: taskId, sort_no: sortNo });
+        await SB.updateRecruitTask(recruitEditingId, { task_id: taskId, sort_no: sortNo });
         sbToast("已更新招品任务");
       } else {
-        await SB.addRecruitTask({ title, task_id: taskId, sort_no: sortNo, image_path: imagePath });
+        await SB.addRecruitTask({ task_id: taskId, sort_no: sortNo, image_path: imagePath });
         sbToast("招品任务已发布");
       }
       resetRecruitForm();
@@ -1605,7 +1605,7 @@
   function resetRecruitForm() {
     recruitImgFile = null;
     recruitEditingId = null;
-    ["#recruit-title", "#recruit-taskid", "#recruit-sort"].forEach(sel => { const el = document.querySelector(sel); if (el) el.value = ""; });
+    ["#recruit-taskid", "#recruit-sort"].forEach(sel => { const el = document.querySelector(sel); if (el) el.value = ""; });
     const imgInput = document.querySelector("#recruit-img-input"); if (imgInput) imgInput.value = "";
     const imgPick = document.querySelector("#recruit-img-pick"); if (imgPick) { imgPick.classList.add("hidden"); imgPick.textContent = ""; }
     const upBtn = document.querySelector("#recruit-save"); if (upBtn) upBtn.disabled = true;
@@ -1656,7 +1656,7 @@
       } else {
         img.innerHTML = '<span class="tcov-ic">图</span>';
       }
-      row.querySelector(".recruit-admin-title").textContent = (t.title || "未命名") + "　任务ID：" + t.task_id;
+      row.querySelector(".recruit-admin-title").textContent = "任务ID：" + t.task_id + "　·　序号 #" + t.sort_no;
       row.querySelector(".recruit-admin-meta").textContent = "序号 #" + t.sort_no + " · 已提交 " + subs.length + " 人 / " + spuList.length + " 个SPU";
       const subEl = row.querySelector(".recruit-admin-sub");
       if (spuList.length) { subEl.textContent = "已提交SPU：" + spuList.join("，"); subEl.classList.remove("hidden2"); }
@@ -1680,7 +1680,6 @@
 
   function editRecruitTask(t) {
     recruitEditingId = t.id;
-    document.querySelector("#recruit-title").value = t.title || "";
     document.querySelector("#recruit-taskid").value = t.task_id || "";
     document.querySelector("#recruit-sort").value = t.sort_no || 0;
     recruitImgFile = null;
