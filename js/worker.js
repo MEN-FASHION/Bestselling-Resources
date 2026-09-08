@@ -307,8 +307,9 @@ async function isPublicAccess(env) {
   // 6.2 GET /recruit/img?path=recruits/xxx  受控招品图片：登录可见，内联展示，防下载
   if (method === "GET" && path === "recruit/img") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
-    const p = url.searchParams.get("path") || "";
-    if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
+    const p = (url.searchParams.get("path") || "").trim();
+    // 兼容历史/不同前缀的图片路径：只要不包含目录穿越且非空即放行，避免误拦 400
+    if (!p || p.includes("..") || p.startsWith("/")) return json({ error: "参数错误" }, 400, CORS);
     const object = await env.IMAGES.get(p);
     if (!object) return json({ error: "文件不存在" }, 404, CORS);
     const headers = new Headers(CORS);
