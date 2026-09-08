@@ -440,16 +440,15 @@ const SB = (() => {
     },
     // 读取招品任务清单（登录可见）
     async listRecruitTasks() {
-      const { data, error } = await client.from("recruit_tasks").select("*").order("sort_no", { ascending: true }).order("created_at", { ascending: true });
+      const { data, error } = await client.from("recruit_tasks").select("*").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取招品任务失败");
       return data || [];
     },
-    // 后台：新增招品任务
-    async addRecruitTask({ title, task_id, sort_no, image_path }) {
+    // 后台：新增招品任务（序号由系统按创建顺序自动生成，无需传入）
+    async addRecruitTask({ title, task_id, image_path }) {
       const s = await client.auth.getSession();
       const { error } = await client.from("recruit_tasks").insert({
         title: title || "", task_id: String(task_id || "").trim(),
-        sort_no: Number.isFinite(Number(sort_no)) ? Number(sort_no) : 0,
         image_path: image_path || "",
         uploaded_by: s?.data?.session?.user?.id || null,
       });

@@ -1547,6 +1547,7 @@
   let recruitAllSubs = [];
   let recruitImgFile = null;
   let recruitEditingId = null;
+  let recruitOldImgPath = null;
 
   function bindRecruit() {
     const upBtn = document.querySelector("#recruit-save");
@@ -1584,17 +1585,18 @@
 
   async function saveRecruitTask() {
     const taskId = (document.querySelector("#recruit-taskid")?.value || "").trim();
-    const sortNo = parseInt((document.querySelector("#recruit-sort")?.value || "0"), 10) || 0;
-    if (!taskId) return sbToast("请填写任务ID", false);
     if (!taskId) return sbToast("请填写任务ID", false);
     try {
-      let imagePath = "";
-      if (recruitImgFile) imagePath = await SB.uploadRecruitImage(recruitImgFile);
+      let imagePath = recruitEditingId ? (recruitOldImgPath || "") : "";
+      if (recruitImgFile) {
+        imagePath = await SB.uploadRecruitImage(recruitImgFile);
+        if (recruitOldImgPath && recruitOldImgPath !== imagePath) await SB.deleteRecruitImage(recruitOldImgPath).catch(() => {});
+      }
       if (recruitEditingId) {
-        await SB.updateRecruitTask(recruitEditingId, { task_id: taskId, sort_no: sortNo });
+        await SB.updateRecruitTask(recruitEditingId, { task_id: taskId, image_path: imagePath });
         sbToast("已更新招品任务");
       } else {
-        await SB.addRecruitTask({ task_id: taskId, sort_no: sortNo, image_path: imagePath });
+        await SB.addRecruitTask({ task_id: taskId, image_path: imagePath });
         sbToast("招品任务已发布");
       }
       resetRecruitForm();
@@ -1605,7 +1607,8 @@
   function resetRecruitForm() {
     recruitImgFile = null;
     recruitEditingId = null;
-    ["#recruit-taskid", "#recruit-sort"].forEach(sel => { const el = document.querySelector(sel); if (el) el.value = ""; });
+    recruitOldImgPath = null;
+    ["#recruit-taskid"].forEach(sel => { const el = document.querySelector(sel); if (el) el.value = ""; });
     const imgInput = document.querySelector("#recruit-img-input"); if (imgInput) imgInput.value = "";
     const imgPick = document.querySelector("#recruit-img-pick"); if (imgPick) { imgPick.classList.add("hidden"); imgPick.textContent = ""; }
     const upBtn = document.querySelector("#recruit-save"); if (upBtn) upBtn.disabled = true;
@@ -1632,10 +1635,11 @@
       box.innerHTML = '<p class="hint">暂无招品任务，先在上方上传一张招品图片。</p>';
       return;
     }
-    recruitTasks.forEach(t => {
+    recruitTasks.forEach((t, idx) => {
       const subs = recruitSubsFor(t.id);
       const spuList = [];
       subs.forEach(s => { (s.spus || []).forEach(sp => { if (sp && spuList.indexOf(sp) < 0) spuList.push(sp); }); });
+      const seq = idx + 1;
       const row = document.createElement("div");
       row.className = "recruit-admin-row";
       row.innerHTML =
@@ -1652,12 +1656,12 @@
         '</div>';
       const img = row.querySelector(".recruit-img");
       if (t.image_path) {
-        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => {});
+        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => { if (!img.dataset.loaded) img.innerHTML = '<span class="tcov-ic">图</span>'; });
       } else {
         img.innerHTML = '<span class="tcov-ic">图</span>';
       }
-      row.querySelector(".recruit-admin-title").textContent = "任务ID：" + t.task_id + "　·　序号 #" + t.sort_no;
-      row.querySelector(".recruit-admin-meta").textContent = "序号 #" + t.sort_no + " · 已提交 " + subs.length + " 人 / " + spuList.length + " 个SPU";
+      row.querySelector(".recruit-admin-title").textContent = "任务ID：" + t.task_id + "　·　序号 #" + seq;
+      row.querySelector(".recruit-admin-meta").textContent = "序号 #" + seq + " · 已提交 " + subs.length + " 人 / " + spuList.length + " 个SPU";
       const subEl = row.querySelector(".recruit-admin-sub");
       if (spuList.length) { subEl.textContent = "已提交SPU：" + spuList.join("，"); subEl.classList.remove("hidden2"); }
       const tip = spuList.length ? ("该任务已提交货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
@@ -1680,8 +1684,8 @@
 
   function editRecruitTask(t) {
     recruitEditingId = t.id;
+    recruitOldImgPath = t.image_path || null;
     document.querySelector("#recruit-taskid").value = t.task_id || "";
-    document.querySelector("#recruit-sort").value = t.sort_no || 0;
     recruitImgFile = null;
     const imgInput = document.querySelector("#recruit-img-input"); if (imgInput) imgInput.value = "";
     document.querySelector("#recruit-save").disabled = false;
@@ -1702,10 +1706,11 @@
     if (!recruitTasks.length) return sbToast("暂无招品任务可导出", false);
     if (typeof XLSX === "undefined") return sbToast("导出组件未加载，请联网后重试", false);
     const rows = [];
-    recruitTasks.forEach(t => {
+    recruitTasks.forEach((t, ti) => {
+      const seq = ti + 1;
       const subs = recruitSubsFor(t.id);
       subs.forEach(s => {
-        rows.push({ 任务ID: t.task_id, 前台序号: t.sort_no, 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(",") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(",") });
       });
     });
     if (!rows.length) return sbToast("暂无商家提交数据可导出", false);

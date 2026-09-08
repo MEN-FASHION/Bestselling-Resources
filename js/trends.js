@@ -12,6 +12,7 @@
   let pdfDoc = null, pdfPage = 1, pdfScale = 1.0, pdfRendering = false;
   let recruitTasks = [];   // 招品任务清单
   let recruitSubs = [];    // 全部提交（前台悬浮显示用）
+  let recruitCurUid = "";  // 当前登录商家 ID（前台只看自己的提交）
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -407,6 +408,8 @@
 
   async function loadRecruitView() {
     try {
+      recruitCurUid = "";
+      try { const sess = await SB.getSession(); recruitCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
       recruitTasks = await SB.listRecruitTasks();
       recruitSubs = await SB.listAllRecruitSubmissions().catch(() => []);
       renderRecruitCards();
@@ -425,37 +428,52 @@
       box.innerHTML = '<p class="empty-tip">暂无招品任务。</p>';
       return;
     }
-    recruitTasks.forEach(t => {
-      const subs = recruitSubsFor(t.id);
-      const spuList = [];
-      subs.forEach(s => { (s.spus || []).forEach(sp => { if (sp && spuList.indexOf(sp) < 0) spuList.push(sp); }); });
+    recruitTasks.forEach((t, idx) => {
+      const mySub = recruitSubsFor(t.id).find(s => s.user_id === recruitCurUid);
+      const mySpus = (mySub && mySub.spus) ? mySub.spus.filter(Boolean) : [];
+      const seq = idx + 1;
       const card = document.createElement("div");
       card.className = "recruit-card";
       card.innerHTML =
-        '<div class="recruit-img"><span class="recruit-no"></span></div>' +
+        '<div class="recruit-img"><span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') + '</div>' +
         '<div class="recruit-body">' +
           '<div class="recruit-spu-sub"></div>' +
-          '<div class="recruit-form">' +
+          '<div class="recruit-form hidden">' +
             '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
-            '<button type="button" class="btn-primary rec-save">保存SPU</button>' +
+            '<button type="button" class="btn-primary rec-save">保存</button>' +
+          '</div>' +
+          '<div class="recruit-ops">' +
+            '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
+            '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
           '</div>' +
         '</div>';
       const img = card.querySelector(".recruit-img");
-      card.querySelector(".recruit-no").textContent = "#" + (t.sort_no == null ? "" : t.sort_no);
+      card.querySelector(".recruit-no").textContent = seq;
       if (t.image_path) {
-        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => { img.innerHTML = '<span class="rtip">图</span>'; });
+        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => { if (!img.dataset.loaded) img.innerHTML = '<span class="rtip">图</span>'; });
       } else {
         img.innerHTML = '<span class="rtip">图</span>';
       }
       const subEl = card.querySelector(".recruit-spu-sub");
-      if (spuList.length) { subEl.textContent = "已提交 " + spuList.length + " 个SPU"; } else { subEl.textContent = "暂无商家提交"; }
-      const tip = spuList.length ? ("该任务已提交的货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
+      if (mySpus.length) { subEl.textContent = "我已上传 " + mySpus.length + " 个SPU"; } else { subEl.textContent = "尚未上传货品SPU"; }
+      const tip = mySpus.length ? ("我上传的货品SPU：\n" + mySpus.join("\n")) : "尚未上传货品SPU";
       img.title = tip;
-      card.querySelector(".rec-save").addEventListener("click", () => saveMySpu(t, card));
+      const form = card.querySelector(".recruit-form");
+      const ops = card.querySelector(".recruit-ops");
+      const inp = card.querySelector(".recruit-spu-input");
+      const openForm = (prefill) => {
+        inp.value = mySpus.length && prefill ? mySpus.join(",") : "";
+        ops.classList.add("hidden");
+        form.classList.remove("hidden");
+        inp.focus();
+      };
+      card.querySelector(".rec-upload").addEventListener("click", () => openForm(false));
+      card.querySelector(".rec-edit").addEventListener("click", () => openForm(true));
+      card.querySelector(".rec-save").addEventListener("click", () => saveMySpu(t, card, ops, form));
       box.appendChild(card);
     });
   }
-  async function saveMySpu(t, card) {
+  async function saveMySpu(t, card, ops, form) {
     const inp = card.querySelector(".recruit-spu-input");
     const raw = inp ? inp.value.trim() : "";
     if (!raw) return toast("请填写货品SPU", false);
@@ -464,7 +482,6 @@
     try {
       await SB.upsertRecruitSubmission(t.id, spus);
       toast("已保存 " + spus.length + " 个SPU");
-      inp.value = "";
       loadRecruitView();
     } catch (e) {
       toast("保存失败：" + (e.message || ""), false);

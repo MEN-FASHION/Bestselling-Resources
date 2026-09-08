@@ -839,8 +839,11 @@ select.input {
 .recruit-card { position: relative; background: linear-gradient(165deg,#4a2f28 0%,#3a241e 100%); border: 1px solid #5a3a30; border-radius: 10px; overflow: hidden; transition: transform .2s, box-shadow .2s, border-color .2s; display: flex; flex-direction: column; box-shadow: 0 3px 12px rgba(0,0,0,.35); }
 .recruit-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 8px 22px rgba(0,0,0,.45); }
 .recruit-img { position: relative; width: 100%; aspect-ratio: 1 / 1; background: linear-gradient(160deg,#2a1c17 0%,#1a100c 100%); background-size: cover; background-position: center; }
-.recruit-no { position: absolute; top: 10px; left: 10px; width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #ffe27a 0%, #f4b400 70%); color: #3a241e; font-weight: 800; font-size: 17px; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 8px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.5); z-index: 2; }
+.recruit-no { position: absolute; top: 7px; left: 7px; width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #ffe27a 0%, #f4b400 70%); color: #3a241e; font-weight: 800; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.5); z-index: 2; }
 .recruit-body { padding: 11px 12px; display: flex; flex-direction: column; gap: 7px; }
+.recruit-done { position: absolute; right: 7px; top: 7px; z-index: 2; background: rgba(34,150,80,.92); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; box-shadow: 0 2px 5px rgba(0,0,0,.3); }
+.recruit-ops { margin-top: auto; display: flex; gap: 8px; }
+.recruit-ops .btn-ghost { flex: 1; justify-content: center; padding: 6px 8px; font-size: 12px; border-radius: 7px; }
 .recruit-taskid { font-size: 13px; color: #ffd680; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .recruit-spu-sub { font-size: 12px; color: #b79b8a; }
 .recruit-form { margin-top: auto; display: flex; gap: 8px; }
