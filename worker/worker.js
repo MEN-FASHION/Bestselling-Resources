@@ -207,7 +207,7 @@ async function isPublicAccess(env) {
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     headers.set("Pragma", "no-cache");
-    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
     return new Response(object.body, { headers });
   }
 
@@ -225,7 +225,7 @@ async function isPublicAccess(env) {
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     headers.set("Pragma", "no-cache");
-    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
     return new Response(object.body, { headers });
   }
 
@@ -278,7 +278,7 @@ async function isPublicAccess(env) {
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     headers.set("Pragma", "no-cache");
-    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
     return new Response(object.body, { headers });
   }
 
@@ -318,7 +318,7 @@ async function isPublicAccess(env) {
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     headers.set("Pragma", "no-cache");
-    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
     return new Response(object.body, { headers });
   }
 

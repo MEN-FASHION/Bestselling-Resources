@@ -435,7 +435,11 @@
       const card = document.createElement("div");
       card.className = "recruit-card";
       card.innerHTML =
-        '<div class="recruit-img"><span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') + '</div>' +
+        '<div class="recruit-img">' +
+          '<img class="recruit-thumb" alt="">' +
+          '<span class="recruit-ph">图片加载中</span>' +
+          '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
+        '</div>' +
         '<div class="recruit-body">' +
           '<div class="recruit-spu-sub"></div>' +
           '<div class="recruit-form hidden">' +
@@ -448,11 +452,17 @@
           '</div>' +
         '</div>';
       const img = card.querySelector(".recruit-img");
+      const im = card.querySelector(".recruit-thumb");
+      const ph = card.querySelector(".recruit-ph");
       card.querySelector(".recruit-no").textContent = seq;
       if (t.image_path) {
-        SB.recruitImageUrl(t.image_path).then(u => { if (!img.dataset.loaded) { img.style.backgroundImage = "url('" + u + "')"; img.dataset.loaded = "1"; } }).catch(() => { if (!img.dataset.loaded) img.innerHTML = '<span class="rtip">图</span>'; });
+        SB.recruitImageUrl(t.image_path).then(u => {
+          im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
+          im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
+          im.src = u;
+        }).catch(() => { ph.textContent = "图片暂不可见"; });
       } else {
-        img.innerHTML = '<span class="rtip">图</span>';
+        ph.textContent = "暂无图片";
       }
       const subEl = card.querySelector(".recruit-spu-sub");
       if (mySpus.length) { subEl.textContent = "我已上传 " + mySpus.length + " 个SPU"; } else { subEl.textContent = "尚未上传货品SPU"; }
