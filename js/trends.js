@@ -410,7 +410,7 @@
     try {
       recruitCurUid = "";
       try { const sess = await SB.getSession(); recruitCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
-      recruitTasks = await SB.listRecruitTasks();
+      recruitTasks = await SB.listRecruitTasks({ status: "published" });  // 前台只显示已发布
       recruitSubs = await SB.listAllRecruitSubmissions().catch(() => []);
       renderRecruitCards();
     } catch (e) {

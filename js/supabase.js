@@ -439,25 +439,45 @@ const SB = (() => {
       if (!res.ok) throw new Error(j.error || "删除失败");
     },
     // 读取招品任务清单（登录可见）
-    async listRecruitTasks() {
-      const { data, error } = await client.from("recruit_tasks").select("*").order("created_at", { ascending: true });
+    async listRecruitTasks(filter) {
+      let q = client.from("recruit_tasks").select("*").order("created_at", { ascending: true });
+      if (filter && filter.status) q = q.eq("status", filter.status);
+      const { data, error } = await q;
       if (error) throw new Error(error.message || "读取招品任务失败");
       return data || [];
     },
     // 后台：新增招品任务（序号由系统按创建顺序自动生成，无需传入）
-    async addRecruitTask({ title, task_id, image_path }) {
+    async addRecruitTask({ title, task_id, image_path, status, tags }) {
       const s = await client.auth.getSession();
       const { error } = await client.from("recruit_tasks").insert({
         title: title || "", task_id: String(task_id || "").trim(),
-        image_path: image_path || "",
-        uploaded_by: s?.data?.session?.user?.id || null,
+        image_path: image_path || "", status: status || "draft",
+        tags: tags || [], uploaded_by: s?.data?.session?.user?.id || null,
       });
       if (error) throw new Error(error.message || "保存招品任务失败");
+    },
+    // 后台：批量新增招品任务（上传多张图后一次生成多条卡片）
+    async addRecruitTasks(list) {
+      if (!list || !list.length) return;
+      const s = await client.auth.getSession();
+      const rows = list.map(x => ({
+        title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
+        image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
+        tags: (x && x.tags) || [], uploaded_by: s?.data?.session?.user?.id || null,
+      }));
+      const { error } = await client.from("recruit_tasks").insert(rows);
+      if (error) throw new Error(error.message || "批量保存招品任务失败");
     },
     // 后台：更新招品任务
     async updateRecruitTask(id, patch) {
       const { error } = await client.from("recruit_tasks").update(Object.assign({}, patch)).eq("id", id);
       if (error) throw new Error(error.message || "更新招品任务失败");
+    },
+    // 后台：批量更新（用于批量发布/批量绑定）
+    async bulkUpdateRecruitTasks(ids, patch) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("recruit_tasks").update(Object.assign({}, patch)).in("id", ids);
+      if (error) throw new Error(error.message || "批量更新招品任务失败");
     },
     // 后台：删除招品任务（连带提交记录 cascade）
     async removeRecruitTask(id) {

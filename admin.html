@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 后台管理</title>
-<link rel="stylesheet" href="css/style.css?v=20260908CORP">
+<link rel="stylesheet" href="css/style.css?v=20260909RC5">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 </head>
 <body class="admin">
@@ -299,27 +299,44 @@
 
       <div class="panel-card" id="recruit-card">
         <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span></h2>
+
+        <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
         <div class="recruit-upload">
-          <div class="rg-row"><label class="field">任务ID（必填，商家需据此填写）</label><input id="recruit-taskid" class="input" placeholder="例如：RC2026001"></div>
-          
-          <div class="rg-row"><label class="field">招品图片</label>
+          <div class="rg-row"><label class="field">批量上传招品图片（可多选，每张图片生成一个独立任务卡片）</label>
             <div id="recruit-img-dropzone" class="dropzone">
-              <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽招品图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG</p></div>
-              <input type="file" id="recruit-img-input" accept="image/*" hidden>
+              <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽多张招品图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG，可多选批量上传</p></div>
+              <input type="file" id="recruit-img-input" accept="image/*" multiple hidden>
             </div>
-            <div id="recruit-img-pick" class="hint hidden" style="margin-top:8px;"></div>
+            <div id="recruit-upload-preview" class="recruit-upload-pre recruit-pre hidden"></div>
           </div>
-          <button id="recruit-save" class="btn-primary" disabled>保存招品任务</button>
+          <div class="rg-row"><label class="field">任务ID（选填；留空则每张图创建「未发布」草稿卡片，之后再单独/批量填写）</label>
+            <input id="recruit-taskid" class="input" placeholder="例如：RC2026001，多个可用英文逗号分隔，按顺序对应图片"></div>
+          <div class="rg-btnrow">
+            <button id="recruit-save" class="btn-primary" type="button">上传生成任务卡片</button>
+            <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
+          </div>
         </div>
         <hr class="tag-sub-hr">
-        <div class="recruit-head">
-          <h3 class="tbs-title">招品任务列表</h3>
-          <span id="recruit-count" class="hint-inline">加载中…</span>
-          <button id="recruit-export" class="btn-primary" type="button">导出 Excel</button>
+
+        <!-- 筛选 + 批量操作工具条 -->
+        <div class="recruit-toolbar">
+          <div class="recruit-filters" id="recruit-filters">
+            <button class="recruit-filter active" data-st="">全部</button>
+            <button class="recruit-filter" data-st="published">已发布</button>
+            <button class="recruit-filter" data-st="submitted">已上传</button>
+            <button class="recruit-filter" data-st="bound">已绑定</button>
+          </div>
+          <div class="recruit-batchops">
+            <label class="recruit-count-label"><input type="checkbox" id="recruit-checkall"> 全选</label>
+            <span id="recruit-count" class="hint-inline">加载中…</span>
+            <button id="recruit-batch-pub" class="btn-ghost small" type="button">批量发布</button>
+            <button id="recruit-batch-bound" class="btn-ghost small" type="button">批量标记已绑定</button>
+            <button id="recruit-batch-unbound" class="btn-ghost small" type="button">取消已绑定</button>
+            <button id="recruit-export" class="btn-ghost small" type="button">导出 Excel</button>
+          </div>
         </div>
-        <p class="hint">鼠标悬浮任务ID或图片可查看已上传的货品SPU；点「复制SPU」一键复制该任务下所有SPU；右上角「导出Excel」汇总所有任务。</p>
-        <div id="recruit-list" class="recruit-admin-list"></div>
-        <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
+        <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选，并支持为该任务打标签；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
+        <div id="recruit-list" class="recruit-grid-admin recruit-list"></div>
       </div>
 
       <div class="panel-card" id="dash-card">
@@ -345,6 +362,16 @@
           <div class="dash-card">
             <h3 class="dash-chart-title">元素标签分布</h3>
             <div id="dash-element" class="hbar-list"></div>
+          </div>
+        </div>
+        <div class="dash-recruit-section">
+          <h3 class="dash-chart-title">招品回品专区统计 <span class="hint-inline">（招品任务与商家SPU提交情况）</span></h3>
+          <div id="dash-recruit-overview" class="dash-overview"></div>
+          <div class="dash-charts">
+            <div class="dash-card">
+              <h3 class="dash-chart-title">招品任务状态分布</h3>
+              <div id="dash-recruit-status" class="hbar-list"></div>
+            </div>
           </div>
         </div>
         <div class="dash-donut-wrap">
@@ -399,8 +426,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260908CORP"></script>
-  <script src="js/supabase.js?v=20260908CORP"></script>
-  <script src="js/admin.js?v=20260908CORP"></script>
+  <script src="js/config.js?v=20260909RC5"></script>
+  <script src="js/supabase.js?v=20260909RC5"></script>
+  <script src="js/admin.js?v=20260909RC5"></script>
 </body>
 </html>

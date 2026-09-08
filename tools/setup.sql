@@ -442,9 +442,18 @@ create table if not exists public.recruit_tasks (
   task_id text not null,            -- 管理员定义的任务ID（商家据此关联，需唯一）
   sort_no int default 0,            -- 前台序号映射（数字小越靠前）
   image_path text default '',       -- 招品图片 R2 路径，如 recruits/xxx.jpg
+  status text not null default 'draft',  -- 状态：draft=未发布/草稿，published=已发布
+  bound boolean not null default false,  -- 已绑定标记：管理员处理后勾选
+  bound_at timestamptz,             -- 绑定时间
+  tags jsonb not null default '[]',      -- 管理员为该任务打的标签（字符数组）
   uploaded_by uuid references auth.users (id) on delete set null
 );
 alter table public.recruit_tasks enable row level security;
+-- 兼容旧表：补列（幂等）
+alter table public.recruit_tasks add column if not exists status text not null default 'draft';
+alter table public.recruit_tasks add column if not exists bound boolean not null default false;
+alter table public.recruit_tasks add column if not exists bound_at timestamptz;
+alter table public.recruit_tasks add column if not exists tags jsonb not null default '[]';
 
 -- 登录用户可读招品任务清单（前台商家浏览；后台管理员也经此读取）
 drop policy if exists "authenticated read recruit_tasks" on public.recruit_tasks;
