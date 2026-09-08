@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 前台</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20260908NOT">
 </head>
 <body class="front">
   <!-- 提示条 -->
@@ -42,6 +42,7 @@
         <nav class="top-tabs">
           <a href="index.html" class="tab-link active">视觉专区</a>
           <a href="trends.html" class="tab-link">趋势专区</a>
+          <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
         </nav>
         <div class="topbar-actions">
           <button id="login-btn" class="btn-ghost hidden">登录</button>
@@ -75,6 +76,23 @@
     </div>
   </section>
 
+  <!-- ================= 公告弹窗：未读 + 历史记录 ================= -->
+  <div id="notice-modal" class="modal hidden">
+    <div class="notice-dialog">
+      <div class="notice-dialog-head">
+        <div class="notice-tabs">
+          <button type="button" class="notice-tab-btn active" data-ntab="unread">未读公告</button>
+          <button type="button" class="notice-tab-btn" data-ntab="history">公告记录</button>
+        </div>
+        <div class="notice-head-actions">
+          <span id="notice-unread-count" class="hint-inline"></span>
+          <button type="button" class="notice-close" id="notice-close">×</button>
+        </div>
+      </div>
+      <div id="notice-modal-body" class="notice-modal-body"></div>
+    </div>
+  </div>
+
   <!-- ================= 灯箱 ================= -->
   <div id="lightbox" class="lightbox hidden">
     <button class="lb-close" id="lb-close">×</button>
@@ -85,8 +103,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260907FOLD"></script>
-  <script src="js/supabase.js?v=20260907FOLD"></script>
-  <script src="js/frontend.js?v=20260907FOLD"></script>
+  <script src="js/config.js?v=20260908NOT"></script>
+  <script src="js/supabase.js?v=20260908NOT"></script>
+  <script src="js/frontend.js?v=20260908NOT"></script>
 </body>
 </html>

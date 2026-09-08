@@ -323,5 +323,88 @@ const SB = (() => {
         .from("site_settings").update({ public_access: !!v, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw new Error(error.message || "保存失败");
     },
+
+    // ============ 公告 ============
+    // 后台：读取全部公告（含草稿/下架）
+    async listAnnouncements() {
+      const { data, error } = await client.from("announcements").select("*").order("created_at", { ascending: false });
+      if (error) throw new Error(error.message || "读取公告失败");
+      return data || [];
+    },
+    // 后台：新增公告
+    async addAnnouncement({ title, content, published, images }) {
+      const { error } = await client.from("announcements").insert({
+        title, content: content || "", published: published !== false,
+        images: images || [],
+      });
+      if (error) throw new Error(error.message || "保存公告失败");
+    },
+    // 后台：更新公告
+    async updateAnnouncement(id, patch) {
+      const { error } = await client.from("announcements").update(Object.assign({ updated_at: new Date().toISOString() }, patch)).eq("id", id);
+      if (error) throw new Error(error.message || "更新公告失败");
+    },
+    // 后台：删除公告
+    async removeAnnouncement(id) {
+      const { error } = await client.from("announcements").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除公告失败");
+    },
+    // 前台：读取近一个月内【已发布】的公告
+    async listRecentPublishedAnnouncements() {
+      const from = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      const { data, error } = await client
+        .from("announcements").select("*").eq("published", true)
+        .gte("created_at", from).order("created_at", { ascending: false });
+      if (error) throw new Error(error.message || "读取公告失败");
+      return data || [];
+    },
+    // 前台：读取全部【已发布】公告（历史记录用，含超一个月）
+    async listAllPublishedAnnouncements() {
+      const { data, error } = await client
+        .from("announcements").select("*").eq("published", true)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message || "读取公告失败");
+      return data || [];
+    },
+    // 前台：读取当前登录用户已读的公告 id 列表
+    async listMyReadAnnouncementIds() {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return [];
+      const { data, error } = await client.from("announcement_reads").select("announcement_id").eq("user_id", uid);
+      if (error) return [];
+      return (data || []).map(d => d.announcement_id);
+    },
+    // 前台：标记某公告为已读
+    async markAnnouncementRead(id) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return;
+      await client.from("announcement_reads").upsert(
+        { announcement_id: id, user_id: uid, read_at: new Date().toISOString() },
+        { onConflict: "announcement_id,user_id" }
+      );
+    },
+    // 后台：上传公告图片（经 Worker 存 R2，返回 notices/ 相对路径）
+    async uploadNoticeImage(file) {
+      const token = await currentToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/notice/uploadimg", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "图片上传失败");
+      return j.path;
+    },
+    // 前台：公告图片受控 URL（需登录、经 Worker 鉴权、防下载）
+    async noticeImageUrl(path) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/notice/img?path=" + encodeURIComponent(path);
+      return base + "/notice/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
+    },
   };
 })();

@@ -63,7 +63,146 @@
     setupAntiDownload();
     // 立即判断当前是否已登录
     SB.getSession().then(s => { window.__loggedIn = !!s; refreshUI(); }).catch(() => refreshUI());
+
+    // ===== 公告弹窗事件 =====
+    $("#notice-tab").addEventListener("click", function (e) {
+      e.preventDefault();
+      noticeTabActive = noticeUnreadList.length === 0 ? "history" : "unread";
+      openNoticeModal();
+    });
+    $("#notice-close").addEventListener("click", closeNoticeModal);
+    $("#notice-modal").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "notice-modal") closeNoticeModal();
+    });
+    document.querySelectorAll(".notice-tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        noticeTabActive = btn.getAttribute("data-ntab") || "unread";
+        renderNoticeBody();
+      });
+    });
+    onAuthRefreshNotices();
   });
+
+  // ================= 公告：近一个月未读 + 历史记录（弹窗） =================
+  let noticeAutoShown = false;
+  let noticeUnreadList = [];
+  let noticeHistoryList = [];
+  let noticeTabActive = "unread";
+
+  async function onAuthRefreshNotices() {
+    loadNotices();
+    SB.onAuth(() => loadNotices());
+  }
+  async function loadNotices() {
+    try {
+      const all = await SB.listRecentPublishedAnnouncements().catch(() => []);
+      const readIds = await SB.listMyReadAnnouncementIds().catch(() => []);
+      const readSet = new Set(readIds || []);
+      noticeUnreadList = (all || []).filter(a => !readSet.has(String(a.id)));
+      updateNoticeBadge();
+      if (!noticeAutoShown && window.__loggedIn && noticeUnreadList.length > 0) {
+        noticeAutoShown = true;
+        noticeTabActive = "unread";
+        openNoticeModal();
+      }
+    } catch (e) {}
+  }
+  function updateNoticeBadge() {
+    const badge = $("#notice-badge");
+    if (badge) {
+      const n = noticeUnreadList.length;
+      badge.textContent = String(n);
+      badge.classList.toggle("hidden", n === 0);
+    }
+  }
+  async function loadHistory() {
+    if (noticeHistoryList.length) return;
+    try { noticeHistoryList = await SB.listAllPublishedAnnouncements().catch(() => []); } catch (e) { noticeHistoryList = []; }
+  }
+  async function openNoticeModal() {
+    const modal = $("#notice-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    await renderNoticeBody();
+  }
+  function closeNoticeModal() {
+    const modal = $("#notice-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+  async function renderNoticeBody() {
+    const body = $("#notice-modal-body");
+    if (!body) return;
+    document.querySelectorAll(".notice-tab-btn").forEach(b => {
+      b.classList.toggle("active", b.getAttribute("data-ntab") === noticeTabActive);
+    });
+    if (noticeTabActive === "unread") {
+      if (!noticeUnreadList.length) { body.innerHTML = "<div class='notice-empty'>暂无未读公告</div>"; return; }
+      body.innerHTML = "";
+      noticeUnreadList.forEach(a => body.appendChild(buildNoticeCard(a, true)));
+      return;
+    }
+    await loadHistory();
+    if (!noticeHistoryList.length) { body.innerHTML = "<div class='notice-empty'>暂无历史公告</div>"; return; }
+    body.innerHTML = "";
+    noticeHistoryList.forEach(a => {
+      const isUnread = noticeUnreadList.some(u => u && String(u.id) === String(a.id));
+      body.appendChild(buildNoticeCard(a, isUnread));
+    });
+  }
+  function buildNoticeCard(a, isUnread) {
+    const card = document.createElement("div");
+    card.className = "notice-card" + (isUnread ? " unread" : "");
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "notice-card-head";
+    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>▾</span>";
+    head.querySelector(".notice-card-title").textContent = a.title || "公告";
+    head.querySelector(".notice-card-time").textContent = fmtTime(a.created_at);
+    const body = document.createElement("div");
+    body.className = "notice-card-body";
+    body.style.display = "none";
+    const imgs = a.images || [];
+    if (imgs.length) {
+      const fig = document.createElement("div");
+      fig.className = "notice-card-imgs";
+      imgs.forEach(p => {
+        const im = document.createElement("img");
+        im.alt = "";
+        im.src = SB.noticeImageUrl(p);
+        im.loading = "lazy";
+        fig.appendChild(im);
+      });
+      body.appendChild(fig);
+    }
+    const txt = document.createElement("div");
+    txt.className = "notice-card-text";
+    txt.textContent = a.content || "";
+    body.appendChild(txt);
+    head.onclick = async () => {
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "block";
+      head.classList.toggle("open", !open);
+      if (!open && isUnread) {
+        card.classList.remove("unread");
+        try {
+          await SB.markAnnouncementRead(a.id);
+          noticeUnreadList = noticeUnreadList.filter(u => !u || String(u.id) !== String(a.id));
+          updateNoticeBadge();
+        } catch (e) {}
+      }
+    };
+    card.appendChild(head);
+    card.appendChild(body);
+    return card;
+  }
+  function fmtTime(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      const p = n => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    } catch (e) { return ""; }
+  }
 
   function setupAntiDownload() {
     document.addEventListener("contextmenu", (e) => {

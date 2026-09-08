@@ -242,6 +242,46 @@ async function isPublicAccess(env) {
     return json({ ok: true }, 200, CORS);
   }
 
+  // ---------- 5. 公告专区（公告图片存 R2，受控代理，不暴露直链） ----------
+  // 5.1 POST /notice/uploadimg 上传公告图片（管理员）→ 返回 notices/ 路径
+  if (method === "POST" && path === "notice/uploadimg") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!file) return json({ error: "缺少图片" }, 400, CORS);
+    if (!/^image\//i.test(file.type || "") && !/\.(jpe?g|png|webp)$/i.test(file.name || "")) {
+      return json({ error: "仅支持图片" }, 400, CORS);
+    }
+    const cleanName = (file.name || "img").replace(/[^\w.\-]/g, "_");
+    const stamp = Date.now() + "_" + Math.floor(Math.random() * 1e4);
+    const key = "notices/" + stamp + "_" + cleanName;
+    await env.IMAGES.put(key, file.stream(), {
+      httpMetadata: { contentType: file.type || "image/jpeg" },
+    });
+    return json({ ok: true, path: key }, 200, CORS);
+  }
+
+  // 5.2 GET /notice/img?path=notices/xxx  受控公告图片：必须登录，内联展示，防下载
+  if (method === "GET" && path === "notice/img") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p.startsWith("notices/")) return json({ error: "参数错误" }, 400, CORS);
+    const object = await env.IMAGES.get(p);
+    if (!object) return json({ error: "文件不存在" }, 404, CORS);
+    const headers = new Headers(CORS);
+    headers.set("Content-Type", object.httpMetadata?.contentType || "image/jpeg");
+    headers.set("Content-Disposition", "inline");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    return new Response(object.body, { headers });
+  }
+
   return json({ error: "未知请求" }, 404, CORS);
 }
 

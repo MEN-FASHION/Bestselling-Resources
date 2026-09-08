@@ -23,7 +23,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -1294,5 +1294,198 @@
     } catch (e) {
       sbToast("删除失败：" + (e.message || ""), false);
     }
+  }
+
+  // ================= 公告管理：编辑/发布/下架/删除 + 图文 =================
+  let noticeImages = [];      // 已上传图片路径数组（R2 notices/）
+  let noticeEditingId = null;
+
+  function bindNotice() {
+    const titleEl = document.querySelector("#notice-title");
+    const contentEl = document.querySelector("#notice-content");
+    const pubEl = document.querySelector("#notice-published");
+    const saveBtn = document.querySelector("#notice-save");
+    const resetBtn = document.querySelector("#notice-reset");
+
+    if (titleEl) titleEl.addEventListener("input", () => { if (saveBtn) saveBtn.disabled = !titleEl.value.trim(); });
+
+    // 图片选择/上传
+    const pickBtn = document.querySelector("#notice-img-pick");
+    const imgInput = document.querySelector("#notice-img-input");
+    if (pickBtn && imgInput) {
+      pickBtn.addEventListener("click", () => imgInput.click());
+      imgInput.addEventListener("change", () => {
+        const files = Array.from(imgInput.files || []);
+        imgInput.value = "";
+        files.forEach(f => uploadNoticeImage(f));
+      });
+    }
+    renderNoticeThumbs();
+
+    if (saveBtn) saveBtn.addEventListener("click", () => doSaveNotice(titleEl, contentEl, pubEl));
+    if (resetBtn) resetBtn.addEventListener("click", () => resetNoticeForm(titleEl, contentEl, pubEl));
+
+    loadNoticeAdminList();
+  }
+
+  async function uploadNoticeImage(file) {
+    if (file.type && file.type.indexOf("image/") !== 0) return sbToast("仅支持图片文件", false);
+    sbToast("图片上传中…");
+    try {
+      const path = await SB.uploadNoticeImage(file);
+      noticeImages.push(path);
+      renderNoticeThumbs();
+      sbToast("图片已添加");
+    } catch (e) {
+      sbToast("图片上传失败：" + (e.message || ""), false);
+    }
+  }
+
+  function renderNoticeThumbs() {
+    const thumbs = document.querySelector("#notice-img-thumbs");
+    if (!thumbs) return;
+    thumbs.innerHTML = "";
+    noticeImages.forEach((p, idx) => {
+      const wrap = document.createElement("div");
+      wrap.className = "notice-thumb";
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = SB.noticeImageUrl(p);
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "notice-thumb-x";
+      x.textContent = "×";
+      x.title = "移除图片";
+      x.addEventListener("click", () => {
+        noticeImages.splice(idx, 1);
+        renderNoticeThumbs();
+      });
+      wrap.appendChild(img);
+      wrap.appendChild(x);
+      thumbs.appendChild(wrap);
+    });
+  }
+
+  function resetNoticeForm(titleEl, contentEl, pubEl, keepImages) {
+    if (titleEl) titleEl.value = "";
+    if (contentEl) contentEl.value = "";
+    if (pubEl) pubEl.checked = true;
+    if (!keepImages) noticeImages = [];
+    noticeEditingId = null;
+    renderNoticeThumbs();
+    if (titleEl) titleEl.dispatchEvent(new Event("input"));
+  }
+
+  async function doSaveNotice(titleEl, contentEl, pubEl) {
+    const title = (titleEl && titleEl.value || "").trim();
+    if (!title) return sbToast("请填写公告标题", false);
+    const content = (contentEl && contentEl.value || "").trim();
+    const published = !pubEl ? true : pubEl.checked;
+    try {
+      if (noticeEditingId) {
+        await SB.updateAnnouncement(noticeEditingId, { title, content, published, images: noticeImages });
+        sbToast("公告已更新");
+      } else {
+        await SB.addAnnouncement({ title, content, published, images: noticeImages });
+        sbToast("公告已发布");
+      }
+      resetNoticeForm(titleEl, contentEl, pubEl, false);
+      loadNoticeAdminList();
+    } catch (e) {
+      sbToast("保存失败：" + (e.message || ""), false);
+    }
+  }
+
+  async function loadNoticeAdminList() {
+    const box = document.querySelector("#notice-list-box");
+    if (!box) return;
+    let list = [];
+    try { list = await SB.listAnnouncements(); } catch (e) { list = []; }
+    box.innerHTML = "";
+    if (!list.length) {
+      box.innerHTML = '<p class="hint">暂无公告。填写上方表单并点击「发布/保存」。</p>';
+      return;
+    }
+    list.forEach(a => {
+      const row = document.createElement("div");
+      row.className = "notice-admin-row";
+      const info = document.createElement("div");
+      info.className = "notice-admin-info";
+      const t = document.createElement("div");
+      t.className = "notice-admin-title";
+      t.textContent = a.title || "（无标题）";
+      const m = document.createElement("div");
+      m.className = "notice-admin-meta";
+      m.textContent = fmtAdminDate(a.created_at) + " · " + (a.published ? "已发布" : "已下架") + (a.images && a.images.length ? " · " + a.images.length + " 图" : "");
+      info.appendChild(t);
+      info.appendChild(m);
+      const ops = document.createElement("div");
+      ops.className = "notice-admin-ops";
+      const bEdit = document.createElement("button");
+      bEdit.type = "button";
+      bEdit.className = "btn-ghost";
+      bEdit.textContent = "编辑";
+      bEdit.addEventListener("click", () => editNotice(a));
+      const bPub = document.createElement("button");
+      bPub.type = "button";
+      bPub.className = "btn-ghost";
+      bPub.textContent = a.published ? "下架" : "发布";
+      bPub.addEventListener("click", () => toggleNoticePublish(a));
+      const bDel = document.createElement("button");
+      bDel.type = "button";
+      bDel.className = "btn-danger";
+      bDel.textContent = "删除";
+      bDel.addEventListener("click", () => deleteNotice(a));
+      ops.appendChild(bEdit);
+      ops.appendChild(bPub);
+      ops.appendChild(bDel);
+      row.appendChild(info);
+      row.appendChild(ops);
+      box.appendChild(row);
+    });
+  }
+
+  function editNotice(a) {
+    const titleEl = document.querySelector("#notice-title");
+    const contentEl = document.querySelector("#notice-content");
+    const pubEl = document.querySelector("#notice-published");
+    if (titleEl) titleEl.value = a.title || "";
+    if (contentEl) contentEl.value = a.content || "";
+    if (pubEl) pubEl.checked = a.published !== false;
+    noticeImages = (a.images || []).slice();
+    noticeEditingId = a.id;
+    renderNoticeThumbs();
+    if (titleEl) titleEl.dispatchEvent(new Event("input"));
+    sbToast("已载入《" + (a.title || "") + "》到表单，修改后点「发布/保存」");
+  }
+
+  async function toggleNoticePublish(a) {
+    try {
+      await SB.updateAnnouncement(a.id, { published: a.published ? false : true });
+      sbToast(a.published ? "已下架" : "已发布");
+      loadNoticeAdminList();
+    } catch (e) {
+      sbToast("操作失败：" + (e.message || ""), false);
+    }
+  }
+
+  async function deleteNotice(a) {
+    if (!confirm("确认删除公告「" + (a.title || "") + "」？")) return;
+    try {
+      await SB.removeAnnouncement(a.id);
+      sbToast("已删除");
+      loadNoticeAdminList();
+    } catch (e) {
+      sbToast("删除失败：" + (e.message || ""), false);
+    }
+  }
+
+  function fmtAdminDate(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      const p = n => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    } catch (e) { return ""; }
   }
 })();

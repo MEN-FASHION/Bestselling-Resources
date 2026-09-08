@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>图片图鉴 · 后台管理</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20260908NOT">
 </head>
 <body class="admin">
   <div id="toast" class="toast"></div>
@@ -54,6 +54,7 @@
           <a class="nav-item" data-target="tag-card">④ 标签管理</a>
           <a class="nav-item" data-target="dash-card">⑤ 数据看板</a>
           <a class="nav-item" data-target="trend-card">⑥ 趋势专区</a>
+          <a class="nav-item" data-target="notice-card">⑦ 公告管理</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -244,6 +245,29 @@
       </div>
 
       <!-- 数据看板（各类标签统计图表） -->
+      <!-- 公告管理（编辑/发布/下架/删除公告，前台展示近一月未读） -->
+      <div class="panel-card" id="notice-card">
+        <h2>⑦ 公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h2>
+        <div class="notice-form-box">
+          <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
+          <textarea id="notice-content" class="input" rows="4" placeholder="公告内容（支持多行文字）" style="margin-top:8px;"></textarea>
+          <div class="notice-img-box" style="margin-top:8px;">
+            <button id="notice-img-pick" class="btn-ghost" type="button">+ 添加图片（可多张）</button>
+            <input id="notice-img-input" type="file" accept="image/*" multiple style="display:none;">
+            <span class="hint-inline">上传后展示于公告正文上方，前台受控查看不可下载。</span>
+            <div id="notice-img-thumbs" class="notice-img-thumbs"></div>
+          </div>
+          <div class="notice-form-actions">
+            <label class="chk"><input type="checkbox" id="notice-published" checked> 发布到前台</label>
+            <button id="notice-save" class="btn-primary">发布/保存</button>
+            <button id="notice-reset" class="btn-ghost" type="button">清空新建</button>
+          </div>
+        </div>
+        <div id="notice-list-box" class="notice-list-box">
+          <p class="hint">点击「编辑」可回填到上方表单修改；「发布/下架」切换状态；「删除」移除公告。</p>
+        </div>
+      </div>
+
       <div class="panel-card" id="dash-card">
         <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
@@ -319,8 +343,8 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260906FIX3"></script>
-  <script src="js/supabase.js?v=20260906FIX3"></script>
-  <script src="js/admin.js?v=20260906FIX3"></script>
+  <script src="js/config.js?v=20260908NOT"></script>
+  <script src="js/supabase.js?v=20260908NOT"></script>
+  <script src="js/admin.js?v=20260908NOT"></script>
 </body>
 </html>

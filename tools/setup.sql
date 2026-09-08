@@ -333,3 +333,99 @@ create policy "admin delete trends"
     exists (select 1 from public.profiles p
             where p.user_id = auth.uid() and p.role = 'admin')
   );
+
+-- ============================================================
+-- 公告功能：公告表 + 已读记录表
+-- 前台：展示最近一个月内发布且该用户未读的公告；点开即为已读
+-- 后台：⑦ 公告管理，可编辑/发布/下架/删除
+-- ============================================================
+create table if not exists public.announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text default '',
+  images text[] default '{}',       -- 公告配图：R2 notices/ 相对路径数组
+  published boolean not null default true,   -- 是否已发布到前台
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 兼容旧表：补 images 列（若已存在则忽略）
+alter table public.announcements add column if not exists images text[] default '{}';
+
+alter table public.announcements enable row level security;
+
+-- 登录用户可读取【已发布】的公告（前台）；后台管理需读全部，见 admin 策略
+drop policy if exists "authenticated read published announcements" on public.announcements;
+create policy "authenticated read published announcements"
+  on public.announcements for select
+  to authenticated
+  using (published = true);
+
+-- 仅管理员可读全部公告（含草稿/下架）
+drop policy if exists "admin read all announcements" on public.announcements;
+create policy "admin read all announcements"
+  on public.announcements for select
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+-- 仅管理员可新增公告
+drop policy if exists "admin insert announcements" on public.announcements;
+create policy "admin insert announcements"
+  on public.announcements for insert
+  to authenticated
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+-- 仅管理员可更新公告
+drop policy if exists "admin update announcements" on public.announcements;
+create policy "admin update announcements"
+  on public.announcements for update
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  )
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+-- 仅管理员可删除公告
+drop policy if exists "admin delete announcements" on public.announcements;
+create policy "admin delete announcements"
+  on public.announcements for delete
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role = 'admin')
+  );
+
+-- ---------- 公告已读记录 ----------
+create table if not exists public.announcement_reads (
+  id uuid primary key default gen_random_uuid(),
+  announcement_id uuid not null references public.announcements (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  read_at timestamptz not null default now(),
+  unique (announcement_id, user_id)
+);
+
+alter table public.announcement_reads enable row level security;
+
+-- 用户可读取自己的已读记录
+drop policy if exists "select own announcement reads" on public.announcement_reads;
+create policy "select own announcement reads"
+  on public.announcement_reads for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- 用户可写入自己的已读记录
+drop policy if exists "insert own announcement reads" on public.announcement_reads;
+create policy "insert own announcement reads"
+  on public.announcement_reads for insert
+  to authenticated
+  with check (auth.uid() = user_id);
