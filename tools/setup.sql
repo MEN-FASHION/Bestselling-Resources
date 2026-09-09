@@ -215,6 +215,12 @@ create table if not exists public.tag_defs (
   unique (type, name)
 );
 
+-- 兼容旧库：已存在的 tag_defs 表可能仍是旧的 type 检查约束（不含 scene/shoot/skin），
+-- 这里幂等地重建约束以允许全部六种标签维度，避免插入新维度时报 23514 错误。
+alter table public.tag_defs drop constraint if exists tag_defs_type_check;
+alter table public.tag_defs add constraint tag_defs_type_check
+  check (type in ('style','element','scene','shoot','skin'));
+
 alter table public.tag_defs enable row level security;
 
 -- 匿名与登录用户均可读取（前台筛选/展示需要）
