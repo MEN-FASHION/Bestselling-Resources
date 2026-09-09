@@ -20,12 +20,23 @@ const SB = (() => {
     client,
 
     // ============ Auth ============
+    // 邮箱规范化：去首尾空格并转小写
+    normalizeEmail(e) {
+      if (!e) return "";
+      return String(e).trim().toLowerCase();
+    },
     async signUp(email, password) {
-      const { data, error } = await client.auth.signUp({ email, password });
+      const { data, error } = await client.auth.signUp({
+        email: this.normalizeEmail(email),
+        password
+      });
       return { data, error };
     },
     async signIn(email, password) {
-      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      const { data, error } = await client.auth.signInWithPassword({
+        email: this.normalizeEmail(email),
+        password
+      });
       return { data, error };
     },
     async signOut() {
@@ -438,12 +449,19 @@ const SB = (() => {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "删除失败");
     },
-    // 读取招品任务清单（登录可见）
+    // 读取招品任务清单（登录可见；默认排除已删除软删除项）
     async listRecruitTasks(filter) {
-      let q = client.from("recruit_tasks").select("*").order("created_at", { ascending: true });
+      let q = client.from("recruit_tasks").select("*").is("deleted_at", null).order("created_at", { ascending: true });
       if (filter && filter.status) q = q.eq("status", filter.status);
       const { data, error } = await q;
       if (error) throw new Error(error.message || "读取招品任务失败");
+      return data || [];
+    },
+    // 后台：读取回收站（已软删除的任务）
+    async listRecruitTrash() {
+      let q = client.from("recruit_tasks").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+      const { data, error } = await q;
+      if (error) throw new Error(error.message || "读取回收站失败");
       return data || [];
     },
     // 后台：新增招品任务（序号由系统按创建顺序自动生成，无需传入）
@@ -479,10 +497,27 @@ const SB = (() => {
       const { error } = await client.from("recruit_tasks").update(Object.assign({}, patch)).in("id", ids);
       if (error) throw new Error(error.message || "批量更新招品任务失败");
     },
-    // 后台：删除招品任务（连带提交记录 cascade）
+    // 后台：软删除招品任务 → 移入回收站（不删图片与提交记录）
     async removeRecruitTask(id) {
-      const { error } = await client.from("recruit_tasks").delete().eq("id", id);
-      if (error) throw new Error(error.message || "删除招品任务失败");
+      const { error } = await client.from("recruit_tasks").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw new Error(error.message || "移入回收站失败");
+    },
+    // 后台：从回收站恢复招品任务
+    async restoreRecruitTask(id) {
+      const { error } = await client.from("recruit_tasks").update({ deleted_at: null }).eq("id", id);
+      if (error) throw new Error(error.message || "恢复招品任务失败");
+    },
+    // 后台：批量从回收站恢复
+    async bulkRestoreRecruitTasks(ids) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("recruit_tasks").update({ deleted_at: null }).in("id", ids);
+      if (error) throw new Error(error.message || "批量恢复失败");
+    },
+    // 后台：永久删除（硬删除，连带提交记录 cascade）
+    async purgeRecruitTasks(ids) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("recruit_tasks").delete().in("id", ids);
+      if (error) throw new Error(error.message || "永久删除失败");
     },
     // 后台：读取全部提交（含 user_id，供看所有用户SPU/导出）
     async listAllRecruitSubmissions() {

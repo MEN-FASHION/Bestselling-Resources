@@ -127,7 +127,7 @@
     // 后台登录页提供“注册”入口，便于用户创建首个账号，再在数据库里赋予管理员角色
     $("#admin-toggle").onclick = (e) => {
       e.preventDefault();
-      sbToast("请先注册邮箱（下方），注册后再到数据库把该用户设为管理员（见 README）");
+      sbToast("请先用邮箱注册（下方），注册后再到数据库把该用户设为管理员（见 README）");
     };
     $("#admin-signup-btn").onclick = async () => {
       const email = $("#admin-email").value.trim();
@@ -450,7 +450,8 @@
         mkCap("类目", [img.category || ""], "cat") +
         mkCap("渠道", img.tags, "ch") +
         mkCap("风格", img.style_tags, "st") +
-        mkCap("元素", img.element_tags, "el");
+        mkCap("元素", img.element_tags, "el") +
+        mkCap("场景", img.scene_tags, "sc");
 
       // 勾选框
       const cb = document.createElement("input");
@@ -599,10 +600,10 @@
   }
   async function clearTags() {
     if (!selectedImages.size) return;
-    if (!confirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素 全部标签？")) return;
+    if (!confirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素/场景 全部标签？")) return;
     closeTagModal();
     try {
-      await SB.clearImageFields([...selectedImages], ["tags", "style_tags", "element_tags"]);
+      await SB.clearImageFields([...selectedImages], ["tags", "style_tags", "element_tags", "scene_tags"]);
       sbToast("已清空所选图片标签");
     } catch (e) {
       sbToast("清空失败：" + (e.message || ""), false);
@@ -620,17 +621,19 @@
       imgs.forEach(i => {
         (i.style_tags || []).forEach(t => usage["style:" + t] = (usage["style:" + t] || 0) + 1);
         (i.element_tags || []).forEach(t => usage["element:" + t] = (usage["element:" + t] || 0) + 1);
+        (i.scene_tags || []).forEach(t => usage["scene:" + t] = (usage["scene:" + t] || 0) + 1);
       });
     } catch (e) { /* 忽略用量统计失败 */ }
     renderTagDefs("style", defs.filter(d => d.type === "style"), usage);
     renderTagDefs("element", defs.filter(d => d.type === "element"), usage);
+    renderTagDefs("scene", defs.filter(d => d.type === "scene"), usage);
   }
   function renderTagDefs(type, list, usage) {
     const box = document.getElementById(type + "-tag-list");
     if (!box) return;
     box.innerHTML = "";
     if (!list.length) {
-      box.innerHTML = `<p class="hint">暂无${type === "style" ? "风格" : "元素"}标签，可在下方新增。</p>`;
+      box.innerHTML = `<p class="hint">暂无${type === "style" ? "风格" : (type === "element" ? "元素" : "场景")}标签，可在下方新增。</p>`;
       return;
     }
     list.forEach(d => {
@@ -651,6 +654,7 @@
     };
     setup("style-tag-add", "style-tag-new", "style");
     setup("element-tag-add", "element-tag-new", "element");
+    setup("scene-tag-add", "scene-tag-new", "scene");
   }
   async function addTagDef(type, input) {
     const name = (input.value || "").trim();
@@ -667,13 +671,16 @@
     if (!confirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并移除。" : "？"))) return;
     try {
       if (used > 0) {
-        const field = type === "style" ? "style_tags" : "element_tags";
-        const imgs = await SB.listImages(null);
-        let n = 0;
-        for (const img of imgs) {
-          if (!Array.isArray(img[field]) || !img[field].includes(tname)) continue;
-          await SB.updateImageField(img.id, field, img[field].filter(t => t !== tname));
-          n++;
+        const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags" };
+        const field = FIELD_FOR_DEF[type];
+        if (field) {
+          const imgs = await SB.listImages(null);
+          let n = 0;
+          for (const img of imgs) {
+            if (!Array.isArray(img[field]) || !img[field].includes(tname)) continue;
+            await SB.updateImageField(img.id, field, img[field].filter(t => t !== tname));
+            n++;
+          }
         }
       }
       await SB.deleteTagDef(def.id);
@@ -713,7 +720,7 @@
 
     // 总览卡
     const cats = new Set(imgs.map(i => i.category));
-    const hasAny = i => ["tags", "style_tags", "element_tags"].some(f => Array.isArray(i[f]) && i[f].length);
+    const hasAny = i => ["tags", "style_tags", "element_tags", "scene_tags"].some(f => Array.isArray(i[f]) && i[f].length);
     const tagged = imgs.filter(hasAny).length;
     const ov = $("#dash-overview");
     ov.innerHTML = "";
@@ -733,7 +740,8 @@
     const charts = [
       { el: "dash-channel", field: "tags", names: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), color: "var(--gold)", lab: "渠道" },
       { el: "dash-style", field: "style_tags", names: defs.filter(d => d.type === "style").map(d => d.name), color: "#6ea8fe", lab: "风格" },
-      { el: "dash-element", field: "element_tags", names: defs.filter(d => d.type === "element").map(d => d.name), color: "#7ee0a3", lab: "元素" }
+      { el: "dash-element", field: "element_tags", names: defs.filter(d => d.type === "element").map(d => d.name), color: "#7ee0a3", lab: "元素" },
+      { el: "dash-scene", field: "scene_tags", names: defs.filter(d => d.type === "scene").map(d => d.name), color: "#d3a06b", lab: "场景" }
     ];
     charts.forEach(cd => {
       const rows = cd.names.map(n => ({ name: n, count: imgs.filter(i => Array.isArray(i[cd.field]) && i[cd.field].includes(n)).length }));
@@ -873,7 +881,7 @@
   let smartTag = "";               // 当前选中标签
   let smartAll = [];               // 全量图片缓存
   let smartDragging = null;        // 正在拖拽的图片对象
-  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags" };
+  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags" };
 
   function openSmartModal() {
     if (!document.querySelector("#smart-modal")) return;
@@ -892,7 +900,8 @@
     const dims = [
       { key: "style", label: "风格" },
       { key: "element", label: "元素" },
-      { key: "channel", label: "渠道" }
+      { key: "channel", label: "渠道" },
+      { key: "scene", label: "场景" }
     ];
     box.innerHTML = "";
     dims.forEach(d => {
@@ -933,7 +942,7 @@
       t.className = "smart-tag-empty";
       t.textContent = smartDim === "channel"
         ? "暂无渠道标签（请在 config.js 维护 CHANNEL_TAGS）"
-        : "暂无" + ({ style: "风格", element: "元素" }[smartDim] || "") + "标签，请到「⑥ 标签管理」新增";
+        : "暂无" + ({ style: "风格", element: "元素", scene: "场景" }[smartDim] || "") + "标签，请到「标签管理」新增";
       box.appendChild(t);
       return;
     }
@@ -1584,6 +1593,9 @@ let recruitTasks = [];
   let recruitImgFiles = [];   // 批量待上传图片
   let recruitFilter = "";     // "" | published | submitted | bound
   let recruitSelected = new Set();  // 卡片勾选
+  let recruitTrash = [];              // 回收站任务
+  let recruitTrashSelected = new Set();  // 回收站勾选
+  let recruitInTrash = false;         // 是否处于回收站视图
 
   function renderRecruitPre() {
     const pre = document.querySelector("#recruit-upload-preview");
@@ -1649,6 +1661,22 @@ let recruitTasks = [];
     if (bu) bu.onclick = () => bulkSetRecruitBound(false);
     const exportBtn = document.querySelector("#recruit-export");
     if (exportBtn) exportBtn.addEventListener("click", exportRecruitExcel);
+    // 批量删除 → 移入回收站
+    const bdel = document.querySelector("#recruit-batch-del");
+    if (bdel) bdel.onclick = () => bulkDeleteRecruit();
+    // 回收站开关
+    const trashToggle = document.querySelector("#recruit-trash-toggle");
+    if (trashToggle) trashToggle.onclick = () => openRecruitTrash();
+    const trashBack = document.querySelector("#recruit-trash-back");
+    if (trashBack) trashBack.onclick = () => closeRecruitTrash();
+    // 回收站全选
+    const tca = document.querySelector("#recruit-trash-checkall");
+    if (tca) tca.onchange = () => { recruitTrashSelected.clear(); if (tca.checked) recruitTrash.forEach(t => recruitTrashSelected.add(t.id)); renderRecruitTrash(); };
+    // 回收站批量恢复 / 永久删除
+    const trRestore = document.querySelector("#recruit-trash-restore");
+    if (trRestore) trRestore.onclick = () => bulkRestoreRecruit();
+    const trPurge = document.querySelector("#recruit-trash-purge");
+    if (trPurge) trPurge.onclick = () => bulkPurgeRecruit();
     renderRecruitPre();
   }
 
@@ -1832,13 +1860,133 @@ let recruitTasks = [];
   }
 
   async function confirmDeleteRecruit(t) {
-    if (!confirm("确认删除招品任务ID「" + t.task_id + "」？其图片与商家提交记录会一并移除。")) return;
+    if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
     try {
-      if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {});
       await SB.removeRecruitTask(t.id);
-      sbToast("已删除");
+      sbToast("已移入回收站");
       loadRecruitList();
     } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+  }
+
+  // 批量删除 → 移入回收站
+  async function bulkDeleteRecruit() {
+    const ids = [...recruitSelected];
+    if (!ids.length) return sbToast("请先勾选要删除的任务", false);
+    if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
+    try {
+      await SB.bulkUpdateRecruitTasks(ids, { deleted_at: new Date().toISOString() });
+      sbToast("已移入回收站 " + ids.length + " 个任务");
+      loadRecruitList();
+    } catch (e) { sbToast("操作失败", false); }
+  }
+
+  // ===== 回收站 =====
+  async function openRecruitTrash() {
+    recruitInTrash = true;
+    const main = document.querySelector("#recruit-main-area");
+    const trash = document.querySelector("#recruit-trash-view");
+    if (main) main.classList.add("hidden");
+    if (trash) trash.classList.remove("hidden");
+    const toggle = document.querySelector("#recruit-trash-toggle");
+    if (toggle) toggle.textContent = "🗑 回收站";
+    try {
+      recruitTrash = await SB.listRecruitTrash();
+      recruitTrashSelected.clear();
+      renderRecruitTrash();
+    } catch (e) { sbToast("加载回收站失败", false); }
+  }
+  function closeRecruitTrash() {
+    recruitInTrash = false;
+    const main = document.querySelector("#recruit-main-area");
+    const trash = document.querySelector("#recruit-trash-view");
+    if (main) main.classList.remove("hidden");
+    if (trash) trash.classList.add("hidden");
+    loadRecruitList();
+  }
+  function renderRecruitTrash() {
+    const box = document.querySelector("#recruit-trash-list");
+    const cnt = document.querySelector("#recruit-trash-count");
+    const ca = document.querySelector("#recruit-trash-checkall");
+    if (!box) return;
+    if (cnt) cnt.textContent = "共 " + recruitTrash.length + " 个任务";
+    if (ca) ca.checked = recruitTrash.length > 0 && recruitTrash.every(t => recruitTrashSelected.has(t.id));
+    box.innerHTML = "";
+    if (!recruitTrash.length) { box.innerHTML = '<p class="hint">回收站为空。</p>'; return; }
+    recruitTrash.forEach((t) => {
+      const subs = recruitSubsFor(t.id);
+      const spuList = [];
+      subs.forEach(s => { (s.spus || []).forEach(sp => { if (sp && spuList.indexOf(sp) < 0) spuList.push(sp); }); });
+      const card = document.createElement("div");
+      card.className = "recruit-acard" + (recruitTrashSelected.has(t.id) ? " sel" : "");
+      card.innerHTML =
+        '<div class="recruit-acard-imghold">' +
+          '<img class="recruit-acard-img" alt="">' +
+          '<span class="recruit-acard-trashtag">回收站</span>' +
+          '<span class="recruit-acard-check"><input type="checkbox" class="recruit-check"' + (recruitTrashSelected.has(t.id) ? ' checked' : '') + '></span>' +
+        '</div>' +
+        '<div class="recruit-acard-body">' +
+          '<div class="recruit-acard-tid" title="任务ID：' + escAttr(t.task_id || "") + '">任务ID：' + escHtml(t.task_id || "（未填写）") + '</div>' +
+          '<div class="recruit-acard-strow"><span class="recruit-chip chip-draft">已删除 · ' + escHtml((t.deleted_at || "").slice(0, 10)) + '</span><span class="recruit-acard-meta">' + subs.length + ' 人 / ' + spuList.length + ' 个SPU</span></div>' +
+          '<div class="recruit-acard-actions">' +
+            '<button class="btn-ghost small trash-restore">恢复</button>' +
+            '<button class="btn-danger small trash-purge">永久删除</button>' +
+          '</div>' +
+        '</div>';
+      const img = card.querySelector(".recruit-acard-img");
+      if (t.image_path) {
+        SB.recruitImageUrl(t.image_path).then(u => {
+          img.onload = () => img.classList.add("loaded");
+          img.onerror = () => { img.classList.remove("loaded"); img.src = ""; };
+          img.src = u;
+        }).catch(() => {});
+      } else {
+        card.querySelector(".recruit-acard-imghold").style.background = "rgba(255,255,255,.03)";
+      }
+      const cb = card.querySelector(".recruit-check");
+      cb.onchange = () => { if (cb.checked) recruitTrashSelected.add(t.id); else recruitTrashSelected.delete(t.id); card.classList.toggle("sel", cb.checked); };
+      card.querySelector(".trash-restore").onclick = () => restoreTrashOne(t);
+      card.querySelector(".trash-purge").onclick = () => purgeTrashOne(t);
+      box.appendChild(card);
+    });
+  }
+  async function restoreTrashOne(t) {
+    try {
+      await SB.restoreRecruitTask(t.id);
+      sbToast("已恢复");
+      const back = document.querySelector("#recruit-trash-back");
+      if (back) back.click();
+    } catch (e) { sbToast("恢复失败", false); }
+  }
+  async function purgeTrashOne(t) {
+    if (!confirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    try {
+      if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {});
+      await SB.purgeRecruitTasks([t.id]);
+      sbToast("已永久删除");
+      openRecruitTrash();
+    } catch (e) { sbToast("永久删除失败", false); }
+  }
+  async function bulkRestoreRecruit() {
+    const ids = [...recruitTrashSelected];
+    if (!ids.length) return sbToast("请先勾选要恢复的任务", false);
+    try {
+      await SB.bulkRestoreRecruitTasks(ids);
+      sbToast("已恢复 " + ids.length + " 个任务");
+      const back = document.querySelector("#recruit-trash-back");
+      if (back) back.click();
+    } catch (e) { sbToast("批量恢复失败", false); }
+  }
+  async function bulkPurgeRecruit() {
+    const ids = [...recruitTrashSelected];
+    if (!ids.length) return sbToast("请先勾选要永久删除的任务", false);
+    if (!confirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    try {
+      const inTrash = recruitTrash.filter(t => ids.includes(t.id));
+      for (const t of inTrash) { if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {}); }
+      await SB.purgeRecruitTasks(ids);
+      sbToast("已永久删除 " + ids.length + " 个任务");
+      openRecruitTrash();
+    } catch (e) { sbToast("永久删除失败", false); }
   }
 
   function exportRecruitExcel() {

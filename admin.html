@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>图片图鉴 · 后台管理</title>
-<link rel="stylesheet" href="css/style.css?v=20260909RC5">
+<title>视觉与趋势管理系统</title>
+<link rel="stylesheet" href="css/style.css?v=20260909EM">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 </head>
 <body class="admin">
@@ -14,14 +14,15 @@
   <section id="admin-login" class="auth-wrap">
     <div class="auth-card">
       <div class="brand">
-        <span class="brand-mark">◆</span>
-        <h1>后台管理</h1>
+        <div class="logo-mark" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
+        
+        <h1>视觉与趋势管理系统</h1>
         <p class="subtitle">管理员登录</p>
       </div>
       <form id="admin-login-form" class="auth-form">
         <h2 class="form-title">管理员登录</h2>
         <label>邮箱</label>
-        <input type="email" id="admin-email" placeholder="you@example.com" autocomplete="email" required>
+        <input type="email" id="admin-email" placeholder="请输入邮箱" autocomplete="email" required>
         <label>密码</label>
         <input type="password" id="admin-pass" placeholder="请输入密码" autocomplete="current-password" required>
         <button type="submit" class="btn-primary" id="admin-login-btn">进入后台</button>
@@ -38,7 +39,7 @@
   <!-- ================= 后台主体 ================= -->
   <section id="admin-panel" class="admin-panel hidden">
     <header class="admin-head">
-      <div class="brand-sm"><span>◆</span> 后台管理</div>
+      <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></span> 视觉与趋势管理系统</div>
       <div>
         <span class="ghost-chip" id="token-status">令牌：未配置</span>
         <button id="admin-logout" class="btn-ghost">退出</button>
@@ -110,7 +111,7 @@
           <button id="smart-tag-btn" class="btn-ghost">智能打标</button>
           <button id="batch-del-btn" class="btn-danger">批量删除（0）</button>
         </div>
-        <p class="hint">勾选图片后点击「批量打标签」，可分渠道/风格/元素给选中的图片统一打标；打标后前台可按标签筛选并展示。</p>
+        <p class="hint">勾选图片后点击「批量打标签」，可分渠道/风格/元素/场景给选中的图片统一打标；打标后前台可按标签筛选并展示。</p>
         <div class="manage-layout gallery-layout">
           <!-- 左侧：类目菜单（有图的类目） -->
           <aside class="sidebar">
@@ -127,7 +128,7 @@
 
       <!-- 标签管理（综合：常用类目 / 前台类目 / 风格·元素标签） -->
       <div class="panel-card" id="tag-card">
-        <h2>④ 标签管理 <span class="hint-inline">（常用类目 / 前台类目 / 风格·元素标签）</span></h2>
+        <h2>④ 标签管理 <span class="hint-inline">（常用类目 / 前台类目 / 风格 · 元素 · 场景标签）</span></h2>
 
         <div class="tag-sub">
           <h3 class="tbs-title">我的常用类目 <span class="hint-inline">（上传时优先出现，仅自己可见）</span></h3>
@@ -155,7 +156,7 @@
         <hr class="tag-sub-hr">
 
         <div class="tag-sub">
-          <h3 class="tbs-title">风格 · 元素标签（自定义增删）</h3>
+          <h3 class="tbs-title">风格 · 元素 · 场景标签（自定义增删）</h3>
           <p class="hint">删除标签时，会同步移除所有图片上的该标签。</p>
           <div class="tag-mgmt-grid">
             <div class="tag-mgmt-col">
@@ -172,6 +173,14 @@
               <div class="tag-mgmt-add">
                 <input id="element-tag-new" class="input" placeholder="新增元素标签，如：条纹、格纹">
                 <button id="element-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">场景标签（自定义）<span class="hint-inline">（室内 · 室外 两大类）</span></h3>
+              <div id="scene-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="scene-tag-new" class="input" placeholder="新增场景标签，如：室内·客厅、室外·街道">
+                <button id="scene-tag-add" class="btn-ghost">添加</button>
               </div>
             </div>
           </div>
@@ -298,8 +307,9 @@
       </div>
 
       <div class="panel-card" id="recruit-card">
-        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span></h2>
+        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span><span class="head-right"><button id="recruit-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
 
+        <div id="recruit-main-area">
         <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
         <div class="recruit-upload">
           <div class="rg-row"><label class="field">批量上传招品图片（可多选，每张图片生成一个独立任务卡片）</label>
@@ -332,11 +342,30 @@
             <button id="recruit-batch-pub" class="btn-ghost small" type="button">批量发布</button>
             <button id="recruit-batch-bound" class="btn-ghost small" type="button">批量标记已绑定</button>
             <button id="recruit-batch-unbound" class="btn-ghost small" type="button">取消已绑定</button>
+            <button id="recruit-batch-del" class="btn-ghost small" type="button">批量删除</button>
             <button id="recruit-export" class="btn-ghost small" type="button">导出 Excel</button>
           </div>
         </div>
         <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
         <div id="recruit-list" class="recruit-grid-admin recruit-list"></div>
+        </div><!-- /recruit-main-area -->
+
+        <!-- 回收站视图 -->
+        <div id="recruit-trash-view" class="hidden">
+          <div class="recruit-toolbar">
+            <div class="recruit-filters">
+              <button id="recruit-trash-back" class="btn-ghost small" type="button">← 返回招品列表</button>
+              <span class="hint-inline">回收站：已删除的任务可恢复或永久删除</span>
+            </div>
+            <div class="recruit-batchops">
+              <label class="recruit-count-label"><input type="checkbox" id="recruit-trash-checkall"> 全选</label>
+              <span id="recruit-trash-count" class="hint-inline">加载中…</span>
+              <button id="recruit-trash-restore" class="btn-ghost small" type="button">批量恢复</button>
+              <button id="recruit-trash-purge" class="btn-danger small" type="button">永久删除</button>
+            </div>
+          </div>
+          <div id="recruit-trash-list" class="recruit-grid-admin recruit-list"></div>
+        </div>
       </div>
 
       <div class="panel-card" id="dash-card">
@@ -362,6 +391,10 @@
           <div class="dash-card">
             <h3 class="dash-chart-title">元素标签分布</h3>
             <div id="dash-element" class="hbar-list"></div>
+          </div>
+          <div class="dash-card">
+            <h3 class="dash-chart-title">场景标签分布</h3>
+            <div id="dash-scene" class="hbar-list"></div>
           </div>
         </div>
         <div class="dash-recruit-section">
@@ -410,7 +443,7 @@
     <!-- 批量打标签弹窗 -->
     <div id="tag-modal" class="modal-mask hidden">
       <div class="modal">
-        <h3>批量打标签（渠道 / 风格 / 元素）</h3>
+        <h3>批量打标签（渠道 / 风格 / 元素 / 场景）</h3>
         <p class="hint" id="tag-modal-info"></p>
         <div id="tag-modal-groups" class="mtag-groups"></div>
         <div class="mtag-actions">
@@ -426,8 +459,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260909RC5"></script>
-  <script src="js/supabase.js?v=20260909RC5"></script>
-  <script src="js/admin.js?v=20260909RC5"></script>
+  <script src="js/config.js?v=20260909EM"></script>
+  <script src="js/supabase.js?v=20260909EM"></script>
+  <script src="js/admin.js?v=20260909EM"></script>
 </body>
 </html>

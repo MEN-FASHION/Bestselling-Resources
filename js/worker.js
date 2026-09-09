@@ -1,5 +1,5 @@
 /* ============================================================
- * Cloudflare Worker —— 图片图鉴站的"守门员"
+ * Cloudflare Worker —— TREND BANK 的"守门员"
  *
  * 职责：
  *   1) GET   /images/{category}/{file}  访客看图（必须携带 Supabase 登录令牌）

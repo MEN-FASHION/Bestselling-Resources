@@ -15,8 +15,8 @@
  * ============================================================ */
 window.CONFIG = {
   // ---------- 站点信息 ----------
-  siteTitle: "图片图鉴",
-  siteSubtitle: "Browse · Collect · Share",
+  siteTitle: "TREND BANK",
+  siteSubtitle: "Trend Archive · Product Imagery",
 
   // ---------- Supabase 配置（登录验证）★ 必填 ----------
   SUPABASE: {
@@ -50,12 +50,20 @@ window.CONFIG = {
   TAG_GROUPS: [
     { key: "channel", label: "渠道",  field: "tags",         source: "fixed", defType: "" },
     { key: "style",   label: "风格",  field: "style_tags",   source: "defs",  defType: "style" },
-    { key: "element", label: "元素",  field: "element_tags", source: "defs",  defType: "element" }
+    { key: "element", label: "元素",  field: "element_tags", source: "defs",  defType: "element" },
+    { key: "scene",   label: "场景",  field: "scene_tags",   source: "defs",  defType: "scene" }
   ],
 
   // ---------- 预设风格 / 元素标签（首次建库时写入 tag_defs，可在后台自定义增删） ----------
   PRESET_STYLE_TAGS: ["复古美式", "街头潮流", "极简", "商务通勤", "户外机能", "工装", "休闲", "学院风"],
   PRESET_ELEMENT_TAGS: ["条纹", "格纹", "印花", "字母", "拼接", "刺绣", "牛仔", "迷彩", "扎染", "做旧"],
+
+  // ---------- 场景标签：室内 / 室外两大类（后台「标签管理」可自定义增删） ----------
+  // 标签名采用「室内·卧室」「室外·街道」前缀命名，前台按前缀自动分成「室内」「室外」两大组展示。
+  PRESET_SCENE_TAGS: [
+    "室内·卧室", "室内·客厅", "室内·教室", "室内·书房", "室内·厨房", "室内·卫生间", "室内·玄关", "室内·衣帽间", "室内·办公室",
+    "室外·街道", "室外·商场", "室外·户外", "室外·园区", "室外·广场", "室外·公园", "室外·建筑外景", "室外·交通工具"
+  ],
 
   // ---------- 候选类目清单（后台「类目管理」可选列表，来自类目表） ----------
   // 管理员可在后台据此勾选/添加类目；也可输入自定义类目。

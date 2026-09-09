@@ -3,24 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>趋势专区 · 图片图鉴</title>
-<link rel="stylesheet" href="css/style.css?v=20260909RC5">
+<title>TREND BANK · 趋势专区</title>
+<link rel="stylesheet" href="css/style.css?v=20260909EM">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
 
+  <!-- 加载遮罩：判定登录态期间盖住 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
   <!-- ================= 登录页（趋势专区始终需登录） ================= -->
-  <section id="login-view" class="auth-wrap">
+  <section id="login-view" class="auth-wrap hidden">
     <div class="auth-card">
       <div class="brand">
-        <span class="brand-mark">◆</span>
+        <div class="trademark-avatar" aria-label="TREND BANK 商标">
+          <svg viewBox="0 0 120 120" width="92" height="92" role="img" aria-label="TREND BANK">
+            <circle cx="60" cy="60" r="58" fill="#ffffff"/>
+            <circle cx="60" cy="60" r="57.5" fill="none" stroke="#e2ddd4" stroke-width="1"/>
+            <text x="60" y="62" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" letter-spacing="3" fill="#2c2c2c">TB</text>
+            <text x="60" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8" letter-spacing="4" fill="#9c8b74">TREND&nbsp;BANK</text>
+          </svg>
+        </div>
+        <div class="logo-mark" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
         <h1 id="site-title"></h1>
         <p class="subtitle">趋势专区 · 登录后查看</p>
       </div>
       <form id="login-form" class="auth-form">
         <h2 class="form-title">趋势专区登录</h2>
         <label>邮箱</label>
-        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" required>
+        <input type="email" id="auth-email" placeholder="请输入邮箱" autocomplete="email" required>
         <label>密码</label>
         <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
         <button type="submit" class="btn-primary" id="auth-submit">进入趋势专区</button>
@@ -36,7 +49,7 @@
   <!-- ================= 趋势专区 ================= -->
   <header class="topbar" id="front-topbar">
     <div class="topbar-inner">
-      <div class="brand-sm"><span>◆</span> <span id="front-brand">图片图鉴</span></div>
+      <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="front-brand">TREND BANK</span></div>
       <nav class="top-tabs">
         <a href="index.html" class="tab-link">视觉专区</a>
         <a href="trends.html" class="tab-link" data-viewtab="trend">趋势专区</a>
@@ -132,8 +145,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260909RC5"></script>
-  <script src="js/supabase.js?v=20260909RC5"></script>
-  <script src="js/trends.js?v=20260909RC5"></script>
+  <script src="js/config.js?v=20260909EM"></script>
+  <script src="js/supabase.js?v=20260909EM"></script>
+  <script src="js/trends.js?v=20260909EM"></script>
 </body>
 </html>

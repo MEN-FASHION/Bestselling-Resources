@@ -25,8 +25,8 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    $("#site-title").textContent = CONFIG.siteTitle || "图片图鉴";
-    document.title = (CONFIG.siteTitle || "图片图鉴") + " · 趋势专区";
+    $("#site-title").textContent = CONFIG.siteTitle || "TREND BANK";
+    document.title = (CONFIG.siteTitle || "TREND BANK") + " · 趋势专区";
     if (window.pdfjsLib) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
     }
@@ -36,6 +36,8 @@
       window.__loggedIn = !!session;
       refreshUI();
     });
+    // 兜底：异常情况下最多等3s后揭开遮罩
+    setTimeout(hideSplash, 3000);
 
     $("#login-form").addEventListener("submit", onLogin);
     $("#logout-btn").onclick = onLogout;
@@ -267,8 +269,14 @@
     });
   }
 
+  function hideSplash() {
+    const s = document.getElementById("boot-splash");
+    if (s) s.classList.add("hidden");
+  }
+
   async function refreshUI() {
     if (window.__loggedIn) { showTrend(); } else { showLogin(); }
+    hideSplash();
   }
   function showLogin() {
     $("#login-view").classList.remove("hidden");
@@ -282,8 +290,8 @@
     $("#trend-view").classList.toggle("hidden", rec);
     $("#recruit-view").classList.toggle("hidden", !rec);
     const brand = $("#front-brand");
-    if (brand) brand.textContent = (CONFIG.siteTitle || "图片图鉴") + (rec ? " · 招品回品" : " · 趋势专区");
-    document.title = (CONFIG.siteTitle || "图片图鉴") + (rec ? " · 招品回品" : " · 趋势专区");
+    if (brand) brand.textContent = (CONFIG.siteTitle || "TREND BANK") + (rec ? " · 招品回品" : " · 趋势专区");
+    document.title = (CONFIG.siteTitle || "TREND BANK") + (rec ? " · 招品回品" : " · 趋势专区");
     document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", (a.dataset.viewtab === "trend") !== rec));
     if (rec) loadRecruitView(); else loadTrends();
   }

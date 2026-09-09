@@ -1,5 +1,5 @@
 -- ============================================================
--- 图片图鉴站 · Supabase 初始化脚本
+-- TREND BANK · Supabase 初始化脚本
 -- 使用方法：登录 supabase.com → 你的项目 → SQL Editor → 粘贴全部执行
 -- ============================================================
 
@@ -51,6 +51,7 @@ create table if not exists public.images (
 alter table public.images add column if not exists tags text[] not null default '{}';
 alter table public.images add column if not exists style_tags text[] not null default '{}';
 alter table public.images add column if not exists element_tags text[] not null default '{}';
+alter table public.images add column if not exists scene_tags text[] not null default '{}';
 
 alter table public.images enable row level security;
 
@@ -201,7 +202,7 @@ create policy "admin update settings"
 -- ---------- 3.7 标签定义表（风格/元素标签，后台可自定义增删） ----------
 create table if not exists public.tag_defs (
   id uuid primary key default gen_random_uuid(),
-  type text not null check (type in ('style','element')),
+  type text not null check (type in ('style','element','scene')),
   name text not null,
   sort_order int not null default 1,
   created_at timestamptz not null default now(),
@@ -265,6 +266,15 @@ insert into public.tag_defs (type, name) values
   ('element', '条纹'), ('element', '格纹'), ('element', '印花'), ('element', '字母'),
   ('element', '拼接'), ('element', '刺绣'), ('element', '牛仔'), ('element', '迷彩'),
   ('element', '扎染'), ('element', '做旧')
+on conflict (type, name) do nothing;
+
+-- 预设场景标签（室内/室外两大类，可自定义增删）
+insert into public.tag_defs (type, name) values
+  ('scene', '室内·卧室'), ('scene', '室内·客厅'), ('scene', '室内·教室'), ('scene', '室内·书房'),
+  ('scene', '室内·厨房'), ('scene', '室内·卫生间'), ('scene', '室内·玄关'), ('scene', '室内·衣帽间'),
+  ('scene', '室内·办公室'), ('scene', '室外·街道'), ('scene', '室外·商场'), ('scene', '室外·户外'),
+  ('scene', '室外·园区'), ('scene', '室外·广场'), ('scene', '室外·公园'), ('scene', '室外·建筑外景'),
+  ('scene', '室外·交通工具')
 on conflict (type, name) do nothing;
 
 -- ---------- 4.（可选）把某个用户设为管理员 ----------
@@ -454,6 +464,7 @@ alter table public.recruit_tasks add column if not exists status text not null d
 alter table public.recruit_tasks add column if not exists bound boolean not null default false;
 alter table public.recruit_tasks add column if not exists bound_at timestamptz;
 alter table public.recruit_tasks add column if not exists tags jsonb not null default '[]';
+alter table public.recruit_tasks add column if not exists deleted_at timestamptz;  -- 软删除：删除进回收站
 
 -- 登录用户可读招品任务清单（前台商家浏览；后台管理员也经此读取）
 drop policy if exists "authenticated read recruit_tasks" on public.recruit_tasks;

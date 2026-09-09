@@ -8,12 +8,14 @@
   let curChannel = "";   // 渠道标签筛选
   let curStyle = "";     // 风格标签筛选
   let curElement = "";   // 元素标签筛选
+  let curScene = "";     // 场景标签筛选
   let lightboxList = [];
   let lightboxIdx = 0;
   let catalog = [];
   let galleryLoaded = false;
   let styleDefs = [];    // 风格标签定义
   let elementDefs = [];  // 元素标签定义
+  let sceneDefs = [];    // 场景标签定义（室内/室外）
 
   let activeCats = [];
   let usedCats = [];
@@ -36,7 +38,7 @@
     $("#site-title").textContent = CONFIG.siteTitle;
     $(".subtitle").textContent = CONFIG.siteSubtitle;
     $("#top-title").textContent = CONFIG.siteTitle;
-    document.title = CONFIG.siteTitle + " · 前台";
+    document.title = CONFIG.siteTitle + " · 视觉专区";
 
     if (CONFIG.enableSignup) {
       $("#auth-toggle-link").classList.remove("hidden");
@@ -44,13 +46,18 @@
 
     SB.getPublicAccess().then((pub) => {
       window.__publicAccess = !!pub;
-      refreshAuthUI();
-    }).catch(() => { window.__publicAccess = false; refreshAuthUI(); });
+      window.__pubReady = true;
+      maybeBoot();
+    }).catch(() => { window.__publicAccess = false; window.__pubReady = true; maybeBoot(); });
 
     SB.onAuth((session) => {
-      if (session) { window.__loggedIn = true; refreshAuthUI(); }
-      else { window.__loggedIn = false; refreshAuthUI(); }
+      window.__loggedIn = !!session;
+      window.__authReady = true;
+      maybeBoot();
     });
+
+    // 兜底：异常情况下最多等3s后揭开遮罩，避免卡在加载页
+    setTimeout(hideSplash, 3000);
 
     $("#login-btn").onclick = () => showLogin();
     setupAntiDownload();
@@ -100,6 +107,17 @@
     document.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") e.preventDefault();
     });
+  }
+
+  // 登录态与公开访问标志都就绪后，才决定显示哪个视图并揭开加载遮罩，避免登录页闪现
+  function maybeBoot() {
+    if (!(window.__authReady && window.__pubReady)) return;
+    hideSplash();
+    refreshAuthUI();
+  }
+  function hideSplash() {
+    const s = document.getElementById("boot-splash");
+    if (s) s.classList.add("hidden");
   }
 
   function refreshAuthUI() {
@@ -301,6 +319,7 @@
       usedCats = used;
       styleDefs = defs.filter(d => d.type === "style").map(d => d.name);
       elementDefs = defs.filter(d => d.type === "element").map(d => d.name);
+      sceneDefs = defs.filter(d => d.type === "scene").map(d => d.name);
       shownCats = activeCats.filter(c => usedCats.includes(c));
       renderCatMenu(shownCats);
       await renderGrid(currentCat);
@@ -327,6 +346,7 @@
     if (curChannel && !(Array.isArray(img.tags) && img.tags.includes(curChannel))) return false;
     if (curStyle && !(Array.isArray(img.style_tags) && img.style_tags.includes(curStyle))) return false;
     if (curElement && !(Array.isArray(img.element_tags) && img.element_tags.includes(curElement))) return false;
+    if (curScene && !(Array.isArray(img.scene_tags) && img.scene_tags.includes(curScene))) return false;
     return true;
   }
 
@@ -354,6 +374,7 @@
         else if (groupKey === "channel") curChannel = value;
         else if (groupKey === "style") curStyle = value;
         else if (groupKey === "element") curElement = value;
+        else if (groupKey === "scene") curScene = value;
         else { curElement = value; }
         renderTagBar(list);
         renderGrid();
@@ -365,8 +386,12 @@
       { key: "category", label: "类目", items: shownCats, cur: (v) => currentCat === (v || "全部"), field: null, catIdx: true },
       { key: "channel", label: "渠道", items: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), cur: (v) => curChannel === v, field: "tags" },
       { key: "style", label: "风格", items: styleDefs, cur: (v) => curStyle === v, field: "style_tags" },
-      { key: "element", label: "元素", items: elementDefs, cur: (v) => curElement === v, field: "element_tags" }
+      { key: "element", label: "元素", items: elementDefs, cur: (v) => curElement === v, field: "element_tags" },
+      { key: "scene", label: "场景", items: sceneDefs, cur: (v) => curScene === v, field: "scene_tags" }
     ];
+
+    // 场景标签按「室内 / 室外」前缀分组展示（无前缀归入「其他」）
+    function sceneGroupName(t) { return t.indexOf("·") > 0 ? t.split("·")[0] : "其他"; }
 
     grpMeta.forEach(g => {
       const wrap = document.createElement("div");
@@ -380,13 +405,49 @@
       // 「全部」选项
       const allActive = g.key === "category" ? (currentCat === "全部") : (g.cur(""));
       chips.appendChild(mkChip(g.key, "", "全部", list.length, allActive));
-      g.items.forEach(t => {
-        const active = g.key === "category" ? (currentCat === t) : g.cur(t);
-        const cnt = list.filter(i => g.key === "category"
-          ? (i.category === t)
-          : (Array.isArray(i[g.field]) && i[g.field].includes(t))).length;
-        chips.appendChild(mkChip(g.key, t, t, cnt, active));
-      });
+
+      if (g.key === "scene") {
+        // 场景标签按「室内/室外/其他」分组渲染
+        const order = ["室内", "室外", "其他"];
+        const buckets = {};
+        g.items.forEach(t => {
+          const k = sceneGroupName(t);
+          (buckets[k] = buckets[k] || []).push(t);
+        });
+        order.forEach(k => {
+          if (!buckets[k] || !buckets[k].length) return;
+          const sub = document.createElement("div");
+          sub.className = "tag-subgroup";
+          const subN = document.createElement("span");
+          subN.className = "tag-subgroup-name";
+          subN.textContent = k;
+          sub.appendChild(subN);
+          const subChips = document.createElement("div");
+          subChips.className = "tag-chips";
+          buckets[k].forEach(t => {
+            const active = g.cur(t);
+            const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
+            subChips.appendChild(mkChip(g.key, t, t, cnt, active));
+          });
+          sub.appendChild(subChips);
+          chips.appendChild(sub);
+        });
+        // 其他未覆盖前缀场景标签一律展示（防御）
+        g.items.forEach(t => {
+          if (["室内", "室外", "其他"].includes(sceneGroupName(t))) return;
+          const active = g.cur(t);
+          const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
+          chips.appendChild(mkChip(g.key, t, t, cnt, active));
+        });
+      } else {
+        g.items.forEach(t => {
+          const active = g.key === "category" ? (currentCat === t) : g.cur(t);
+          const cnt = list.filter(i => g.key === "category"
+            ? (i.category === t)
+            : (Array.isArray(i[g.field]) && i[g.field].includes(t))).length;
+          chips.appendChild(mkChip(g.key, t, t, cnt, active));
+        });
+      }
       wrap.appendChild(chips);
       groupsBox.appendChild(wrap);
     });
@@ -403,7 +464,8 @@
     if (curChannel) parts.push("渠道:" + curChannel);
     if (curStyle) parts.push("风格:" + curStyle);
     if (curElement) parts.push("元素:" + curElement);
-    el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素";
+    if (curScene) parts.push("场景:" + curScene);
+    el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素·场景";
   }
 
   async function renderGrid(setCat) {
@@ -420,7 +482,7 @@
     imgs = imgs.filter(_match);
     renderTagBar(catImgs);
 
-    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement;
+    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene;
     $("#empty-tip").textContent = hasFilter
       ? "没有同时满足所选类目与标签的图片。"
       : "该分类暂无可浏览的图片。";
