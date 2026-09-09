@@ -51,7 +51,9 @@ window.CONFIG = {
     { key: "channel", label: "渠道",  field: "tags",         source: "fixed", defType: "" },
     { key: "style",   label: "风格",  field: "style_tags",   source: "defs",  defType: "style" },
     { key: "element", label: "元素",  field: "element_tags", source: "defs",  defType: "element" },
-    { key: "scene",   label: "场景",  field: "scene_tags",   source: "defs",  defType: "scene" }
+    { key: "scene",   label: "场景",  field: "scene_tags",   source: "defs",  defType: "scene" },
+    { key: "shoot",   label: "拍摄方式", field: "shoot_tags", source: "defs", defType: "shoot" },
+    { key: "skin",    label: "肤色",  field: "skin_tags",    source: "defs",  defType: "skin" }
   ],
 
   // ---------- 预设风格 / 元素标签（首次建库时写入 tag_defs，可在后台自定义增删） ----------
@@ -64,6 +66,10 @@ window.CONFIG = {
     "室内·卧室", "室内·客厅", "室内·教室", "室内·书房", "室内·厨房", "室内·卫生间", "室内·玄关", "室内·衣帽间", "室内·办公室",
     "室外·街道", "室外·商场", "室外·户外", "室外·园区", "室外·广场", "室外·公园", "室外·建筑外景", "室外·交通工具"
   ],
+
+  // ---------- 预设拍摄方式 / 肤色标签（登入 tag_defs，可在后台自定义增删） ----------
+  PRESET_SHOOT_TAGS: ["摆拍", "挂拍", "模拍", "3D"],
+  PRESET_SKIN_TAGS: ["黑", "白", "黄"],
 
   // ---------- 候选类目清单（后台「类目管理」可选列表，来自类目表） ----------
   // 管理员可在后台据此勾选/添加类目；也可输入自定义类目。

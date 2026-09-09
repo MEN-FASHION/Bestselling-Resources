@@ -187,6 +187,52 @@ img { display: block; }
 }
 .empty-tip { text-align: center; color: var(--sub); padding: 80px 0; font-size: 15px; }
 
+/* ---------- 前台图片比例 & 鼠标悬浮标签 ---------- */
+#grid .cell { position: relative; }
+#grid .holder { aspect-ratio: 3 / 4; }           /* 竖版 1340:1785 (≈3:4) */
+.cell-hover-mask {
+  position: absolute; inset: 0; z-index: 3;
+  background: linear-gradient(180deg, rgba(12,14,18,.0) 30%, rgba(12,14,18,.85) 100%);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 2px; padding: 10px 12px 12px;
+  opacity: 0; transition: opacity .18s ease; pointer-events: none;
+}
+.cell:hover .cell-hover-mask { opacity: 1; }
+.hcap-row { font-size: 12px; color: #eee; line-height: 1.5; display: flex; gap: 7px; }
+.hcap-row b { color: #cfbda4; font-weight: 600; min-width: 34px; flex: none; }
+.hcap-row.ch b { color: #dcae57; }
+.hcap-row.st b { color: #9db9ff; }
+.hcap-row.el b { color: #8fd9ac; }
+.hcap-row.sc b { color: #e2b08a; }
+.hcap-row.sh b { color: #cbabe9; }
+.hcap-row.sk b { color: #e6a0a0; }
+.hcap-row span { color: #f2f2f2; }
+.hcap-empty { color: #9aa0ab; font-size: 12px; }
+
+/* ---------- 标签维度前端展示开关 ---------- */
+.frontend-dim-switches {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; margin-top: 6px;
+}
+.fds-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); cursor: pointer; user-select: none;
+}
+.fds-row.on { border-color: var(--gold); }
+.fds-name { flex: 1; font-size: 13px; color: var(--txt); }
+.fds-state { font-size: 12px; color: var(--sub); }
+.fds-switch {
+  width: 34px; height: 19px; border-radius: 999px; background: #d6d6d6;
+  position: relative; transition: background .2s; flex: none;
+}
+.fds-switch i {
+  position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; transition: left .2s;
+}
+.fds-switch.on { background: var(--gold); }
+.fds-switch.on i { left: 17px; }
+
 /* ---------- 灯箱 ---------- */
 .lightbox {
   position: fixed; inset: 0; z-index: 100;
@@ -431,12 +477,12 @@ select.input {
   font-size: 12px; color: var(--gold); font-weight: 600; white-space: nowrap;
   padding-right: 10px; border-right: 1px solid var(--line);
 }
-.tag-subgroup { display: flex; align-items: baseline; gap: 8px; }
-.tag-subgroup + .tag-subgroup { margin-top: 6px; }
+
+.tag-subgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(156,139,116,.06); border: 1px solid var(--line); border-radius: 8px; }
+.tag-subgroup + .tag-subgroup { margin-top: 8px; }
 .tag-subgroup-name {
-  font-size: 11px; color: var(--sub); font-weight: 600; white-space: nowrap;
-  padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--card); line-height: 18px;
+  font-size: 12px; color: var(--txt); font-weight: 700; white-space: nowrap;
+  min-width: 34px; letter-spacing: .5px;
 }
 .tag-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .tag-chip {

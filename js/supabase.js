@@ -121,6 +121,12 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
     },
+    // 返回所有已上传图片名（用于上传时去重校验，避免重复传图）
+    async listImageNames() {
+      const { data, error } = await client.from("images").select("name");
+      if (error) throw new Error(error.message || "读取失败");
+      return (data || []).map(d => d && d.name).filter(Boolean);
+    },
     async listCategories() {
       const { data, error } = await client.from("images").select("category").order("category");
       if (error) throw new Error(error.message || "读取失败");
@@ -335,6 +341,23 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存失败");
     },
 
+    // 各标签维度是否在前台展示（channel/style/element/scene/shoot/skin）
+    async getFrontendDims() {
+      const { data, error } = await client
+        .from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_dims) {
+        return { channel: true, style: true, element: true, scene: true, shoot: true, skin: true };
+      }
+      return data.frontend_dims;
+    },
+    async setFrontendDim(dim, show) {
+      const cur = await this.getFrontendDims();
+      cur[dim] = !!show;
+      const { error } = await client
+        .from("site_settings").update({ frontend_dims: cur, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+
     // ============ 公告 ============
     // 后台：读取全部公告（含草稿/下架）
     async listAnnouncements() {
@@ -449,20 +472,38 @@ const SB = (() => {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "删除失败");
     },
+    
+    
+    
+    
     // 读取招品任务清单（登录可见；默认排除已删除软删除项）
     async listRecruitTasks(filter) {
-      let q = client.from("recruit_tasks").select("*").is("deleted_at", null).order("created_at", { ascending: true });
-      if (filter && filter.status) q = q.eq("status", filter.status);
-      const { data, error } = await q;
-      if (error) throw new Error(error.message || "读取招品任务失败");
-      return data || [];
+      // 优先走带软删除/状态过滤的新表查询；旧表缺列时 PostgREST 会返回 400，这里降级为无损查询
+      try {
+        let q = client.from("recruit_tasks").select("*");
+        q = q.is("deleted_at", null);
+        if (filter && filter.status) q = q.eq("status", filter.status);
+        q = q.order("created_at", { ascending: true });
+        const { data, error } = await q;
+        if (!error) return data || [];
+      } catch (e) {}
+      // 降级：线上表缺少 status / deleted_at 列时的安全读取
+      const q2 = client.from("recruit_tasks").select("*").order("created_at", { ascending: true });
+      const res = await q2;
+      if (res.error) throw new Error(res.error.message || "读取招品任务失败");
+      let rows = res.data || [];
+      if (filter && filter.status) rows = rows.filter(r => (r.status == null ? "published" : r.status) === filter.status);
+      rows = rows.filter(r => !r.deleted_at);
+      return rows;
     },
     // 后台：读取回收站（已软删除的任务）
     async listRecruitTrash() {
-      let q = client.from("recruit_tasks").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
-      const { data, error } = await q;
-      if (error) throw new Error(error.message || "读取回收站失败");
-      return data || [];
+      try {
+        const { data, error } = await client.from("recruit_tasks").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+        if (!error) return data || [];
+      } catch (e) {}
+      // 旧表无 deleted_at 列 → 无回收站概念
+      return [];
     },
     // 后台：新增招品任务（序号由系统按创建顺序自动生成，无需传入）
     async addRecruitTask({ title, task_id, image_path, status, tags }) {
@@ -520,12 +561,16 @@ const SB = (() => {
       if (error) throw new Error(error.message || "永久删除失败");
     },
     // 后台：读取全部提交（含 user_id，供看所有用户SPU/导出）
-    async listAllRecruitSubmissions() {
-      const { data, error } = await client.from("recruit_submissions").select("*").order("created_at", { ascending: false });
-      if (error) throw new Error(error.message || "读取提交失败");
-      return data || [];
-    },
+    
     // 前台：当前用户对某任务的提交记录
+    // 前台/后台：读取全部商家提交记录（用于悬浮显示与看板统计）
+    async listAllRecruitSubmissions() {
+      try {
+        const { data, error } = await client.from("recruit_submissions").select("*").order("created_at", { ascending: false });
+        if (!error) return data || [];
+      } catch (e) {}
+      return [];
+    },
     async myRecruitSubmission(taskId) {
       const s = await client.auth.getSession();
       const uid = s?.data?.session?.user?.id;

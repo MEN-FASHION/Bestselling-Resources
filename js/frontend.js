@@ -9,6 +9,8 @@
   let curStyle = "";     // 风格标签筛选
   let curElement = "";   // 元素标签筛选
   let curScene = "";     // 场景标签筛选
+  let curShoot = "";     // 拍摄方式标签筛选
+  let curSkin = "";      // 肤色标签筛选
   let lightboxList = [];
   let lightboxIdx = 0;
   let catalog = [];
@@ -16,6 +18,9 @@
   let styleDefs = [];    // 风格标签定义
   let elementDefs = [];  // 元素标签定义
   let sceneDefs = [];    // 场景标签定义（室内/室外）
+  let shootDefs = [];    // 拍摄方式标签定义
+  let skinDefs = [];     // 肤色标签定义
+  let dimSwitches = {};  // 各维度是否在前台展示
 
   let activeCats = [];
   let usedCats = [];
@@ -320,6 +325,9 @@
       styleDefs = defs.filter(d => d.type === "style").map(d => d.name);
       elementDefs = defs.filter(d => d.type === "element").map(d => d.name);
       sceneDefs = defs.filter(d => d.type === "scene").map(d => d.name);
+      shootDefs = defs.filter(d => d.type === "shoot").map(d => d.name);
+      skinDefs = defs.filter(d => d.type === "skin").map(d => d.name);
+      try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
       shownCats = activeCats.filter(c => usedCats.includes(c));
       renderCatMenu(shownCats);
       await renderGrid(currentCat);
@@ -341,12 +349,16 @@
   }
 
   // 单张图片是否命中「类目 + 三个标签维度」的组合筛选
+  function _dimOn(key) { return dimSwitches[key] !== false; }
+
   function _match(img) {
     if (currentCat && currentCat !== "全部" && img.category !== currentCat) return false;
-    if (curChannel && !(Array.isArray(img.tags) && img.tags.includes(curChannel))) return false;
-    if (curStyle && !(Array.isArray(img.style_tags) && img.style_tags.includes(curStyle))) return false;
-    if (curElement && !(Array.isArray(img.element_tags) && img.element_tags.includes(curElement))) return false;
-    if (curScene && !(Array.isArray(img.scene_tags) && img.scene_tags.includes(curScene))) return false;
+    if (_dimOn("channel") && curChannel && !(Array.isArray(img.tags) && img.tags.includes(curChannel))) return false;
+    if (_dimOn("style") && curStyle && !(Array.isArray(img.style_tags) && img.style_tags.includes(curStyle))) return false;
+    if (_dimOn("element") && curElement && !(Array.isArray(img.element_tags) && img.element_tags.includes(curElement))) return false;
+    if (_dimOn("scene") && curScene && !(Array.isArray(img.scene_tags) && img.scene_tags.includes(curScene))) return false;
+    if (_dimOn("shoot") && curShoot && !(Array.isArray(img.shoot_tags) && img.shoot_tags.includes(curShoot))) return false;
+    if (_dimOn("skin") && curSkin && !(Array.isArray(img.skin_tags) && img.skin_tags.includes(curSkin))) return false;
     return true;
   }
 
@@ -375,6 +387,8 @@
         else if (groupKey === "style") curStyle = value;
         else if (groupKey === "element") curElement = value;
         else if (groupKey === "scene") curScene = value;
+        else if (groupKey === "shoot") curShoot = value;
+        else if (groupKey === "skin") curSkin = value;
         else { curElement = value; }
         renderTagBar(list);
         renderGrid();
@@ -387,13 +401,16 @@
       { key: "channel", label: "渠道", items: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), cur: (v) => curChannel === v, field: "tags" },
       { key: "style", label: "风格", items: styleDefs, cur: (v) => curStyle === v, field: "style_tags" },
       { key: "element", label: "元素", items: elementDefs, cur: (v) => curElement === v, field: "element_tags" },
-      { key: "scene", label: "场景", items: sceneDefs, cur: (v) => curScene === v, field: "scene_tags" }
+      { key: "scene", label: "场景", items: sceneDefs, cur: (v) => curScene === v, field: "scene_tags" },
+      { key: "shoot", label: "拍摄方式", items: shootDefs, cur: (v) => curShoot === v, field: "shoot_tags" },
+      { key: "skin", label: "肤色", items: skinDefs, cur: (v) => curSkin === v, field: "skin_tags" }
     ];
 
     // 场景标签按「室内 / 室外」前缀分组展示（无前缀归入「其他」）
     function sceneGroupName(t) { return t.indexOf("·") > 0 ? t.split("·")[0] : "其他"; }
 
-    grpMeta.forEach(g => {
+    const visibleGrp = grpMeta.filter(g => g.key === "category" || _dimOn(g.key));
+    visibleGrp.forEach(g => {
       const wrap = document.createElement("div");
       wrap.className = "tag-group";
       const gName = document.createElement("span");
@@ -427,8 +444,11 @@
           buckets[k].forEach(t => {
             const active = g.cur(t);
             const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
-            subChips.appendChild(mkChip(g.key, t, t, cnt, active));
+            // 子组内只显示细分名，避免「室内·卧室」在「室内」分组下重复冗长
+            const short = t.split("·")[1] || t;
+            subChips.appendChild(mkChip(g.key, t, short, cnt, active));
           });
+          
           sub.appendChild(subChips);
           chips.appendChild(sub);
         });
@@ -461,11 +481,13 @@
     if (!el) return;
     const parts = [];
     if (currentCat && currentCat !== "全部") parts.push("类目:" + currentCat);
-    if (curChannel) parts.push("渠道:" + curChannel);
-    if (curStyle) parts.push("风格:" + curStyle);
-    if (curElement) parts.push("元素:" + curElement);
-    if (curScene) parts.push("场景:" + curScene);
-    el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素·场景";
+    if (_dimOn("channel") && curChannel) parts.push("渠道:" + curChannel);
+    if (_dimOn("style") && curStyle) parts.push("风格:" + curStyle);
+    if (_dimOn("element") && curElement) parts.push("元素:" + curElement);
+    if (_dimOn("scene") && curScene) parts.push("场景:" + curScene);
+    if (_dimOn("shoot") && curShoot) parts.push("拍摄:" + curShoot);
+    if (_dimOn("skin") && curSkin) parts.push("肤色:" + curSkin);
+    el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素·场景·拍摄·肤色";
   }
 
   async function renderGrid(setCat) {
@@ -482,7 +504,7 @@
     imgs = imgs.filter(_match);
     renderTagBar(catImgs);
 
-    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene;
+    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene || curShoot || curSkin;
     $("#empty-tip").textContent = hasFilter
       ? "没有同时满足所选类目与标签的图片。"
       : "该分类暂无可浏览的图片。";
@@ -507,16 +529,17 @@
       imgEl.draggable = false;
       imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
       holder.appendChild(imgEl);
-      // 底部显示渠道/风格/元素标签（不显示文件名）
-      const cap = document.createElement("div");
-      cap.className = "cell-cap";
-      const mk = (lab, arr, cls) => `<span class="cap-row ${cls}"><i>${lab}</i>${(Array.isArray(arr) && arr.length) ? escHtml(arr.join(" / ")) : "未打标"}</span>`;
-      cap.innerHTML =
-        mk("渠道", img.tags, "ch") +
-        mk("风格", img.style_tags, "st") +
-        mk("元素", img.element_tags, "el");
+      // 标签信息改为「鼠标悬浮」展示（不再常驻图片下方）
+      const mask = document.createElement("div");
+      mask.className = "cell-hover-mask";
+      const mk = (lab, arr, cls) => {
+        const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
+        return list.length ? `<div class="hcap-row ${cls}"><b>${lab}</b><span>${escHtml(list.join("、"))}</span></div>` : "";
+      };
+      const inner = (_dimOn("channel") ? mk("渠道", img.tags, "ch") : "") + (_dimOn("style") ? mk("风格", img.style_tags, "st") : "") + (_dimOn("element") ? mk("元素", img.element_tags, "el") : "") + (_dimOn("scene") ? mk("场景", img.scene_tags, "sc") : "") + (_dimOn("shoot") ? mk("拍摄", img.shoot_tags, "sh") : "") + (_dimOn("skin") ? mk("肤色", img.skin_tags, "sk") : "");
+      mask.innerHTML = inner || `<div class="hcap-empty">暂无标签</div>`;
+      holder.appendChild(mask);
       cell.appendChild(holder);
-      cell.appendChild(cap);
       cell.onclick = () => openLightbox(idx);
       holder.style.background = "var(--shade)";
       grid.appendChild(cell);

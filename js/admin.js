@@ -198,15 +198,28 @@
     const prog = $("#progress"); prog.classList.remove("hidden");
     const bar = $("#progress-bar");
     const total = pendingFiles.length;
-    let done = 0, failed = 0;
+    let done = 0, failed = 0, dup = 0, dupNames = [];
+
+    // 重复校验：加载库中已存在的图片名，同名图片无法重复上传
+    let existingNames = new Set();
+    try { existingNames = new Set(await SB.listImageNames()); } catch (e) { console.warn("加载已有图片名失败，跳过重复校验", e); }
 
     for (const file of pendingFiles) {
+      const cleanName = file.name.replace(/[^\w.\-]/g, "_");
+      if (existingNames.has(cleanName)) {
+        dup++;
+        dupNames.push(cleanName);
+        console.warn("检测到重复图片，跳过：" + cleanName);
+        done++;
+        bar.style.width = Math.round(done / total * 100) + "%";
+        continue;
+      }
       try {
         // 1) 上传到 R2（经 Worker，路径由 Worker 生成）
-        const cleanName = file.name.replace(/[^\w.\-]/g, "_");
         const path = await SB.uploadImage(file, cat);
         // 2) 记录到 DB 清单
         await SB.addImageRecord({ category: cat, name: cleanName, path });
+        existingNames.add(cleanName); // 本次会话后续相同文件也不再重复上传
       } catch (e) {
         console.warn(e);
         failed++;
@@ -215,7 +228,13 @@
       bar.style.width = Math.round(done / total * 100) + "%";
     }
 
-    sbToast(`上传完成：成功 ${total - failed}，失败 ${failed}`);
+    let msg = `上传完成：成功 ${total - failed - dup}，失败 ${failed}`;
+    if (dup) msg += `，重复跳过 ${dup}`;
+    sbToast(msg, failed === 0 && dup === 0);
+    if (dup) {
+      const shown = dupNames.slice(0, 3).join("、");
+      console.warn("重复图片（已跳过）：" + (dup > 3 ? shown + " 等共" + dup + "张" : shown));
+    }
     setTimeout(() => { prog.classList.add("hidden"); bar.style.width = "0%"; }, 800);
     pendingFiles = [];
     renderPending();
@@ -451,7 +470,9 @@
         mkCap("渠道", img.tags, "ch") +
         mkCap("风格", img.style_tags, "st") +
         mkCap("元素", img.element_tags, "el") +
-        mkCap("场景", img.scene_tags, "sc");
+        mkCap("场景", img.scene_tags, "sc") +
+        mkCap("拍摄", img.shoot_tags, "sh") +
+        mkCap("肤色", img.skin_tags, "sk");
 
       // 勾选框
       const cb = document.createElement("input");
@@ -600,10 +621,10 @@
   }
   async function clearTags() {
     if (!selectedImages.size) return;
-    if (!confirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素/场景 全部标签？")) return;
+    if (!confirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素/场景/拍摄方式/肤色 全部标签？")) return;
     closeTagModal();
     try {
-      await SB.clearImageFields([...selectedImages], ["tags", "style_tags", "element_tags", "scene_tags"]);
+      await SB.clearImageFields([...selectedImages], ["tags", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"]);
       sbToast("已清空所选图片标签");
     } catch (e) {
       sbToast("清空失败：" + (e.message || ""), false);
@@ -611,8 +632,43 @@
     await loadManage();
   }
 
+  // ================= 标签维度「前台展示」开关 =================
+  let dimSwitches = {};
+  const DIM_META = [
+    { key: "channel", label: "渠道" },
+    { key: "style", label: "风格" },
+    { key: "element", label: "元素" },
+    { key: "scene", label: "场景" },
+    { key: "shoot", label: "拍摄方式" },
+    { key: "skin", label: "肤色" }
+  ];
+  async function loadFrontendDims() {
+    try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
+    renderFrontendDims();
+  }
+  function renderFrontendDims() {
+    const box = document.getElementById("frontend-dim-switches");
+    if (!box) return;
+    box.innerHTML = "";
+    DIM_META.forEach(d => {
+      const on = dimSwitches[d.key] !== false;
+      const row = document.createElement("div");
+      row.className = "fds-row" + (on ? " on" : "");
+      row.innerHTML = `<span class="fds-name">${d.label}</span><span class="fds-switch${on ? " on" : ""}"><i></i></span><span class="fds-state">${on ? "展示" : "隐藏"}</span>`;
+      row.onclick = async () => {
+        const next = !(dimSwitches[d.key] !== false);
+        dimSwitches[d.key] = next;
+        renderFrontendDims();
+        try { await SB.setFrontendDim(d.key, next); sbToast(`已${next ? "开启" : "关闭"}「${d.label}」前台展示`); }
+        catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+      };
+      box.appendChild(row);
+    });
+  }
+
   // ================= 标签管理（风格/元素自定义增删） =================
   async function loadTagDefs() {
+    await loadFrontendDims();   // 读取标签维度前台展示开关
     let defs = [];
     try { defs = await SB.listTagDefs(); } catch (e) { sbToast("读取标签失败", false); }
     const usage = {};
@@ -622,18 +678,22 @@
         (i.style_tags || []).forEach(t => usage["style:" + t] = (usage["style:" + t] || 0) + 1);
         (i.element_tags || []).forEach(t => usage["element:" + t] = (usage["element:" + t] || 0) + 1);
         (i.scene_tags || []).forEach(t => usage["scene:" + t] = (usage["scene:" + t] || 0) + 1);
+        (i.shoot_tags || []).forEach(t => usage["shoot:" + t] = (usage["shoot:" + t] || 0) + 1);
+        (i.skin_tags || []).forEach(t => usage["skin:" + t] = (usage["skin:" + t] || 0) + 1);
       });
     } catch (e) { /* 忽略用量统计失败 */ }
     renderTagDefs("style", defs.filter(d => d.type === "style"), usage);
     renderTagDefs("element", defs.filter(d => d.type === "element"), usage);
     renderTagDefs("scene", defs.filter(d => d.type === "scene"), usage);
+    renderTagDefs("shoot", defs.filter(d => d.type === "shoot"), usage);
+    renderTagDefs("skin", defs.filter(d => d.type === "skin"), usage);
   }
   function renderTagDefs(type, list, usage) {
     const box = document.getElementById(type + "-tag-list");
     if (!box) return;
     box.innerHTML = "";
     if (!list.length) {
-      box.innerHTML = `<p class="hint">暂无${type === "style" ? "风格" : (type === "element" ? "元素" : "场景")}标签，可在下方新增。</p>`;
+      box.innerHTML = `<p class="hint">暂无${type === "style" ? "风格" : (type === "element" ? "元素" : (type === "scene" ? "场景" : (type === "shoot" ? "拍摄方式" : "肤色")))}标签，可在下方新增。</p>`;
       return;
     }
     list.forEach(d => {
@@ -655,6 +715,8 @@
     setup("style-tag-add", "style-tag-new", "style");
     setup("element-tag-add", "element-tag-new", "element");
     setup("scene-tag-add", "scene-tag-new", "scene");
+    setup("shoot-tag-add", "shoot-tag-new", "shoot");
+    setup("skin-tag-add", "skin-tag-new", "skin");
   }
   async function addTagDef(type, input) {
     const name = (input.value || "").trim();
@@ -671,7 +733,7 @@
     if (!confirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并移除。" : "？"))) return;
     try {
       if (used > 0) {
-        const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags" };
+        const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags" };
         const field = FIELD_FOR_DEF[type];
         if (field) {
           const imgs = await SB.listImages(null);
@@ -720,7 +782,7 @@
 
     // 总览卡
     const cats = new Set(imgs.map(i => i.category));
-    const hasAny = i => ["tags", "style_tags", "element_tags", "scene_tags"].some(f => Array.isArray(i[f]) && i[f].length);
+    const hasAny = i => ["tags", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"].some(f => Array.isArray(i[f]) && i[f].length);
     const tagged = imgs.filter(hasAny).length;
     const ov = $("#dash-overview");
     ov.innerHTML = "";
@@ -741,7 +803,9 @@
       { el: "dash-channel", field: "tags", names: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), color: "var(--gold)", lab: "渠道" },
       { el: "dash-style", field: "style_tags", names: defs.filter(d => d.type === "style").map(d => d.name), color: "#6ea8fe", lab: "风格" },
       { el: "dash-element", field: "element_tags", names: defs.filter(d => d.type === "element").map(d => d.name), color: "#7ee0a3", lab: "元素" },
-      { el: "dash-scene", field: "scene_tags", names: defs.filter(d => d.type === "scene").map(d => d.name), color: "#d3a06b", lab: "场景" }
+      { el: "dash-scene", field: "scene_tags", names: defs.filter(d => d.type === "scene").map(d => d.name), color: "#d3a06b", lab: "场景" },
+      { el: "dash-shoot", field: "shoot_tags", names: defs.filter(d => d.type === "shoot").map(d => d.name), color: "#b89bd6", lab: "拍摄方式" },
+      { el: "dash-skin", field: "skin_tags", names: defs.filter(d => d.type === "skin").map(d => d.name), color: "#e6a0a0", lab: "肤色" }
     ];
     charts.forEach(cd => {
       const rows = cd.names.map(n => ({ name: n, count: imgs.filter(i => Array.isArray(i[cd.field]) && i[cd.field].includes(n)).length }));
@@ -881,7 +945,7 @@
   let smartTag = "";               // 当前选中标签
   let smartAll = [];               // 全量图片缓存
   let smartDragging = null;        // 正在拖拽的图片对象
-  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags" };
+  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags" };
 
   function openSmartModal() {
     if (!document.querySelector("#smart-modal")) return;
@@ -901,7 +965,9 @@
       { key: "style", label: "风格" },
       { key: "element", label: "元素" },
       { key: "channel", label: "渠道" },
-      { key: "scene", label: "场景" }
+      { key: "scene", label: "场景" },
+      { key: "shoot", label: "拍摄方式" },
+      { key: "skin", label: "肤色" }
     ];
     box.innerHTML = "";
     dims.forEach(d => {
@@ -925,12 +991,14 @@
     if (smartDim === "channel") {
       const list = (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []);
       renderSmartTags([...new Set(list)]);
+      renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
       return;
     }
     try {
       const defs = await SB.listTagDefs();
       const list = (defs || []).filter(d => d.type === smartDim).map(d => d.name);
       renderSmartTags([...new Set(list)]);
+      renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
     } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
   }
   function renderSmartTags(list) {
@@ -942,7 +1010,7 @@
       t.className = "smart-tag-empty";
       t.textContent = smartDim === "channel"
         ? "暂无渠道标签（请在 config.js 维护 CHANNEL_TAGS）"
-        : "暂无" + ({ style: "风格", element: "元素", scene: "场景" }[smartDim] || "") + "标签，请到「标签管理」新增";
+        : "暂无" + ({ style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "") + "标签，请到「标签管理」新增";
       box.appendChild(t);
       return;
     }
@@ -966,18 +1034,42 @@
     undoneGrid.innerHTML = "";
     document.querySelector("#smart-cnt-done").textContent = "0";
     document.querySelector("#smart-cnt-undone").textContent = "0";
-    if (!smartTag) return;
+    if (!smartAll.length) return;
     const field = smartFieldMap[smartDim];
-    const tarId = smartTag;
-    const doneList = [], undoneList = [];
-    smartAll.forEach(img => {
-      const has = Array.isArray(img[field]) && img[field].includes(tarId);
-      (has ? doneList : undoneList).push(img);
-    });
-    document.querySelector("#smart-cnt-done").textContent = doneList.length;
-    document.querySelector("#smart-cnt-undone").textContent = undoneList.length;
-    doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
-    undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+
+    // 池标题：已选具体标签→按"是否含该标签"；未选标签→按"该维度是否已打标"
+    const doneHead = document.querySelector("#smart-pool-done .smart-pool-head");
+    const undoneHead = document.querySelector("#smart-pool-undone .smart-pool-head");
+    const finishHead = (el, label, cnt) => {
+      if (!el) return;
+      el.childNodes[0].nodeValue = label;
+      const c = el.querySelector(".sp-count");
+      if (c) c.textContent = cnt;
+    };
+
+    if (smartTag) {
+      const doneList = [], undoneList = [];
+      smartAll.forEach(img => {
+        const has = Array.isArray(img[field]) && img[field].includes(smartTag);
+        (has ? doneList : undoneList).push(img);
+      });
+      finishHead(doneHead, "已打该标签 ", doneList.length);
+      finishHead(undoneHead, "未打该标签 ", undoneList.length);
+      doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
+      undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+    } else {
+      // 未选具体标签：自动聚焦"该维度还没打任何标"的图片
+      const doneList = [], undoneList = [];
+      const dimLabel = ({ style: "风格", element: "元素", channel: "渠道", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "该维度");
+      smartAll.forEach(img => {
+        const has = Array.isArray(img[field]) && img[field].length > 0;
+        (has ? doneList : undoneList).push(img);
+      });
+      finishHead(doneHead, "已打" + dimLabel + " ", doneList.length);
+      finishHead(undoneHead, "未打" + dimLabel + " ", undoneList.length);
+      doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
+      undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+    }
   }
   function makeSmartCard(img, isDone) {
     const card = document.createElement("div");

@@ -52,6 +52,8 @@ alter table public.images add column if not exists tags text[] not null default 
 alter table public.images add column if not exists style_tags text[] not null default '{}';
 alter table public.images add column if not exists element_tags text[] not null default '{}';
 alter table public.images add column if not exists scene_tags text[] not null default '{}';
+alter table public.images add column if not exists shoot_tags text[] not null default '{}';
+alter table public.images add column if not exists skin_tags text[] not null default '{}';
 
 alter table public.images enable row level security;
 
@@ -170,6 +172,10 @@ insert into public.site_settings (id, public_access)
 values (1, false)
 on conflict (id) do nothing;
 
+-- 各标签维度是否在前台展示（channel/style/element/scene/shoot/skin）
+alter table public.site_settings
+  add column if not exists frontend_dims jsonb not null default '{"channel":true,"style":true,"element":true,"scene":true,"shoot":true,"skin":true}'::jsonb;
+
 alter table public.site_settings enable row level security;
 
 -- 匿名与登录用户均可读取开关（前台首次加载需判断是否公开浏览）
@@ -202,7 +208,7 @@ create policy "admin update settings"
 -- ---------- 3.7 标签定义表（风格/元素标签，后台可自定义增删） ----------
 create table if not exists public.tag_defs (
   id uuid primary key default gen_random_uuid(),
-  type text not null check (type in ('style','element','scene')),
+  type text not null check (type in ('style','element','scene','shoot','skin')),
   name text not null,
   sort_order int not null default 1,
   created_at timestamptz not null default now(),
@@ -275,6 +281,16 @@ insert into public.tag_defs (type, name) values
   ('scene', '室内·办公室'), ('scene', '室外·街道'), ('scene', '室外·商场'), ('scene', '室外·户外'),
   ('scene', '室外·园区'), ('scene', '室外·广场'), ('scene', '室外·公园'), ('scene', '室外·建筑外景'),
   ('scene', '室外·交通工具')
+on conflict (type, name) do nothing;
+
+-- 预设拍摄方式标签（摆拍/挂拍/模拍/3D，可自定义增删）
+insert into public.tag_defs (type, name) values
+  ('shoot', '摆拍'), ('shoot', '挂拍'), ('shoot', '模拍'), ('shoot', '3D')
+on conflict (type, name) do nothing;
+
+-- 预设肤色标签（黑/白/黄，可自定义增删）
+insert into public.tag_defs (type, name) values
+  ('skin', '黑'), ('skin', '白'), ('skin', '黄')
 on conflict (type, name) do nothing;
 
 -- ---------- 4.（可选）把某个用户设为管理员 ----------

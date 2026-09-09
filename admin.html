@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260909EM">
+<link rel="stylesheet" href="css/style.css?v=20260909SSK">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 </head>
 <body class="admin">
@@ -68,7 +68,7 @@
       </div>
 
       <!-- 上传区 -->
-      <div class="panel-card" id="upload-card">
+      <div class="panel-card hidden" id="upload-card">
         <h2>① 上传图片</h2>
         <div class="row">
           <label class="field">分类（常用类目优先，可输入新建）</label>
@@ -91,7 +91,7 @@
       </div>
 
       <!-- 前台访问设置 -->
-      <div class="panel-card" id="access-card">
+      <div class="panel-card hidden" id="access-card">
         <h2>⑤ 前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h2>
         <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
         <label class="switch-row">
@@ -127,7 +127,7 @@
       </div>
 
       <!-- 标签管理（综合：常用类目 / 前台类目 / 风格·元素标签） -->
-      <div class="panel-card" id="tag-card">
+      <div class="panel-card hidden" id="tag-card">
         <h2>④ 标签管理 <span class="hint-inline">（常用类目 / 前台类目 / 风格 · 元素 · 场景标签）</span></h2>
 
         <div class="tag-sub">
@@ -156,7 +156,14 @@
         <hr class="tag-sub-hr">
 
         <div class="tag-sub">
-          <h3 class="tbs-title">风格 · 元素 · 场景标签（自定义增删）</h3>
+          <h3 class="tbs-title">前台展示开关 <span class="hint-inline">（关闭后该维度标签在前台不可见）</span></h3>
+          <p class="hint">每个标签维度都可单独控制是否在前台展示；关闭后，前台筛选栏与该维度在图片上的标签均不显示。</p>
+          <div id="frontend-dim-switches" class="frontend-dim-switches"></div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">风格 · 元素 · 场景 · 拍摄方式 · 肤色标签（自定义增删）</h3>
           <p class="hint">删除标签时，会同步移除所有图片上的该标签。</p>
           <div class="tag-mgmt-grid">
             <div class="tag-mgmt-col">
@@ -183,12 +190,28 @@
                 <button id="scene-tag-add" class="btn-ghost">添加</button>
               </div>
             </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">拍摄方式标签（自定义）</h3>
+              <div id="shoot-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="shoot-tag-new" class="input" placeholder="新增拍摄方式标签，如：摆拍、挂拍、模拍、3D">
+                <button id="shoot-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">肤色标签（自定义）</h3>
+              <div id="skin-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="skin-tag-new" class="input" placeholder="新增肤色标签，如：黑、白、黄">
+                <button id="skin-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 趋势专区管理（上传趋势文件 / 列表 / 删除） -->
-      <div class="panel-card" id="trend-card">
+      <div class="panel-card hidden" id="trend-card">
         <h2>⑥ 趋势专区 <span class="hint-inline">（上传类目/月度/周度趋势文件，前台登录后在线预览、不可下载）</span></h2>
         <div class="trend-upload">
           <div class="row">
@@ -257,7 +280,7 @@
 
       <!-- 数据看板（各类标签统计图表） -->
       <!-- 公告管理（编辑/发布/下架/删除公告，前台展示近一月未读） -->
-      <div class="panel-card" id="notice-card">
+      <div class="panel-card hidden" id="notice-card">
         <h2>⑦ 公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h2>
         <div class="notice-form-box">
           <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
@@ -306,7 +329,7 @@
         </div>
       </div>
 
-      <div class="panel-card" id="recruit-card">
+      <div class="panel-card hidden" id="recruit-card">
         <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span><span class="head-right"><button id="recruit-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
 
         <div id="recruit-main-area">
@@ -368,7 +391,7 @@
         </div>
       </div>
 
-      <div class="panel-card" id="dash-card">
+      <div class="panel-card hidden" id="dash-card">
         <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
           <span id="dash-meta" class="hint-inline">加载中…</span>
@@ -396,6 +419,14 @@
             <h3 class="dash-chart-title">场景标签分布</h3>
             <div id="dash-scene" class="hbar-list"></div>
           </div>
+          <div class="dash-card">
+            <h3 class="dash-chart-title">拍摄方式标签分布</h3>
+            <div id="dash-shoot" class="hbar-list"></div>
+          </div>
+          <div class="dash-card">
+            <h3 class="dash-chart-title">肤色标签分布</h3>
+            <div id="dash-skin" class="hbar-list"></div>
+          </div>
         </div>
         <div class="dash-recruit-section">
           <h3 class="dash-chart-title">招品回品专区统计 <span class="hint-inline">（招品任务与商家SPU提交情况）</span></h3>
@@ -421,7 +452,7 @@
     <div id="smart-modal" class="modal-mask hidden">
       <div class="modal smart-modal-box">
         <h3>智能打标（拖拽式）</h3>
-        <p class="hint">① 选择标签维度 → ② 选择具体标签 → 下方出现左右两个池子：左池=已打该标签的图片，右池=未打该标签的图片。把右池图片拖进左池＝打上该标签；把左池图片拖回右池＝移除该标签。也可点图片右下角的箭头按钮完成移动。</p>
+        <p class="hint">选择标签维度后，左右两个池子会自动分类：左池＝已打该维度标签的图片，右池＝该维度<b>还没打任何标签</b>的图片（方便你挑还没打的）。再选一个具体标签，可按"是否含该标签"进一步区分已打/未打。把右池拖进左池＝打上标签；把左池拖回右池＝移除标签。也可点图片右下角的箭头按钮完成移动。</p>
         <div class="smart-dims" id="smart-dims"></div>
         <div class="smart-tags" id="smart-tags"></div>
         <div class="smart-pools">
@@ -459,8 +490,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260909EM"></script>
-  <script src="js/supabase.js?v=20260909EM"></script>
-  <script src="js/admin.js?v=20260909EM"></script>
+  <script src="js/config.js?v=20260909SSK"></script>
+  <script src="js/supabase.js?v=20260909SSK"></script>
+  <script src="js/admin.js?v=20260909SSK"></script>
 </body>
 </html>
