@@ -487,6 +487,21 @@
       };
       if (cb.checked) cell.classList.add("selected");
 
+      // 「选中此行」按钮：一键选中/取消该卡片用于批量打标
+      const selRow = document.createElement("button");
+      selRow.className = "mgr-selrow" + (selectedImages.has(img.id) ? " on" : "");
+      selRow.textContent = selectedImages.has(img.id) ? "已选中" : "选中此行";
+      selRow.onclick = (e) => {
+        e.stopPropagation();
+        const willSel = !selectedImages.has(img.id);
+        if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
+        cell.classList.toggle("selected", willSel);
+        cb.checked = willSel;
+        selRow.classList.toggle("on", willSel);
+        selRow.textContent = willSel ? "已选中" : "选中此行";
+        updateBatchBtn();
+      };
+
       // 单个删除按钮
       const delBtn = document.createElement("button");
       delBtn.className = "btn-danger mgr-del";
@@ -496,6 +511,7 @@
       cell.appendChild(cb);
       cell.appendChild(holder);
       cell.appendChild(cap);
+      cell.appendChild(selRow);
       cell.appendChild(delBtn);
       grid.appendChild(cell);
 
@@ -945,7 +961,10 @@
   let smartTag = "";               // 当前选中标签
   let smartAll = [];               // 全量图片缓存
   let smartDragging = null;        // 正在拖拽的图片对象
-  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags" };
+  let smartToken = "";             // 智能打标取图鉴权令牌
+  const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags", category: "category" };
+  // 单值维度（类目 category 是字符串，其余是数组）
+  const smartSingleDim = { category: true };
 
   function openSmartModal() {
     if (!document.querySelector("#smart-modal")) return;
@@ -962,6 +981,7 @@
     const box = document.querySelector("#smart-dims");
     if (!box) return;
     const dims = [
+      { key: "category", label: "类目" },
       { key: "style", label: "风格" },
       { key: "element", label: "元素" },
       { key: "channel", label: "渠道" },
@@ -985,9 +1005,19 @@
     });
   }
   async function loadSmartAll() {
+    try { smartToken = await SB.currentToken(); } catch (e) { smartToken = ""; }
     try { smartAll = await SB.listImages(null); }
     catch (e) { sbToast("读取图片失败", false); return; }
-    // 渲染该维度的标签选择条（渠道用固定清单，风格/元素用 tag_defs）
+    // 渲染该维度的标签选择条（类目用 categories 表；渠道用固定清单；其余用 tag_defs）
+    if (smartDim === "category") {
+      try {
+        const cats = await SB.listActiveCats();
+        const list = (cats || []).map(c => c.name);
+        renderSmartTags([...new Set(list)]);
+      } catch (e) { renderSmartTags([]); }
+      renderSmartPools();
+      return;
+    }
     if (smartDim === "channel") {
       const list = (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []);
       renderSmartTags([...new Set(list)]);
@@ -1010,7 +1040,7 @@
       t.className = "smart-tag-empty";
       t.textContent = smartDim === "channel"
         ? "暂无渠道标签（请在 config.js 维护 CHANNEL_TAGS）"
-        : "暂无" + ({ style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "") + "标签，请到「标签管理」新增";
+        : "暂无" + ({ category: "类目", style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "") + "标签，请到「标签管理」新增";
       box.appendChild(t);
       return;
     }
@@ -1025,6 +1055,16 @@
       };
       box.appendChild(b);
     });
+  }
+  // 判断某图在某维度是否含指定标签（tag 为空串则只判断"该维度是否已打标"；单值维度=category 用字符串判断）
+  function smartHas(img, field, tag) {
+    const single = smartSingleDim[field];
+    if (single) {
+      const v = img[field];
+      return tag ? (v === tag) : !!v;
+    }
+    const arr = Array.isArray(img[field]) ? img[field] : [];
+    return tag ? arr.includes(tag) : arr.length > 0;
   }
   function renderSmartPools() {
     const doneGrid = document.querySelector("#smart-grid-done");
@@ -1050,7 +1090,7 @@
     if (smartTag) {
       const doneList = [], undoneList = [];
       smartAll.forEach(img => {
-        const has = Array.isArray(img[field]) && img[field].includes(smartTag);
+        const has = smartHas(img, field, smartTag);
         (has ? doneList : undoneList).push(img);
       });
       finishHead(doneHead, "已打该标签 ", doneList.length);
@@ -1060,9 +1100,9 @@
     } else {
       // 未选具体标签：自动聚焦"该维度还没打任何标"的图片
       const doneList = [], undoneList = [];
-      const dimLabel = ({ style: "风格", element: "元素", channel: "渠道", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "该维度");
+      const dimLabel = ({ category: "类目", style: "风格", element: "元素", channel: "渠道", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "该维度");
       smartAll.forEach(img => {
-        const has = Array.isArray(img[field]) && img[field].length > 0;
+        const has = smartHas(img, field, "");
         (has ? doneList : undoneList).push(img);
       });
       finishHead(doneHead, "已打" + dimLabel + " ", doneList.length);
@@ -1079,7 +1119,7 @@
     const wrap = document.createElement("div");
     wrap.className = "holder";
     const im = document.createElement("img");
-    im.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path;
+    im.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (smartToken ? "?token=" + encodeURIComponent(smartToken) : "");
     // 缩略图懒加载
     if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver((es, ob) => {
@@ -1142,8 +1182,21 @@
     const field = smartFieldMap[smartDim];
     const img = smartAll.find(i => i.id === id);
     if (!img) return;
-    const cur = Array.isArray(img[field]) ? img[field] : [];
+    const isSingle = smartSingleDim[field];
     let next;
+    if (isSingle) {
+      next = toDone ? smartTag : "";
+      try {
+        await SB.setImageSingleField(img.id, field, next);
+        img[field] = next;
+        sbToast(toDone ? "已为图片打上「" + smartTag + "」类目" : "已清空该图片类目");
+        renderSmartPools();
+      } catch (e) {
+        sbToast("操作失败：" + (e.message || ""), false);
+      }
+      return;
+    }
+    const cur = Array.isArray(img[field]) ? img[field] : [];
     if (toDone) next = [...new Set(cur.concat([smartTag]))];
     else next = cur.filter(t => t !== smartTag);
     try {
@@ -1156,11 +1209,51 @@
       sbToast("操作失败：" + (e.message || ""), false);
     }
   }
+  // 全屏切换（智能打标弹窗）
+  function toggleSmartFullscreen() {
+    const modal = document.querySelector("#smart-modal");
+    const fsBtn = document.querySelector("#smart-fs");
+    if (!modal) return;
+    const on = modal.classList.toggle("fullscreen");
+    if (fsBtn) fsBtn.textContent = on ? "退出全屏" : "全屏";
+  }
+  // 全选本池：给右池（未打该标签）的全部图片一键打上当前标签
+  async function smartSelectAll() {
+    if (!smartTag) { sbToast("请先选择一个具体标签，再全选本池", false); return; }
+    const field = smartFieldMap[smartDim];
+    const undoneGrid = document.querySelector("#smart-grid-undone");
+    if (!undoneGrid) return;
+    const ids = [...undoneGrid.querySelectorAll(".smart-card")].map(c => c.dataset.id).filter(Boolean);
+    if (!ids.length) { sbToast("本池暂无需要打标的图片", false); return; }
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      const img = smartAll.find(i => i.id === id);
+      if (!img) continue;
+      try {
+        if (smartSingleDim[field]) {
+          await SB.setImageSingleField(id, field, smartTag);
+          img[field] = smartTag;
+        } else {
+          const cur = Array.isArray(img[field]) ? img[field] : [];
+          const next = [...new Set(cur.concat([smartTag]))];
+          await SB.updateImageField(id, field, next);
+          img[field] = next;
+        }
+        ok++;
+      } catch (e) { fail++; }
+    }
+    sbToast("已为 " + ok + " 张图片打上「" + smartTag + "」" + (smartSingleDim[field] ? "类目" : "标签") + (fail ? "，失败 " + fail + " 张" : ""));
+    renderSmartPools();
+  }
   function bindSmartModal() {
     const openBtn = document.querySelector("#smart-tag-btn");
     if (openBtn) openBtn.addEventListener("click", openSmartModal);
     const closeBtn = document.querySelector("#smart-close");
     if (closeBtn) closeBtn.addEventListener("click", closeSmartModal);
+    const fsBtn = document.querySelector("#smart-fs");
+    if (fsBtn) fsBtn.addEventListener("click", toggleSmartFullscreen);
+    const selAll = document.querySelector("#smart-select-all");
+    if (selAll) selAll.addEventListener("click", smartSelectAll);
     bindSmartDrop();
   }
 

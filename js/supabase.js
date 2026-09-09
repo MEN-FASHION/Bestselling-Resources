@@ -218,6 +218,13 @@ const SB = (() => {
     async updateImageTags(id, tags) {
       return this.updateImageField(id, "tags", tags);
     },
+    // 给单张图片设置单值字段（如 category 类目，是字符串不是数组）
+    async setImageSingleField(id, field, value) {
+      const v = value == null ? "" : String(value);
+      const { error } = await client.from("images").update({ [field]: v }).eq("id", id);
+      if (error) throw new Error(error.message || "设置失败");
+      return v;
+    },
     // 清空一批图片的指定字段标签
     async clearImageFields(ids, fields) {
       if (!ids || !ids.length) return;
