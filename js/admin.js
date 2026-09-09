@@ -474,45 +474,35 @@
         mkCap("拍摄", img.shoot_tags, "sh") +
         mkCap("肤色", img.skin_tags, "sk");
 
-      // 勾选框
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.className = "mgr-check";
-      cb.dataset.id = img.id;
-      cb.checked = selectedImages.has(img.id);
-      cb.onchange = () => {
-        if (cb.checked) selectedImages.add(img.id); else selectedImages.delete(img.id);
-        cell.classList.toggle("selected", cb.checked);
-        updateBatchBtn();
-      };
-      if (cb.checked) cell.classList.add("selected");
+      // 选中状态初始高亮
+      if (selectedImages.has(img.id)) cell.classList.add("selected");
 
-      // 「选中此行」按钮：一键选中/取消该卡片用于批量打标
+      // 顶部操作行：最左 =「选中此行」，最右 =「删除」；点击图片也可选中
+      cell.appendChild(holder);
+      cell.appendChild(cap);
+      const topbar = document.createElement("div");
+      topbar.className = "mgr-topbar";
       const selRow = document.createElement("button");
       selRow.className = "mgr-selrow" + (selectedImages.has(img.id) ? " on" : "");
       selRow.textContent = selectedImages.has(img.id) ? "已选中" : "选中此行";
+      selRow.dataset.id = img.id;
       selRow.onclick = (e) => {
         e.stopPropagation();
         const willSel = !selectedImages.has(img.id);
         if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
         cell.classList.toggle("selected", willSel);
-        cb.checked = willSel;
         selRow.classList.toggle("on", willSel);
         selRow.textContent = willSel ? "已选中" : "选中此行";
         updateBatchBtn();
       };
-
-      // 单个删除按钮
       const delBtn = document.createElement("button");
       delBtn.className = "btn-danger mgr-del";
-      delBtn.textContent = "删";
+      delBtn.textContent = "删除";
       delBtn.onclick = (e) => { e.stopPropagation(); removeImage(img); };
-
-      cell.appendChild(cb);
-      cell.appendChild(holder);
-      cell.appendChild(cap);
-      cell.appendChild(selRow);
-      cell.appendChild(delBtn);
+      topbar.appendChild(selRow);
+      topbar.appendChild(delBtn);
+      cell.appendChild(topbar);
+      // 点击卡片主体也切换选中（可选便捷）
       grid.appendChild(cell);
 
       // 懒加载缩略图
@@ -890,14 +880,13 @@
 
   // 全选 / 取消全选（仅当前网格显示的）
   function toggleSelectAll() {
-    const boxes = [...document.querySelectorAll("#manage-grid .mgr-check")];
-    // 若当前已全选则取消，否则全选
-    const allChecked = boxes.every(b => b.checked);
-    boxes.forEach(b => {
-      b.checked = !allChecked;
+    const rows = [...document.querySelectorAll("#manage-grid .mgr-selrow")];
+    const allOn = rows.every(b => b.classList.contains("on"));
+    rows.forEach(b => {
+      const id = b.dataset.id;
       const cell = b.closest(".cell");
-      if (b.checked) { selectedImages.add(b.dataset.id); cell.classList.add("selected"); }
-      else { selectedImages.delete(b.dataset.id); cell.classList.remove("selected"); }
+      if (!allOn) { selectedImages.add(id); b.classList.add("on"); b.textContent = "已选中"; cell.classList.add("selected"); }
+      else { selectedImages.delete(id); b.classList.remove("on"); b.textContent = "选中此行"; cell.classList.remove("selected"); }
     });
     updateBatchBtn();
   }
@@ -1119,16 +1108,36 @@
     const wrap = document.createElement("div");
     wrap.className = "holder";
     const im = document.createElement("img");
-    im.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (smartToken ? "?token=" + encodeURIComponent(smartToken) : "");
-    // 缩略图懒加载
+    // 与图片管理完全一致的取图方式（懒加载 + 实时令牌 + onerror 兜底重试）
+    const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+    const makeSrc = (tok) => (base + "/" + img.path + (tok ? "?token=" + encodeURIComponent(tok) : ""));
+    im.alt = img.name || "";
+    im.loading = "lazy";
+    im.draggable = false;
+    im.addEventListener("contextmenu", (e) => e.preventDefault());
+    let toked = false;
+    im.onerror = () => {
+      // 首拉失败（可能无令牌）则用当前登录令牌重试一次；仍失败才报错
+      if (!toked) {
+        toked = true;
+        SB.currentToken().then(t => { im.src = makeSrc(t || smartToken); }).catch(() => { im.src = makeSrc(smartToken); });
+      }
+    };
+    im.dataset.src = makeSrc("");
+    im.src = makeSrc(smartToken);
+    // 懒加载：与图片管理一致，进入视口才真正设置带令牌的 src
     if ("IntersectionObserver" in window) {
-      const io = new IntersectionObserver((es, ob) => {
-        es.forEach(en => {
-          if (en.isIntersecting) { en.target.src = en.target.dataset.src; ob.unobserve(en.target); }
+      const io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            SB.currentToken().then(t => { im.src = makeSrc(t || smartToken); }).catch(() => { im.src = makeSrc(smartToken); });
+            obs.unobserve(im);
+          }
         });
-      }, { root: document.querySelector("#smart-modal") });
+      }, { rootMargin: "300px" });
       io.observe(im);
-    } else { im.src = im.dataset.src; }
+    }
+    im.loading = "lazy";
     wrap.appendChild(im);
     const cap = document.createElement("div");
     cap.className = "smart-cap";
