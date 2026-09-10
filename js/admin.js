@@ -954,6 +954,7 @@
   const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags", category: "category" };
   // 单值维度（类目 category 是字符串，其余是数组）
   const smartSingleDim = { category: true };
+  const smartAlbumPreview = {};   // 每个图册标签显示的最新拖入图片（tag -> img 对象）
 
   function openSmartModal() {
     if (!document.querySelector("#smart-modal")) return;
@@ -1058,11 +1059,80 @@
     return tag ? arr.includes(tag) : arr.length > 0;
   }
   // 用指向弹窗滚动容器的懒加载渲染一个池子，避免一次性加载上百张
+  // 智能打标取图地址（带令牌）
+  function smartImgUrl(img, tok) {
+    const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+    return base + "/" + img.path + (tok ? "?token=" + encodeURIComponent(tok) : "");
+  }
+  // 按容器宽度计算列数（行内卡片 + 行末按钮均分）
+  function smartCols(gridEl, cardW, gap) {
+    if (!gridEl) return 4;
+    const pad = 20;                 // 容器左右 padding 合计
+    const btnW = 34;                // 行末按钮预留宽（含间距）
+    const avail = (gridEl.clientWidth || 640) - pad - btnW;
+    return Math.max(1, Math.floor((avail + gap) / (cardW + gap)));
+  }
+  // 池子按行渲染：每行若干卡片 + 行末「全选本行」按钮（右侧池在最右侧）
+  function smartRenderRows(container, list, isDone, smartToken) {
+    if (!container || !list.length) return;
+    container.innerHTML = "";
+    const gap = 10, cardW = 150, btnW = 34;
+    const cols = smartCols(container, cardW, gap);
+    const pad = 20;
+    const avail = (container.clientWidth || 640) - pad;
+    const cardPx = Math.max(140, Math.floor((avail - gap * (cols - 1) - btnW) / cols));
+    for (let i = 0; i < list.length; i += cols) {
+      const row = document.createElement("div");
+      row.className = "smart-row";
+      const chunk = list.slice(i, i + cols);
+      chunk.forEach(img => {
+        const c = makeSmartCard(img, isDone, smartToken);
+        c.style.width = cardPx + "px";
+        row.appendChild(c);
+      });
+      const b = document.createElement("button");
+      b.className = "smart-row-sel";
+      b.type = "button";
+      b.textContent = isDone ? "全选本行去标" : "全选本行打标";
+      b.title = "选中这一行的所有图片";
+      b.onclick = (e) => { e.stopPropagation(); smartSelectRow(chunk.map(x => x.id), isDone); };
+      row.appendChild(b);
+      container.appendChild(row);
+    }
+  }
   function renderSmartGrid(gridEl, list, isDone, smartToken) {
     if (!gridEl || !list.length) return;
-    list.forEach(img => {
-      gridEl.appendChild(makeSmartCard(img, isDone, smartToken));
-    });
+    smartRenderRows(gridEl, list, isDone, smartToken);
+  }
+// 全选某一行：batch 打标(toDone=true)或去标(false)，带二次确认
+  async function smartSelectRow(ids, toDone) {
+    if (!smartTag) { sbToast("请先选择一个具体标签，再全选本行", false); return; }
+    if (!ids.length) return;
+    const field = smartFieldMap[smartDim];
+    const single = smartSingleDim[field];
+    const action = single
+      ? (toDone ? "打上「" + smartTag + "」类目" : "清空「" + smartTag + "」类目")
+      : (toDone ? "打上「" + smartTag + "」标签" : "移除「" + smartTag + "」标签");
+    if (!confirm("确认要对本行 " + ids.length + " 张图片批量" + action + "？")) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      const img = smartAll.find(i => i.id === id);
+      if (!img) continue;
+      try {
+        if (single) {
+          await SB.setImageSingleField(id, field, toDone ? smartTag : "");
+          img[field] = toDone ? smartTag : "";
+        } else {
+          const cur = Array.isArray(img[field]) ? img[field] : [];
+          const next = toDone ? [...new Set(cur.concat([smartTag]))] : cur.filter(t => t !== smartTag);
+          await SB.updateImageField(id, field, next);
+          img[field] = next;
+        }
+        ok++;
+      } catch (e) { fail++; }
+    }
+    sbToast("本行已" + action + "，" + ok + " 张成功" + (fail ? "，失败 " + fail + " 张" : ""));
+    await renderSmartPools();
   }
 
   async function renderSmartPools() {
@@ -1237,6 +1307,8 @@
         if (!id) return;
         // 把图片打上该册子标签（自动落到左池该标签下）
         smartTag = tag;
+        const draggedImg = smartAll.find(i => i.id === id);
+        if (draggedImg) smartAlbumPreview[tag] = draggedImg;   // 图册缩略图显示最新拖入的这张
         moveSmart(id, true);
       });
     }
@@ -1247,16 +1319,10 @@
     const cntEl = document.querySelector("#smart-album-cnt");
     if (!box) return;
     box.innerHTML = "";
-    const lists = [];
-    // 收集当前维度的标签清单
-    if (smartDim === "category") {
-      (smartTagsCache || []).forEach(t => lists.push(t));
-    } else {
-      (smartTagsCache || []).forEach(t => lists.push(t));
-    }
+    const lists = (smartTagsCache || []).slice();
     if (!lists.length) {
       if (cntEl) cntEl.textContent = "0";
-      box.innerHTML = '<div class="smart-album-name" style="color:var(--sub);font-weight:400;font-size:12px">暂无标签，可到标签管理新增</div>';
+      box.innerHTML = '<div class="smart-album-name" style="color:var(--sub);font-weight:400;font-size:12px;padding:8px">暂无标签，可到标签管理新增</div>';
       return;
     }
     const field = smartFieldMap[smartDim];
@@ -1267,14 +1333,36 @@
       const a = document.createElement("div");
       a.className = "smart-album" + (tag === smartTag ? " active" : "") + (count === 0 ? " empty" : "");
       a.dataset.tag = tag;
+      // 顶部竖版缩略图：优先显示最新拖入该册子的图，其次显示册内任意一张
+      const thumbWrap = document.createElement("div");
+      thumbWrap.className = "smart-album-thumb";
+      const pv = smartAlbumPreview[tag] || smartAll.find(img => smartHas(img, field, tag)) || null;
+      if (pv && pv.path) {
+        const im = document.createElement("img");
+        im.alt = tag;
+        im.src = smartImgUrl(pv, smartToken);
+        im.addEventListener("error", () => {
+          if (smartToken) im.src = smartImgUrl(pv, "");
+        });
+        thumbWrap.appendChild(im);
+      } else {
+        const ph = document.createElement("span");
+        ph.className = "smart-album-ph";
+        ph.textContent = tag;
+        thumbWrap.appendChild(ph);
+      }
+      const body = document.createElement("div");
+      body.className = "smart-album-body";
       const name = document.createElement("div");
       name.className = "smart-album-name";
       name.textContent = tag;
       const c = document.createElement("div");
       c.className = "smart-album-count";
       c.textContent = count + " 张";
-      a.appendChild(name);
-      a.appendChild(c);
+      body.appendChild(name);
+      body.appendChild(c);
+      a.appendChild(thumbWrap);
+      a.appendChild(body);
       a.title = "把图片拖进此册子，即打上「" + tag + "」标签";
       // 点击册子：选中该标签
       a.addEventListener("click", async () => {
