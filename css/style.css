@@ -679,7 +679,7 @@ select.input {
 .smart-pool-head .sp-count { margin-left: 6px; font-weight: 400; color: var(--sub); }
 .smart-pool-grid { flex: 1 1 auto; min-height: 0; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; overflow-y: auto; align-content: start; grid-auto-rows: max-content; }
 .smart-pool-grid.drop-over { outline: 2px dashed var(--gold); outline-offset: -4px; background: rgba(139,115,85,.06); }
-.smart-card { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #191c20; cursor: grab; transition: border-color .15s, transform .15s; }
+.smart-card { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #191c20; cursor: grab; transition: border-color .15s, transform .15s; }
 .smart-card:hover { border-color: var(--gold); transform: translateY(-1px); }
 .smart-card.dragging { opacity: .45; border-style: dashed; }
 .smart-card .holder { width: 100%; aspect-ratio: 3 / 4; overflow: hidden; background: var(--shade); }
@@ -1261,7 +1261,7 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .smart-album.active { border-color: var(--gold); background: rgba(139,115,85,.10); }
 .smart-album.empty { opacity: .55; }
 /* 池内一行：卡片横向排 + 行末"全选本行"按钮固定在行最右侧 */
-.smart-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.smart-row { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; flex-wrap: nowrap; }
 .smart-row-sel { flex: 0 0 auto; align-self: center; margin-left: auto; padding: 6px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.03); color: var(--sub); cursor: pointer; white-space: nowrap; transition: border-color .15s, background .15s, color .15s; }
 .smart-row-sel:hover { border-color: var(--gold); color: var(--gold); background: rgba(139,115,85,.06); }
 
