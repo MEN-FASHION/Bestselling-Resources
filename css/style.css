@@ -684,17 +684,19 @@ select.input {
 .smart-card.dragging { opacity: .45; border-style: dashed; }
 .smart-card .holder { width: 100%; aspect-ratio: 3 / 4; overflow: hidden; background: var(--shade); }
 .smart-card .holder img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; pointer-events: none; user-select: none; -webkit-user-drag: none; opacity: 1 !important; }
-/* 智能打标卡片底部：该图所有维度已打标签（前台式展示） */
-.smart-card-tags { padding: 5px 6px; display: flex; flex-direction: column; gap: 2px; max-height: 92px; overflow: hidden; }
-.smart-card-tags .mgr-cap-row { display: block; font-size: 10px; line-height: 1.25; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.smart-card-tags .mgr-cap-row i { font-style: normal; margin-right: 4px; opacity: .7; }
-.smart-card-tags .mgr-cap-row.cat i { color: #c9a86a; }
-.smart-card-tags .mgr-cap-row.ch i { color: #a3b7d8; }
-.smart-card-tags .mgr-cap-row.st i { color: #c9a86a; }
-.smart-card-tags .mgr-cap-row.el i { color: #a3b7d8; }
-.smart-card-tags .mgr-cap-row.sc i { color: #b7a6c9; }
-.smart-card-tags .mgr-cap-row.sh i { color: #9ec6b3; }
-.smart-card-tags .mgr-cap-row.sk i { color: #d8a3a3; }
+/* 智能打标卡片：标签浮层叠加显示在图片顶部（前台式） */
+.smart-card { position: relative; }
+.smart-card-tags { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: 4px 4px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; align-content: flex-start; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); border-radius: 8px 8px 0 0; max-height: 78px; overflow: hidden; }
+.sm-tag.chip { display: inline-block; font-size: 10px; line-height: 1.3; padding: 1px 6px; border-radius: 999px; color: #fff; white-space: nowrap; backdrop-filter: blur(2px); }
+.sm-tag.chip.cat { background: rgba(201,168,106,.92); }
+.sm-tag.chip.ch { background: rgba(163,183,216,.92); }
+.sm-tag.chip.st { background: rgba(201,168,106,.92); }
+.sm-tag.chip.el { background: rgba(163,183,216,.92); }
+.sm-tag.chip.sc { background: rgba(183,166,201,.92); }
+.sm-tag.chip.sh { background: rgba(158,198,179,.92); }
+.sm-tag.chip.sk { background: rgba(216,163,163,.92); }
+.sm-tag.chip.none { background: rgba(120,120,120,.75); font-style: italic; }
+.smart-card:hover .smart-card-tags { max-height: none; overflow: visible; }
 
 /* ========== 标签管理综合页（常用类目/前台类目/风格·元素标签） ========== */
 .tag-sub { display: flex; flex-direction: column; gap: 12px; }

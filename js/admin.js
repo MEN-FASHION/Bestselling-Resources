@@ -1444,23 +1444,25 @@
     wrap.appendChild(im);
     card.appendChild(wrap);
 
+    // 标签浮层：叠加显示在图片上（前台式），只展示有值的维度标签
     const cap = document.createElement("div");
-      cap.className = "smart-card-tags";
-      const dims = [
-        ["类目", img.category ? [img.category] : []],
-        ["渠道", (Array.isArray(img.tags) ? img.tags : []).concat(!Array.isArray(img.tags) && img.tags ? [img.tags] : [])],
-        ["风格", img.style_tags],
-        ["元素", img.element_tags],
-        ["场景", img.scene_tags],
-        ["拍摄", img.shoot_tags],
-        ["肤色", img.skin_tags]
-      ];
-      const capHtml = dims.map(([lab, arr]) => {
-        const v = (Array.isArray(arr) ? arr : []).filter(Boolean).join("、");
-        return `<span class="mgr-cap-row ${lab === "类目" ? "cat" : lab === "渠道" ? "ch" : lab === "风格" ? "st" : lab === "元素" ? "el" : lab === "场景" ? "sc" : lab === "拍摄" ? "sh" : "sk"}"><i>${lab}</i>${v ? escHtml(v) : "未打标"}</span>`;
-      }).join("");
-      cap.innerHTML = capHtml;
-      card.appendChild(cap);
+    cap.className = "smart-card-tags";
+    const dims = [
+      ["类目", "cat", img.category ? [img.category] : []],
+      ["渠道", "ch", (Array.isArray(img.tags) ? img.tags : []).concat(!Array.isArray(img.tags) && img.tags ? [img.tags] : [])],
+      ["风格", "st", img.style_tags],
+      ["元素", "el", img.element_tags],
+      ["场景", "sc", img.scene_tags],
+      ["拍摄", "sh", img.shoot_tags],
+      ["肤色", "sk", img.skin_tags]
+    ];
+    const chips = [];
+    dims.forEach(([lab, cls, arr]) => {
+      const v = (Array.isArray(arr) ? arr : []).filter(Boolean);
+      v.forEach(t => chips.push(`<span class="sm-tag chip ${cls}">${escHtml(t)}</span>`));
+    });
+    cap.innerHTML = chips.length ? chips.join("") : `<span class="sm-tag chip none">未打标</span>`;
+    card.appendChild(cap);
       // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
     card.addEventListener("click", (e) => {
       if (smartDragging) return;                      // 拖拽中不触发
