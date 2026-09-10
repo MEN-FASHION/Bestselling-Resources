@@ -1109,6 +1109,15 @@
       doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true, smartToken)));
       undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false, smartToken)));
     }
+    // 兜底：错峰补载未成功显示的图片（避免一次性并发过高导致部分灰块）
+    setTimeout(() => {
+      [doneGrid, undoneGrid].forEach(grid => {
+        if (!grid) return;
+        grid.querySelectorAll(".smart-card .holder img:not(.loaded)").forEach(im => {
+          im.dispatchEvent(new Event("error"));
+        });
+      });
+    }, 500);
   }
   function makeSmartCard(img, isDone, smartToken) {
     const card = document.createElement("div");
@@ -1122,20 +1131,22 @@
     const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
     const makeSrc = (tok) => (base + "/" + img.path + (tok ? "?token=" + encodeURIComponent(tok) : ""));
     im.alt = img.name || "";
-    im.loading = "lazy";
+    im.loading = "eager";
     im.draggable = false;
     im.addEventListener("contextmenu", (e) => e.preventDefault());
-    // 立即加载：智能打标弹窗内懒加载监听不可靠，改为打开即加载，保证图片显示；失败时用令牌重试一次
+    // 立即加载：智能打标弹窗内懒加载监听不可靠，改为打开即加载，保证图片显示
+    let retried = false;
     const doLoad = (tok) => {
       im.src = makeSrc(tok);
-      im.onload = () => im.classList.add("loaded");
+      im.onload = () => { im.classList.add("loaded"); retried = false; };
       im.onerror = () => { im.classList.remove("loaded"); };
     };
     doLoad(smartToken);
-    // 若首次失败，尝试重新取令牌加载一次
+    // 无论是否已带令牌，加载失败都重取一次最新令牌重试（处理令牌过期/失效）
     im.addEventListener("error", () => {
-      if (smartToken) return;
-      SB.currentToken().then((t) => { if (t) { smartToken = t; doLoad(t); } }).catch(() => {});
+      if (retried) return;
+      retried = true;
+      SB.currentToken().then((t) => { if (t) doLoad(t); }).catch(() => {});
     });
     wrap.appendChild(im);
     const cap = document.createElement("div");
