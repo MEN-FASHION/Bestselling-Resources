@@ -19,7 +19,16 @@
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
-      if (session) enterPanel();
+      if (session) {
+        enterPanel();
+      } else {
+        // 未登录：显示登录页，隐藏后台
+        $("#admin-login").classList.remove("hidden");
+        $("#admin-panel").classList.add("hidden");
+      }
+      // 鉴权判定完成，揭开加载遮罩，避免登录页闪现
+      const sp = document.getElementById("boot-splash");
+      if (sp) sp.classList.add("hidden");
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
@@ -72,20 +81,11 @@
     currentRole = await SB.myRole();
     el.textContent = currentUser.email + " · " + (currentRole === "admin" ? "管理员" : "访客");
     el.classList.toggle("bad", currentRole !== "admin");
-    if (currentRole !== "admin" && currentUser) {
-      // 非管理员：隐藏上传区，只显示只读提示
-      ["#upload-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.add("hidden"));
-      $("#manage-card").classList.toggle("hidden", false);
-      $("#no-perm").classList.remove("hidden");
-      // 非管理员侧边只保留“图片管理”
-      document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
-        n.classList.toggle("hidden", n.dataset.target !== "manage-card");
-      });
-    } else {
-      ["#upload-card", "#access-card", "#tag-card", "#dash-card"].forEach(s => $(s)?.classList.remove("hidden"));
-      $("#no-perm").classList.add("hidden");
-      document.querySelectorAll("#admin-panel .nav-item").forEach(n => n.classList.remove("hidden"));
-    }
+    // 只控制侧边菜单显隐；面板显隐统一由 switchPanel 管理，避免后台各面板连在一起
+    const isAdmin = currentRole === "admin";
+    document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
+      n.classList.toggle("hidden", !isAdmin && n.dataset.target !== "manage-card");
+    });
   }
 
   // ================= 登录 / 退出 =================
@@ -188,10 +188,7 @@
     if (currentRole !== "admin") { sbToast("无权限：只有管理员可上传", false); return; }
 
     let cat = $("#cat-select").value;
-    if (cat === "__new__") {
-      cat = ($("#cat-new").value || "").trim();
-      if (!cat) { sbToast("请输入或选择分类", false); return; }
-    }
+    if (!cat) { sbToast("请选择分类", false); return; }
 
     uploading = true;
     $("#upload-btn").disabled = true;
@@ -243,19 +240,18 @@
   }
 
   // ================= 分类下拉（常用类目优先） =================
+  // 类目只能从已配置的「前台类目 + 常用类目」里选，不支持在传图时新增（防止误传出"露脸模特"这类残留类目）
   async function loadCats() {
     let cats = [];
     try { cats = await SB.listActiveCats(); } catch (e) {}
     const sel = $("#cat-select");
     sel.innerHTML = "";
+    sel.add(new Option("── 请选择类目 ──", ""));
     // 常用类目排前面
     if (currentFavCats.length) {
       currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
-      sel.add(new Option("──────────", ""));
-      sel.value = "";
     }
     cats.forEach(c => sel.add(new Option(c, c)));
-    sel.add(new Option("＋ 新建分类", "__new__"));
   }
 
   // ================= 我的常用类目 =================
@@ -264,15 +260,16 @@
   }
   async function loadFavCats() {
     try { currentFavCats = await SB.myFavCats(); } catch (e) { currentFavCats = []; }
-    // 候选 = 配置里的候选清单 + 已添加的前台类目 + 已有常用类目
-    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats).concat(currentFavCats));
+    // 与前台类目保持一致：候选以「前台类目 currentActiveCats」为主，勾选状态 = 前台类目
+    const base = (currentActiveCats && currentActiveCats.length) ? currentActiveCats : currentFavCats;
+    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(base));
     const box = $("#fav-list");
     box.innerHTML = "";
     [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
       const label = document.createElement("label");
       label.className = "check-item";
       label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span>${escHtml(name)}</span>`;
-      label.querySelector("input").checked = currentFavCats.includes(name);
+      label.querySelector("input").checked = base.includes(name);
       label.querySelector("input").onchange = () => {
         $("#fav-save").disabled = false;
       };
@@ -283,10 +280,16 @@
   async function saveFavCats() {
     const picked = [...document.querySelectorAll("#fav-list input:checked")].map(i => i.value);
     try {
+      // 与前台类目保持一致：勾选项新增进 categories，未勾选项从前台类目移除
+      const toAdd = picked.filter(c => !currentActiveCats.includes(c));
+      const toDel = currentActiveCats.filter(c => !picked.includes(c));
+      for (const c of toAdd) await SB.addCategory(c);
+      for (const c of toDel) await SB.removeCategory(c);
+      currentActiveCats = await SB.listActiveCats();
       currentFavCats = await SB.updateFavCats(picked);
-      sbToast("常用类目已保存");
+      sbToast("常用类目已保存（已同步前台类目）");
       $("#fav-save").disabled = true;
-      await loadCats();
+      await loadCats(); await loadCatMgmt();
     } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
 
@@ -330,8 +333,11 @@
           for (const img of imgs) {
             if ((img.category || "") === name) { await SB.updateImageField(img.id, "category", ""); n++; }
           }
+          // 同步从常用类目移除
+          const fav = (currentFavCats || []).filter(c => c !== name);
+          try { await SB.updateFavCats(fav); currentFavCats = fav; } catch (e) {}
           sbToast("已删除类目「" + name + "」" + (n ? "，清空 " + n + " 张图片" : ""));
-          await loadCatMgmt(); await loadCats(); await loadManage();
+          await loadCatMgmt(); await loadCats(); await loadFavCats(); await loadManage();
         } catch (err) { sbToast("删除失败：" + (err.message || ""), false); }
       };
       if (isUsedOnly) { /* 残留类目：默认不勾选，仅展示以便删除 */ }
@@ -411,6 +417,8 @@
       }
       sbToast("前台类目已保存");
       $("#cat-mgmt-save").disabled = true;
+      // 与常用类目保持一致：同步当前用户的常用类目 = 前台类目
+      try { await SB.updateFavCats(picked); currentFavCats = picked; } catch (e) {}
       await loadCats(); await loadFavCats(); await loadManage();
     } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
@@ -443,12 +451,40 @@
 
     // 渲染左侧类目菜单
     menu.innerHTML = "";
+    // 已配置的启用类目 + 候选类目（用于判断是否为"残留类目"——图片中有但无配置）
+    let activeCats = [];
+    try { activeCats = await SB.listActiveCats(); } catch (e) { activeCats = []; }
+    let cfgOpts = [];
+    try { cfgOpts = await SB.listCategories(); } catch (e) { cfgOpts = []; }
+    const configured = new Set([...activeCats, ...cfgOpts.map(c => c.name)]);
     ["全部"].concat(usedCats).forEach(c => {
+      const row = document.createElement("div");
+      row.className = "cat-menu-row";
       const b = document.createElement("button");
       b.className = "cat-menu-item" + (c === currentManageCat ? " active" : "");
       b.textContent = c + "（" + (c === "全部" ? allImgs.length : allImgs.filter(i => i.category === c).length) + "）";
       b.onclick = () => { currentManageCat = c; renderManageGrid(allImgs, usedCats); };
-      menu.appendChild(b);
+      row.appendChild(b);
+      // 残留类目：图片中有该类目但未在配置表中 → 提供一键删除（清空该类目下图片的类目字段）
+      if (c !== "全部" && !configured.has(c)) {
+        const del = document.createElement("button");
+        del.className = "cat-menu-del";
+        del.title = "删除残留类目「" + c + "」（清空该类目下所有图片的类目字段）";
+        del.textContent = "×";
+        del.onclick = async (ev) => {
+          ev.stopPropagation();
+          if (!confirm("类目「" + c + "」未在配置表中（疑似误加）。确定删除吗？\n删除后会同步清空该类目下所有图片的类目字段（图片本身保留）。")) return;
+          try {
+            const imgs = allImgs.filter(i => (i.category || "") === c);
+            let n = 0;
+            for (const img of imgs) { await SB.updateImageField(img.id, "category", ""); n++; }
+            sbToast("已删除残留类目「" + c + "」，清空 " + n + " 张图片的类目");
+            await loadManage();
+          } catch (err) { sbToast("删除失败：" + (err.message || ""), false); }
+        };
+        row.appendChild(del);
+      }
+      menu.appendChild(row);
     });
 
     renderManageGrid(allImgs, usedCats);
@@ -496,6 +532,19 @@
 
       // 选中状态初始高亮
       if (selectedImages.has(img.id)) cell.classList.add("selected");
+
+      // 点击卡片主体（图片/说明区）也可切换选中，支持连续多选；
+      // 按钮查询放到运行时执行，避免依赖 topbar 定义顺序
+      const clickCell = (e) => {
+        if (e.target.closest(".mgr-topbar") || e.target.closest(".mgr-del")) return;
+        const willSel = !selectedImages.has(img.id);
+        if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
+        cell.classList.toggle("selected", willSel);
+        const sb = cell.querySelector(".mgr-selrow");
+        if (sb) { sb.classList.toggle("on", willSel); sb.textContent = willSel ? "已选中" : "选中此行"; }
+        updateBatchBtn();
+      };
+      cell.addEventListener("click", clickCell);
 
       // 顶部操作行：最左 =「选中此行」，最右 =「删除」；点击图片也可选中
       cell.appendChild(holder);
@@ -1063,8 +1112,16 @@
     sbToast("批量删除完成：成功 " + ok + "，失败 " + fail);
     selectedImages = new Set();
     updateBatchBtn();
-    // 删除可能影响类目，刷新整套
-    await loadCats(); await loadCatMgmt(); await loadFavCats(); await loadManage();
+    // 删除可能影响类目，刷新整套（各步独立容错，确保网格必定重绘）
+    await refreshAfterImageChange();
+  }
+
+  // 图片增删后统一刷新：类目/常用类目/标签管理/图片网格，各步独立容错，确保网格必定重绘
+  async function refreshAfterImageChange() {
+    const steps = [loadCats, loadCatMgmt, loadFavCats, loadManage];
+    for (const fn of steps) {
+      try { await fn(); } catch (e) { console.warn("refresh 跳过:", fn.name, e); }
+    }
   }
 
   // 单个删除
@@ -1075,8 +1132,8 @@
       await SB.removeImageRecord(img.id);
       selectedImages.delete(img.id);
       sbToast("已删除");
-      // 删除后刷新类目与网格
-      await loadCats(); await loadCatMgmt(); await loadFavCats(); await loadManage();
+      // 删除后刷新类目与网格（各步独立容错，确保网格必定重绘）
+      await refreshAfterImageChange();
     } catch (e) { sbToast("删除失败，请重试", false); }
   }
 

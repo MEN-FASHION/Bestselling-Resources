@@ -137,6 +137,8 @@ img { display: block; }
   padding: 4px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
 }
 .cat-menu { display: flex; flex-direction: column; gap: 4px; }
+.cat-menu-row { display: flex; align-items: center; gap: 4px; }
+.cat-menu-row .cat-menu-item { flex: 1; min-width: 0; }
 .cat-menu-item {
   display: block; width: 100%; text-align: left; padding: 9px 12px;
   background: transparent; color: var(--sub); border: none; border-radius: 8px;
@@ -147,6 +149,14 @@ img { display: block; }
   background: linear-gradient(135deg, var(--gold), var(--gold2));
   color: #2c2c2c; font-weight: 600;
 }
+/* 残留类目删除按钮（图片中有该类目但未在配置表） */
+.cat-menu-del {
+  flex: 0 0 auto; width: 22px; height: 22px; line-height: 18px; padding: 0;
+  text-align: center; font-size: 14px; font-weight: 700;
+  background: var(--danger, #e5484d); color: #fff; border: none; border-radius: 6px;
+  cursor: pointer; opacity: .75; transition: .2s;
+}
+.cat-menu-del:hover { opacity: 1; background: #d33a3f; }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -365,6 +375,8 @@ select.input {
   .side-head { display: none; }
   .cat-menu { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
   .cat-menu-item { white-space: nowrap; }
+  .cat-menu-row { flex: 0 0 auto; }
+  .cat-menu-row .cat-menu-item { flex: 0 0 auto; white-space: nowrap; }
 }
 @media (max-width: 640px) {
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }

@@ -4,15 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260910HK">
+<link rel="stylesheet" href="css/style.css?v=20260910FIX">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="admin">
   <div id="toast" class="toast"></div>
 
+  <!-- 加载遮罩：判定登录态期间盖住，避免刷新闪现登录页 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
   <!-- ================= 登录页 ================= -->
-  <section id="admin-login" class="auth-wrap">
+  <section id="admin-login" class="auth-wrap hidden">
     <div class="auth-card">
       <div class="brand">
         <div class="logo-mark" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
@@ -72,10 +77,9 @@
       <div class="panel-card hidden" id="upload-card">
         <h2>① 上传图片</h2>
         <div class="row">
-          <label class="field">分类（常用类目优先，可输入新建）</label>
+          <label class="field">分类（只能从已配置的类目中选择，新增类目请到「标签管理 → 前台类目」）</label>
           <div class="cat-input-row">
             <select id="cat-select" class="input"></select>
-            <input id="cat-new" class="input" placeholder="新建分类名">
           </div>
         </div>
         <div id="dropzone" class="dropzone">
@@ -515,8 +519,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260910HK"></script>
-  <script src="js/supabase.js?v=20260910HK"></script>
-  <script src="js/admin.js?v=20260910HK"></script>
+  <script src="js/config.js?v=20260910FIX"></script>
+  <script src="js/supabase.js?v=20260910FIX"></script>
+  <script src="js/admin.js?v=20260910FIX"></script>
 </body>
 </html>
