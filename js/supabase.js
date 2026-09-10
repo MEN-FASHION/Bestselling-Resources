@@ -246,16 +246,43 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取标签失败");
       return data || [];
     },
-    async addTagDef(type, name) {
+    async addTagDef(type, name, group) {
       const n = String(name || "").trim();
       if (!n) throw new Error("标签名不能为空");
-      const { data, error } = await client.from("tag_defs").insert({ type, name: n }).select();
+      // 场景标签为「室内/室外」二级分组：group 传 indoor/outdoor；
+      // 新增标签一律置顶（sort_order 0 最小，排最前面）
+      const payload = { type, name: n, sort_order: 0 };
+      if (type === "scene" && (group === "indoor" || group === "outdoor")) payload.group = group;
+      const { data, error } = await client.from("tag_defs").insert(payload).select();
       if (error) throw new Error(error.message || "新增标签失败");
       return data && data[0];
+    },
+    async updateTagDef(id, name, group) {
+      const n = String(name || "").trim();
+      if (!n) throw new Error("标签名不能为空");
+      const payload = { name: n };
+      // 场景标签可同步更新二级分组（indoor/outdoor）
+      if (group === "indoor" || group === "outdoor") payload.group = group;
+      const { error } = await client.from("tag_defs").update(payload).eq("id", id);
+      if (error) throw new Error(error.message || "保存标签失败");
     },
     async deleteTagDef(id) {
       const { error } = await client.from("tag_defs").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除标签失败");
+    },
+    // 重命名标签并同步更新所有图片字段中的旧标签
+    async renameTagDefAndImages(type, oldName, newName) {
+      const n = String(newName || "").trim();
+      if (!n) throw new Error("标签名不能为空");
+      const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags", channel: "tags" };
+      const field = FIELD_FOR_DEF[type];
+      if (!field) throw new Error("不支持的标签类型");
+      const imgs = await this.listImages(null);
+      for (const img of imgs) {
+        if (!Array.isArray(img[field]) || !img[field].includes(oldName)) continue;
+        const newArr = img[field].map(t => t === oldName ? n : t);
+        await this.updateImageField(img.id, field, newArr);
+      }
     },
 
     // ============ 趋势专区（趋势文件：R2 存本体 + trends 表存清单） ============

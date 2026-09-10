@@ -589,6 +589,27 @@ select.input {
   font-size: 15px; line-height: 1; padding: 0 2px; border-radius: 4px;
 }
 .tagdef-chip .tagdef-del:hover { color: #ff9a9a; background: rgba(224,122,122,.12); }
+/* 标签改名按钮 */
+.tagdef-edit { border: 0; background: none; color: var(--sub); cursor: pointer; font-size: 12px; line-height: 1; opacity: .7; margin-left: 3px; padding: 0 2px; border-radius: 4px; }
+.tagdef-edit:hover { color: var(--gold); opacity: 1; background: rgba(255,255,255,.1); }
+/* 场景标签二级分组标题 */
+.tagdef-subgroup { width: 100%; margin-bottom: 8px; }
+.tagdef-subgroup-name { display: block; font-size: 12px; font-weight: 600; color: var(--gold); letter-spacing: .05em; margin: 2px 0 6px; padding-bottom: 3px; border-bottom: 1px dashed rgba(var(--gold), .3); }
+/* 场景标签录入：先选室内/室外再填名 */
+.tag-scene-add .scene-add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.scene-group-select { flex: 0 0 70px; width: 70px; }
+/* 标签搜索框 */
+.tag-mgmt-search.row-search-top { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.tag-search-input { flex: 1; max-width: 420px; }
+/* 类目删除按钮 */
+.check-item .check-del { margin-left: auto; border: 0; background: none; color: var(--sub); cursor: pointer; font-size: 11px; padding: 1px 6px; border-radius: 999px; opacity: .65; }
+.check-item .check-del:hover { color: #ff9a9a; background: rgba(224,122,122,.12); opacity: 1; }
+.check-item { display: flex; align-items: center; gap: 6px; }
+/* 场景看板：室内/室外分组 */
+.hbar-grouped { width: 100%; }
+.hbar-group { margin-bottom: 12px; }
+.hbar-group-head { font-size: 13px; font-weight: 600; color: var(--gold); margin-bottom: 6px; }
+.hbar-group .hbar { margin: 4px 0; }
 .tag-mgmt-add { display: flex; gap: 8px; margin-top: 12px; }
 .tag-mgmt-add .input { flex: 1; }
 

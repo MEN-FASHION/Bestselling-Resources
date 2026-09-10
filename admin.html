@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260910ALB2">
+<link rel="stylesheet" href="css/style.css?v=20260910HK">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -186,9 +186,16 @@
             <div class="tag-mgmt-col">
               <h3 class="tg-col-title">场景标签（自定义）<span class="hint-inline">（室内 · 室外 两大类）</span></h3>
               <div id="scene-tag-list" class="tag-mgmt-list"></div>
-              <div class="tag-mgmt-add">
-                <input id="scene-tag-new" class="input" placeholder="新增场景标签，如：室内·客厅、室外·街道">
-                <button id="scene-tag-add" class="btn-ghost">添加</button>
+              <div class="tag-mgmt-add tag-scene-add">
+                <div class="scene-add-row">
+                  <select id="scene-group-new" class="input scene-group-select">
+                    <option value="indoor">室内</option>
+                    <option value="outdoor">室外</option>
+                  </select>
+                  <input id="scene-tag-new" class="input" placeholder="场景名，如：客厅、街道">
+                  <button id="scene-tag-add" class="btn-ghost">添加</button>
+                </div>
+                <p class="hint">先选「室内/室外」大类，再填具体场景名（不用带前缀，系统自动归类）。</p>
               </div>
             </div>
             <div class="tag-mgmt-col">
@@ -208,6 +215,12 @@
               </div>
             </div>
           </div>
+
+          <div class="tag-mgmt-search row-search-top">
+            <input id="tag-search-input" class="input tag-search-input" placeholder="搜索标签（按名称过滤所有维度）">
+            <span id="tag-search-res" class="hint-inline"></span>
+          </div>
+          <p class="hint">新增的标签会自动排在列表最前面；鼠标移到标签上可「改名」或「删除」。</p>
         </div>
       </div>
 
@@ -502,8 +515,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260909FSK"></script>
-  <script src="js/supabase.js?v=20260909FSK"></script>
-  <script src="js/admin.js?v=20260910ALB2"></script>
+  <script src="js/config.js?v=20260910HK"></script>
+  <script src="js/supabase.js?v=20260910HK"></script>
+  <script src="js/admin.js?v=20260910HK"></script>
 </body>
 </html>

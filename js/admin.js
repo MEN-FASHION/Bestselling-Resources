@@ -306,15 +306,35 @@
       currentActiveCats = await SB.listActiveCats();
       currentCatOrder = await SB.listActiveCatsWithOrder();
     } catch (e) { currentActiveCats = []; currentCatOrder = []; }
-    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats));
+    // 合并三类：候选类目 + 前台启用类目 + 图片中实际出现的类目（含误加未入库的"露脸模特"这类残留）
+    let usedCats = [];
+    try { usedCats = await SB.listUsedCats(); } catch (e) { usedCats = []; }
+    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats).concat(usedCats));
     const box = $("#cat-mgmt-list");
     box.innerHTML = "";
     [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
       const label = document.createElement("label");
       label.className = "check-item";
-      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span>${escHtml(name)}</span>`;
+      const isUsedOnly = usedCats.includes(name) && !currentActiveCats.includes(name) && !(window.CONFIG.CATEGORY_OPTIONS || []).includes(name);
+      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span title="${escAttr(name)}">${escHtml(name)}</span><button class="check-del" title="删除该类目（勾选项仅从前台移除；这里的删除会同时清空图片上的该类目）">删除</button>`;
       label.querySelector("input").checked = currentActiveCats.includes(name);
       label.querySelector("input").onchange = () => { $("#cat-mgmt-save").disabled = false; };
+      // 删除按钮：从 categories 表移除，并清空图片上的该类目字段
+      label.querySelector(".check-del").onclick = async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!confirm("确定删除类目「" + name + "」吗？\n删除后会同步清空所有归属该类目的图片的类目字段（图片本身保留）。")) return;
+        try {
+          await SB.removeCategory(name);
+          const imgs = await SB.listImages(null);
+          let n = 0;
+          for (const img of imgs) {
+            if ((img.category || "") === name) { await SB.updateImageField(img.id, "category", ""); n++; }
+          }
+          sbToast("已删除类目「" + name + "」" + (n ? "，清空 " + n + " 张图片" : ""));
+          await loadCatMgmt(); await loadCats(); await loadManage();
+        } catch (err) { sbToast("删除失败：" + (err.message || ""), false); }
+      };
+      if (isUsedOnly) { /* 残留类目：默认不勾选，仅展示以便删除 */ }
       box.appendChild(label);
     });
     renderCatOrder();
@@ -702,35 +722,122 @@
       box.innerHTML = `<p class="hint">暂无${type === "style" ? "风格" : (type === "element" ? "元素" : (type === "scene" ? "场景" : (type === "shoot" ? "拍摄方式" : "肤色")))}标签，可在下方新增。</p>`;
       return;
     }
-    list.forEach(d => {
-      const chip = document.createElement("span");
-      chip.className = "tagdef-chip";
-      const used = usage[type + ":" + d.name] || 0;
-      chip.innerHTML = `<span class="tagdef-name">${escHtml(d.name)}</span><span class="tagdef-used">${used}张</span><button class="tagdef-del" title="删除该标签（同时移除图片上的该标签）">×</button>`;
-      chip.querySelector(".tagdef-del").onclick = () => deleteTagDef(d, type, used);
-      box.appendChild(chip);
-    });
+    if (type === "scene") {
+      // 场景标签按「室内/室外」二级分组展示（group 字段为真实分组依据，不靠命名解析）
+      const meta = [{ key: "indoor", label: "室内" }, { key: "outdoor", label: "室外" }];
+      meta.forEach(m => {
+        const subs = list.filter(d => (d.group || "") === m.key);
+        if (subs.length) {
+          const sub = document.createElement("div");
+          sub.className = "tagdef-subgroup";
+          const t = document.createElement("span");
+          t.className = "tagdef-subgroup-name";
+          t.textContent = m.label;
+          sub.appendChild(t);
+          subs.forEach(d => sub.appendChild(makeTagdefChip(d, type, usage)));
+          box.appendChild(sub);
+        }
+      });
+      // 未带 group 的存量场景标签兜底展示（若有）
+      list.filter(d => (d.group || "") !== "indoor" && (d.group || "") !== "outdoor").forEach(d => box.appendChild(makeTagdefChip(d, type, usage)));
+      return;
+    }
+    list.forEach(d => box.appendChild(makeTagdefChip(d, type, usage)));
+  }
+  function makeTagdefChip(d, type, usage) {
+    const chip = document.createElement("span");
+    chip.className = "tagdef-chip";
+    const used = usage[type + ":" + d.name] || 0;
+    const disp = type === "scene" ? (d.name.split("·")[1] || d.name) : d.name;
+    chip.innerHTML = `<span class="tagdef-name" title="${escAttr(d.name)}">${escHtml(disp)}</span><span class="tagdef-used">${used}张</span><button class="tagdef-edit" title="重命名标签并同步图片">✎</button><button class="tagdef-del" title="删除该标签（同时移除图片上的该标签）">×</button>`;
+    chip.querySelector(".tagdef-del").onclick = () => deleteTagDef(d, type, used);
+    chip.querySelector(".tagdef-edit").onclick = () => renameTagDef(d, type, used);
+    return chip;
+  }
+  async function renameTagDef(d, type, used) {
+    const disp = type === "scene" ? (d.name.split("·")[1] || d.name) : d.name;
+    const cur = disp;
+    let group = (d.group === "indoor" || d.group === "outdoor") ? d.group : null;
+    if (type === "scene") {
+      const g = confirm("请选择新分组：确定 = 室内；取消 = 室外");
+      // confirm 只能二选一，改用 prompt 更直观
+    }
+    let newName = "";
+    if (type === "scene") {
+      const g = prompt("【" + cur + "】\n请输入新场景名（不含前缀）：", cur);
+      if (g === null) return;
+      newName = String(g).trim();
+      if (!newName) { sbToast("名称不能为空", false); return; }
+      const g2 = (d.group === "indoor" || d.group === "outdoor") ? d.group : null;
+      // 若无分组用前缀推断
+      let grp = g2 || (d.name.indexOf("室外") === 0 ? "outdoor" : "indoor");
+      newName = (grp === "outdoor" ? "室外·" : "室内·") + newName.replace(/^(室内|室外)·/, "");
+      try {
+        await SB.updateTagDef(d.id, newName, grp);
+        if (used > 0) await SB.renameTagDefAndImages(type, d.name, newName);
+        sbToast("已重命名：" + newName);
+        await loadTagDefs();
+      } catch (e) { sbToast("重命名失败：" + (e.message || ""), false); }
+      return;
+    }
+    newName = prompt("【" + cur + "】\n请输入新名称：", cur);
+    if (newName === null) return;
+    newName = String(newName).trim();
+    if (!newName) { sbToast("名称不能为空", false); return; }
+    try {
+      await SB.updateTagDef(d.id, newName);
+      if (used > 0) await SB.renameTagDefAndImages(type, d.name, newName);
+      sbToast("已重命名：" + newName);
+      await loadTagDefs();
+    } catch (e) { sbToast("重命名失败：" + (e.message || ""), false); }
   }
   function bindTagDefs() {
-    const setup = (addBtnId, inputId, type) => {
-      document.getElementById(addBtnId).onclick = () => addTagDef(type, document.getElementById(inputId));
+    const setup = (addBtnId, inputId, type, groupId) => {
+      document.getElementById(addBtnId).onclick = () => addTagDef(type, document.getElementById(inputId), groupId ? document.getElementById(groupId) : null);
       document.getElementById(inputId).addEventListener("keydown", (e) => {
-        if (e.key === "Enter") addTagDef(type, document.getElementById(inputId));
+        if (e.key === "Enter") addTagDef(type, document.getElementById(inputId), groupId ? document.getElementById(groupId) : null);
       });
     };
     setup("style-tag-add", "style-tag-new", "style");
     setup("element-tag-add", "element-tag-new", "element");
-    setup("scene-tag-add", "scene-tag-new", "scene");
+    setup("scene-tag-add", "scene-tag-new", "scene", "scene-group-new");
     setup("shoot-tag-add", "shoot-tag-new", "shoot");
     setup("skin-tag-add", "skin-tag-new", "skin");
+    // 标签搜索：输入时按名称过滤所有维度的标签（空白则全部显示）
+    const search = document.getElementById("tag-search-input");
+    if (search) {
+      search.addEventListener("input", () => {
+        const q = (search.value || "").trim().toLowerCase();
+        let hit = 0;
+        ["style", "element", "scene", "shoot", "skin"].forEach(type => {
+          const box = document.getElementById(type + "-tag-list");
+          if (!box) return;
+          box.querySelectorAll(".tagdef-chip").forEach(chip => {
+            const nm = (chip.querySelector(".tagdef-name") || {}).textContent || "";
+            const show = !q || nm.toLowerCase().includes(q) || nm.includes(search.value.trim());
+            chip.style.display = show ? "" : "none";
+            if (show) hit++;
+          });
+        });
+        const res = document.getElementById("tag-search-res");
+        if (res) res.textContent = q ? ("匹配 " + hit + " 个标签") : "";
+      });
+    }
   }
-  async function addTagDef(type, input) {
+  async function addTagDef(type, input, groupSelect) {
     const name = (input.value || "").trim();
     if (!name) { sbToast("请输入标签名", false); return; }
+    let group;
+    if (type === "scene") {
+      group = (groupSelect && groupSelect.value) || "indoor";
+    }
     try {
-      await SB.addTagDef(type, name);
+      // 场景标签自动归类到室内/室外二级分组；name 存带前缀形式以兼容图片/筛选
+      const suffix = name.indexOf("·") > 0 ? name : name;
+      const fullName = type === "scene" ? (group === "outdoor" ? "室外·" : "室内·") + suffix.replace(/^(室内|室外)·/, "") : suffix;
+      await SB.addTagDef(type, fullName, group);
       input.value = "";
-      sbToast("已添加标签：" + name);
+      sbToast("已添加标签：" + fullName + (type === "scene" ? "（" + (group === "indoor" ? "室内" : "室外") + "）" : ""));
       await loadTagDefs();
     } catch (e) { sbToast("添加失败：" + (e.message || ""), false); }
   }
@@ -804,12 +911,11 @@
       ov.appendChild(c);
     });
 
-    // 三个标签维度分布条形图
+    // 标签维度分布条形图
     const charts = [
       { el: "dash-channel", field: "tags", names: (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []), color: "var(--gold)", lab: "渠道" },
       { el: "dash-style", field: "style_tags", names: defs.filter(d => d.type === "style").map(d => d.name), color: "#6ea8fe", lab: "风格" },
       { el: "dash-element", field: "element_tags", names: defs.filter(d => d.type === "element").map(d => d.name), color: "#7ee0a3", lab: "元素" },
-      { el: "dash-scene", field: "scene_tags", names: defs.filter(d => d.type === "scene").map(d => d.name), color: "#d3a06b", lab: "场景" },
       { el: "dash-shoot", field: "shoot_tags", names: defs.filter(d => d.type === "shoot").map(d => d.name), color: "#b89bd6", lab: "拍摄方式" },
       { el: "dash-skin", field: "skin_tags", names: defs.filter(d => d.type === "skin").map(d => d.name), color: "#e6a0a0", lab: "肤色" }
     ];
@@ -818,6 +924,50 @@
       rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh"));
       renderHBars(document.getElementById(cd.el), rows, imgs.length, cd.color, cd.lab);
     });
+
+    // 场景标签：按「室内/室外」两大二级分组统计（分开统计，便于掌握内外场景占比）
+    const sceneEl = document.getElementById("dash-scene");
+    if (sceneEl) {
+      const sceneDefs = defs.filter(d => d.type === "scene");
+      const indoorDefs = sceneDefs.filter(d => d.group === "indoor");
+      const outdoorDefs = sceneDefs.filter(d => d.group === "outdoor");
+      // 未带 group 的存量场景按名称前缀兜底归类
+      const norm = (d) => { if (d.group === "indoor" || d.group === "outdoor") return d.group; return d.name.indexOf("室外") === 0 ? "outdoor" : "indoor"; };
+      const inD = sceneDefs.filter(d => norm(d) === "indoor");
+      const outD = sceneDefs.filter(d => norm(d) === "outdoor");
+      const buildRows = (sub) => {
+        const rows = sub.map(n => ({ name: n, count: imgs.filter(i => Array.isArray(i.scene_tags) && i.scene_tags.includes(n)).length }));
+        rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh"));
+        const tot = rows.reduce((s, r) => s + r.count, 0);
+        return { rows, tot };
+      };
+      const inR = buildRows(inD.map(n => n.name));
+      const outR = buildRows(outD.map(n => n.name));
+      const p = document.createElement("div");
+      p.className = "hbar-grouped";
+      function sec(label, r) {
+        const s = document.createElement("div");
+        s.className = "hbar-group";
+        const h = document.createElement("div");
+        h.className = "hbar-group-head";
+        h.textContent = label + "（" + r.tot + " 张 · 占已打场景 " + (r.tot + inR.tot + outR.tot ? Math.round(r.tot * 100 / (inR.tot + outR.tot)) + "%" : "0%") + "）";
+        s.appendChild(h);
+        const w = document.createElement("div");
+        s.appendChild(w);
+        r.rows.forEach(row => {
+          const bar = document.createElement("div");
+          bar.className = "hbar";
+          bar.innerHTML = `<span class="hbar-name">${escHtml(row.name.split("·")[1] || row.name)}</span><span class="hbar-track"><span class="hbar-fill" style="width:${imgs.length ? Math.round(row.count * 100 / imgs.length) : 0}%"></span></span><span class="hbar-num">${row.count}</span>`;
+          w.appendChild(bar);
+        });
+        return s;
+      }
+      p.appendChild(sec("室内", inR));
+      p.appendChild(sec("室外", outR));
+      sceneEl.innerHTML = "";
+      if (!sceneDefs.length) { sceneEl.innerHTML = `<p class="hint">暂无场景标签</p>`; }
+      else sceneEl.appendChild(p);
+    }
 
     // 打标覆盖率环形图
     const rate = imgs.length ? tagged / imgs.length : 0;

@@ -18,6 +18,7 @@
   let styleDefs = [];    // 风格标签定义
   let elementDefs = [];  // 元素标签定义
   let sceneDefs = [];    // 场景标签定义（室内/室外）
+  let sceneGroupMap = {}; // 场景标签名 -> indoor/outdoor 二级分组映射
   let shootDefs = [];    // 拍摄方式标签定义
   let skinDefs = [];     // 肤色标签定义
   let dimSwitches = {};  // 各维度是否在前台展示
@@ -325,6 +326,12 @@
       styleDefs = defs.filter(d => d.type === "style").map(d => d.name);
       elementDefs = defs.filter(d => d.type === "element").map(d => d.name);
       sceneDefs = defs.filter(d => d.type === "scene").map(d => d.name);
+      // 场景标签记录二级分组（indoor/outdoor，用于「室内/室外」分组展示），缺失时按名称前缀兜底
+      sceneGroupMap = {};
+      defs.filter(d => d.type === "scene").forEach(d => {
+        const grp = (d.group === "indoor" || d.group === "outdoor") ? d.group : (d.name.indexOf("室外") === 0 ? "outdoor" : "indoor");
+        sceneGroupMap[d.name] = grp;
+      });
       shootDefs = defs.filter(d => d.type === "shoot").map(d => d.name);
       skinDefs = defs.filter(d => d.type === "skin").map(d => d.name);
       try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
@@ -406,8 +413,13 @@
       { key: "skin", label: "肤色", items: skinDefs, cur: (v) => curSkin === v, field: "skin_tags" }
     ];
 
-    // 场景标签按「室内 / 室外」前缀分组展示（无前缀归入「其他」）
-    function sceneGroupName(t) { return t.indexOf("·") > 0 ? t.split("·")[0] : "其他"; }
+    // 场景标签按「室内 / 室外」二级分组展示（以 group 字段为准，缺失时按名称前缀兜底）
+    function sceneGroupName(t) {
+      const g = sceneGroupMap[t];
+      if (g === "indoor") return "室内";
+      if (g === "outdoor") return "室外";
+      return t.indexOf("·") > 0 ? t.split("·")[0] : "其他";
+    }
 
     const visibleGrp = grpMeta.filter(g => g.key === "category" || _dimOn(g.key));
     visibleGrp.forEach(g => {

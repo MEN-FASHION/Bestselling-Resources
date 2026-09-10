@@ -210,10 +210,17 @@ create table if not exists public.tag_defs (
   id uuid primary key default gen_random_uuid(),
   type text not null check (type in ('style','element','scene','shoot','skin')),
   name text not null,
+  group text,                              -- 场景二级分组：indoor(室内)/outdoor(室外)，其余维度为 null
   sort_order int not null default 1,
   created_at timestamptz not null default now(),
   unique (type, name)
 );
+-- 兼容旧库：已存在的 tag_defs 表补 group 列 + 索引（幂等）
+alter table public.tag_defs add column if not exists group text;
+create index if not exists tag_defs_group_idx on public.tag_defs (type, group);
+-- 存量场景标签按名称前缀自动归类到二级分组（不依赖新增时的选择，保证统计连续）
+update public.tag_defs set group = 'indoor'  where type = 'scene' and group is null and name like '室内%';
+update public.tag_defs set group = 'outdoor' where type = 'scene' and group is null and name like '室外%';
 
 -- 兼容旧库：已存在的 tag_defs 表可能仍是旧的 type 检查约束（不含 scene/shoot/skin），
 -- 这里幂等地重建约束以允许全部六种标签维度，避免插入新维度时报 23514 错误。
@@ -280,14 +287,15 @@ insert into public.tag_defs (type, name) values
   ('element', '扎染'), ('element', '做旧')
 on conflict (type, name) do nothing;
 
--- 预设场景标签（室内/室外两大类，可自定义增删）
-insert into public.tag_defs (type, name) values
-  ('scene', '室内·卧室'), ('scene', '室内·客厅'), ('scene', '室内·教室'), ('scene', '室内·书房'),
-  ('scene', '室内·厨房'), ('scene', '室内·卫生间'), ('scene', '室内·玄关'), ('scene', '室内·衣帽间'),
-  ('scene', '室内·办公室'), ('scene', '室外·街道'), ('scene', '室外·商场'), ('scene', '室外·户外'),
-  ('scene', '室外·园区'), ('scene', '室外·广场'), ('scene', '室外·公园'), ('scene', '室外·建筑外景'),
-  ('scene', '室外·交通工具')
-on conflict (type, name) do nothing;
+-- 预设场景标签（室内/室外两大类二级分组，可自定义增删）
+-- 存量库若已插入上述名称但未更新 group，用下方 update 语句归类；此处插入时直接带 group。
+insert into public.tag_defs (type, name, "group") values
+  ('scene', '室内·卧室', 'indoor'), ('scene', '室内·客厅', 'indoor'), ('scene', '室内·教室', 'indoor'), ('scene', '室内·书房', 'indoor'),
+  ('scene', '室内·厨房', 'indoor'), ('scene', '室内·卫生间', 'indoor'), ('scene', '室内·玄关', 'indoor'), ('scene', '室内·衣帽间', 'indoor'),
+  ('scene', '室内·办公室', 'indoor'), ('scene', '室外·街道', 'outdoor'), ('scene', '室外·商场', 'outdoor'), ('scene', '室外·户外', 'outdoor'),
+  ('scene', '室外·园区', 'outdoor'), ('scene', '室外·广场', 'outdoor'), ('scene', '室外·公园', 'outdoor'), ('scene', '室外·建筑外景', 'outdoor'),
+  ('scene', '室外·交通工具', 'outdoor')
+on conflict (type, name) do update set "group" = excluded."group";
 
 -- 预设拍摄方式标签（摆拍/挂拍/模拍/3D，可自定义增删）
 insert into public.tag_defs (type, name) values
