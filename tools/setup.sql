@@ -210,17 +210,17 @@ create table if not exists public.tag_defs (
   id uuid primary key default gen_random_uuid(),
   type text not null check (type in ('style','element','scene','shoot','skin')),
   name text not null,
-  group text,                              -- 场景二级分组：indoor(室内)/outdoor(室外)，其余维度为 null
+  "group" text,                            -- 场景二级分组：indoor(室内)/outdoor(室外)，其余维度为 null
   sort_order int not null default 1,
   created_at timestamptz not null default now(),
   unique (type, name)
 );
 -- 兼容旧库：已存在的 tag_defs 表补 group 列 + 索引（幂等）
-alter table public.tag_defs add column if not exists group text;
-create index if not exists tag_defs_group_idx on public.tag_defs (type, group);
+alter table public.tag_defs add column if not exists "group" text;
+create index if not exists tag_defs_group_idx on public.tag_defs (type, "group");
 -- 存量场景标签按名称前缀自动归类到二级分组（不依赖新增时的选择，保证统计连续）
-update public.tag_defs set group = 'indoor'  where type = 'scene' and group is null and name like '室内%';
-update public.tag_defs set group = 'outdoor' where type = 'scene' and group is null and name like '室外%';
+update public.tag_defs set "group" = 'indoor'  where type = 'scene' and "group" is null and name like '室内%';
+update public.tag_defs set "group" = 'outdoor' where type = 'scene' and "group" is null and name like '室外%';
 
 -- 兼容旧库：已存在的 tag_defs 表可能仍是旧的 type 检查约束（不含 scene/shoot/skin），
 -- 这里幂等地重建约束以允许全部六种标签维度，避免插入新维度时报 23514 错误。
