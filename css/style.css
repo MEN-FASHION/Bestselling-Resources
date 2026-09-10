@@ -648,7 +648,7 @@ select.input {
 .smart-card { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #191c20; cursor: grab; transition: border-color .15s, transform .15s; }
 .smart-card:hover { border-color: var(--gold); transform: translateY(-1px); }
 .smart-card.dragging { opacity: .45; border-style: dashed; }
-.smart-card .holder { aspect-ratio: 3/4; overflow: hidden; background: #14161a; }
+.smart-card .holder { aspect-ratio: 4/3; overflow: hidden; background: #14161a; }
 .smart-card .holder img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; user-select: none; -webkit-user-drag: none; }
 .smart-cap { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 5px 6px; }
 .smart-cap-name { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -1169,17 +1169,28 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 }
 .trademark-avatar svg { display: block; border-radius: 999px; }
 
-/* 图片管理：选中此行按钮 */
+/* 图片管理卡片：顶部操作行（最左选中此行，最右删除） */
+#manage-grid .mgr-topbar{
+  position:absolute; top:6px; left:6px; right:6px; z-index:3;
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  pointer-events:none;
+}
+#manage-grid .mgr-topbar > *{ pointer-events:auto; }
 #manage-grid .mgr-selrow{
-  position:static; display:block; width:100%; margin:8px 0 0;
-  padding:7px 10px; border-radius:7px; border:1px solid var(--line);
-  background:var(--card); color:var(--txt); font-size:12px; cursor:pointer;
-  transition:all .18s;
+  padding:3px 10px; border-radius:999px;
+  border:1px solid rgba(0,0,0,.10); background:rgba(255,255,255,.88); backdrop-filter:blur(3px);
+  color:var(--txt); font-size:11px; line-height:1.5; cursor:pointer;
+  transition:all .18s; box-shadow:0 1px 4px rgba(0,0,0,.08);
 }
 #manage-grid .mgr-selrow:hover{ border-color:#9c8b74; color:#7a6b52; }
 #manage-grid .mgr-selrow.on{
   border-color:#9c8b74; background:rgba(156,139,116,.16);
   color:#7a6b52; font-weight:600;
+}
+#manage-grid .mgr-del{
+  position:static; padding:3px 10px; border-radius:999px;
+  font-size:11px; line-height:1.5; background:rgba(255,255,255,.88); backdrop-filter:blur(3px);
+  box-shadow:0 1px 4px rgba(0,0,0,.08);
 }
 
 /* 智能打标：全屏铺满 */

@@ -474,45 +474,35 @@
         mkCap("拍摄", img.shoot_tags, "sh") +
         mkCap("肤色", img.skin_tags, "sk");
 
-      // 勾选框
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.className = "mgr-check";
-      cb.dataset.id = img.id;
-      cb.checked = selectedImages.has(img.id);
-      cb.onchange = () => {
-        if (cb.checked) selectedImages.add(img.id); else selectedImages.delete(img.id);
-        cell.classList.toggle("selected", cb.checked);
-        updateBatchBtn();
-      };
-      if (cb.checked) cell.classList.add("selected");
+      // 选中状态初始高亮
+      if (selectedImages.has(img.id)) cell.classList.add("selected");
 
-      // 「选中此行」按钮：一键选中/取消该卡片用于批量打标
+      // 顶部操作行：最左 =「选中此行」，最右 =「删除」；点击图片也可选中
+      cell.appendChild(holder);
+      cell.appendChild(cap);
+      const topbar = document.createElement("div");
+      topbar.className = "mgr-topbar";
       const selRow = document.createElement("button");
       selRow.className = "mgr-selrow" + (selectedImages.has(img.id) ? " on" : "");
       selRow.textContent = selectedImages.has(img.id) ? "已选中" : "选中此行";
+      selRow.dataset.id = img.id;
       selRow.onclick = (e) => {
         e.stopPropagation();
         const willSel = !selectedImages.has(img.id);
         if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
         cell.classList.toggle("selected", willSel);
-        cb.checked = willSel;
         selRow.classList.toggle("on", willSel);
         selRow.textContent = willSel ? "已选中" : "选中此行";
         updateBatchBtn();
       };
-
-      // 单个删除按钮
       const delBtn = document.createElement("button");
       delBtn.className = "btn-danger mgr-del";
-      delBtn.textContent = "删";
+      delBtn.textContent = "删除";
       delBtn.onclick = (e) => { e.stopPropagation(); removeImage(img); };
-
-      cell.appendChild(cb);
-      cell.appendChild(holder);
-      cell.appendChild(cap);
-      cell.appendChild(selRow);
-      cell.appendChild(delBtn);
+      topbar.appendChild(selRow);
+      topbar.appendChild(delBtn);
+      cell.appendChild(topbar);
+      // 点击卡片主体也切换选中（可选便捷）
       grid.appendChild(cell);
 
       // 懒加载缩略图
@@ -890,14 +880,13 @@
 
   // 全选 / 取消全选（仅当前网格显示的）
   function toggleSelectAll() {
-    const boxes = [...document.querySelectorAll("#manage-grid .mgr-check")];
-    // 若当前已全选则取消，否则全选
-    const allChecked = boxes.every(b => b.checked);
-    boxes.forEach(b => {
-      b.checked = !allChecked;
+    const rows = [...document.querySelectorAll("#manage-grid .mgr-selrow")];
+    const allOn = rows.every(b => b.classList.contains("on"));
+    rows.forEach(b => {
+      const id = b.dataset.id;
       const cell = b.closest(".cell");
-      if (b.checked) { selectedImages.add(b.dataset.id); cell.classList.add("selected"); }
-      else { selectedImages.delete(b.dataset.id); cell.classList.remove("selected"); }
+      if (!allOn) { selectedImages.add(id); b.classList.add("on"); b.textContent = "已选中"; cell.classList.add("selected"); }
+      else { selectedImages.delete(id); b.classList.remove("on"); b.textContent = "选中此行"; cell.classList.remove("selected"); }
     });
     updateBatchBtn();
   }
@@ -998,7 +987,7 @@
         smartDim = d.key; smartTag = ""; smartAll = [];
         renderSmartDims();
         renderSmartTags([]);
-        renderSmartPools([]);
+        await renderSmartPools();
         await loadSmartAll();
       };
       box.appendChild(b);
@@ -1015,20 +1004,20 @@
         const list = (cats || []).map(c => c.name);
         renderSmartTags([...new Set(list)]);
       } catch (e) { renderSmartTags([]); }
-      renderSmartPools();
+      await renderSmartPools();
       return;
     }
     if (smartDim === "channel") {
       const list = (window.CONFIG.CHANNEL_TAGS || []).flatMap(g => g.tags || []);
       renderSmartTags([...new Set(list)]);
-      renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
+      await renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
       return;
     }
     try {
       const defs = await SB.listTagDefs();
       const list = (defs || []).filter(d => d.type === smartDim).map(d => d.name);
       renderSmartTags([...new Set(list)]);
-      renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
+      await renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
     } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
   }
   function renderSmartTags(list) {
@@ -1048,10 +1037,10 @@
       const b = document.createElement("button");
       b.className = "smart-tag" + (tag === smartTag ? " active" : "");
       b.textContent = tag;
-      b.onclick = () => {
+      b.onclick = async () => {
         smartTag = tag;
         renderSmartTags(list);
-        renderSmartPools(smartAll);
+        await renderSmartPools();
       };
       box.appendChild(b);
     });
@@ -1066,7 +1055,33 @@
     const arr = Array.isArray(img[field]) ? img[field] : [];
     return tag ? arr.includes(tag) : arr.length > 0;
   }
-  function renderSmartPools() {
+  // 用指向弹窗滚动容器的懒加载渲染一个池子，避免一次性加载上百张
+  function renderSmartGrid(gridEl, list, isDone, smartToken) {
+    if (!gridEl || !list.length) return;
+    let io = null;
+    if ("IntersectionObserver" in window) {
+      io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            en.target.src = en.target.dataset.src;
+            en.target.onload = () => en.target.classList.add("loaded");
+            obs.unobserve(en.target);
+          }
+        });
+      }, { root: gridEl, rootMargin: "200px", threshold: 0.01 });
+    }
+    list.forEach(img => {
+      const card = makeSmartCard(img, isDone, smartToken);
+      gridEl.appendChild(card);
+      const im = card.querySelector("img");
+      if (io) io.observe(im);
+      else { im.src = im.dataset.src; im.classList.add("loaded"); }
+    });
+  }
+
+  async function renderSmartPools() {
+    let smartToken = "";
+    try { smartToken = await SB.currentToken(); } catch (e) { smartToken = ""; }
     const doneGrid = document.querySelector("#smart-grid-done");
     const undoneGrid = document.querySelector("#smart-grid-undone");
     if (!doneGrid || !undoneGrid) return;
@@ -1095,8 +1110,8 @@
       });
       finishHead(doneHead, "已打该标签 ", doneList.length);
       finishHead(undoneHead, "未打该标签 ", undoneList.length);
-      doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
-      undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+      renderSmartGrid(doneGrid, doneList, true, smartToken);
+      renderSmartGrid(undoneGrid, undoneList, false, smartToken);
     } else {
       // 未选具体标签：自动聚焦"该维度还没打任何标"的图片
       const doneList = [], undoneList = [];
@@ -1107,11 +1122,11 @@
       });
       finishHead(doneHead, "已打" + dimLabel + " ", doneList.length);
       finishHead(undoneHead, "未打" + dimLabel + " ", undoneList.length);
-      doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true)));
-      undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false)));
+      doneList.forEach(img => doneGrid.appendChild(makeSmartCard(img, true, smartToken)));
+      undoneList.forEach(img => undoneGrid.appendChild(makeSmartCard(img, false, smartToken)));
     }
   }
-  function makeSmartCard(img, isDone) {
+  function makeSmartCard(img, isDone, smartToken) {
     const card = document.createElement("div");
     card.className = "smart-card";
     card.draggable = true;
@@ -1119,16 +1134,17 @@
     const wrap = document.createElement("div");
     wrap.className = "holder";
     const im = document.createElement("img");
-    im.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (smartToken ? "?token=" + encodeURIComponent(smartToken) : "");
-    // 缩略图懒加载
-    if ("IntersectionObserver" in window) {
-      const io = new IntersectionObserver((es, ob) => {
-        es.forEach(en => {
-          if (en.isIntersecting) { en.target.src = en.target.dataset.src; ob.unobserve(en.target); }
-        });
-      }, { root: document.querySelector("#smart-modal") });
-      io.observe(im);
-    } else { im.src = im.dataset.src; }
+    // 与图片管理完全一致的取图方式：渲染前一次性拿好令牌，只设 dataset.src，进入视口懒加载
+    const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+    const makeSrc = (tok) => (base + "/" + img.path + (tok ? "?token=" + encodeURIComponent(tok) : ""));
+    im.alt = img.name || "";
+    im.loading = "lazy";
+    im.draggable = false;
+    im.addEventListener("contextmenu", (e) => e.preventDefault());
+    // 不立即加载：由 renderSmartPools 用"指向弹窗滚动容器"的懒加载按需加载，避免一次性加载上百张挤爆并发
+    im.dataset.src = makeSrc(smartToken);
+    im.onload = () => im.classList.add("loaded");
+    im.onerror = () => { im.classList.remove("loaded"); };
     wrap.appendChild(im);
     const cap = document.createElement("div");
     cap.className = "smart-cap";
@@ -1190,7 +1206,7 @@
         await SB.setImageSingleField(img.id, field, next);
         img[field] = next;
         sbToast(toDone ? "已为图片打上「" + smartTag + "」类目" : "已清空该图片类目");
-        renderSmartPools();
+        await renderSmartPools();
       } catch (e) {
         sbToast("操作失败：" + (e.message || ""), false);
       }
@@ -1204,7 +1220,7 @@
       img[field] = next;
       sbToast(toDone ? "已为图片打上「" + smartTag + "」标签" : "已移除「" + smartTag + "」标签");
       // 重新划分两池（保持已选标签高亮）
-      renderSmartPools();
+      await renderSmartPools();
     } catch (e) {
       sbToast("操作失败：" + (e.message || ""), false);
     }
@@ -1243,7 +1259,7 @@
       } catch (e) { fail++; }
     }
     sbToast("已为 " + ok + " 张图片打上「" + smartTag + "」" + (smartSingleDim[field] ? "类目" : "标签") + (fail ? "，失败 " + fail + " 张" : ""));
-    renderSmartPools();
+    await renderSmartPools();
   }
   function bindSmartModal() {
     const openBtn = document.querySelector("#smart-tag-btn");
