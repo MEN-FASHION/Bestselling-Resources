@@ -1058,24 +1058,8 @@
   // 用指向弹窗滚动容器的懒加载渲染一个池子，避免一次性加载上百张
   function renderSmartGrid(gridEl, list, isDone, smartToken) {
     if (!gridEl || !list.length) return;
-    let io = null;
-    if ("IntersectionObserver" in window) {
-      io = new IntersectionObserver((entries, obs) => {
-        entries.forEach(en => {
-          if (en.isIntersecting) {
-            en.target.src = en.target.dataset.src;
-            en.target.onload = () => en.target.classList.add("loaded");
-            obs.unobserve(en.target);
-          }
-        });
-      }, { root: gridEl, rootMargin: "200px", threshold: 0.01 });
-    }
     list.forEach(img => {
-      const card = makeSmartCard(img, isDone, smartToken);
-      gridEl.appendChild(card);
-      const im = card.querySelector("img");
-      if (io) io.observe(im);
-      else { im.src = im.dataset.src; im.classList.add("loaded"); }
+      gridEl.appendChild(makeSmartCard(img, isDone, smartToken));
     });
   }
 
@@ -1141,10 +1125,18 @@
     im.loading = "lazy";
     im.draggable = false;
     im.addEventListener("contextmenu", (e) => e.preventDefault());
-    // 不立即加载：由 renderSmartPools 用"指向弹窗滚动容器"的懒加载按需加载，避免一次性加载上百张挤爆并发
-    im.dataset.src = makeSrc(smartToken);
-    im.onload = () => im.classList.add("loaded");
-    im.onerror = () => { im.classList.remove("loaded"); };
+    // 立即加载：智能打标弹窗内懒加载监听不可靠，改为打开即加载，保证图片显示；失败时用令牌重试一次
+    const doLoad = (tok) => {
+      im.src = makeSrc(tok);
+      im.onload = () => im.classList.add("loaded");
+      im.onerror = () => { im.classList.remove("loaded"); };
+    };
+    doLoad(smartToken);
+    // 若首次失败，尝试重新取令牌加载一次
+    im.addEventListener("error", () => {
+      if (smartToken) return;
+      SB.currentToken().then((t) => { if (t) { smartToken = t; doLoad(t); } }).catch(() => {});
+    });
     wrap.appendChild(im);
     const cap = document.createElement("div");
     cap.className = "smart-cap";
