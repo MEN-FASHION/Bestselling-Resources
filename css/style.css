@@ -640,7 +640,7 @@ select.input {
 .smart-tag { padding: 4px 12px; border: 1px solid var(--line); background: var(--card); color: var(--txt); border-radius: 14px; cursor: pointer; font-size: 12px; }
 .smart-tag.active { border-color: var(--gold); color: var(--gold); background: rgba(139,115,85,.12); }
 .smart-tag-empty { font-size: 12px; color: var(--sub); }
-.smart-pools { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 6px 0 14px; }
+.smart-pools { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 200px 1fr; gap: 14px; margin: 6px 0 14px; }
 .smart-pool { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--card); }
 .smart-pool-head { padding: 9px 14px; font-size: 13px; font-weight: 700; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--line); letter-spacing: .5px; flex: 0 0 auto; }
 .smart-pool-head .sp-count { margin-left: 6px; font-weight: 400; color: var(--sub); }
@@ -1210,3 +1210,20 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .smart-select-all:hover { opacity: .88; }
 #smart-fs.btn-ghost { border: 1px solid #ddd; background: #fff; color: #555; border-radius: 8px; padding: 5px 12px; cursor: pointer; }
 #smart-fs.btn-ghost:hover { border-color: #9c8b74; color: #9c8b74; }
+
+/* ===== 智能打标：图册（中间栏） ===== */
+.smart-albums { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--card); }
+.smart-albums-head { padding: 9px 12px; font-size: 13px; font-weight: 700; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--line); letter-spacing: .5px; flex: 0 0 auto; }
+.smart-albums-head .sp-count { margin-left: 6px; font-weight: 400; color: var(--sub); }
+.smart-albums-list { flex: 1 1 auto; min-height: 0; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.smart-album { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: rgba(255,255,255,.02); cursor: grab; transition: border-color .15s, background .15s; }
+.smart-album:hover { border-color: var(--gold); background: rgba(139,115,85,.06); }
+.smart-album.drop-over { outline: 2px dashed var(--gold); outline-offset: -4px; background: rgba(139,115,85,.10); }
+.smart-album-name { font-size: 12px; color: var(--txt); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smart-album-count { font-size: 11px; color: var(--sub); margin-top: 3px; }
+.smart-album.active { border-color: var(--gold); background: rgba(139,115,85,.10); }
+.smart-album.empty { opacity: .55; }
+
+/* 全选本池去标按钮（左池） */
+#smart-pool-done .smart-pool-head { display: flex; align-items: center; }
+#smart-pool-done .smart-pool-head .sp-count { margin-right: auto; }

@@ -1020,7 +1020,9 @@
       await renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
     } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
   }
+  let smartTagsCache = [];                          // 当前维度标签清单缓存（供图册栏复用）
   function renderSmartTags(list) {
+    smartTagsCache = Array.isArray(list) ? list.slice() : [];
     const box = document.querySelector("#smart-tags");
     if (!box) return;
     box.innerHTML = "";
@@ -1118,6 +1120,7 @@
         });
       });
     }, 500);
+    renderSmartAlbums();
   }
   function makeSmartCard(img, isDone, smartToken) {
     const card = document.createElement("div");
@@ -1194,6 +1197,7 @@
   function bindSmartDrop() {
     const doneGrid = document.querySelector("#smart-grid-done");
     const undoneGrid = document.querySelector("#smart-grid-undone");
+    const albumsEl = document.querySelector("#smart-albums-list");
     if (!doneGrid || !undoneGrid) return;
     const setup = (el, toDone) => {
       el.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; el.classList.add("drop-over"); });
@@ -1208,7 +1212,83 @@
     };
     setup(doneGrid, true);
     setup(undoneGrid, false);
+    // 图册栏：拖入某个册子=打上该标签（不依赖中间选中标签）
+    if (albumsEl) {
+      albumsEl.addEventListener("dragover", (e) => {
+        const a = e.target.closest(".smart-album");
+        if (!a) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        albumsEl.querySelectorAll(".smart-album").forEach(x => x.classList.remove("drop-over"));
+        a.classList.add("drop-over");
+      });
+      albumsEl.addEventListener("dragleave", (e) => {
+        const a = e.target.closest(".smart-album");
+        if (a) a.classList.remove("drop-over");
+      });
+      albumsEl.addEventListener("drop", (e) => {
+        e.preventDefault();
+        albumsEl.querySelectorAll(".smart-album").forEach(x => x.classList.remove("drop-over"));
+        const a = e.target.closest(".smart-album");
+        if (!a) return;
+        const tag = a.dataset.tag;
+        if (!tag) return;
+        const id = smartDragging ? smartDragging.id : null;
+        if (!id) return;
+        // 把图片打上该册子标签（自动落到左池该标签下）
+        smartTag = tag;
+        moveSmart(id, true);
+      });
+    }
   }
+  // 渲染中间图册栏：当前维度下每个具体标签一个小册子，展示已收录数量
+  function renderSmartAlbums() {
+    const box = document.querySelector("#smart-albums-list");
+    const cntEl = document.querySelector("#smart-album-cnt");
+    if (!box) return;
+    box.innerHTML = "";
+    const lists = [];
+    // 收集当前维度的标签清单
+    if (smartDim === "category") {
+      (smartTagsCache || []).forEach(t => lists.push(t));
+    } else {
+      (smartTagsCache || []).forEach(t => lists.push(t));
+    }
+    if (!lists.length) {
+      if (cntEl) cntEl.textContent = "0";
+      box.innerHTML = '<div class="smart-album-name" style="color:var(--sub);font-weight:400;font-size:12px">暂无标签，可到标签管理新增</div>';
+      return;
+    }
+    const field = smartFieldMap[smartDim];
+    // 统计每个标签已收录数量
+    lists.forEach(tag => {
+      let count = 0;
+      smartAll.forEach(img => { if (smartHas(img, field, tag)) count++; });
+      const a = document.createElement("div");
+      a.className = "smart-album" + (tag === smartTag ? " active" : "") + (count === 0 ? " empty" : "");
+      a.dataset.tag = tag;
+      const name = document.createElement("div");
+      name.className = "smart-album-name";
+      name.textContent = tag;
+      const c = document.createElement("div");
+      c.className = "smart-album-count";
+      c.textContent = count + " 张";
+      a.appendChild(name);
+      a.appendChild(c);
+      a.title = "把图片拖进此册子，即打上「" + tag + "」标签";
+      // 点击册子：选中该标签
+      a.addEventListener("click", async () => {
+        smartTag = tag;
+        document.querySelectorAll("#smart-tags .smart-tag").forEach(b => {
+          b.classList.toggle("active", b.textContent === tag);
+        });
+        await renderSmartPools();
+      });
+      box.appendChild(a);
+    });
+    if (cntEl) cntEl.textContent = lists.length;
+  }
+
   async function moveSmart(id, toDone) {
     if (!smartTag) { sbToast("请先在中间选择一个标签", false); return; }
     const field = smartFieldMap[smartDim];
@@ -1257,6 +1337,7 @@
     if (!undoneGrid) return;
     const ids = [...undoneGrid.querySelectorAll(".smart-card")].map(c => c.dataset.id).filter(Boolean);
     if (!ids.length) { sbToast("本池暂无需要打标的图片", false); return; }
+    if (!confirm("确认要对本池 " + ids.length + " 张图片批量打上「" + smartTag + "」标签？")) return;
     let ok = 0, fail = 0;
     for (const id of ids) {
       const img = smartAll.find(i => i.id === id);
@@ -1286,7 +1367,38 @@
     if (fsBtn) fsBtn.addEventListener("click", toggleSmartFullscreen);
     const selAll = document.querySelector("#smart-select-all");
     if (selAll) selAll.addEventListener("click", smartSelectAll);
+    const deselAll = document.querySelector("#smart-deselect-all");
+    if (deselAll) deselAll.addEventListener("click", smartDeselAll);
     bindSmartDrop();
+  }
+  // 全选本池去标：给左池（已打该标签）的全部图片一键移除当前标签（需二次确认）
+  async function smartDeselAll() {
+    if (!smartTag) { sbToast("请先选择一个具体标签，再全选本池去标", false); return; }
+    const field = smartFieldMap[smartDim];
+    const doneGrid = document.querySelector("#smart-grid-done");
+    if (!doneGrid) return;
+    const ids = [...doneGrid.querySelectorAll(".smart-card")].map(c => c.dataset.id).filter(Boolean);
+    if (!ids.length) { sbToast("本池暂无需要移除标签的图片", false); return; }
+    if (!confirm("确认要对本池 " + ids.length + " 张图片批量移除「" + smartTag + "」标签？")) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      const img = smartAll.find(i => i.id === id);
+      if (!img) continue;
+      try {
+        if (smartSingleDim[field]) {
+          await SB.setImageSingleField(id, field, "");
+          img[field] = "";
+        } else {
+          const cur = Array.isArray(img[field]) ? img[field] : [];
+          const next = cur.filter(t => t !== smartTag);
+          await SB.updateImageField(id, field, next);
+          img[field] = next;
+        }
+        ok++;
+      } catch (e) { fail++; }
+    }
+    sbToast("已为 " + ok + " 张图片移除「" + smartTag + "」" + (smartSingleDim[field] ? "类目" : "标签") + (fail ? "，失败 " + fail + " 张" : ""));
+    await renderSmartPools();
   }
 
   // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
