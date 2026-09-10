@@ -1161,6 +1161,9 @@
   const smartFieldMap = { style: "style_tags", element: "element_tags", channel: "tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags", category: "category" };
   // 单值维度（类目 category 是字符串，其余是数组）
   const smartSingleDim = { category: true };
+  // 逻辑单值维度：数组存储但每张图该维度只允许一个标签（打新替换旧）。
+  // 区别于 category（字符串字段）：这些仍是数组字段，仅"选中某标签时排除已打其它标签的图 + 写入替换"。
+  const smartUniqueFields = new Set(["style_tags", "tags", "scene_tags", "shoot_tags", "skin_tags"]);
   const smartAlbumPreview = {};   // 每个图册标签显示的最新拖入图片（tag -> img 对象）
 
   function openSmartModal() {
@@ -1265,6 +1268,12 @@
     const arr = Array.isArray(img[field]) ? img[field] : [];
     return tag ? arr.includes(tag) : arr.length > 0;
   }
+  // 逻辑单值维度：判断该图在此维度是否已打任意标签（数组非空）
+  function smartHasAny(img, field) {
+    const v = img[field];
+    if (Array.isArray(v)) return v.length > 0;
+    return !!(v && String(v).trim());
+  }
   // 用指向弹窗滚动容器的懒加载渲染一个池子，避免一次性加载上百张
   // 智能打标取图地址（带令牌）
   function smartImgUrl(img, tok) {
@@ -1331,7 +1340,7 @@
           img[field] = toDone ? smartTag : "";
         } else {
           const cur = Array.isArray(img[field]) ? img[field] : [];
-          const next = toDone ? [...new Set(cur.concat([smartTag]))] : cur.filter(t => t !== smartTag);
+          const next = (toDone && smartUniqueFields.has(field)) ? [smartTag] : (toDone ? [...new Set(cur.concat([smartTag]))] : cur.filter(t => t !== smartTag));
           await SB.updateImageField(id, field, next);
           img[field] = next;
         }
@@ -1369,7 +1378,11 @@
       const doneList = [], undoneList = [];
       smartAll.forEach(img => {
         const has = smartHas(img, field, smartTag);
-        (has ? doneList : undoneList).push(img);
+        if (has) { doneList.push(img); return; }
+        // 对逻辑单值维度：该图已打下同维度其它标签 → 视为"该维度已占用"，
+        // 不再出现在"未打当前标签"池中，避免被重复打标。
+        if (smartUniqueFields.has(field) && smartHasAny(img, field)) return;
+        undoneList.push(img);
       });
       finishHead(doneHead, "已打该标签 ", doneList.length);
       finishHead(undoneHead, "未打该标签 ", undoneList.length);
@@ -1429,25 +1442,10 @@
       SB.currentToken().then((t) => { if (t) doLoad(t); }).catch(() => {});
     });
     wrap.appendChild(im);
-    const cap = document.createElement("div");
-    cap.className = "smart-cap";
-    const lbl = document.createElement("span");
-    lbl.className = "smart-cap-name";
-    lbl.textContent = img.name || img.id;
-    lbl.title = (img.name || img.id) + "　" + (img.category || "");
-    const btn = document.createElement("button");
-    btn.className = "smart-move";
-    btn.textContent = isDone ? "←" : "→";
-    btn.title = isDone ? "移除「" + smartTag + "」标签" : "打上「" + smartTag + "」标签";
-    btn.onclick = (e) => { e.stopPropagation(); moveSmart(img.id, !isDone); };
-    cap.appendChild(lbl);
-    cap.appendChild(btn);
     card.appendChild(wrap);
-    card.appendChild(cap);
 
     // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
     card.addEventListener("click", (e) => {
-      if (e.target.closest(".smart-move")) return;   // 按钮点击交给按钮
       if (smartDragging) return;                      // 拖拽中不触发
       e.stopPropagation();
       moveSmart(img.id, !isDone);                     // 左池→撤标(false)，右池→打标(true)
@@ -1570,6 +1568,15 @@
       body.appendChild(c);
       a.appendChild(thumbWrap);
       a.appendChild(body);
+      // 图册删除按钮（右上角）×：删除该标签并同步移除图片上的该标签，同步到标签管理
+      const del = document.createElement("button");
+      del.className = "smart-album-del";
+      del.type = "button";
+      del.title = "删除图册「" + tag + "」（同步到标签管理并移除图片上的该标签）";
+      del.textContent = "×";
+      del.setAttribute("data-tag", tag);
+      del.addEventListener("click", (e) => { e.stopPropagation(); smartDeleteAlbum(tag); });
+      a.appendChild(del);
       a.title = "把图片拖进此册子，即打上「" + tag + "」标签";
       // 点击册子：选中该标签
       a.addEventListener("click", async () => {
@@ -1582,6 +1589,95 @@
       box.appendChild(a);
     });
     if (cntEl) cntEl.textContent = lists.length;
+  }
+// 新增图册（打标时）：在当前维度新增一个标签，并同步写入标签管理（tag_defs）
+  async function smartAddAlbum() {
+    if (!smartDim) { sbToast("请先选择一个维度（风格/元素/渠道等）", false); return; }
+    const dimLabel = { category: "类目", style: "风格", element: "元素", channel: "渠道", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || smartDim;
+    if (smartDim === "channel") { sbToast("渠道标签请在 config.js 维护 CHANNEL_TAGS，不支持在此新增", false); return; }
+    const name = prompt("请输入新的「" + dimLabel + "」标签名称：");
+    if (name === null) return;
+    const tag = name.trim();
+    if (!tag) { sbToast("标签名称不能为空", false); return; }
+    if ((smartTagsCache || []).some(t => t === tag)) { sbToast("标签「" + tag + "」已存在", false); return; }
+    // 场景维度需带 indoor/outdoor 分组
+    let group = null;
+    if (smartDim === "scene") {
+      const g = prompt("该场景属于室内还是室外？输入 室内 或 室外（回车留空=不分组）：");
+      if (g !== null && g.trim()) {
+        const gv = g.trim();
+        group = (gv === "室内" || gv === "indoor") ? "indoor" : (gv === "室外" || gv === "outdoor") ? "outdoor" : null;
+      }
+    }
+    try {
+      await SB.addTagDef(smartDim, tag, group);
+      // 本地同步刷新标签缓存
+      if (!smartTagsCache) smartTagsCache = [];
+      smartTagsCache.push(tag);
+      // 更新图册栏与标签栏
+      renderSmartAlbums();
+      const tagBox = document.querySelector("#smart-tags");
+      if (tagBox) {
+        const b = document.createElement("button");
+        b.className = "smart-tag";
+        b.textContent = tag;
+        b.onclick = async () => {
+          smartTag = tag;
+          renderSmartTags(smartTagsCache.slice());
+          await renderSmartPools();
+        };
+        tagBox.appendChild(b);
+      }
+      sbToast("已新增标签「" + tag + "」并同步到标签管理", true);
+    } catch (err) {
+      sbToast("新增标签失败，请重试", false);
+    }
+  }
+
+  // 删除图册（打标时）：删除该标签，同步移除图片上的该标签，并同步删除标签管理里的标签
+  async function smartDeleteAlbum(tag) {
+    if (!tag) return;
+    if (!confirm("确认删除图册「" + tag + "」？将同步移除图片上已打的该标签，并从标签管理删除该标签。")) return;
+    const field = smartFieldMap[smartDim];
+    try {
+      // 1. 从数据库删除标签定义（先按 type+name 查出 id）
+      let defId = null;
+      try {
+        const defs = await SB.listTagDefs(smartDim);
+        const hit = (defs || []).find(d => d.name === tag);
+        if (hit) defId = hit.id;
+      } catch (e) { /* 忽略查询失败 */ }
+      if (defId) await SB.deleteTagDef(defId);
+      // 2. 逐张移除图片上该标签（图片本身保留）
+      const affected = smartAll.filter(img => smartHas(img, field, tag));
+      if (affected.length) {
+        if (smartSingleDim[field]) {
+          // 单值维度：清空该字段
+          for (const img of affected) { await SB.setImageSingleField(img.id, field, ""); img[field] = ""; }
+        } else {
+          // 多值维度：从数组移除该标签
+          for (const img of affected) {
+            const arr = (img[field] || []).filter(x => x !== tag);
+            await SB.updateImageField(img.id, field, arr);
+            img[field] = arr;
+          }
+        }
+      }
+      // 3. 刷新本地缓存
+      smartTagsCache = (smartTagsCache || []).filter(t => t !== tag);
+      if (smartTag === tag) { smartTag = ""; }
+      renderSmartAlbums();
+      const tagBox = document.querySelector("#smart-tags");
+      if (tagBox) {
+        tagBox.querySelectorAll(".smart-tag").forEach(b => {
+          if (b.textContent === tag) b.remove();
+        });
+      }
+      await renderSmartPools();
+      sbToast("已删除标签「" + tag + "」并同步到标签管理", true);
+    } catch (err) {
+      sbToast("删除标签失败，请重试", false);
+    }
   }
 
   async function moveSmart(id, toDone) {
@@ -1604,8 +1700,14 @@
       return;
     }
     const cur = Array.isArray(img[field]) ? img[field] : [];
-    if (toDone) next = [...new Set(cur.concat([smartTag]))];
-    else next = cur.filter(t => t !== smartTag);
+    // 逻辑单值维度（风格/渠道/场景/拍摄/肤色）：打新=替换旧，只保留当前标签
+    if (toDone && smartUniqueFields.has(field)) {
+      next = [smartTag];
+    } else if (toDone) {
+      next = [...new Set(cur.concat([smartTag]))];
+    } else {
+      next = cur.filter(t => t !== smartTag);
+    }
     try {
       await SB.updateImageField(img.id, field, next);
       img[field] = next;
@@ -1643,7 +1745,7 @@
           img[field] = smartTag;
         } else {
           const cur = Array.isArray(img[field]) ? img[field] : [];
-          const next = [...new Set(cur.concat([smartTag]))];
+          const next = smartUniqueFields.has(field) ? [smartTag] : [...new Set(cur.concat([smartTag]))];
           await SB.updateImageField(id, field, next);
           img[field] = next;
         }
@@ -1664,6 +1766,8 @@
     if (selAll) selAll.addEventListener("click", smartSelectAll);
     const deselAll = document.querySelector("#smart-deselect-all");
     if (deselAll) deselAll.addEventListener("click", smartDeselAll);
+    const albumAdd = document.querySelector("#smart-album-add");
+    if (albumAdd) albumAdd.addEventListener("click", smartAddAlbum);
     bindSmartDrop();
   }
   // 全选本池去标：给左池（已打该标签）的全部图片一键移除当前标签（需二次确认）
