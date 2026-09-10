@@ -1165,6 +1165,19 @@
     card.appendChild(wrap);
     card.appendChild(cap);
 
+    // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".smart-move")) return;   // 按钮点击交给按钮
+      if (smartDragging) return;                      // 拖拽中不触发
+      e.stopPropagation();
+      moveSmart(img.id, !isDone);                     // 左池→撤标(false)，右池→打标(true)
+      if (isDone) {
+        sbToast("已移除「" + smartTag + "」标签", false);
+      } else {
+        sbToast("已为图片打上「" + smartTag + "」标签", true);
+      }
+    });
+
     // 拖拽
     card.addEventListener("dragstart", (e) => {
       smartDragging = img;
