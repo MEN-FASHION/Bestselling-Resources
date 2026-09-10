@@ -1444,7 +1444,24 @@
     wrap.appendChild(im);
     card.appendChild(wrap);
 
-    // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
+    const cap = document.createElement("div");
+      cap.className = "smart-card-tags";
+      const dims = [
+        ["类目", img.category ? [img.category] : []],
+        ["渠道", (Array.isArray(img.tags) ? img.tags : []).concat(!Array.isArray(img.tags) && img.tags ? [img.tags] : [])],
+        ["风格", img.style_tags],
+        ["元素", img.element_tags],
+        ["场景", img.scene_tags],
+        ["拍摄", img.shoot_tags],
+        ["肤色", img.skin_tags]
+      ];
+      const capHtml = dims.map(([lab, arr]) => {
+        const v = (Array.isArray(arr) ? arr : []).filter(Boolean).join("、");
+        return `<span class="mgr-cap-row ${lab === "类目" ? "cat" : lab === "渠道" ? "ch" : lab === "风格" ? "st" : lab === "元素" ? "el" : lab === "场景" ? "sc" : lab === "拍摄" ? "sh" : "sk"}"><i>${lab}</i>${v ? escHtml(v) : "未打标"}</span>`;
+      }).join("");
+      cap.innerHTML = capHtml;
+      card.appendChild(cap);
+      // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
     card.addEventListener("click", (e) => {
       if (smartDragging) return;                      // 拖拽中不触发
       e.stopPropagation();
