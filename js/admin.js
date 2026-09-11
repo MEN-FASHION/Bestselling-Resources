@@ -1411,6 +1411,7 @@
         });
       });
     }, 500);
+    renderSmartUploadEntry();      // 右池首位：上传入口卡 + 待传缩略图卡
     renderSmartAlbums();
   }
   function makeSmartCard(img, isDone, smartToken) {
@@ -1792,19 +1793,12 @@
     bindSmartUpload();
     bindSmartDrop();
   }
-  // ================= 智能打标内上传图片（与「上传图片」菜单一致：选类目→上传→刷新池子） =================
-  let smartPending = [];           // 智能打标弹窗内待上传文件
+  // ================= 智能打标内上传图片（上传入口=右池首位卡片，待传=缩略图卡，按钮/进度常驻右池头部） =================
+  let smartPending = [];           // 待上传文件（含预览）
+  let smartUploading = false;      // 是否正在上传
   function bindSmartUpload() {
-    const dz = document.querySelector("#smart-dropzone");
     const fi = document.querySelector("#smart-file");
-    if (!dz || !fi) return;
-    const em = dz.querySelector("em");
-    if (em) em.onclick = (e) => { e.stopPropagation(); fi.click(); };
-    dz.onclick = (e) => { if (e.target.tagName !== "EM") fi.click(); };
-    fi.onchange = () => { smartAddFiles(fi.files); fi.value = ""; };
-    ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
-    ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
-    dz.addEventListener("drop", (e) => { smartAddFiles(e.dataTransfer.files); });
+    if (fi) fi.onchange = () => { smartAddFiles(fi.files); fi.value = ""; };
     const btn = document.querySelector("#smart-upload-btn");
     if (btn) btn.onclick = doSmartUpload;
   }
@@ -1814,68 +1808,108 @@
     let cats = [];
     try { cats = await SB.listActiveCats(); } catch (e) {}
     sel.innerHTML = "";
-    sel.add(new Option("── 请选择类目 ──", ""));
+    sel.add(new Option("类目…", ""));
     if (currentFavCats.length) {
       currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
     }
     cats.forEach(c => sel.add(new Option(c, c)));
   }
+  // 点「＋」上传入口卡片：打开文件选择
+  function smartPick() { const fi = document.querySelector("#smart-file"); if (fi) fi.click(); }
   function smartAddFiles(fileList) {
     const imgs = Array.from(fileList).filter(f => /^image\//.test(f.type));
     if (!imgs.length) { sbToast("请选择图片文件", false); return; }
     imgs.forEach(f => {
       if (smartPending.some(p => p.name === f.name && p.size === f.size)) return;
-      smartPending.push(f);
+      const item = { file: f, url: URL.createObjectURL(f) };
+      smartPending.push(item);
     });
     smartRenderPending();
   }
-  function smartRemovePending(idx) { smartPending.splice(idx, 1); smartRenderPending(); }
-  function smartRenderPending() {
-    const box = document.querySelector("#smart-pending");
-    if (!box) return;
-    box.innerHTML = "";
-    smartPending.forEach((f, idx) => {
-      const row = document.createElement("div");
-      row.className = "pending-row";
-      row.innerHTML = `<span class="pname">🖼 ${f.name}</span><span class="psize">${fmtSize(f.size)}</span><button class="x" data-i="${idx}">×</button>`;
-      row.querySelector(".x").onclick = () => smartRemovePending(idx);
-      box.appendChild(row);
-    });
-    const btn = document.querySelector("#smart-upload-btn");
-    if (btn) { btn.disabled = smartPending.length === 0; btn.textContent = "上传所选（" + smartPending.length + "）"; }
+  function smartRemovePending(idx) {
+    const it = smartPending[idx];
+    if (it && it.url) URL.revokeObjectURL(it.url);
+    smartPending.splice(idx, 1);
+    smartRenderPending();
   }
-  // 上传并写库，成功后刷新左右池（直接可打标）；与主上传一致做去重校验、选类目
+  function smartRenderPending() {
+    const btn = document.querySelector("#smart-upload-btn");
+    if (btn) { btn.disabled = smartPending.length === 0; btn.textContent = "上传" + (smartPending.length ? `（${smartPending.length}）` : ""); }
+    renderSmartUploadEntry();     // 刷新右池首位的"上传入口 + 待传缩略图"
+  }
+  // 在右池 grid 首位插入「上传入口卡片 + 待传缩略图卡」
+  function renderSmartUploadEntry() {
+    const undoneGrid = document.querySelector("#smart-grid-undone");
+    if (!undoneGrid) return;
+    // 移除旧的上传入口/待传卡（保留真正的图片卡）
+    [...undoneGrid.querySelectorAll(".smart-up-entry, .smart-up-thumb")].forEach(n => n.remove());
+    // ① 上传入口卡片（占一个图片位）
+    const entry = document.createElement("div");
+    entry.className = "smart-card smart-up-entry";
+    entry.onclick = (e) => { e.stopPropagation(); smartPick(); };
+    entry.innerHTML = `<div class="holder up-holder"><div class="up-inner"><span class="up-plus">＋</span><span class="up-txt">上传图片</span><span class="up-sub">点击选文件</span></div></div>`;
+    undoneGrid.insertBefore(entry, undoneGrid.firstChild);
+    // ② 待传缩略图卡（小图预览，无边框文件标题）
+    smartPending.forEach((it, idx) => {
+      const t = document.createElement("div");
+      t.className = "smart-card smart-up-thumb";
+      t.innerHTML = `<div class="holder"><img src="${it.url}" alt=""></div><button class="x" title="移除">×</button>`;
+      t.querySelector(".x").onclick = (e) => { e.stopPropagation(); smartRemovePending(idx); };
+      undoneGrid.insertBefore(t, entry.nextSibling);
+    });
+  }
+  // 上传并写库：并发限制提速，缩略图预览，成功后刷新池子（新图直接可打标）
   async function doSmartUpload() {
-    if (!smartPending.length) return;
+    if (!smartPending.length || smartUploading) return;
     if (currentRole !== "admin") { sbToast("无权限：只有管理员可上传", false); return; }
     let cat = document.querySelector("#smart-cat").value;
-    if (!cat) { sbToast("请选择分类", false); return; }
+    if (!cat) { sbToast("请先选择上传类目", false); return; }
+    smartUploading = true;
+    const btn = document.querySelector("#smart-upload-btn");
     const prog = document.querySelector("#smart-progress");
     const bar = document.querySelector("#smart-progress-bar");
+    if (btn) btn.disabled = true;
     if (prog) prog.classList.remove("hidden");
-    const total = smartPending.length;
+    const files = smartPending.map(it => it.file);
+    const total = files.length;
     let done = 0, failed = 0, dup = 0;
+    const setBar = () => { if (bar) bar.style.width = Math.round(done / total * 100) + "%"; };
+    setBar();
     let existingNames = new Set();
     try { existingNames = new Set(await SB.listImageNames()); } catch (e) { console.warn("加载已有图片名失败", e); }
-    for (const file of smartPending) {
-      const cleanName = file.name.replace(/[^\w.\-]/g, "_");
-      if (existingNames.has(cleanName)) { dup++; done++; if (bar) bar.style.width = Math.round(done / total * 100) + "%"; continue; }
-      try {
-        const path = await SB.uploadImage(file, cat);
-        await SB.addImageRecord({ category: cat, name: cleanName, path });
-        existingNames.add(cleanName);
-      } catch (e) { console.warn(e); failed++; }
-      done++;
-      if (bar) bar.style.width = Math.round(done / total * 100) + "%";
+    // 记录结果容器（按 index）
+    const results = new Array(total).fill(null);
+    // 并发分组上传（单批并行 4 张，大幅快于串行）
+    const CONCURRENCY = 4;
+    let cursor = 0;
+    async function worker() {
+      while (cursor < files.length) {
+        const i = cursor++;
+        const file = files[i];
+        const cleanName = file.name.replace(/[^\w.\-]/g, "_");
+        if (existingNames.has(cleanName)) { results[i] = { ok: false, dup: true }; done++; setBar(); continue; }
+        try {
+          const path = await SB.uploadImage(file, cat);
+          await SB.addImageRecord({ category: cat, name: cleanName, path });
+          existingNames.add(cleanName);
+          results[i] = { ok: true };
+        } catch (e) { console.warn(e); results[i] = { ok: false, fail: true }; }
+        done++; setBar();
+      }
     }
-    let msg = `上传完成：成功 ${total - failed - dup}，失败 ${failed}`;
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
+    results.forEach(r => { if (!r) return; if (r.dup) dup++; else if (r.fail) failed++; });
+    const okCount = total - failed - dup;
+    let msg = `上传完成：成功 ${okCount}，失败 ${failed}`;
     if (dup) msg += `，重复跳过 ${dup}`;
     sbToast(msg, failed === 0 && dup === 0);
     setTimeout(() => { if (prog) prog.classList.add("hidden"); if (bar) bar.style.width = "0%"; }, 800);
+    smartPending.forEach(it => { if (it.url) URL.revokeObjectURL(it.url); });
     smartPending = [];
+    smartUploading = false;
     smartRenderPending();
-    await loadManage();            // 图片清单刷新
-    await loadSmartAll();          // 智能打标池刷新（新图可直接打标）
+    await loadManage();
+    await loadSmartAll();
     renderSmartPools();
   }
   // 全选本池去标：给左池（已打该标签）的全部图片一键移除当前标签（需二次确认）

@@ -1289,11 +1289,27 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 #smart-pool-done .smart-pool-head { display: flex; align-items: center; }
 #smart-pool-done .smart-pool-head .sp-count { margin-right: auto; }
 
-/* ================= 智能打标内上传图片 ================= */
-.smart-upload { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 12px; flex: 0 0 auto; }
-.smart-upload .su-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.smart-upload .su-title { font-weight: 600; font-size: 14px; color: var(--txt); }
-.smart-upload .su-lbl { font-size: 12px; color: var(--muted); }
-.smart-upload .su-cat { min-width: 180px; }
-.smart-upload .su-dz { }
-.smart-upload .su-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+
+/* ================= 智能打标内上传（入口卡=右池首位，按钮/进度常驻右池头部） ================= */
+#smart-pool-undone .smart-pool-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#smart-pool-undone .smart-pool-head .sp-count { margin-right: 8px; }
+.su-spacer { flex: 1 1 auto; }
+.su-cat { min-width: 110px; max-width: 150px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--txt); font-size: 12px; }
+.sm-upload { height: 30px; padding: 0 14px; font-size: 12px; white-space: nowrap; }
+.sm-progress { flex: 1 1 120px; max-width: 200px; height: 8px; }
+/* 上传入口卡（右池首位） */
+.smart-up-entry .holder { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.smart-up-entry:hover { border-color: var(--gold); }
+.smart-up-entry .up-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); }
+.smart-up-entry .up-plus { font-size: 30px; line-height: 1; color: var(--gold); }
+.smart-up-entry .up-txt { font-size: 13px; font-weight: 600; color: var(--txt); }
+.smart-up-entry .up-sub { font-size: 11px; color: var(--muted); }
+/* 待传缩略图卡 */
+.smart-up-thumb { position: relative; }
+.smart-up-thumb .holder { cursor: default; }
+.smart-up-thumb .holder img { object-fit: cover; }
+.smart-up-thumb .x { position: absolute; top: 6px; right: 6px; z-index: 4; width: 20px; height: 20px; border: none; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 20px; cursor: pointer; padding: 0; }
+.smart-up-thumb .x:hover { background: #c0392b; }
+/* 进度条平滑过渡 */
+.smart-up-head .progress, .smart-progress .progress-bar { transition: width .3s ease; }
+.smart-progress.hidden { display: none; }
