@@ -100,7 +100,7 @@ img { display: block; }
 .gallery-view { min-height: 100vh; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
-  background: rgba(14,15,17,.85); backdrop-filter: blur(12px);
+  background: rgba(247,246,243,.88); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
 .topbar-inner {
@@ -462,7 +462,7 @@ select.input {
   position: relative; z-index: 2;
   display: flex; align-items: center; gap: 10px;
   padding: 9px 14px; cursor: pointer; user-select: none;
-  background: rgba(14,15,17,.9); backdrop-filter: blur(10px);
+  background: rgba(255,255,255,.92); backdrop-filter: blur(10px);
   border: 1px solid var(--line); border-radius: 12px;
   transition: border-color .2s;
 }
@@ -475,7 +475,7 @@ select.input {
 .tf-body {
   position: absolute; left: 0; right: 0; top: calc(100% + 6px);
   z-index: 60; border-radius: 12px;
-  background: rgba(20,22,25,.97); backdrop-filter: blur(12px);
+  background: rgba(255,255,255,.98); backdrop-filter: blur(12px);
   border: 1px solid var(--line); box-shadow: var(--shadow);
   padding: 14px 14px 6px;
   opacity: 0; visibility: hidden; transform: translateY(-6px);
@@ -686,17 +686,20 @@ select.input {
 .smart-card .holder img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; pointer-events: none; user-select: none; -webkit-user-drag: none; opacity: 1 !important; }
 /* 智能打标卡片：标签浮层叠加显示在图片顶部（前台式） */
 .smart-card { position: relative; }
-.smart-card-tags { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: 4px 4px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; align-content: flex-start; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); border-radius: 8px 8px 0 0; max-height: 78px; overflow: hidden; }
-.sm-tag.chip { display: inline-block; font-size: 10px; line-height: 1.3; padding: 1px 6px; border-radius: 999px; color: #fff; white-space: nowrap; backdrop-filter: blur(2px); }
-.sm-tag.chip.cat { background: rgba(201,168,106,.92); }
-.sm-tag.chip.ch { background: rgba(163,183,216,.92); }
-.sm-tag.chip.st { background: rgba(201,168,106,.92); }
-.sm-tag.chip.el { background: rgba(163,183,216,.92); }
-.sm-tag.chip.sc { background: rgba(183,166,201,.92); }
-.sm-tag.chip.sh { background: rgba(158,198,179,.92); }
-.sm-tag.chip.sk { background: rgba(216,163,163,.92); }
-.sm-tag.chip.none { background: rgba(120,120,120,.75); font-style: italic; }
-.smart-card:hover .smart-card-tags { max-height: none; overflow: visible; }
+.smart-card-tags { position: absolute; top: 6px; left: 6px; z-index: 3; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; pointer-events: none; max-width: calc(100% - 12px); }
+.smart-tag-row { display: flex; align-items: baseline; gap: 5px; font-size: 10.5px; line-height: 1.45; max-width: 100%; padding: 1px 7px; border-radius: 6px; background: rgba(12,14,18,.55); backdrop-filter: blur(3px); }
+.smart-tag-row b { color: #fff; font-weight: 600; min-width: 24px; flex: none; opacity: .9; }
+.smart-tag-row span { color: #f3efe9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smart-tag-row.cat b { color: #ecd9b3; }
+.smart-tag-row.ch b { color: #dcae57; }
+.smart-tag-row.st b { color: #9db9ff; }
+.smart-tag-row.el b { color: #8fd9ac; }
+.smart-tag-row.sc b { color: #d8bfea; }
+.smart-tag-row.sh b { color: #8fd7c0; }
+.smart-tag-row.sk b { color: #f0b8b8; }
+.smart-tag-row.none b { color: #bbb; }
+.smart-tag-row.none span { color: #bbb; font-style: italic; }
+.smart-card:hover .smart-tag-row span { white-space: normal; word-break: break-all; }
 
 /* ========== 标签管理综合页（常用类目/前台类目/风格·元素标签） ========== */
 .tag-sub { display: flex; flex-direction: column; gap: 12px; }

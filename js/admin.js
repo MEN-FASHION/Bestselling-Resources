@@ -1456,12 +1456,13 @@
       ["拍摄", "sh", img.shoot_tags],
       ["肤色", "sk", img.skin_tags]
     ];
-    const chips = [];
+    // 像前台一样：每个维度一行（左对齐竖排一列），维度标签 + 标签值
+    const rows = [];
     dims.forEach(([lab, cls, arr]) => {
       const v = (Array.isArray(arr) ? arr : []).filter(Boolean);
-      v.forEach(t => chips.push(`<span class="sm-tag chip ${cls}">${escHtml(t)}</span>`));
+      if (v.length) rows.push(`<div class="smart-tag-row ${cls}"><b>${lab}</b><span>${escHtml(v.join("、"))}</span></div>`);
     });
-    cap.innerHTML = chips.length ? chips.join("") : `<span class="sm-tag chip none">未打标</span>`;
+    cap.innerHTML = rows.length ? rows.join("") : `<div class="smart-tag-row none"><b>—</b><span>未打标</span></div>`;
     card.appendChild(cap);
       // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
     card.addEventListener("click", (e) => {
