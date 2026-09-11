@@ -1317,3 +1317,35 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* 进度条平滑过渡 */
 .smart-up-head .progress, .smart-progress .progress-bar { transition: width .3s ease; }
 .smart-progress.hidden { display: none; }
+
+/* 智能打标：顶部标签栏"编辑/改名"按钮 */
+.smart-tag { display: inline-flex; align-items: center; gap: 4px; }
+.smart-tag-name { line-height: 1.2; }
+.smart-tag-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; font-size: 11px; line-height: 1;
+  border-radius: 4px; color: var(--sub); background: transparent;
+  opacity: 0; transition: opacity .15s, color .15s, background .15s; cursor: pointer;
+}
+.smart-tag:hover .smart-tag-edit { opacity: 1; }
+.smart-tag-edit:hover { color: var(--gold); background: rgba(139,115,85,.15); }
+
+/* 智能打标：图册"编辑/改名"按钮 */
+.smart-album-name { display: flex; align-items: center; gap: 4px; }
+.smart-album-edit {
+  flex: none; width: 14px; height: 14px; font-size: 11px; line-height: 1;
+  border: none; border-radius: 4px; color: var(--sub); background: transparent;
+  opacity: 0; transition: opacity .15s, color .15s, background .15s; cursor: pointer; padding: 0;
+}
+.smart-album:hover .smart-album-edit { opacity: 1; }
+.smart-album-edit:hover { color: var(--gold); background: rgba(139,115,85,.15); }
+
+/* 智能打标：图片卡片删除按钮（右上角） */
+.smart-card-del {
+  position: absolute; top: 4px; right: 4px; z-index: 3;
+  width: 20px; height: 20px; line-height: 1; font-size: 14px;
+  border: none; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
+  opacity: 0; transition: opacity .15s, background .15s; cursor: pointer;
+}
+.smart-card:hover .smart-card-del { opacity: 1; }
+.smart-card-del:hover { background: #d9534f; }

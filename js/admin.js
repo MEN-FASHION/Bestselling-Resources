@@ -1240,6 +1240,7 @@
     } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
   }
   let smartTagsCache = [];                          // 当前维度标签清单缓存（供图册栏复用）
+  let smartTokenCache = "";                          // 最近一次取到的取图令牌（供局部移动卡片复用）
   const smartSceneGroup = {};                       // 场景标签 -> 分组（indoor/outdoor），供图册栏按室内/室外分组
   function renderSmartTags(list) {
     smartTagsCache = Array.isArray(list) ? list.slice() : [];
@@ -1258,7 +1259,20 @@
     list.forEach(tag => {
       const b = document.createElement("button");
       b.className = "smart-tag" + (tag === smartTag ? " active" : "");
-      b.textContent = tag;
+      b.type = "button";
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "smart-tag-name";
+      nameSpan.textContent = tag;
+      b.appendChild(nameSpan);
+      // 编辑标签名（渠道标签来自 config.js，不支持改名；其余维度可改名并同步图片）
+      if (smartDim !== "channel") {
+        const ed = document.createElement("span");
+        ed.className = "smart-tag-edit";
+        ed.textContent = "✎";
+        ed.title = "编辑/改名（同步更新图片与标签管理）";
+        ed.addEventListener("click", (e) => { e.stopPropagation(); smartRenameTag(tag); });
+        b.appendChild(ed);
+      }
       b.onclick = async () => {
         smartTag = tag;
         renderSmartTags(list);
@@ -1363,6 +1377,7 @@
   async function renderSmartPools() {
     let smartToken = "";
     try { smartToken = await SB.currentToken(); } catch (e) { smartToken = ""; }
+    smartTokenCache = smartToken;
     const doneGrid = document.querySelector("#smart-grid-done");
     const undoneGrid = document.querySelector("#smart-grid-undone");
     if (!doneGrid || !undoneGrid) return;
@@ -1474,6 +1489,14 @@
     });
     cap.innerHTML = rows.length ? rows.join("") : `<div class="smart-tag-row none"><b>—</b><span>未打标</span></div>`;
     card.appendChild(cap);
+    // 卡片右上角删除图片按钮（点击确认后删除该图，并刷新池子/图册）
+    const del = document.createElement("button");
+    del.className = "smart-card-del";
+    del.type = "button";
+    del.title = "删除该图片";
+    del.textContent = "×";
+    del.addEventListener("click", (e) => { e.stopPropagation(); smartDeleteImage(img); });
+    card.appendChild(del);
       // 双向点击：左池点图=撤标回右池；右池点图=打标到左池（保留拖拽）
     card.addEventListener("click", (e) => {
       if (smartDragging) return;                      // 拖拽中不触发
@@ -1596,7 +1619,19 @@
       body.className = "smart-album-body";
       const name = document.createElement("div");
       name.className = "smart-album-name";
-      name.textContent = tag;
+      const nameTxt = document.createElement("span");
+      nameTxt.textContent = tag;
+      name.appendChild(nameTxt);
+      // 图册支持编辑标签名（除渠道维度）
+      if (smartDim !== "channel") {
+        const edn = document.createElement("button");
+        edn.className = "smart-album-edit";
+        edn.type = "button";
+        edn.textContent = "✎";
+        edn.title = "编辑/改名（同步更新图片与标签管理）";
+        edn.addEventListener("click", (e) => { e.stopPropagation(); smartRenameTag(tag); });
+        name.appendChild(edn);
+      }
       const c = document.createElement("div");
       c.className = "smart-album-count";
       c.textContent = count + " 张";
@@ -1692,6 +1727,85 @@
     }
   }
 
+// 编辑/改名标签（顶部标签栏与图册栏共用）：同步更新 tag_defs 与图片上已打的该标签，然后刷新
+// 删除智能打标中的单张图片（确认后删除 R2 文件 + 数据库记录，并刷新池子与标签覆盖）
+  async function smartDeleteImage(img) {
+    if (!img || !img.id) return;
+    if (!confirm("确认删除该图片？此操作不可恢复。")) return;
+    try {
+      if (img.path) await SB.deleteImage(img.path);
+      await SB.removeImageRecord(img.id);
+      selectedImages.delete(img.id);
+      // 更新本地缓存
+      smartAll = smartAll.filter(i => i.id !== img.id);
+      sbToast("已删除图片");
+      // 刷新池子与图册栏，并同步刷新图片管理网格
+      renderSmartAlbums();
+      await renderSmartPools();
+      refreshAfterImageChange();
+    } catch (err) { sbToast("删除失败，请重试", false); }
+  }
+
+  // 编辑/改名标签（顶部标签栏与图册栏共用）：同步更新 tag_defs 与图片上已打的该标签，然后刷新
+  async function smartRenameTag(tag) {
+    if (!tag) return;
+    if (smartDim === "channel") { sbToast("渠道标签请在 config.js 维护，不支持在此改名", false); return; }
+    const dimLabel = { category: "类目", style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || smartDim;
+    const newName = prompt("重命名「" + tag + "」（" + dimLabel + "）：\n请输入新标签名称");
+    if (newName === null) return;
+    const n = String(newName || "").trim();
+    if (!n) { sbToast("标签名称不能为空", false); return; }
+    if (n === tag) { sbToast("新名称与旧名称相同", false); return; }
+    if ((smartTagsCache || []).some(t => t === n)) { sbToast("标签「" + n + "」已存在", false); return; }
+    // 场景维度：保留原分组；可选更换室内/室外
+    let group = null;
+    try {
+      const defs = await SB.listTagDefs(smartDim);
+      const hit = (defs || []).find(d => d.name === tag);
+      group = hit ? (hit.group || null) : null;
+    } catch (e) { /* 忽略 */ }
+    if (smartDim === "scene") {
+      const g = prompt("该场景属于室内还是室外？输入 室内 或 室外（回车保留原分组）：");
+      if (g !== null && g.trim()) {
+        const gv = g.trim();
+        group = (gv === "室内" || gv === "indoor") ? "indoor" : (gv === "室外" || gv === "outdoor") ? "outdoor" : group;
+      }
+    }
+    try {
+      // 1. 更新 tag_defs 里的名称（按 type+name 查出 id）
+      const defs = await SB.listTagDefs(smartDim);
+      const hit = (defs || []).find(d => d.name === tag);
+      if (!hit) { sbToast("未找到该标签定义", false); return; }
+      await SB.updateTagDef(hit.id, n, group);
+      // 2. 同步更新图片上该标签
+      const field = smartFieldMap[smartDim];
+      if (field && field !== "category") {
+        await SB.renameTagDefAndImages(smartDim, tag, n);
+      } else if (field === "category") {
+        // 类目字段为字符串，单独处理
+        await SB.renameCategoryImages(tag, n);
+      }
+      // 3. 更新本地缓存
+      smartTagsCache = smartTagsCache.map(t => t === tag ? n : t);
+      if (smartDim === "scene") { delete smartSceneGroup[tag]; smartSceneGroup[n] = group || (n.indexOf("室外") >= 0 ? "outdoor" : "indoor"); }
+      smartAll.forEach(img => {
+        const f = smartFieldMap[smartDim];
+        if (!f) return;
+        if (smartSingleDim[f]) {
+          if (img[f] === tag) img[f] = n;
+        } else if (Array.isArray(img[f])) {
+          img[f] = img[f].map(t => t === tag ? n : t);
+        }
+      });
+      // 4. 刷新标签栏 / 图册栏 / 池子
+      renderSmartTags(smartTagsCache.slice());
+      renderSmartAlbums();
+      await renderSmartPools();
+      sbToast("已将「" + tag + "」改名为「" + n + "」，并同步图片与标签管理", true);
+    } catch (err) {
+      sbToast("改名失败，请重试", false);
+    }
+  }
   // 删除图册（打标时）：删除该标签，同步移除图片上的该标签，并同步删除标签管理里的标签
   async function smartDeleteAlbum(tag) {
     if (!tag) return;
@@ -1739,6 +1853,30 @@
     }
   }
 
+  // 单图打标/撤标后，只移动这一张卡到对应池，不重建整个池子 → 滚动位置保持不变
+  function smartMoveCardLocally(img, toDone) {
+    const doneGrid = document.querySelector("#smart-grid-done");
+    const undoneGrid = document.querySelector("#smart-grid-undone");
+    if (!doneGrid || !undoneGrid) return;
+    const src = toDone ? undoneGrid : doneGrid;
+    const dst = toDone ? doneGrid : undoneGrid;
+    (src.querySelectorAll(".smart-card") || []).forEach(c => {
+      if (c.dataset.id === String(img.id)) c.remove();
+    });
+    if (!smartTag) { smartSyncPoolCnt(); renderSmartAlbums(); return; }
+    dst.appendChild(makeSmartCard(img, toDone, smartTokenCache));
+    smartSyncPoolCnt();
+    renderSmartAlbums();               // 图册栏计数同步更新（不影响池子滚动）
+  }
+  // 只刷新左右池的计数文案，不清空池子
+  function smartSyncPoolCnt() {
+    const set = (grid, el) => {
+      if (!grid || !el) return;
+      el.textContent = grid.querySelectorAll(".smart-card").length;
+    };
+    set(document.querySelector("#smart-grid-done"), document.querySelector("#smart-cnt-done"));
+    set(document.querySelector("#smart-grid-undone"), document.querySelector("#smart-cnt-undone"));
+  }
   async function moveSmart(id, toDone) {
     if (!smartTag) { sbToast("请先在中间选择一个标签", false); return; }
     const field = smartFieldMap[smartDim];
@@ -1752,7 +1890,7 @@
         await SB.setImageSingleField(img.id, field, next);
         img[field] = next;
         sbToast(toDone ? "已为图片打上「" + smartTag + "」类目" : "已清空该图片类目");
-        await renderSmartPools();
+        smartMoveCardLocally(img, toDone);
       } catch (e) {
         sbToast("操作失败：" + (e.message || ""), false);
       }
@@ -1771,8 +1909,8 @@
       await SB.updateImageField(img.id, field, next);
       img[field] = next;
       sbToast(toDone ? "已为图片打上「" + smartTag + "」标签" : "已移除「" + smartTag + "」标签");
-      // 重新划分两池（保持已选标签高亮）
-      await renderSmartPools();
+      // 局部移动这一张卡，保持当前滚动位置（不再整池重渲染回顶）
+      smartMoveCardLocally(img, toDone);
     } catch (e) {
       sbToast("操作失败：" + (e.message || ""), false);
     }

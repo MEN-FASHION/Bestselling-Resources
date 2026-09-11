@@ -169,6 +169,25 @@ const SB = (() => {
       const { error } = await client.from("categories").delete().eq("name", name);
       if (error) throw new Error(error.message || "删除失败");
     },
+    // 重命名类目：同步更新 categories 表名称 + 所有图片的 category 字段
+    async renameCategoryImages(oldName, newName) {
+      const n = String(newName || "").trim();
+      if (!n) throw new Error("类目名不能为空");
+      if (n === oldName) return;
+      // 1. 更新 categories 表同名类目（若存在）
+      try {
+        const { data: cats, error: cErr } = await client.from("categories").select("id").eq("name", oldName);
+        if (!cErr && cats && cats.length) {
+          const { error: uErr } = await client.from("categories").update({ name: n }).eq("name", oldName);
+          if (uErr && uErr.code !== "23505") throw uErr;
+        }
+      } catch (e) { if (e.code !== "23505") throw e; }
+      // 2. 更新所有图片的 category 字段（字符串字段，用 setImageSingleField）
+      const imgs = await this.listImages(null);
+      for (const img of imgs) {
+        if (img.category === oldName) await this.setImageSingleField(img.id, "category", n);
+      }
+    },
 
     // ============ 常用类目（当前用户 profiles.favorite_categories） ============
     async myFavCats() {
