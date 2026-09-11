@@ -1178,6 +1178,20 @@
     const m = document.querySelector("#smart-modal");
     if (m) m.classList.add("hidden");
   }
+  // 从标签管理面板一键回到智能打标：切回图片管理并打开弹窗，保留上次的维度与选中标签，重载池子数据
+  function backToSmartTag() {
+    switchPanel("manage-card");
+    const m = document.querySelector("#smart-modal");
+    if (!m) return;
+    m.classList.remove("hidden");
+    renderSmartDims();
+    fillSmartCat();
+    Promise.resolve().then(loadSmartAll);
+    const box = document.getElementById("smart-grid-done");
+    if (box) box.scrollTop = 0;
+    const boxU = document.getElementById("smart-grid-undone");
+    if (boxU) boxU.scrollTop = 0;
+  }
   function renderSmartDims() {
     const box = document.querySelector("#smart-dims");
     if (!box) return;
@@ -1971,6 +1985,9 @@
       closeSmartModal();
       switchPanel("tag-card");
     });
+    // 标签管理面板里的「返回智能打标」：切回图片管理并恢复智能打标弹窗，保留上次维度/选中标签
+    const smartBackBtn = document.querySelector("#smart-back-btn");
+    if (smartBackBtn) smartBackBtn.addEventListener("click", () => backToSmartTag());
     bindSmartUpload();
     bindSmartDrop();
   }

@@ -1349,3 +1349,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 }
 .smart-card:hover .smart-card-del { opacity: 1; }
 .smart-card-del:hover { background: #d9534f; }
+
+/* 标签管理面板头部：标题靠左 + 「返回智能打标」按钮靠右 */
+.tag-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.tag-card-head h2{margin:0;}
+.tag-card-head .btn-ghost{flex:0 0 auto;}
