@@ -665,6 +665,8 @@ select.input {
 
 /* ================= 智能打标（拖拽池） ================= */
 .smart-modal-box { width: 92vw !important; max-width: 1300px; display: flex; flex-direction: column; max-height: 84vh; overflow: hidden; }
+.smart-head-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.smart-head-actions { display: flex; align-items: center; gap: 8px; }
 .smart-modal-box > *:not(.smart-pools) { flex: 0 0 auto; }
 .smart-dims { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; flex: 0 0 auto; }
 .smart-dim { padding: 6px 18px; border: 1px solid var(--line); background: var(--card); color: var(--txt); border-radius: 20px; cursor: pointer; font-size: 13px; }
@@ -1261,6 +1263,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .smart-albums-head { padding: 9px 12px; font-size: 13px; font-weight: 700; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--line); letter-spacing: .5px; flex: 0 0 auto; }
 .smart-albums-head .sp-count { margin-left: 6px; font-weight: 400; color: var(--sub); }
 .smart-albums-list { flex: 1 1 auto; min-height: 0; padding: 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.smart-album-group { font-size: 12px; font-weight: 700; color: var(--gold); letter-spacing: 1px; margin: 4px 2px 2px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.smart-album-group:first-child { border-top: none; padding-top: 0; margin-top: 0; }
 .smart-album { border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: rgba(255,255,255,.02); cursor: grab; transition: border-color .15s, background .15s; }
 .smart-album:hover { border-color: var(--gold); background: rgba(139,115,85,.06); }
 .smart-album.drop-over { outline: 2px dashed var(--gold); outline-offset: -4px; background: rgba(139,115,85,.10); }

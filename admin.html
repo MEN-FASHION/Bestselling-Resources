@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260911SMU">
+<link rel="stylesheet" href="css/style.css?v=20260911TGM">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -471,7 +471,10 @@
       <div class="modal smart-modal-box">
         <div class="smart-head-bar">
           <h3>智能打标（拖拽式）</h3>
-          <button id="smart-fs" class="btn-ghost">全屏</button>
+          <span class="smart-head-actions">
+            <button id="smart-tagmgr-btn" class="btn-ghost" title="打开标签管理，方便增删改维护标签">标签管理</button>
+            <button id="smart-fs" class="btn-ghost">全屏</button>
+          </span>
         </div>
         <p class="hint">选择标签维度后，左右两个池子会自动分类：左池＝已打该维度标签的图片，右池＝该维度<b>还没打任何标签</b>的图片（方便你挑还没打的）。再选一个具体标签，可按"是否含该标签"进一步区分已打/未打。把右池拖进左池＝打上标签；把左池拖回右池＝移除标签。也可点图片右下角的箭头按钮完成移动。</p>
         <div class="smart-dims" id="smart-dims"></div>
@@ -526,8 +529,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260911SMU"></script>
-  <script src="js/supabase.js?v=20260911SMU"></script>
-  <script src="js/admin.js?v=20260911SMU"></script>
+  <script src="js/config.js?v=20260911TGM"></script>
+  <script src="js/supabase.js?v=20260911TGM"></script>
+  <script src="js/admin.js?v=20260911TGM"></script>
 </body>
 </html>

@@ -1227,12 +1227,20 @@
     }
     try {
       const defs = await SB.listTagDefs();
+      // 记录场景标签的室内/室外分组（供图册栏分组显示）
+      if (smartDim === "scene") {
+        Object.keys(smartSceneGroup).forEach(k => delete smartSceneGroup[k]);
+        (defs || []).forEach(d => { if (d.type === "scene") smartSceneGroup[d.name] = d.group || (d.name.indexOf("室外") >= 0 ? "outdoor" : "indoor"); });
+      } else {
+        Object.keys(smartSceneGroup).forEach(k => delete smartSceneGroup[k]);
+      }
       const list = (defs || []).filter(d => d.type === smartDim).map(d => d.name);
       renderSmartTags([...new Set(list)]);
       await renderSmartPools(); // 未选具体标签时，按"是否已打该维度标"自动分池
     } catch (e) { renderSmartTags([]); sbToast("读取标签失败", false); }
   }
   let smartTagsCache = [];                          // 当前维度标签清单缓存（供图册栏复用）
+  const smartSceneGroup = {};                       // 场景标签 -> 分组（indoor/outdoor），供图册栏按室内/室外分组
   function renderSmartTags(list) {
     smartTagsCache = Array.isArray(list) ? list.slice() : [];
     const box = document.querySelector("#smart-tags");
@@ -1553,14 +1561,20 @@
       return;
     }
     const field = smartFieldMap[smartDim];
-    // 统计每个标签已收录数量
-    lists.forEach(tag => {
+    // 场景维度：按室内/室外分组；其余维度平铺
+    let groups = null;
+    if (smartDim === "scene") {
+      groups = [
+        { key: "indoor", label: "室内" },
+        { key: "outdoor", label: "室外" },
+      ];
+    }
+    const renderOne = (tag) => {
       let count = 0;
       smartAll.forEach(img => { if (smartHas(img, field, tag)) count++; });
       const a = document.createElement("div");
       a.className = "smart-album" + (tag === smartTag ? " active" : "") + (count === 0 ? " empty" : "");
       a.dataset.tag = tag;
-      // 顶部竖版缩略图：优先显示最新拖入该册子的图，其次显示册内任意一张
       const thumbWrap = document.createElement("div");
       thumbWrap.className = "smart-album-thumb";
       const pv = smartAlbumPreview[tag] || smartAll.find(img => smartHas(img, field, tag)) || null;
@@ -1590,7 +1604,6 @@
       body.appendChild(c);
       a.appendChild(thumbWrap);
       a.appendChild(body);
-      // 图册删除按钮（右上角）×：删除该标签并同步移除图片上的该标签，同步到标签管理
       const del = document.createElement("button");
       del.className = "smart-album-del";
       del.type = "button";
@@ -1600,7 +1613,6 @@
       del.addEventListener("click", (e) => { e.stopPropagation(); smartDeleteAlbum(tag); });
       a.appendChild(del);
       a.title = "把图片拖进此册子，即打上「" + tag + "」标签";
-      // 点击册子：选中该标签
       a.addEventListener("click", async () => {
         smartTag = tag;
         document.querySelectorAll("#smart-tags .smart-tag").forEach(b => {
@@ -1609,7 +1621,29 @@
         await renderSmartPools();
       });
       box.appendChild(a);
-    });
+    };
+    if (groups) {
+      groups.forEach(g => {
+        const members = lists.filter(t => smartSceneGroup[t] === g.key);
+        if (!members.length) return;
+        const gTitle = document.createElement("div");
+        gTitle.className = "smart-album-group";
+        gTitle.textContent = g.label;
+        box.appendChild(gTitle);
+        members.forEach(renderOne);
+      });
+      // 未归入 indoor/outdoor 的场景标签（无分组）单独展示
+      const rest = lists.filter(t => smartSceneGroup[t] !== "indoor" && smartSceneGroup[t] !== "outdoor");
+      if (rest.length) {
+        const gTitle = document.createElement("div");
+        gTitle.className = "smart-album-group";
+        gTitle.textContent = "其他";
+        box.appendChild(gTitle);
+        rest.forEach(renderOne);
+      }
+    } else {
+      lists.forEach(renderOne);
+    }
     if (cntEl) cntEl.textContent = lists.length;
   }
 // 新增图册（打标时）：在当前维度新增一个标签，并同步写入标签管理（tag_defs）
@@ -1636,6 +1670,8 @@
       // 本地同步刷新标签缓存
       if (!smartTagsCache) smartTagsCache = [];
       smartTagsCache.push(tag);
+      // 场景标签记录分组
+      if (smartDim === "scene") smartSceneGroup[tag] = group || (tag.indexOf("室外") >= 0 ? "outdoor" : "indoor");
       // 更新图册栏与标签栏
       renderSmartAlbums();
       const tagBox = document.querySelector("#smart-tags");
@@ -1687,6 +1723,7 @@
       }
       // 3. 刷新本地缓存
       smartTagsCache = (smartTagsCache || []).filter(t => t !== tag);
+      delete smartSceneGroup[tag];
       if (smartTag === tag) { smartTag = ""; }
       renderSmartAlbums();
       const tagBox = document.querySelector("#smart-tags");
@@ -1790,6 +1827,12 @@
     if (deselAll) deselAll.addEventListener("click", smartDeselAll);
     const albumAdd = document.querySelector("#smart-album-add");
     if (albumAdd) albumAdd.addEventListener("click", smartAddAlbum);
+    // 从智能打标进入标签管理：关闭弹窗并切到标签管理面板
+    const tagMgrBtn = document.querySelector("#smart-tagmgr-btn");
+    if (tagMgrBtn) tagMgrBtn.addEventListener("click", () => {
+      closeSmartModal();
+      switchPanel("tag-card");
+    });
     bindSmartUpload();
     bindSmartDrop();
   }
