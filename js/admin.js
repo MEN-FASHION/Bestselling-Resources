@@ -1171,6 +1171,7 @@
     document.querySelector("#smart-modal").classList.remove("hidden");
     smartDim = "style"; smartTag = "";
     renderSmartDims();
+    fillSmartCat();
     Promise.resolve().then(loadSmartAll);
   }
   function closeSmartModal() {
@@ -1788,7 +1789,94 @@
     if (deselAll) deselAll.addEventListener("click", smartDeselAll);
     const albumAdd = document.querySelector("#smart-album-add");
     if (albumAdd) albumAdd.addEventListener("click", smartAddAlbum);
+    bindSmartUpload();
     bindSmartDrop();
+  }
+  // ================= 智能打标内上传图片（与「上传图片」菜单一致：选类目→上传→刷新池子） =================
+  let smartPending = [];           // 智能打标弹窗内待上传文件
+  function bindSmartUpload() {
+    const dz = document.querySelector("#smart-dropzone");
+    const fi = document.querySelector("#smart-file");
+    if (!dz || !fi) return;
+    const em = dz.querySelector("em");
+    if (em) em.onclick = (e) => { e.stopPropagation(); fi.click(); };
+    dz.onclick = (e) => { if (e.target.tagName !== "EM") fi.click(); };
+    fi.onchange = () => { smartAddFiles(fi.files); fi.value = ""; };
+    ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+    ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+    dz.addEventListener("drop", (e) => { smartAddFiles(e.dataTransfer.files); });
+    const btn = document.querySelector("#smart-upload-btn");
+    if (btn) btn.onclick = doSmartUpload;
+  }
+  async function fillSmartCat() {
+    const sel = document.querySelector("#smart-cat");
+    if (!sel) return;
+    let cats = [];
+    try { cats = await SB.listActiveCats(); } catch (e) {}
+    sel.innerHTML = "";
+    sel.add(new Option("── 请选择类目 ──", ""));
+    if (currentFavCats.length) {
+      currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
+    }
+    cats.forEach(c => sel.add(new Option(c, c)));
+  }
+  function smartAddFiles(fileList) {
+    const imgs = Array.from(fileList).filter(f => /^image\//.test(f.type));
+    if (!imgs.length) { sbToast("请选择图片文件", false); return; }
+    imgs.forEach(f => {
+      if (smartPending.some(p => p.name === f.name && p.size === f.size)) return;
+      smartPending.push(f);
+    });
+    smartRenderPending();
+  }
+  function smartRemovePending(idx) { smartPending.splice(idx, 1); smartRenderPending(); }
+  function smartRenderPending() {
+    const box = document.querySelector("#smart-pending");
+    if (!box) return;
+    box.innerHTML = "";
+    smartPending.forEach((f, idx) => {
+      const row = document.createElement("div");
+      row.className = "pending-row";
+      row.innerHTML = `<span class="pname">🖼 ${f.name}</span><span class="psize">${fmtSize(f.size)}</span><button class="x" data-i="${idx}">×</button>`;
+      row.querySelector(".x").onclick = () => smartRemovePending(idx);
+      box.appendChild(row);
+    });
+    const btn = document.querySelector("#smart-upload-btn");
+    if (btn) { btn.disabled = smartPending.length === 0; btn.textContent = "上传所选（" + smartPending.length + "）"; }
+  }
+  // 上传并写库，成功后刷新左右池（直接可打标）；与主上传一致做去重校验、选类目
+  async function doSmartUpload() {
+    if (!smartPending.length) return;
+    if (currentRole !== "admin") { sbToast("无权限：只有管理员可上传", false); return; }
+    let cat = document.querySelector("#smart-cat").value;
+    if (!cat) { sbToast("请选择分类", false); return; }
+    const prog = document.querySelector("#smart-progress");
+    const bar = document.querySelector("#smart-progress-bar");
+    if (prog) prog.classList.remove("hidden");
+    const total = smartPending.length;
+    let done = 0, failed = 0, dup = 0;
+    let existingNames = new Set();
+    try { existingNames = new Set(await SB.listImageNames()); } catch (e) { console.warn("加载已有图片名失败", e); }
+    for (const file of smartPending) {
+      const cleanName = file.name.replace(/[^\w.\-]/g, "_");
+      if (existingNames.has(cleanName)) { dup++; done++; if (bar) bar.style.width = Math.round(done / total * 100) + "%"; continue; }
+      try {
+        const path = await SB.uploadImage(file, cat);
+        await SB.addImageRecord({ category: cat, name: cleanName, path });
+        existingNames.add(cleanName);
+      } catch (e) { console.warn(e); failed++; }
+      done++;
+      if (bar) bar.style.width = Math.round(done / total * 100) + "%";
+    }
+    let msg = `上传完成：成功 ${total - failed - dup}，失败 ${failed}`;
+    if (dup) msg += `，重复跳过 ${dup}`;
+    sbToast(msg, failed === 0 && dup === 0);
+    setTimeout(() => { if (prog) prog.classList.add("hidden"); if (bar) bar.style.width = "0%"; }, 800);
+    smartPending = [];
+    smartRenderPending();
+    await loadManage();            // 图片清单刷新
+    await loadSmartAll();          // 智能打标池刷新（新图可直接打标）
+    renderSmartPools();
   }
   // 全选本池去标：给左池（已打该标签）的全部图片一键移除当前标签（需二次确认）
   async function smartDeselAll() {

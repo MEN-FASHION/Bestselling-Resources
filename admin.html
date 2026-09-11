@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260911FRT">
+<link rel="stylesheet" href="css/style.css?v=20260911UPL">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -476,6 +476,27 @@
         <p class="hint">选择标签维度后，左右两个池子会自动分类：左池＝已打该维度标签的图片，右池＝该维度<b>还没打任何标签</b>的图片（方便你挑还没打的）。再选一个具体标签，可按"是否含该标签"进一步区分已打/未打。把右池拖进左池＝打上标签；把左池拖回右池＝移除标签。也可点图片右下角的箭头按钮完成移动。</p>
         <div class="smart-dims" id="smart-dims"></div>
         <div class="smart-tags" id="smart-tags"></div>
+        <!-- 上传图片（与「上传图片」菜单一致：选类目后上传，成功后自动刷新池子） -->
+        <div class="smart-upload" id="smart-upload">
+          <div class="su-head">
+            <span class="su-title">上传图片</span>
+            <label class="su-lbl">类目</label>
+            <select id="smart-cat" class="input su-cat"></select>
+          </div>
+          <div id="smart-dropzone" class="dropzone su-dz">
+            <div class="dz-inner">
+              <span class="dz-icon">＋</span>
+              <p>拖拽图片到这里，或 <em>点击选择文件</em></p>
+              <p class="dz-sub">支持 jpg / png / webp / gif，可多选；上传后可直接在下方打标</p>
+            </div>
+            <input type="file" id="smart-file" accept="image/*" multiple hidden>
+          </div>
+          <div id="smart-pending" class="pending-list"></div>
+          <div class="su-actions">
+            <button id="smart-upload-btn" class="btn-primary" disabled>上传所选（0）</button>
+            <div id="smart-progress" class="progress hidden"><div id="smart-progress-bar" class="progress-bar"></div></div>
+          </div>
+        </div>
         <div class="smart-pools">
           <div class="smart-pool" id="smart-pool-done">
             <div class="smart-pool-head">已打该标签 <span class="sp-count" id="smart-cnt-done">0</span>
@@ -521,8 +542,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260911FRT"></script>
-  <script src="js/supabase.js?v=20260911FRT"></script>
-  <script src="js/admin.js?v=20260911FRT"></script>
+  <script src="js/config.js?v=20260911UPL"></script>
+  <script src="js/supabase.js?v=20260911UPL"></script>
+  <script src="js/admin.js?v=20260911UPL"></script>
 </body>
 </html>
