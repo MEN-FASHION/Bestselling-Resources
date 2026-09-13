@@ -2174,9 +2174,14 @@
   }
   function bindSmartUrlMatch() {
     const fi = document.querySelector("#smart-url-file");
-    if (fi) fi.onchange = () => { smartUrlMatch(fi.files); fi.value = ""; };
+    if (fi) fi.addEventListener("change", (e) => { smartUrlMatch(fi.files); fi.value = ""; e.preventDefault(); });
     const btn = document.querySelector("#smart-urlmatch-btn");
-    if (btn) btn.onclick = () => { if (fi) fi.click(); };
+    if (btn) btn.addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (!smartPending.length) { sbToast("请先在智能打标弹窗里选择要上传的图片（点右池「上传图片」卡片或用「上传」按钮），再上传匹配链接表格", false); return; }
+      if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
+      if (fi) fi.click();
+    });
   }
     const btn = document.querySelector("#smart-upload-btn");
     if (btn) btn.onclick = doSmartUpload;
