@@ -2120,6 +2120,7 @@
     const smartBackBtn = document.querySelector("#smart-back-btn");
     if (smartBackBtn) smartBackBtn.addEventListener("click", () => backToSmartTag());
     bindSmartUpload();
+    bindSmartUrlMatch();
     bindSmartDrop();
   }
   // ================= 智能打标内上传图片（上传入口=右池首位卡片，待传=缩略图卡，按钮/进度常驻右池头部） =================
@@ -2128,6 +2129,55 @@
   function bindSmartUpload() {
     const fi = document.querySelector("#smart-file");
     if (fi) fi.onchange = () => { smartAddFiles(fi.files); fi.value = ""; };
+// 智能打标弹窗内：上传链接Excel，给当前智能待传图片按文件名挂外链
+  function smartUrlMatch(files) {
+    if (!files || !files.length) return;
+    if (!smartPending.length) { sbToast("请先选择图片，再上传匹配链接表格", false); return; }
+    if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        let nameKey = null, urlKey = null;
+        if (rows.length) {
+          const keys = Object.keys(rows[0]);
+          for (const k of keys) {
+            const lk = String(k).toLowerCase();
+            if (!nameKey && (lk === "name" || lk === "图片名" || lk === "名称")) nameKey = k;
+            if (!urlKey && (lk === "url" || lk === "链接" || lk === "外链")) urlKey = k;
+          }
+        }
+        if (!nameKey || !urlKey) { sbToast("未找到 Name 列和 Url 列，请检查表头", false); return; }
+        const map = {};
+        rows.forEach(r => {
+          const n = stripExt(r[nameKey]);
+          const u = String(r[urlKey] || "").trim();
+          if (n && u) map[n] = u;
+        });
+        if (!Object.keys(map).length) { sbToast("表格中没有可匹配的（图片名+Url）数据", false); return; }
+        let matched = 0;
+        smartPending.forEach(it => {
+          if (!it.file) return;
+          const n = stripExt(it.file.name);
+          if (map[n]) { it.file._url = map[n]; matched++; }
+        });
+        smartRenderPending();
+        sbToast(`已匹配 ${matched} 张图片链接${matched ? "" : "（未匹配到）"}`, matched > 0);
+      } catch (e) {
+        sbToast("表格解析失败，请检查文件格式", false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  function bindSmartUrlMatch() {
+    const fi = document.querySelector("#smart-url-file");
+    if (fi) fi.onchange = () => { smartUrlMatch(fi.files); fi.value = ""; };
+    const btn = document.querySelector("#smart-urlmatch-btn");
+    if (btn) btn.onclick = () => { if (fi) fi.click(); };
+  }
     const btn = document.querySelector("#smart-upload-btn");
     if (btn) btn.onclick = doSmartUpload;
   }
