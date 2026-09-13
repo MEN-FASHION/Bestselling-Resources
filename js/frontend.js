@@ -781,10 +781,13 @@
       const { error } = await SB.signUp(email, pass);
       if (error) { Auth.toast("注册失败：" + error.message, false); return; }
       Auth.toast("注册成功，已登录");
+      setTimeout(() => location.reload(), 800); // 用新令牌重载，重建带令牌图片URL
       return;
     }
     const { error } = await SB.signIn(email, pass);
     if (error) { Auth.toast("登录失败：" + error.message, false); return; }
+    Auth.toast("登录成功");
+    setTimeout(() => location.reload(), 800); // 用新令牌重载，重建带令牌图片URL
   });
   $("#auth-toggle-link").onclick = (e) => {
     e.preventDefault();
