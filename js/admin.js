@@ -16,12 +16,20 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
+    let enteredUserId = null; // 防重入：只跟踪真正切换的登录用户，避免 token 刷新触发重复 enterPanel
     SB.onAuth((session) => {
       currentUser = session ? session.user : null;
       refreshUserBadge();
+      const uid = session && session.user ? session.user.id : null;
       if (session) {
-        enterPanel();
+        if (enteredUserId !== uid) {
+          enteredUserId = uid;
+          enterPanel();
+        }
+        // 已进入同一用户（token 刷新等重复回调）时不重复 enterPanel，避免图片列表反复重绘闪跳
       } else {
+        enteredUserId = null;
+        panelReady = false; // 登出后允许下次登录重新进入后台
         // 未登录：显示登录页，隐藏后台
         $("#admin-login").classList.remove("hidden");
         $("#admin-panel").classList.add("hidden");
@@ -167,7 +175,10 @@
       }
     };
   }
+  let panelReady = false; // 面板级防重入：已进入后台且用户未切换时，不再重复加载/拉回图片管理，避免反复重绘与菜单被覆盖
   function enterPanel() {
+    if (panelReady) return;
+    panelReady = true;
     $("#admin-login").classList.add("hidden");
     $("#admin-panel").classList.remove("hidden");
     loadCats(); loadManage(); loadAccess();

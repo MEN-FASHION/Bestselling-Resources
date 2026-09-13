@@ -12,10 +12,15 @@ const SB = (() => {
 
   // 取当前登录令牌（强制刷新会话后再取，确保拿到新鲜 token，避免手机端存有已过期访问令牌）
   async function currentToken() {
+    // 仅在会话里没有有效访问令牌时才刷新会话；每次取 token 都 refreshSession 会持续触发
+    // onAuthStateChange 的 TOKEN_REFRESHED 事件，被 onAuth 回调重复 enterPanel/loadManage，造成图片列表反复重绘闪跳。
     try {
-      // 关键：先触发一次会话刷新，确保 access_token 是最新的（Supabase 会静默用 refresh_token 换新）
+      const s = await client.auth.getSession();
+      if (s?.data?.session?.access_token) return s.data.session.access_token;
+    } catch (e) { /* 忽略读取失败 */ }
+    try {
       await client.auth.refreshSession();
-    } catch (e) { /* 无刷新 token 或刷新失败时忽略，继续尝试读现有会话 */ }
+    } catch (e) { /* 无刷新 token 或刷新失败时忽略 */ }
     try {
       const s = await client.auth.getSession();
       return s?.data?.session?.access_token || "";
@@ -100,9 +105,19 @@ const SB = (() => {
     },
     // 暴露当前登录令牌
     async currentToken() {
-      try { await client.auth.refreshSession(); } catch (e) { /* 忽略刷新失败 */ }
-      const s = await client.auth.getSession();
-      return s?.data?.session?.access_token || "";
+      // 仅在无有效令牌时才刷新会话；每次调用都 refreshSession 会触发 onAuthStateChange 的
+      // TOKEN_REFRESHED 事件，进而被 onAuth 回调重复 enterPanel/loadManage，造成图片列表反复重绘闪跳。
+      let token = "";
+      try {
+        const s = await client.auth.getSession();
+        token = (s && s.data && s.data.session && s.data.session.access_token) || "";
+      } catch (e) { /* 忽略读取失败 */ }
+      if (!token) {
+        try { await client.auth.refreshSession(); } catch (e) { /* 忽略刷新失败 */ }
+        const s2 = await client.auth.getSession();
+        token = (s2 && s2.data && s2.data.session && s2.data.session.access_token) || "";
+      }
+      return token || "";
     },
     onAuth(cb) {
       client.auth.onAuthStateChange((_event, session) => cb(session));
