@@ -525,6 +525,27 @@
 
     const guestToken = await SB.currentToken();
     window.__guestToken = guestToken;
+    // ===== [诊断面板] 排查手机端图片不显示 =====
+    window.__dbgLines = [];
+    const dbgLog = (m) => { window.__dbgLines.push(m); window.__dbgRender && window.__dbgRender(); };
+    window.__dbgRender = () => {
+      let el = document.getElementById("dbg-panel");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "dbg-panel";
+        el.style.cssText = "position:fixed;left:0;right:0;bottom:0;background:#111;color:#0f0;font-size:11px;font-family:monospace;z-index:99999;padding:6px 8px;max-height:45%;overflow:auto;white-space:pre-wrap;word-break:break-all;";
+        document.body.appendChild(el);
+      }
+      el.textContent = "【图片诊断】" + window.__dbgLines.slice(-30).join("\n");
+    };
+    window.__dbgRender();
+    dbgLog("登录令牌: " + (guestToken ? ("有("+guestToken.slice(0,12)+"...)"+guestToken.length+"字符") : "【空】"));
+    dbgLog("图片总数: " + imgs.length);
+    dbgLog("图片请求基址: " + ((window.CONFIG && window.CONFIG.WORKER_URL) || "【未配置】"));
+    // 采样第一张图的 data-src，看是否带上 token
+    const __f = document.querySelector("#grid img[data-src]");
+    if (__f) dbgLog("首图data-src(前60): " + __f.dataset.src.slice(0,60) + "  带token=" + (__f.dataset.src.indexOf("token=")>=0));
+
     lightboxList = imgs.map(i => {
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
@@ -549,6 +570,7 @@
           try {
             const headers = at ? { "Authorization": "Bearer " + at } : {};
             const resp = await fetch(au, { headers, cache: "no-store" });
+            dbgLog("fetch兜底 status=" + resp.status + " url尾巴=" + au.split("/").slice(-2).join("/"));
             if (!resp.ok) throw new Error(String(resp.status));
             const blob = await resp.blob();
             const obj = URL.createObjectURL(blob);
@@ -566,7 +588,7 @@
           if (!settled) {
             settled = true;
             lazyInflight--;
-            p.classList.add("loaded", "lazy-fallback");
+            p.classList.add("loaded", "lazy-fallback"); dbgLog("图片加载失败(兜底也失败) → 灰块");
             p.onerror = null;
             p.onload = null;
             lazyPump();
@@ -585,6 +607,7 @@
           if (settled) return;
           settled = true;
           clearTimeout(hangTimer);
+          dbgLog("img直接加载 error → 走fetch兜底");
           // 报错也走 Authorization 头兜底（不额外加并发计数，settled 已释放）
           lazyInflight--;
           (async () => {
@@ -594,6 +617,7 @@
               try {
                 const headers = at ? { "Authorization": "Bearer " + at } : {};
                 const resp = await fetch(au, { headers, cache: "no-store" });
+                dbgLog("fetch兜底(status) status=" + resp.status);
                 if (!resp.ok) throw new Error(String(resp.status));
                 const blob = await resp.blob();
                 const obj = URL.createObjectURL(blob);
@@ -604,7 +628,7 @@
                 return;
               } catch (e) { /* fall through */ }
             }
-            p.classList.add("loaded", "lazy-fallback");
+            p.classList.add("loaded", "lazy-fallback"); dbgLog("图片加载失败(兜底也失败) → 灰块");
             p.onerror = null;
             p.onload = null;
             lazyPump();
