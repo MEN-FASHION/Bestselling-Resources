@@ -263,6 +263,14 @@ img { display: block; }
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
   color: #ddd; font-size: 14px; background: rgba(0,0,0,.5); padding: 5px 14px; border-radius: 999px;
 }
+.lb-open-link {
+  position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #fff; font-size: 14px; text-decoration: none;
+  background: rgba(20,110,255,.85); padding: 7px 18px; border-radius: 999px;
+  transition: background .2s;
+}
+.lb-open-link:hover { background: rgba(20,110,255,1); }
 
 /* ================= 后台 ================= */
 .admin-panel { min-height: 100vh; }
@@ -366,6 +374,11 @@ select.input {
 .x { background: none; border: none; color: var(--danger); font-size: 20px; cursor: pointer; line-height: 1; }
 
 #upload-btn { margin-top: 18px; }
+.url-match-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.url-match-row .hint { flex: 1 1 320px; color: var(--sub); font-size: 12px; }
+.url-match-row .hint code { color: var(--gold); }
+.url-match-result { font-size: 12px; color: var(--sub); }
+.url-match-result.ok { color: #2ecc71; }
 .progress { margin-top: 16px; height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
 .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width .3s; }
 

@@ -54,6 +54,7 @@ alter table public.images add column if not exists element_tags text[] not null 
 alter table public.images add column if not exists scene_tags text[] not null default '{}';
 alter table public.images add column if not exists shoot_tags text[] not null default '{}';
 alter table public.images add column if not exists skin_tags text[] not null default '{}';
+alter table public.images add column if not exists url text;   -- 图片外链（前台灯箱「打开链接」跳转，可由传图时Excel批量匹配）
 
 alter table public.images enable row level security;
 

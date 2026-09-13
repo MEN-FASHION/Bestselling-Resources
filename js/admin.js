@@ -207,6 +207,10 @@
     dz.addEventListener("drop", (e) => { addFiles(e.dataTransfer.files); });
 
     $("#upload-btn").onclick = doUpload;
+    const mbtn = $("#url-match-btn");
+    if (mbtn) mbtn.onclick = () => { const mi = $("#url-match-input"); if (mi) mi.click(); };
+    const mi = $("#url-match-input");
+    if (mi) mi.onchange = () => { const r = handleUrlMatch(mi.files); mi.value = ""; };
   }
   function addFiles(fileList) {
     const imgs = Array.from(fileList).filter(f => /^image\//.test(f.type));
@@ -218,18 +222,73 @@
     renderPending();
   }
   function removePending(idx) { pendingFiles.splice(idx, 1); renderPending(); }
+
+  // 依据文件名（不含扩展名）给待上传图片批量挂外链：Excel/CSV 需含 Name 列（图片名，不含扩展名）与 Url 列
+  function stripExt(name) { return String(name || "").replace(/\.[^.]+$/, "").trim(); }
+  function handleUrlMatch(files) {
+    if (!pendingFiles.length) { sbToast("请先选择图片，再上传匹配链接表格", false); return; }
+    if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
+    if (!files || !files.length) return;
+    const file = files[0];
+    const mr = $("#url-match-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        // 找 Name 列与 Url 列（大小写不敏感，容错图片名/名称 列名）
+        let nameKey = null, urlKey = null;
+        if (rows.length) {
+          const keys = Object.keys(rows[0]);
+          for (const k of keys) {
+            const lk = String(k).toLowerCase();
+            if (!nameKey && (lk === "name" || lk === "图片名" || lk === "名称")) nameKey = k;
+            if (!urlKey && (lk === "url" || lk === "链接" || lk === "外链")) urlKey = k;
+          }
+        }
+        if (!nameKey || !urlKey) { sbToast("未找到 Name 列和 Url 列，请检查表头", false); return; }
+        const map = {};
+        rows.forEach(r => {
+          const n = stripExt(r[nameKey]);
+          const u = String(r[urlKey] || "").trim();
+          if (n && u) map[n] = u;
+        });
+        if (!Object.keys(map).length) { sbToast("表格中没有可匹配的（图片名+Url）数据", false); return; }
+        let matched = 0;
+        pendingFiles.forEach(f => {
+          const n = stripExt(f.name);
+          if (map[n]) { f._url = map[n]; matched++; }
+        });
+        let un = 0;
+        pendingFiles.forEach(f => { if (!f._url) un++; });
+        renderPending();
+        mr.textContent = `匹配成功 ${matched} 张${un ? `；${un} 张未匹配到链接` : ""}`;
+        mr.className = "url-match-result" + (matched ? " ok" : "");
+        sbToast(`已匹配 ${matched} 张图片链接${un ? `，${un} 张未匹配` : ""}`, matched > 0);
+      } catch (e) {
+        sbToast("表格解析失败，请检查文件格式", false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
   function renderPending() {
     const box = $("#pending-list");
     box.innerHTML = "";
     pendingFiles.forEach((f, idx) => {
       const row = document.createElement("div");
       row.className = "pending-row";
-      row.innerHTML = `<span class="pname">🖼 ${f.name}</span><span class="psize">${fmtSize(f.size)}</span><button class="x" data-i="${idx}">×</button>`;
+      const linked = f._url ? `<span class="purl">🔗 已匹配链接</span>` : "";
+      row.innerHTML = `<span class="pname">🖼 ${f.name}</span>${linked}<span class="psize">${fmtSize(f.size)}</span><button class="x" data-i="${idx}">×</button>`;
       row.querySelector(".x").onclick = () => removePending(idx);
       box.appendChild(row);
     });
     $("#upload-btn").disabled = pendingFiles.length === 0;
     $("#upload-btn").textContent = "上传所选（" + pendingFiles.length + "）";
+    const mbtn = $("#url-match-btn");
+    if (mbtn) mbtn.disabled = pendingFiles.length === 0;
+    const mr = $("#url-match-result");
+    if (mr && pendingFiles.length === 0) mr.textContent = "";
   }
   function fmtSize(n) {
     if (n > 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
@@ -269,7 +328,7 @@
         // 1) 上传到 R2（经 Worker，路径由 Worker 生成）
         const path = await SB.uploadImage(file, cat);
         // 2) 记录到 DB 清单
-        await SB.addImageRecord({ category: cat, name: cleanName, path });
+        await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "" });
         existingNames.add(cleanName); // 本次会话后续相同文件也不再重复上传
       } catch (e) {
         console.warn(e);
@@ -2151,7 +2210,7 @@
         if (existingNames.has(cleanName)) { results[i] = { ok: false, dup: true }; done++; setBar(); continue; }
         try {
           const path = await SB.uploadImage(file, cat);
-          await SB.addImageRecord({ category: cat, name: cleanName, path });
+          await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "" });
           existingNames.add(cleanName);
           results[i] = { ok: true };
         } catch (e) { console.warn(e); results[i] = { ok: false, fail: true }; }

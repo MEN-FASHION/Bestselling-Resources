@@ -265,11 +265,12 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存失败");
       return list;
     },
-    async addImageRecord({ category, name, path }) {
+    async addImageRecord({ category, name, path, url }) {
       const token = await currentToken();
       const s = await client.auth.getSession();
       const { error } = await client.from("images").insert({
         category, name, path,
+        url: (url || "").trim() || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       });
       if (error) throw new Error(error.message || "写入失败");
