@@ -541,7 +541,23 @@
     window.__dbgRender();
     dbgLog("登录令牌: " + (guestToken ? ("有("+guestToken.slice(0,12)+"...)"+guestToken.length+"字符") : "【空】"));
     dbgLog("图片总数: " + imgs.length);
+
     dbgLog("图片请求基址: " + ((window.CONFIG && window.CONFIG.WORKER_URL) || "【未配置】"));
+    // ===== [链路探测] 直接探测图片服务根路径：能否连通？8 秒超时 =====
+    (async () => {
+      const base = (window.CONFIG && window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!base) { dbgLog("链路探测: 无基址,跳过"); return; }
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(base, { cache: "no-store", signal: ctrl.signal });
+        dbgLog("链路探测: 已连通 status=" + r.status + " 耗时" + (Date.now() - t0) + "ms");
+      } catch (e) {
+        dbgLog("链路探测: " + (e && e.name === "AbortError" ? "8秒无响应(疑似网络屏蔽/挂起)" : ("失败: " + (e && e.message ? e.message : "网络错误"))));
+      }
+      clearTimeout(timer);
+    })();
     // 采样第一张图的 data-src，看是否带上 token
     const __f = document.querySelector("#grid img[data-src]");
     if (__f) dbgLog("首图data-src(前60): " + __f.dataset.src.slice(0,60) + "  带token=" + (__f.dataset.src.indexOf("token=")>=0));
@@ -600,6 +616,7 @@
           settled = true;
           clearTimeout(hangTimer);
           lazyInflight--;
+          dbgLog("图片加载成功(onload)");
           p.classList.add("loaded");
           lazyPump();
         };
@@ -636,6 +653,7 @@
         };
         p.dataset.loading = "1";
         hangTimer = setTimeout(() => {
+          dbgLog("4s看门狗触发: 图片挂起(src未完成) → 走fetch兜底");
           // 看门狗：4s 内既没 onload 也没 onerror → 移动端"挂起"。强制走 Authorization 头兜底。
           if (!settled) {
             settled = true;
@@ -648,6 +666,7 @@
             fetchFallback();
           }
         }, 4000);
+        if (p.dataset.src) { if (!window.__dbgFirstLoad) { window.__dbgFirstLoad = 1; dbgLog("图片开始加载: src前60=" + p.dataset.src.slice(0,60)); } }
         p.src = p.dataset.src;
       }
     }
