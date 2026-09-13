@@ -539,30 +539,91 @@
         const p = lazyQueue.shift();
         if (!p) break;
         lazyInflight++;
-        p.onload = () => { lazyInflight--; p.classList.add("loaded"); lazyPump(); };
-        p.onerror = () => {
-          // 先尝试 fetch + Authorization 头兜底加载（与列表接口同链路，规避移动端超长 token URL 挂起）
+        let settled = false;
+        // 兜底拉取：改用 fetch + Authorization 头（与列表接口同链路，规避移动端超长 token URL 挂起）
+        const fetchFallback = async () => {
           const au = p.dataset.authUrl;
           const at = p.dataset.authToken;
-          if (au) {
-            (async () => {
+          // 先销毁挂起的 src 请求，避免其继续占着请求
+          p.removeAttribute("src");
+          try {
+            const headers = at ? { "Authorization": "Bearer " + at } : {};
+            const resp = await fetch(au, { headers, cache: "no-store" });
+            if (!resp.ok) throw new Error(String(resp.status));
+            const blob = await resp.blob();
+            const obj = URL.createObjectURL(blob);
+            if (!settled) {
+              settled = true;
+              lazyInflight--;
+              p.classList.add("loaded");
+              p.onerror = null;
+              p.onload = null;
+              p.src = obj;
+              lazyPump();
+            }
+            return;
+          } catch (e) { /* fall through */ }
+          if (!settled) {
+            settled = true;
+            lazyInflight--;
+            p.classList.add("loaded", "lazy-fallback");
+            p.onerror = null;
+            p.onload = null;
+            lazyPump();
+          }
+        };
+        let hangTimer = 0;
+        p.onload = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hangTimer);
+          lazyInflight--;
+          p.classList.add("loaded");
+          lazyPump();
+        };
+        p.onerror = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hangTimer);
+          // 报错也走 Authorization 头兜底（不额外加并发计数，settled 已释放）
+          lazyInflight--;
+          (async () => {
+            const au = p.dataset.authUrl;
+            const at = p.dataset.authToken;
+            if (au) {
               try {
                 const headers = at ? { "Authorization": "Bearer " + at } : {};
-                const resp = await fetch(au, { headers });
+                const resp = await fetch(au, { headers, cache: "no-store" });
                 if (!resp.ok) throw new Error(String(resp.status));
                 const blob = await resp.blob();
                 const obj = URL.createObjectURL(blob);
-                p.onload = () => { lazyInflight--; p.classList.add("loaded"); lazyPump(); };
+                p.classList.add("loaded");
                 p.onerror = null;
+                p.onload = null;
                 p.src = obj;
                 return;
               } catch (e) { /* fall through */ }
-              lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump();
-            })();
-          } else {
-            lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump();
-          }
+            }
+            p.classList.add("loaded", "lazy-fallback");
+            p.onerror = null;
+            p.onload = null;
+            lazyPump();
+          })();
         };
+        p.dataset.loading = "1";
+        hangTimer = setTimeout(() => {
+          // 看门狗：4s 内既没 onload 也没 onerror → 移动端"挂起"。强制走 Authorization 头兜底。
+          if (!settled) {
+            settled = true;
+            clearTimeout(hangTimer);
+            lazyInflight--;
+            p.onerror = null;
+            p.onload = null;
+            // 无论兜底成功与否，先推进队列，避免并发槽一直被占用
+            lazyPump();
+            fetchFallback();
+          }
+        }, 4000);
         p.src = p.dataset.src;
       }
     }
@@ -664,27 +725,32 @@
     const url = lightboxList[lightboxIdx] || "";
     const img = catalog[lightboxIdx];
     const lbImg = $("#lb-img");
-    lbImg.src = url;
-    // 灯箱图片同样加 fetch 兜底：若直接 src 加载失败（手机端超长 token URL 挂起），改用 Authorization 头拉取
     let lbDone = false;
-    lbImg.onload = () => { lbDone = true; };
-    lbImg.onerror = () => {
+    let lbHangTimer = 0;
+    const lbFallback = () => {
       if (lbDone || !img) return;
       lbDone = true;
+      clearTimeout(lbHangTimer);
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       const au = base + "/" + img.path;
       const at = (window.__guestToken || "");
+      lbImg.onerror = null;
+      lbImg.onload = null;
       (async () => {
         try {
           const headers = at ? { "Authorization": "Bearer " + at } : {};
-          const resp = await fetch(au, { headers });
+          const resp = await fetch(au, { headers, cache: "no-store" });
           if (!resp.ok) throw new Error(String(resp.status));
           const blob = await resp.blob();
-          lbImg.onerror = null;
           lbImg.src = URL.createObjectURL(blob);
         } catch (e) { /* 保留原状 */ }
       })();
     };
+    lbImg.onload = () => { lbDone = true; clearTimeout(lbHangTimer); };
+    lbImg.onerror = lbFallback;
+    // 看门狗：4s 内既没 onload 也没 onerror → 手机端长 token URL 挂起，强制转 Authorization 头兜底
+    lbHangTimer = setTimeout(lbFallback, 4000);
+    lbImg.src = url;
     let parts = [(lightboxIdx + 1) + " / " + lightboxList.length];
     if (img) {
       const t = (arr) => (Array.isArray(arr) && arr.length) ? arr.join(" / ") : "";
