@@ -553,8 +553,9 @@
       const imgEl = document.createElement("img");
       imgEl.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
       imgEl.alt = img.name || "";
-      imgEl.loading = "lazy";
       imgEl.decoding = "async";
+      // 注意：不再设置 loading="lazy"。原生懒加载与下方自建的 IntersectionObserver 懒加载 + 并发池在部分移动端浏览器（iOS Safari / 微信内核 / 安卓 WebView）上会冲突，
+      // 导致动态赋值 src 的图片一直停在"待加载"灰色状态（既不加载成功也不报错）。去掉原生懒加载，统一由自建按需加载控制，桌面与移动端行为一致。
       imgEl.draggable = false;
       imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
       holder.appendChild(imgEl);
@@ -573,22 +574,42 @@
       holder.style.background = "var(--shade)";
       grid.appendChild(cell);
 
+      // 使用自建的按需加载（IntersectionObserver）。为避免个别移动端浏览器 IO 不触发导致图片一直空白，
+      // 同时给每张图记录"是否已开始加载"，并设一道看门狗定时器兜底。
       if ("IntersectionObserver" in window) {
         const io = new IntersectionObserver((entries, obs) => {
           entries.forEach(en => {
             if (en.isIntersecting) {
               const target = en.target;
+              target.setAttribute("data-started", "1");
               lazyEnqueue(target);
               obs.unobserve(target);
             }
           });
-        }, { rootMargin: "200px" });
+        }, { rootMargin: "300px" });
         io.observe(imgEl);
       } else {
+        imgEl.setAttribute("data-started", "1");
         imgEl.src = imgEl.dataset.src;
         imgEl.classList.add("loaded");
       }
+
+      // 看门狗兜底：无论 IO 是否正常触发，1.5s 后强制把仍未开始加载的图全部排队加载，确保任何设备都能出图
+      setTimeout(() => {
+        const pending = grid.querySelectorAll("img:not([data-started])");
+        if (pending.length) {
+          pending.forEach(p => { p.setAttribute("data-started", "1"); lazyEnqueue(p); });
+        }
+      }, 1500);
     });
+
+    // 主看门狗：渲染完成后 2.5s 统一兜底，处理 IO 未触发 / 排队异常等边缘情况
+    setTimeout(() => {
+      const still = grid.querySelectorAll("img:not([data-started])");
+      if (still.length) {
+        still.forEach(p => { p.setAttribute("data-started", "1"); lazyEnqueue(p); });
+      }
+    }, 2500);
   }
 
   // ASCII 文本转义封装（依赖 frontend.html 内无函数时本地兜底）
