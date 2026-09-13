@@ -32,7 +32,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindPreview]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -56,6 +56,60 @@
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); }
+  }
+
+  // ================= 前台预览（后台内嵌，无需另开页面） =================
+  let previewPage = "index.html";
+  function setPreviewTab(url) {
+    document.querySelectorAll("#preview-mask .preview-tab").forEach(t => {
+      t.classList.toggle("active", t.dataset.pview === url);
+    });
+  }
+  function setPreviewFrame(url) {
+    const frame = $("#preview-frame");
+    frame.src = "about:blank";
+    setTimeout(() => { frame.src = url; }, 30);
+  }
+  function openPreview() {
+    previewPage = "index.html";
+    setPreviewTab("index.html");
+    $("#preview-mask").classList.remove("hidden");
+    document.body.classList.add("no-scroll");
+    $("#preview-frame").src = "index.html";
+  }
+  function closePreview() {
+    const mask = $("#preview-mask");
+    if (!mask || mask.classList.contains("hidden")) return;
+    mask.classList.add("hidden");
+    document.body.classList.remove("no-scroll");
+    $("#preview-frame").src = "about:blank";
+  }
+  function refreshPreview() {
+    setPreviewFrame(previewPage);
+  }
+  function switchPreviewPage(url) {
+    previewPage = url;
+    setPreviewTab(url);
+    setPreviewFrame(url);
+  }
+  function openPreviewInNewTab() {
+    window.open(previewPage, "_blank");
+  }
+  function bindPreview() {
+    const btn = $("#admin-preview-btn");
+    if (btn) btn.addEventListener("click", openPreview);
+    const close = $("#preview-close");
+    if (close) close.addEventListener("click", closePreview);
+    const refresh = $("#preview-refresh");
+    if (refresh) refresh.addEventListener("click", refreshPreview);
+    const open = $("#preview-open");
+    if (open) open.addEventListener("click", openPreviewInNewTab);
+    document.querySelectorAll("#preview-mask .preview-tab").forEach(t => {
+      t.addEventListener("click", () => switchPreviewPage(t.dataset.pview));
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closePreview();
+    });
   }
   async function saveCatOrder() {
     const rows = [...document.querySelectorAll("#cat-order-box .cat-order-item")];
@@ -1261,6 +1315,16 @@
     const box = document.querySelector("#smart-tags");
     if (!box) return;
     box.innerHTML = "";
+    // 顶部标签栏「＋新增」：非渠道维度可直接新增标签并同步到标签管理
+    if (smartDim && smartDim !== "channel") {
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "smart-tag smart-tag-add";
+      addBtn.title = "新增" + ({ category: "类目", style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || "") + "标签（自动同步到标签管理）";
+      addBtn.textContent = "＋ 新增";
+      addBtn.addEventListener("click", (e) => { e.stopPropagation(); smartAddAlbum(); });
+      box.appendChild(addBtn);
+    }
     if (!list.length) {
       const t = document.createElement("span");
       t.className = "smart-tag-empty";
@@ -1716,25 +1780,16 @@
     }
     try {
       await SB.addTagDef(smartDim, tag, group);
-      // 本地同步刷新标签缓存
+      // 本地同步刷新标签缓存（置顶显示）
       if (!smartTagsCache) smartTagsCache = [];
-      smartTagsCache.push(tag);
+      smartTagsCache.unshift(tag);
       // 场景标签记录分组
       if (smartDim === "scene") smartSceneGroup[tag] = group || (tag.indexOf("室外") >= 0 ? "outdoor" : "indoor");
-      // 更新图册栏与标签栏
+      // 更新图册栏与标签栏，并自动选中新标签，可直接开始打标
+      smartTag = tag;
       renderSmartAlbums();
-      const tagBox = document.querySelector("#smart-tags");
-      if (tagBox) {
-        const b = document.createElement("button");
-        b.className = "smart-tag";
-        b.textContent = tag;
-        b.onclick = async () => {
-          smartTag = tag;
-          renderSmartTags(smartTagsCache.slice());
-          await renderSmartPools();
-        };
-        tagBox.appendChild(b);
-      }
+      renderSmartTags(smartTagsCache.slice());
+      await renderSmartPools();
       sbToast("已新增标签「" + tag + "」并同步到标签管理", true);
     } catch (err) {
       sbToast("新增标签失败，请重试", false);
@@ -1971,6 +2026,14 @@
     if (openBtn) openBtn.addEventListener("click", openSmartModal);
     const closeBtn = document.querySelector("#smart-close");
     if (closeBtn) closeBtn.addEventListener("click", closeSmartModal);
+    // ESC 键关闭智能打标：全屏时先退出全屏，否则关闭弹窗
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const m = document.querySelector("#smart-modal");
+      if (!m || m.classList.contains("hidden")) return;
+      if (m.classList.contains("fullscreen")) { toggleSmartFullscreen(); return; }
+      closeSmartModal();
+    });
     const fsBtn = document.querySelector("#smart-fs");
     if (fsBtn) fsBtn.addEventListener("click", toggleSmartFullscreen);
     const selAll = document.querySelector("#smart-select-all");

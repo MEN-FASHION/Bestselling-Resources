@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260911BK">
+<link rel="stylesheet" href="css/style.css?v=20260913PV">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -47,6 +47,7 @@
     <header class="admin-head">
       <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></span> 视觉与趋势管理系统</div>
       <div>
+        <button id="admin-preview-btn" class="btn-ghost">预览前台</button>
         <span class="ghost-chip" id="token-status">令牌：未配置</span>
         <button id="admin-logout" class="btn-ghost">退出</button>
       </div>
@@ -529,11 +530,31 @@
     </div>
   </section>
 
+  <!-- ================= 前台预览（后台内嵌，无需另开页面） ================= -->
+  <div id="preview-mask" class="preview-mask hidden">
+    <div class="preview-shell">
+      <div class="preview-toolbar">
+        <div class="preview-title">前台预览</div>
+        <div class="preview-tabs">
+          <button type="button" class="preview-tab active" data-pview="index.html">视觉专区</button>
+          <button type="button" class="preview-tab" data-pview="trends.html">趋势专区</button>
+          <button type="button" class="preview-tab" data-pview="trends.html#recruit">招品回品</button>
+        </div>
+        <div class="preview-tools">
+          <button type="button" id="preview-refresh" class="btn-ghost">刷新</button>
+          <button type="button" id="preview-open" class="btn-ghost">新标签打开</button>
+          <button type="button" id="preview-close" class="btn-danger">关闭</button>
+        </div>
+      </div>
+      <iframe id="preview-frame" class="preview-frame" title="前台预览" src="about:blank"></iframe>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260911BK"></script>
-  <script src="js/supabase.js?v=20260911BK"></script>
-  <script src="js/admin.js?v=20260911BK"></script>
+  <script src="js/config.js?v=20260913PV"></script>
+  <script src="js/supabase.js?v=20260913PV"></script>
+  <script src="js/admin.js?v=20260913PV"></script>
 </body>
 </html>
