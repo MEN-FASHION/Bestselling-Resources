@@ -377,6 +377,8 @@ select.input {
 .url-match-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
 .url-match-row .hint { flex: 1 1 320px; color: var(--sub); font-size: 12px; }
 .url-match-row .hint code { color: var(--gold); }
+.url-match-row.top { margin-top: 0; margin-bottom: 14px; padding: 10px 12px; background: rgba(139,115,85,.06); border: 1px dashed rgba(139,115,85,.35); border-radius: 10px; }
+.url-match-row.top .btn-primary { white-space: nowrap; }
 .url-match-result { font-size: 12px; color: var(--sub); }
 .url-match-result.ok { color: #2ecc71; }
 .progress { margin-top: 16px; height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }

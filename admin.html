@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915K">
+<link rel="stylesheet" href="css/style.css?v=20260915L">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -76,6 +76,12 @@
 
       <!-- 上传区 -->
       <div class="panel-card hidden" id="upload-card">
+<div class="url-match-row top">
+          <button id="url-match-btn" class="btn-primary" type="button">上传链接Excel</button>
+          <input type="file" id="url-match-input" accept=".xlsx,.xls,.csv" hidden>
+          <span id="url-match-result" class="url-match-result"></span>
+          <span class="hint">上传含 <code>Name</code>（图片名，不含扩展名）+ <code>Url</code> 两列的 Excel/CSV，按文件名给待上传图片批量挂外链。</span>
+        </div>
         <h2>① 上传图片</h2>
         <div class="row">
           <label class="field">分类（只能从已配置的类目中选择，新增类目请到「标签管理 → 前台类目」）</label>
@@ -92,12 +98,7 @@
           <input type="file" id="file-input" accept="image/*" multiple hidden>
         </div>
         <div id="pending-list" class="pending-list"></div>
-        <div class="url-match-row">
-          <span class="hint">给待上传图片批量匹配外链：上传含 <code>Name</code>（图片名，不含扩展名）+ <code>Url</code> 两列的 Excel / CSV，图片名与选中图片文件名一致即自动挂链接，前台灯箱显示「打开链接」。</span>
-          <input type="file" id="url-match-input" accept=".xlsx,.xls,.csv" hidden>
-          <button id="url-match-btn" class="btn-ghost" type="button" disabled>上传Excel匹配链接</button>
-          <span id="url-match-result" class="url-match-result"></span>
-        </div>
+        
         <button id="upload-btn" class="btn-primary" disabled>上传所选（0）</button>
         <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
       </div>
@@ -559,8 +560,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260915K"></script>
-  <script src="js/supabase.js?v=20260915K"></script>
-  <script src="js/admin.js?v=20260915K"></script>
+  <script src="js/config.js?v=20260915L"></script>
+  <script src="js/supabase.js?v=20260915L"></script>
+  <script src="js/admin.js?v=20260915L"></script>
 </body>
 </html>

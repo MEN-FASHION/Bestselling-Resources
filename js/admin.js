@@ -296,8 +296,6 @@
     });
     $("#upload-btn").disabled = pendingFiles.length === 0;
     $("#upload-btn").textContent = "上传所选（" + pendingFiles.length + "）";
-    const mbtn = $("#url-match-btn");
-    if (mbtn) mbtn.disabled = pendingFiles.length === 0;
     const mr = $("#url-match-result");
     if (mr && pendingFiles.length === 0) mr.textContent = "";
   }
