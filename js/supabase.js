@@ -10,10 +10,18 @@ const SB = (() => {
     window.CONFIG.SUPABASE.anonKey
   );
 
-  // 取当前登录令牌
+  // 取当前登录令牌（强制刷新会话后再取，确保拿到新鲜 token，避免手机端存有已过期访问令牌）
   async function currentToken() {
-    const s = await client.auth.getSession();
-    return s?.data?.session?.access_token || "";
+    try {
+      // 关键：先触发一次会话刷新，确保 access_token 是最新的（Supabase 会静默用 refresh_token 换新）
+      await client.auth.refreshSession();
+    } catch (e) { /* 无刷新 token 或刷新失败时忽略，继续尝试读现有会话 */ }
+    try {
+      const s = await client.auth.getSession();
+      return s?.data?.session?.access_token || "";
+    } catch (e) {
+      return "";
+    }
   }
 
   // ---------- 上传前自动压缩：大图降到合理尺寸/高质量 JPEG，加快手机加载 ----------
@@ -92,6 +100,7 @@ const SB = (() => {
     },
     // 暴露当前登录令牌
     async currentToken() {
+      try { await client.auth.refreshSession(); } catch (e) { /* 忽略刷新失败 */ }
       const s = await client.auth.getSession();
       return s?.data?.session?.access_token || "";
     },
