@@ -529,6 +529,22 @@
       return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
     });
 
+    // 图片并发加载限制：同一时刻最多同时加载 4 张，其余排队，避免手机一次性几十个请求同时打导致卡顿
+    const LAZY_CONC = 4;
+    let lazyInflight = 0;
+    const lazyQueue = [];
+    function lazyPump() {
+      while (lazyInflight < LAZY_CONC && lazyQueue.length) {
+        const p = lazyQueue.shift();
+        if (!p) break;
+        lazyInflight++;
+        p.onload = () => { lazyInflight--; p.classList.add("loaded"); lazyPump(); };
+        p.onerror = () => { lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump(); };
+        p.src = p.dataset.src;
+      }
+    }
+    function lazyEnqueue(el) { lazyQueue.push(el); lazyPump(); }
+
     imgs.forEach((img, idx) => {
       const cell = document.createElement("div");
       cell.className = "cell";
@@ -538,6 +554,7 @@
       imgEl.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
       imgEl.alt = img.name || "";
       imgEl.loading = "lazy";
+      imgEl.decoding = "async";
       imgEl.draggable = false;
       imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
       holder.appendChild(imgEl);
@@ -561,9 +578,7 @@
           entries.forEach(en => {
             if (en.isIntersecting) {
               const target = en.target;
-              target.src = target.dataset.src;
-              target.onload = () => target.classList.add("loaded");
-              target.onerror = () => { target.classList.add("loaded", "lazy-fallback"); };
+              lazyEnqueue(target);
               obs.unobserve(target);
             }
           });

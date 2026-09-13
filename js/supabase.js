@@ -16,6 +16,49 @@ const SB = (() => {
     return s?.data?.session?.access_token || "";
   }
 
+  // ---------- 上传前自动压缩：大图降到合理尺寸/高质量 JPEG，加快手机加载 ----------
+  // 仅对图片生效；已是小图或压缩不划算时保留原图；失败时回退原文件，绝不丢图。
+  async function compressImage(file) {
+    if (!file || !/^image\//i.test(file.type || "")) return file;
+    const MAX_EDGE = 1600;            // 最长边上限
+    const SMALL_BYTES = 300 * 1024;   // 小于 300KB 视为已足够小，直接返回
+    const CANVAS_MAX = 1920;          // 超过此尺寸才考虑压缩（避免无谓转码）
+    if (file.size <= SMALL_BYTES) return file;
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = reject;
+        im.src = dataUrl;
+      });
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      if (!w || !h || (w <= CANVAS_MAX && h <= CANVAS_MAX && file.size <= 900 * 1024)) return file;
+      const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";           // 白底，避免透明 PNG 转 JPEG 变黑底
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, 0, 0, cw, ch);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+      if (!blob || blob.size >= file.size) return file;   // 压缩不划算则保留原图
+      // 保留原文件名，仅替换内容与 MIME，避免影响去重/命名逻辑
+      return new File([blob], file.name, { type: "image/jpeg" });
+    } catch (e) {
+      return file;
+    }
+  }
+
   return {
     client,
 
@@ -89,8 +132,9 @@ const SB = (() => {
     // 管理员上传：通过 Worker 写入 R2，返回存储 path
     async uploadImage(file, category) {
       const token = await currentToken();
+      const f = await compressImage(file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", f);
       fd.append("category", category);
       const res = await fetch(window.CONFIG.WORKER_URL + "/upload", {
         method: "POST",
@@ -312,9 +356,10 @@ const SB = (() => {
     // 带进度上传（XHR 支持 progress；onProgress 回调 0-100 百分比）
     async uploadTrendFileXHR(file, cover, onProgress) {
       const token = await currentToken();
+      const c = cover ? await compressImage(cover) : null;
       const fd = new FormData();
       fd.append("file", file);
-      if (cover) fd.append("cover", cover);
+      if (c) fd.append("cover", c);
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", window.CONFIG.WORKER_URL + "/trend/upload");
@@ -475,8 +520,9 @@ const SB = (() => {
     // 后台：上传公告图片（经 Worker 存 R2，返回 notices/ 相对路径）
     async uploadNoticeImage(file) {
       const token = await currentToken();
+      const f = await compressImage(file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", f);
       const res = await fetch(window.CONFIG.WORKER_URL + "/notice/uploadimg", {
         method: "POST",
         headers: { Authorization: "Bearer " + token },
@@ -497,8 +543,9 @@ const SB = (() => {
     // 后台：上传招品图片（经 Worker 存 R2，返回 recruits/ 相对路径）
     async uploadRecruitImage(file) {
       const token = await currentToken();
+      const f = await compressImage(file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", f);
       const res = await fetch(window.CONFIG.WORKER_URL + "/recruit/upload", {
         method: "POST",
         headers: { Authorization: "Bearer " + token },

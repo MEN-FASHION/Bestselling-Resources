@@ -12,15 +12,24 @@
  *   - 环境变量：SUPABASE_ANON_KEY（你的 anon public key）
  * ============================================================ */
 
-// Supabase 用户查询：通过令牌换 user id
+// Supabase 用户查询：通过令牌换 user id（带短期缓存，避免每张图片请求都重复鉴权）
+// 同一令牌 5 分钟内只校验一次，大幅减少一页多图时的鉴权往返
+const _uidCache = new Map();
 async function getUserId(token, env) {
   if (!token) return null;
+  const now = Date.now();
+  const hit = _uidCache.get(token);
+  if (hit && (now - hit.at) < 5 * 60 * 1000) return hit.id;
   const res = await fetch(env.SUPABASE_URL + "/auth/v1/user", {
     headers: { Authorization: "Bearer " + token, apikey: env.SUPABASE_ANON_KEY },
   });
-  if (!res.ok) return null;
-  const user = await res.json();
-  return user?.id || null;
+  let id = null;
+  if (res.ok) {
+    const user = await res.json();
+    id = user?.id || null;
+  }
+  _uidCache.set(token, { id, at: now });
+  return id;
 }
 
 // 查询某用户在 profiles 表中的角色
