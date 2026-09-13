@@ -524,6 +524,7 @@
     catalog = imgs;
 
     const guestToken = await SB.currentToken();
+    window.__guestToken = guestToken;
     lightboxList = imgs.map(i => {
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
@@ -539,7 +540,29 @@
         if (!p) break;
         lazyInflight++;
         p.onload = () => { lazyInflight--; p.classList.add("loaded"); lazyPump(); };
-        p.onerror = () => { lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump(); };
+        p.onerror = () => {
+          // 先尝试 fetch + Authorization 头兜底加载（与列表接口同链路，规避移动端超长 token URL 挂起）
+          const au = p.dataset.authUrl;
+          const at = p.dataset.authToken;
+          if (au) {
+            (async () => {
+              try {
+                const headers = at ? { "Authorization": "Bearer " + at } : {};
+                const resp = await fetch(au, { headers });
+                if (!resp.ok) throw new Error(String(resp.status));
+                const blob = await resp.blob();
+                const obj = URL.createObjectURL(blob);
+                p.onload = () => { lazyInflight--; p.classList.add("loaded"); lazyPump(); };
+                p.onerror = null;
+                p.src = obj;
+                return;
+              } catch (e) { /* fall through */ }
+              lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump();
+            })();
+          } else {
+            lazyInflight--; p.classList.add("loaded", "lazy-fallback"); lazyPump();
+          }
+        };
         p.src = p.dataset.src;
       }
     }
@@ -551,7 +574,13 @@
       const holder = document.createElement("div");
       holder.className = "holder";
       const imgEl = document.createElement("img");
-      imgEl.dataset.src = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+      const _imgBase = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      imgEl.dataset.src = _imgBase + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+      // 供 fetch 兜底用：干净的图片URL（不带超长 token query）＋ 明文 token。
+      // 部分移动端浏览器（微信内核/自带）对带数百字符 token 的超长图片 URL 请求会挂起（不返回也不报错），
+      // 导致图片一直停留在灰色占位。此处改用与"图片列表接口"完全相同的鉴权链路（Authorization 头）兜底加载。
+      imgEl.dataset.authUrl = _imgBase + "/" + img.path;
+      imgEl.dataset.authToken = guestToken || "";
       imgEl.alt = img.name || "";
       imgEl.decoding = "async";
       // 注意：不再设置 loading="lazy"。原生懒加载与下方自建的 IntersectionObserver 懒加载 + 并发池在部分移动端浏览器（iOS Safari / 微信内核 / 安卓 WebView）上会冲突，
@@ -591,6 +620,12 @@
       } else {
         imgEl.setAttribute("data-started", "1");
         imgEl.src = imgEl.dataset.src;
+        // 无 IO 环境：同样记录干净 URL 与 token，供超时/失败时 fetch 兜底
+        if (!imgEl.dataset.authUrl) {
+          const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+          imgEl.dataset.authUrl = base + "/" + (img.path || "");
+          imgEl.dataset.authToken = guestToken || "";
+        }
         imgEl.classList.add("loaded");
       }
 
@@ -626,8 +661,30 @@
     $("#lightbox").classList.remove("hidden");
   }
   function showLbImage() {
-    $("#lb-img").src = lightboxList[lightboxIdx] || "";
+    const url = lightboxList[lightboxIdx] || "";
     const img = catalog[lightboxIdx];
+    const lbImg = $("#lb-img");
+    lbImg.src = url;
+    // 灯箱图片同样加 fetch 兜底：若直接 src 加载失败（手机端超长 token URL 挂起），改用 Authorization 头拉取
+    let lbDone = false;
+    lbImg.onload = () => { lbDone = true; };
+    lbImg.onerror = () => {
+      if (lbDone || !img) return;
+      lbDone = true;
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      const au = base + "/" + img.path;
+      const at = (window.__guestToken || "");
+      (async () => {
+        try {
+          const headers = at ? { "Authorization": "Bearer " + at } : {};
+          const resp = await fetch(au, { headers });
+          if (!resp.ok) throw new Error(String(resp.status));
+          const blob = await resp.blob();
+          lbImg.onerror = null;
+          lbImg.src = URL.createObjectURL(blob);
+        } catch (e) { /* 保留原状 */ }
+      })();
+    };
     let parts = [(lightboxIdx + 1) + " / " + lightboxList.length];
     if (img) {
       const t = (arr) => (Array.isArray(arr) && arr.length) ? arr.join(" / ") : "";
