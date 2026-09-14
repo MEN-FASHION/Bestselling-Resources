@@ -25,7 +25,7 @@ window.CONFIG = {
   },
 
   // ---------- Cloudflare Worker（图片守门员） ★ 必填 ----------
-  WORKER_URL: "https://gallery-api.lisaifei7.workers.dev",
+  WORKER_URL: "https://newtrend.top",
 
   // ---------- 功能开关 ----------
   enableSignup: true,      // 前台是否允许自助注册（默认允许）
