@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TREND BANK · 视觉专区</title>
+<link rel="stylesheet" href="css/style.css?v=20260915W">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body class="front">
+  <!-- 提示条 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- 加载遮罩：判定登录态期间盖住，避免闪现登录页 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="login-view" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="trademark-avatar" aria-label="TREND BANK 商标">
+          <svg viewBox="0 0 120 120" width="92" height="92" role="img" aria-label="TREND BANK">
+            <circle cx="60" cy="60" r="58" fill="#ffffff"/>
+            <circle cx="60" cy="60" r="57.5" fill="none" stroke="#e2ddd4" stroke-width="1"/>
+            <text x="60" y="62" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" letter-spacing="3" fill="#2c2c2c">TB</text>
+            <text x="60" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8" letter-spacing="4" fill="#9c8b74">TREND&nbsp;BANK</text>
+          </svg>
+        </div>
+        <div class="logo-mark" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
+        <h1 id="site-title"></h1>
+        <p class="subtitle"></p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <h2 class="form-title" id="auth-title">访客登录</h2>
+        <label>邮箱</label>
+        <input type="email" id="auth-email" placeholder="请输入邮箱" autocomplete="email" required>
+        <label>密码</label>
+        <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="auth-submit">进入图鉴</button>
+        <div class="auth-links">
+          <a href="#" id="auth-toggle-link" class="hidden">没有账号？注册一个</a>
+          <span class="auth-sep">·</span>
+          <a href="admin.html">管理员入口 →</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 画廊 ================= -->
+  <section id="gallery-view" class="gallery-view hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="top-title"></span></div>
+        <nav class="top-tabs">
+          <a href="index.html" class="tab-link active">视觉专区</a>
+          <a href="trends.html" class="tab-link">趋势专区</a>
+          <a href="trends.html#recruit" class="tab-link">招品回品</a>
+          <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
+        </nav>
+        <div class="topbar-actions">
+          <button id="login-btn" class="btn-ghost hidden">登录</button>
+          <button id="logout-btn" class="btn-ghost hidden">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="gallery-layout">
+      <!-- ===== 左侧：类目菜单栏 ===== -->
+      <aside id="sidebar" class="sidebar">
+        <div class="side-head">服装类目</div>
+        <nav id="cat-menu" class="cat-menu"></nav>
+      </aside>
+
+      <!-- ===== 右侧：渠道/风格/元素 标签筛选（吸顶）+ 图片网格 ===== -->
+      <main class="grid-wrap">
+        <div id="tag-filter" class="tag-filter">
+          <div class="tf-trigger">
+            <span class="tf-t">筛选</span>
+            <span class="tf-s" id="tf-summary">类目·渠道·风格·元素</span>
+            <span class="tf-arrow">▾</span>
+          </div>
+          <div class="tf-body">
+            <div class="tf-groups" id="tf-groups"></div>
+          </div>
+        </div>
+        <p id="empty-tip" class="empty-tip hidden">该分类暂无可浏览的图片。</p>
+        <div id="grid" class="grid"></div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ================= 公告弹窗：未读 + 历史记录 ================= -->
+  <div id="notice-modal" class="modal hidden">
+    <div class="notice-dialog">
+      <div class="notice-dialog-head">
+        <div class="notice-tabs">
+          <button type="button" class="notice-tab-btn active" data-ntab="unread">未读公告</button>
+          <button type="button" class="notice-tab-btn" data-ntab="history">公告记录</button>
+        </div>
+        <div class="notice-head-actions">
+          <span id="notice-unread-count" class="hint-inline"></span>
+          <button type="button" class="notice-close" id="notice-close">×</button>
+        </div>
+      </div>
+      <div id="notice-modal-body" class="notice-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============ 公告放大阅读层（点击查看全文） ============ -->
+  <div id="notice-reader" class="modal hidden">
+    <div class="notice-reader-dialog">
+      <button type="button" class="notice-close" id="notice-reader-close">×</button>
+      <h3 id="notice-reader-title" class="notice-reader-title"></h3>
+      <div id="notice-reader-meta" class="notice-reader-meta"></div>
+      <div id="notice-reader-body" class="notice-reader-body"></div>
+    </div>
+  </div>
+
+  <!-- ================= 灯箱 ================= -->
+  <div id="lightbox" class="lightbox hidden">
+    <button class="lb-close" id="lb-close">×</button>
+    <button class="lb-nav lb-prev" id="lb-prev">‹</button>
+    <img id="lb-img" src="" alt="" draggable="false" ondragstart="return false;">
+    <button class="lb-nav lb-next" id="lb-next">›</button>
+    <div id="lb-caption" class="lb-caption"></div>
+    <a id="lb-open-link" class="lb-open-link hidden" href="#" target="_blank" rel="noopener noreferrer">🔗 打开链接</a>
+  </div>
+
+<!-- ================= 免责协议（首次访问确认 + 底部随时可查看） ================= -->
+  <div id="legal-overlay" class="legal-overlay hidden">
+    <div class="legal-dialog">
+      <div class="legal-head">
+        <h2 class="legal-title">TREND BANK 网站服务与用户协议</h2>
+        <button type="button" class="legal-close hidden" id="legal-close" title="关闭">×</button>
+      </div>
+      <div class="legal-tabs">
+        <button type="button" class="legal-tab active" data-ltab="disclaimer">免责声明</button>
+        <button type="button" class="legal-tab" data-ltab="terms">用户协议</button>
+        <button type="button" class="legal-tab" data-ltab="privacy">隐私与版权</button>
+      </div>
+      <div class="legal-body">
+        <div class="legal-panel active" data-lpanel="disclaimer">
+          <h3>免责声明</h3>
+          <h4>一、平台与适用范围</h4>
+          <p>本声明适用于「TREND BANK 」（运营域名 newtrend.top，含视觉专区、趋势专区及招品回品等栏目，以下统称"本站"）。凡访问或使用本站，即视为您已阅读并同意本免责声明的全部内容。</p>
+          <h4>二、内容的性质与用途</h4>
+          <p>1. 本站展示的图片、款式、数据与信息，均用于服装行业的趋势学习、设计参考与行业交流，不构成任何形式的商业推荐、广告要约、投资建议或承诺，亦不构成任何交易或合作依据。</p>
+          <p>2. 本站内容仅供参考，您应结合自身情况及专业判断独立作出决定。</p>
+          <h4>三、信息的准确性与时效性</h4>
+          <p>本站内容可能因技术、网络、时间差等原因存在延迟、不完整或偏差；部分信息来源于第三方、公开渠道或用户自行提供，本站不对其准确性、完整性、时效性及适用性作出任何明示或默示保证，亦不就其使用后果承担责任。</p>
+          <h4>四、用户行为的责任</h4>
+          <p>1. 您基于本站内容作出的任何判断、决策、交易或其它行为，均由您自行承担相应风险与责任。</p>
+          <p>2. 您在访问、浏览、上传、提交或使用本站过程中产生的行为及其后果，由您自行负责。</p>
+          <h4>五、免责范围</h4>
+          <p>1. 在法律允许的最大范围内，本站不提供任何形式的担保（明示或默示），包括但不限于适销性、特定用途适用性、不侵权或数据安全的担保。</p>
+          <p>2. 对于因使用或无法使用本站、内容错误或遗漏、数据丢失、第三方服务中断等所导致的直接、间接、偶然或后果性损失，本站不承担责任。</p>
+          <h4>六、不可抗力</h4>
+          <p>因不可抗力（包括但不限于自然灾害、网络或电力故障、第三方平台或服务中断、政策调整等）导致的内容丢失、功能中断或无法访问，本站不承担责任，但将尽合理努力恢复。</p>
+          <h4>七、声明的效力与变更</h4>
+          <p>本免责声明是《用户协议》的组成部分，若与《用户协议》不一致，以对您有利且不违背法律法规的解释为准。本站有权根据运营需要适时更新本声明，更新后于页面公布之日起生效。</p>
+        </div>
+        <div class="legal-panel" data-lpanel="terms">
+          <h3>用户协议</h3>
+          <h4>一、协议的接受</h4>
+          <p>您在使用本站前，应完整阅读并理解本协议；一旦访问或使用本站（包括浏览、注册、登录、上传、提交内容等行为），即视为您已接受本协议全部条款。如您不同意，请停止使用本站。</p>
+          <h4>二、平台与运营主体</h4>
+          <p>本站由「TREND BANK 」（运营域名 newtrend.top）提供运营与服务。本协议构成您与本站之间就使用本站所达成的约定。</p>
+          <h4>三、服务内容与性质</h4>
+          <p>1. 本站提供服装趋势、图片图鉴、标签检索、招品回品等信息服务（以下简称"服务"）。</p>
+          <p>2. 本站有权根据运营需要调整、更新或终止部分或全部功能，并尽合理努力提前提示。</p>
+          <h4>四、账号注册与安全</h4>
+          <p>1. 您应使用真实的、合法的信息注册/登录账号，并对账号下的全部行为负责。</p>
+          <p>2. 请妥善保管账号与登录信息；因账号泄露、被盗、滥用或违规操作造成的损失，由您自行承担。发现异常应及时通知本站。</p>
+          <h4>五、用户行为规范</h4>
+          <p>1. 您承诺以合法、正当、合规的方式使用本站，不从事任何违反法律法规或侵害他人合法权益的活动。</p>
+          <p>2. 未经授权，您不得擅自抓取、复制、篡改、反向工程、破解、恶意爬取或批量下载本站内容，亦不得将本站用于传播违法、侵权、有害信息。</p>
+          <p>3. 您上传、提交或发布的内容，不得含有违法、侵权、诽谤、色情、暴力或违反公序良俗的信息。</p>
+          <h4>六、知识产权与内容授权</h4>
+          <p>1. 本站界面、程序、文字、图片及其它内容的权利归相应权利人所有，受著作权等法律保护。</p>
+          <p>2. 您向本站上传、提交的内容，视为您已获得相关授权，并同意本站在提供服务所需的范围内使用、存储与展示。</p>
+          <h4>七、责任限制</h4>
+          <p>在法律允许的最大范围内，对于因使用本站而产生的间接、偶然或后果性损失，本站不承担责任。</p>
+          <h4>八、协议的修改</h4>
+          <p>本站有权视运营需要修订本协议，修订后于页面公布之日起生效；重大变更将以适当方式提示。您继续使用本站即视为接受修订后的协议。</p>
+          <h4>九、违约处理</h4>
+          <p>如您违反本协议或相关法律法规，本站有权视情节采取警示、限制或终止您的访问权限等措施，并保留依法追究责任的权利。</p>
+          <h4>十、争议解决与法律适用</h4>
+          <p>1. 本协议的订立、履行与解释均适用中华人民共和国（大陆地区）法律（不含冲突法规则）。</p>
+          <p>2. 因本协议产生的争议，双方应友好协商解决；协商不成的，任何一方可向本站运营者所在地有管辖权的人民法院提起诉讼。</p>
+          <h4>十一、可分性与完整协议</h4>
+          <p>本协议任何条款被认定为无效或不可执行，不影响其余条款的效力。本协议构成双方就使用本站达成的完整约定。</p>
+        </div>
+        <div class="legal-panel" data-lpanel="privacy">
+          <h3>隐私与版权声明</h3>
+          <h4>一、我们收集的信息</h4>
+          <p>1. 您主动提供的信息：如注册或登录时的账号信息（邮箱/用户名）、您上传或提交的内容等。</p>
+          <p>2. 自动收集的信息：为提供服务与改进体验，本站可能通过登录状态、公告已读记录、本地存储（如浏览器 localStorage）等方式记录必要的使用信息，包括但不限于您的访问行为、阅读状态、偏好设置等。</p>
+          <h4>二、信息的使用目的</h4>
+          <p>收集的信息仅用于：提供并改进服务、维护账号与权限、实现公告与已读状态、优化内容展示、保障本站安全与合规运营。本站不会将您的个人信息用于与提供服务无关的目的。</p>
+          <h4>三、信息的存储与安全</h4>
+          <p>1. 本站将采取合理的技术与管理措施保护您的信息安全，防止信息被未经授权地访问、使用、修改或泄露。</p>
+          <p>2. 尽管我们尽力保障安全，但互联网环境下不存在百分之百安全的传输与存储，请您理解并知悉相关风险。</p>
+          <h4>四、信息的分享与披露</h4>
+          <p>1. 本站不会向无关第三方出售或出租您的个人信息。</p>
+          <p>2. 除下列情形外，本站不会披露您的个人信息：获得您的明确同意；依据法律法规、司法机关或政府部门的要求；为保护本站及用户合法权益所必需。</p>
+          <h4>五、Cookie 与本地存储</h4>
+          <p>本站可能使用浏览器本地存储（如 localStorage/会话存储）来记录您的同意状态、阅读记录、筛选偏好等，以提升使用体验。您可通过浏览器设置清理或限制相关存储。</p>
+          <h4>六、您的权利</h4>
+          <p>您有权查询、更正、删除您提供的个人信息，或撤回相关授权。如需行使相关权利或就个人信息问题提出疑问，可通过站内联系方式与本站取得联系，我们将依法依规处理。</p>
+          <h4>七、未成年人保护</h4>
+          <p>本站服务主要面向具备完全民事行为能力的用户。若您为未成年人，应在监护人同意与指导下使用本站。</p>
+          <h4>八、版权说明</h4>
+          <p>1. 本站展示的图片与内容，其版权归相应权利人所有；本站仅作展示、学习与研究用途。</p>
+          <p>2. 未经权利人或本站明确授权，请勿擅自下载、转载、复制、商用或用于其它侵权用途。用户上传的内容责任由上传者自行承担。</p>
+          <h4>九、侵权处理</h4>
+          <p>若您认为本站内容侵犯了您的合法权益（包括但不限于著作权、肖像权、商标权等），请及时与本站联系，并提供权属证明与相关说明；我们核实后将依法依规及时处理。</p>
+          <h4>十、政策的更新</h4>
+          <p>本站可能根据法律法规或运营需要更新本声明，更新后于页面公布之日起生效。重大变更将以适当方式提示。</p>
+          <h4>十一、联系方式</h4>
+          <p>如对本声明或个人信息保护有任何疑问、建议或投诉，欢迎通过本站公示的联系方式与运营者取得联系。</p>
+        </div>
+      </div>
+      <div class="legal-foot">
+        <label class="legal-agree">
+          <input type="checkbox" id="legal-agree">
+          <span>我已阅读并同意上述《免责声明》《用户协议》及《隐私与版权声明》</span>
+        </label>
+        <button type="button" class="btn-primary" id="legal-enter">同意并进入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 底部：协议入口 ================= -->
+  <footer class="site-footer">
+    <span class="sf-copy" id="sf-copyright"></span>
+    <nav class="sf-links">
+      <span class="sf-muted">条款：</span>
+      <a href="#" class="legal-link" data-legal="disclaimer">免责声明</a><span class="sf-sep">|</span>
+      <a href="#" class="legal-link" data-legal="terms">用户协议</a><span class="sf-sep">|</span>
+      <a href="#" class="legal-link" data-legal="privacy">隐私与版权</a>
+    </nav>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js?v=20260915W"></script>
+  <script src="js/supabase.js?v=20260915W"></script>
+  <script src="js/frontend.js?v=20260915W"></script>
+</body>
+</html>
