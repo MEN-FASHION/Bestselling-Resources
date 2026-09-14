@@ -1743,7 +1743,10 @@
       a.dataset.tag = tag;
       const thumbWrap = document.createElement("div");
       thumbWrap.className = "smart-album-thumb";
-      const pv = smartAlbumPreview[tag] || smartAll.find(img => smartHas(img, field, tag)) || null;
+      let pv = smartAlbumPreview[tag] || null;
+      // 若图册预览图已被删除（不在此标签已打标的 smartAll 中），则忽略它，回退到该标签任一已打标图
+      if (pv && !smartAll.some(img => img && img.id === pv.id)) pv = null;
+      if (!pv) pv = smartAll.find(img => smartHas(img, field, tag)) || null;
       if (pv && pv.path) {
         const im = document.createElement("img");
         im.alt = tag;
@@ -1872,6 +1875,10 @@
       selectedImages.delete(img.id);
       // 更新本地缓存
       smartAll = smartAll.filter(i => i.id !== img.id);
+      // 清除图册栏中指向该已删图片的"最新图"预览，避免画册残留已删图（回退到该标签其他有效图或占位）
+      for (const k in smartAlbumPreview) {
+        if (smartAlbumPreview[k] && smartAlbumPreview[k].id === img.id) delete smartAlbumPreview[k];
+      }
       sbToast("已删除图片");
       // 刷新池子与图册栏，并同步刷新图片管理网格
       renderSmartAlbums();

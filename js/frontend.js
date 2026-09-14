@@ -40,11 +40,80 @@
     }
   };
 
+/* ---------- 免责协议（首次确认 + 底部随时查看） ---------- */
+  const legalKey = "btrLegalV1";
+  let _legalOverlay = null, _legalClose = null, _legalAgree = null, _legalEnter = null;
+
+  function _qtabs() {
+    return _legalOverlay ? _legalOverlay.querySelectorAll(".legal-tab") : [];
+  }
+  function openLegal(mode, tab) {
+    if (!_legalOverlay) return;
+    if (mode === "view") {
+      if (tab) {
+        const t = _legalOverlay.querySelector('.legal-tab[data-ltab="' + tab + '"]');
+        if (t) t.click();
+      }
+      if (_legalClose) _legalClose.classList.remove("hidden");
+    } else {
+      if (_legalClose) _legalClose.classList.add("hidden");
+    }
+    _legalOverlay.classList.remove("hidden");
+  }
+  function initLegal() {
+    _legalOverlay = document.getElementById("legal-overlay");
+    if (!_legalOverlay) return;
+    _legalClose = document.getElementById("legal-close");
+    _legalAgree = document.getElementById("legal-agree");
+    _legalEnter = document.getElementById("legal-enter");
+
+    _qtabs().forEach((tab) => {
+      tab.addEventListener("click", () => {
+        _qtabs().forEach((t) => t.classList.remove("active"));
+        _legalOverlay.querySelectorAll(".legal-panel").forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        const panel = _legalOverlay.querySelector('.legal-panel[data-lpanel="' + tab.dataset.ltab + '"]');
+        if (panel) panel.classList.add("active");
+      });
+    });
+
+    document.querySelectorAll(".legal-link").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        openLegal("view", link.dataset.legal);
+      });
+    });
+
+    if (_legalClose) {
+      _legalClose.addEventListener("click", () => { _legalOverlay.classList.add("hidden"); });
+    }
+    if (_legalEnter) {
+      _legalEnter.addEventListener("click", () => {
+        if (!_legalAgree || !_legalAgree.checked) {
+          _legalEnter.textContent = "请先勾选同意";
+          _legalEnter.classList.add("shake");
+          setTimeout(() => { _legalEnter.textContent = "同意并进入"; _legalEnter.classList.remove("shake"); }, 1200);
+          return;
+        }
+        try { localStorage.setItem(legalKey, "1"); } catch (e) {}
+        _legalOverlay.classList.add("hidden");
+      });
+    }
+
+    const copy = document.getElementById("sf-copyright");
+    if (copy) copy.textContent = "© " + new Date().getFullYear() + " " + (CONFIG.siteTitle || "本站") + " · 仅供学习与参考";
+
+    let seen = "0";
+    try { seen = localStorage.getItem(legalKey) || "0"; } catch (e) {}
+    if (seen !== "1") openLegal("force");
+  }
   document.addEventListener("DOMContentLoaded", () => {
     $("#site-title").textContent = CONFIG.siteTitle;
     $(".subtitle").textContent = CONFIG.siteSubtitle;
     $("#top-title").textContent = CONFIG.siteTitle;
     document.title = CONFIG.siteTitle + " · 视觉专区";
+
+    initLegal();
 
     if (CONFIG.enableSignup) {
       $("#auth-toggle-link").classList.remove("hidden");
