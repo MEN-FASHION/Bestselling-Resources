@@ -2117,7 +2117,8 @@
     const smartBackBtn = document.querySelector("#smart-back-btn");
     if (smartBackBtn) smartBackBtn.addEventListener("click", () => backToSmartTag());
     bindSmartUpload();
-    bindSmartUrlMatch();
+    // 保护非关键调用：即使 bindSmartUrlMatch 异常，也不阻断后续拖放/上传绑定
+    try { bindSmartUrlMatch(); } catch (e) { /* 忽略，不影响拖放 */ }
     bindSmartDrop();
   }
   // ================= 智能打标内上传图片（上传入口=右池首位卡片，待传=缩略图卡，按钮/进度常驻右池头部） =================
