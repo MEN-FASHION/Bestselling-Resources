@@ -218,10 +218,7 @@
     dz.addEventListener("drop", (e) => { addFiles(e.dataTransfer.files); });
 
     $("#upload-btn").onclick = doUpload;
-    const mbtn = $("#url-match-btn");
-    if (mbtn) mbtn.onclick = () => { const mi = $("#url-match-input"); if (mi) mi.click(); };
-    const mi = $("#url-match-input");
-    if (mi) mi.onchange = () => { const r = handleUrlMatch(mi.files); mi.value = ""; };
+    // 「上传链接Excel」按钮与文件解析统一由文档级委托处理（见下方 bindUrlMatchDelegate），此处不再重复绑定
   }
   function addFiles(fileList) {
     const imgs = Array.from(fileList).filter(f => /^image\//.test(f.type));
@@ -2173,25 +2170,30 @@
     reader.readAsArrayBuffer(file);
   }
   function bindSmartUrlMatch() {
-    const fi = document.querySelector("#smart-url-file");
-    if (fi) fi.addEventListener("change", (e) => { smartUrlMatch(fi.files); fi.value = ""; e.preventDefault(); });
-    const btn = document.querySelector("#smart-urlmatch-btn");
-    if (btn) btn.addEventListener("click", (e) => {
-      e.preventDefault(); e.stopPropagation();
-      if (!smartPending.length) { sbToast("请先在智能打标弹窗里选择要上传的图片（点右池「上传图片」卡片或用「上传」按钮），再上传匹配链接表格", false); return; }
-      if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
-      if (fi) fi.click();
-    });
+    // 「上传链接Excel」点击与文件解析统一由文档级委托处理（见下方 bindUrlMatchDelegate），此处不再重复绑定
   }
-  // 文档级事件委托：确保「上传链接Excel」按钮任何时机都能响应点击（绕开绑定时机/嵌套/覆盖问题）
+  // 文档级点击委托：正确分流两个「上传链接Excel」按钮到各自文件输入（绕开绑定时机/覆盖问题）
   document.addEventListener("click", (e) => {
-    const btn = e.target && e.target.closest ? e.target.closest("#smart-urlmatch-btn,#url-match-btn") : null;
-    if (!btn) return;
-    e.preventDefault(); e.stopPropagation();
-    const fi = document.querySelector("#smart-url-file");
-    if (!smartPending.length) { sbToast("请先在智能打标弹窗里选择要上传的图片（点右池「上传图片」卡片或用「上传」按钮），再上传匹配链接表格", false); return; }
-    if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
-    if (fi) fi.click();
+    const t = e.target;
+    const sm = t && t.closest ? t.closest("#smart-urlmatch-btn") : null;
+    const main = t && t.closest ? t.closest("#url-match-btn") : null;
+    if (sm) {
+      e.preventDefault(); e.stopPropagation();
+      if (!smartPending.length) { sbToast("请先在当前弹窗里选择要上传的图片（点右池「上传图片」卡片或用「上传」按钮），再上传匹配链接表格", false); return; }
+      if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
+      const fi = document.querySelector("#smart-url-file"); if (fi) fi.click(); return;
+    }
+    if (main) {
+      e.preventDefault(); e.stopPropagation();
+      const mi = document.querySelector("#url-match-input"); if (mi) mi.click(); return;
+    }
+  });
+  // 文档级 change 委托：选中文档后必触发解析（主面板→handleUrlMatch，弹窗→smartUrlMatch），不再依赖任何初始化绑定
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === "url-match-input") { handleUrlMatch(t.files); t.value = ""; }
+    else if (t.id === "smart-url-file") { smartUrlMatch(t.files); t.value = ""; }
   });
     const btn = document.querySelector("#smart-upload-btn");
     if (btn) btn.onclick = doSmartUpload;
