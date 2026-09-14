@@ -2183,6 +2183,16 @@
       if (fi) fi.click();
     });
   }
+  // 文档级事件委托：确保「上传链接Excel」按钮任何时机都能响应点击（绕开绑定时机/嵌套/覆盖问题）
+  document.addEventListener("click", (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest("#smart-urlmatch-btn,#url-match-btn") : null;
+    if (!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    const fi = document.querySelector("#smart-url-file");
+    if (!smartPending.length) { sbToast("请先在智能打标弹窗里选择要上传的图片（点右池「上传图片」卡片或用「上传」按钮），再上传匹配链接表格", false); return; }
+    if (typeof XLSX === "undefined") { sbToast("Excel解析组件未加载，请联网后重试", false); return; }
+    if (fi) fi.click();
+  });
     const btn = document.querySelector("#smart-upload-btn");
     if (btn) btn.onclick = doSmartUpload;
   }
