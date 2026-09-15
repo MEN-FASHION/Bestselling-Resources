@@ -304,7 +304,8 @@
     const zoneName = bs ? " · BESTSELLER" : (rec ? " · 招品回品" : " · 趋势专区");
     if (brand) brand.textContent = (CONFIG.siteTitle || "TREND BANK") + zoneName;
     document.title = (CONFIG.siteTitle || "TREND BANK") + zoneName;
-    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", (a.dataset.viewtab === "trend") !== (rec || bs) || (a.dataset.viewtab === "recruit" && rec) || (a.dataset.viewtab === "bestseller" && bs)));
+    const activeTab = bs ? "bestseller" : (rec ? "recruit" : "trend");
+    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", a.dataset.viewtab === activeTab));
     if (rec) loadRecruitView(); else if (bs) loadBestsellerView(); else loadTrends();
   }
   function showTrend() { showMain(); }

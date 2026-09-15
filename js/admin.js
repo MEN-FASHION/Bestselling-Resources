@@ -3639,8 +3639,6 @@ let recruitTasks = [];
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
   }
-})();
-
   // ================= BESTSELLER 专区：后台管理 =================
 let bestsellerTasks = [];
   let bestsellerAllSubs = [];
@@ -3651,7 +3649,7 @@ let bestsellerTasks = [];
   let bestsellerTrashSelected = new Set();  // 回收站勾选
   let bestsellerInTrash = false;         // 是否处于回收站视图
 
-  function renderRecruitPre() {
+  function renderBestsellerPre() {
     const pre = document.querySelector("#bestseller-upload-preview");
     if (!pre) return;
     if (!bestsellerImgFiles.length) { pre.classList.add("hidden"); pre.innerHTML = ""; return; }
@@ -3664,13 +3662,13 @@ let bestsellerTasks = [];
       im.src = URL.createObjectURL(f);
       const rm = document.createElement("button");
       rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
-      rm.onclick = () => { bestsellerImgFiles.splice(i, 1); renderRecruitPre(); };
+      rm.onclick = () => { bestsellerImgFiles.splice(i, 1); renderBestsellerPre(); };
       cell.appendChild(im); cell.appendChild(rm);
       pre.appendChild(cell);
     });
   }
 
-  function bindRecruit() {
+  function bindBestseller() {
     const upBtn = document.querySelector("#bestseller-save");
     const refresh = document.querySelector("#bestseller-refresh");
     const imgDz = document.querySelector("#bestseller-img-dropzone");
@@ -3682,60 +3680,60 @@ let bestsellerTasks = [];
       imgDz.addEventListener("drop", (e) => {
         e.preventDefault();
         const fs = e.dataTransfer.files ? [...e.dataTransfer.files] : [];
-        if (fs.length) addRecruitImgs(fs);
+        if (fs.length) addBestsellerImgs(fs);
       });
       imgInput.addEventListener("change", () => {
-        if (imgInput.files && imgInput.files.length) addRecruitImgs([...imgInput.files]);
+        if (imgInput.files && imgInput.files.length) addBestsellerImgs([...imgInput.files]);
         imgInput.value = "";
       });
     }
-    function addRecruitImgs(fs) {
+    function addBestsellerImgs(fs) {
       const ok = fs.filter(f => /^image\//i.test(f.type || "") && /\.(jpe?g|png|webp)$/i.test(f.name || ""));
       if (!ok.length) { sbToast("仅支持 JPG/PNG 图片", false); return; }
       // 去重（按文件名）
       const names = new Set(bestsellerImgFiles.map(x => x.name));
       ok.forEach(f => { if (!names.has(f.name)) { bestsellerImgFiles.push(f); names.add(f.name); } });
-      renderRecruitPre();
+      renderBestsellerPre();
     }
-    if (upBtn) upBtn.addEventListener("click", saveRecruitTasks);
-    if (refresh) refresh.addEventListener("click", loadRecruitList);
+    if (upBtn) upBtn.addEventListener("click", saveBestsellerTasks);
+    if (refresh) refresh.addEventListener("click", loadBestsellerList);
     // 筛选
     document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => {
-      b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderRecruitList(); };
+      b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
     });
     // 全选
     const ca = document.querySelector("#bestseller-checkall");
-    if (ca) ca.onchange = () => { bestsellerSelected.clear(); if (ca.checked) bestsellerTasks.forEach(t => bestsellerSelected.add(t.id)); renderRecruitList(); };
+    if (ca) ca.onchange = () => { bestsellerSelected.clear(); if (ca.checked) bestsellerTasks.forEach(t => bestsellerSelected.add(t.id)); renderBestsellerList(); };
     // 批量发布 / 批量绑定 / 取消绑定
     const bp = document.querySelector("#bestseller-batch-pub");
-    if (bp) bp.onclick = () => bulkSetRecruitStatus("published");
+    if (bp) bp.onclick = () => bulkSetBestsellerStatus("published");
     const bb = document.querySelector("#bestseller-batch-bound");
-    if (bb) bb.onclick = () => bulkSetRecruitBound(true);
+    if (bb) bb.onclick = () => bulkSetBestsellerBound(true);
     const bu = document.querySelector("#bestseller-batch-unbound");
-    if (bu) bu.onclick = () => bulkSetRecruitBound(false);
+    if (bu) bu.onclick = () => bulkSetBestsellerBound(false);
     const exportBtn = document.querySelector("#bestseller-export");
-    if (exportBtn) exportBtn.addEventListener("click", exportRecruitExcel);
+    if (exportBtn) exportBtn.addEventListener("click", exportBestsellerExcel);
     // 批量删除 → 移入回收站
     const bdel = document.querySelector("#bestseller-batch-del");
-    if (bdel) bdel.onclick = () => bulkDeleteRecruit();
+    if (bdel) bdel.onclick = () => bulkDeleteBestseller();
     // 回收站开关
     const trashToggle = document.querySelector("#bestseller-trash-toggle");
-    if (trashToggle) trashToggle.onclick = () => openRecruitTrash();
+    if (trashToggle) trashToggle.onclick = () => openBestsellerTrash();
     const trashBack = document.querySelector("#bestseller-trash-back");
-    if (trashBack) trashBack.onclick = () => closeRecruitTrash();
+    if (trashBack) trashBack.onclick = () => closeBestsellerTrash();
     // 回收站全选
     const tca = document.querySelector("#bestseller-trash-checkall");
-    if (tca) tca.onchange = () => { bestsellerTrashSelected.clear(); if (tca.checked) bestsellerTrash.forEach(t => bestsellerTrashSelected.add(t.id)); renderRecruitTrash(); };
+    if (tca) tca.onchange = () => { bestsellerTrashSelected.clear(); if (tca.checked) bestsellerTrash.forEach(t => bestsellerTrashSelected.add(t.id)); renderBestsellerTrash(); };
     // 回收站批量恢复 / 永久删除
     const trRestore = document.querySelector("#bestseller-trash-restore");
-    if (trRestore) trRestore.onclick = () => bulkRestoreRecruit();
+    if (trRestore) trRestore.onclick = () => bulkRestoreBestseller();
     const trPurge = document.querySelector("#bestseller-trash-purge");
-    if (trPurge) trPurge.onclick = () => bulkPurgeRecruit();
-    renderRecruitPre();
+    if (trPurge) trPurge.onclick = () => bulkPurgeBestseller();
+    renderBestsellerPre();
   }
 
   // 批量上传：多张图 → 生成多张「未发布」卡片，多任务ID按顺序填入
-  async function saveRecruitTasks() {
+  async function saveBestsellerTasks() {
     if (!bestsellerImgFiles.length) return sbToast("请先选择招品图片", false);
     const ids = (document.querySelector("#bestseller-taskid")?.value || "").replace(/[,，\s]+/g, " ").trim().split(/\s+/).filter(Boolean);
     const cat = document.querySelector("#bestseller-category")?.value || "";
@@ -3746,29 +3744,29 @@ let bestsellerTasks = [];
     sbToast("正在上传 " + files.length + " 张图片…");
     for (let i = 0; i < files.length; i++) {
       try {
-        const imagePath = await SB.uploadRecruitImage(files[i]);
+        const imagePath = await SB.uploadBestsellerImage(files[i]);
         rows.push({ task_id: ids[i] || "", image_path: imagePath, status: ids[i] ? "published" : "draft", category: cat });
       } catch (e) { uploadErr = true; }
     }
     if (!rows.length) { sbToast("图片上传失败，请重试", false); return; }
     try {
-      await SB.addRecruitTasks(rows);
+      await SB.addBestsellerTasks(rows);
       bestsellerImgFiles = [];
-      renderRecruitPre();
+      renderBestsellerPre();
       if (document.querySelector("#bestseller-taskid")) document.querySelector("#bestseller-taskid").value = "";
       if (document.querySelector("#bestseller-category")) document.querySelector("#bestseller-category").value = "";
       if (document.querySelector("#bestseller-cat-search")) document.querySelector("#bestseller-cat-search").value = "";
       sbToast("已创建 " + rows.length + " 张招品任务卡片");
-      loadRecruitList();
+      loadBestsellerList();
     } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
 
-  async function loadRecruitList() {
+  async function loadBestsellerList() {
     if (!document.querySelector("#bestseller-list")) return;
     try {
-      bestsellerTasks = await SB.listRecruitTasks();
-      bestsellerAllSubs = await SB.listAllRecruitSubmissions().catch(() => []);
-      renderRecruitList();
+      bestsellerTasks = await SB.listBestsellerTasks();
+      bestsellerAllSubs = await SB.listAllBestsellerSubmissions().catch(() => []);
+      renderBestsellerList();
     } catch (e) { sbToast("加载招品列表失败", false); }
   }
   function bestsellerSubsFor(taskId) {
@@ -3783,7 +3781,7 @@ let bestsellerTasks = [];
   function bestsellerStatusChip(cls, label) {
     return '<span class="bestseller-chip ' + cls + '">' + label + '</span>';
   }
-  function renderRecruitList() {
+  function renderBestsellerList() {
     const box = document.querySelector("#bestseller-list");
     const cnt = document.querySelector("#bestseller-count");
     const ca = document.querySelector("#bestseller-checkall");
@@ -3852,28 +3850,28 @@ let bestsellerTasks = [];
       const cb = card.querySelector(".bestseller-check");
       cb.onchange = () => { if (cb.checked) bestsellerSelected.add(t.id); else bestsellerSelected.delete(t.id); card.classList.toggle("sel", cb.checked); };
       // 删除
-      card.querySelector(".bestseller-acard-del").onclick = () => confirmDeleteRecruit(t);
+      card.querySelector(".bestseller-acard-del").onclick = () => confirmDeleteBestseller(t);
       // 发布切换
-      card.querySelector(".rcac-pub").onclick = () => setRecruitStatus(t, t.status === "published" ? "draft" : "published");
+      card.querySelector(".rcac-pub").onclick = () => setBestsellerStatus(t, t.status === "published" ? "draft" : "published");
       // 绑定切换
-      card.querySelector(".rcac-bound").onclick = () => setRecruitBound(t, !t.bound);
+      card.querySelector(".rcac-bound").onclick = () => setBestsellerBound(t, !t.bound);
       // 复制SPU
-      card.querySelector(".rcac-copy").onclick = () => copyRecruitSps(t, spuList);
+      card.querySelector(".rcac-copy").onclick = () => copyBestsellerSps(t, spuList);
       // 任务ID 编辑
       const tidInput = card.querySelector(".rcac-tid-input");
       tidInput.value = t.task_id || "";
       tidInput.addEventListener("change", () => {
         const v = tidInput.value.trim();
-        SB.updateRecruitTask(t.id, { task_id: v }).then(() => sbToast("任务ID已更新")).catch(e => sbToast("更新失败", false));
+        SB.updateBestsellerTask(t.id, { task_id: v }).then(() => sbToast("任务ID已更新")).catch(e => sbToast("更新失败", false));
       });
       // 已传SPU 状态区
-      renderRecruitSpsStatus(card, spuList.length);
+      renderBestsellerSpsStatus(card, spuList.length);
       box.appendChild(card);
     });
   }
 
   // 已传SPU 状态标记：商家中已有提交 → 显示「已传SPU · 已上传」
-  function renderRecruitSpsStatus(card, hasSubs) {
+  function renderBestsellerSpsStatus(card, hasSubs) {
     const el = card.querySelector("[data-tags]");
     if (!el) return;
     el.innerHTML = "";
@@ -3883,32 +3881,32 @@ let bestsellerTasks = [];
     el.appendChild(s);
   }
 
-  async function setRecruitStatus(t, st) {
+  async function setBestsellerStatus(t, st) {
     try {
-      await SB.updateRecruitTask(t.id, { status: st });
-      t.status = st; renderRecruitList(); sbToast(st === "published" ? "已发布" : "已取消发布");
+      await SB.updateBestsellerTask(t.id, { status: st });
+      t.status = st; renderBestsellerList(); sbToast(st === "published" ? "已发布" : "已取消发布");
     } catch (e) { sbToast("操作失败", false); }
   }
-  async function setRecruitBound(t, b) {
+  async function setBestsellerBound(t, b) {
     try {
-      await SB.updateRecruitTask(t.id, { bound: b, bound_at: b ? new Date().toISOString() : null });
-      t.bound = b; renderRecruitList(); sbToast(b ? "已标记为已绑定" : "已取消绑定");
+      await SB.updateBestsellerTask(t.id, { bound: b, bound_at: b ? new Date().toISOString() : null });
+      t.bound = b; renderBestsellerList(); sbToast(b ? "已标记为已绑定" : "已取消绑定");
     } catch (e) { sbToast("操作失败", false); }
   }
-  async function bulkSetRecruitStatus(st) {
+  async function bulkSetBestsellerStatus(st) {
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选要发布的任务", false);
-    try { await SB.bulkUpdateRecruitTasks(ids, { status: st }); sbToast("已批量" + (st === "published" ? "发布" : "取消发布") + " " + ids.length + " 个任务"); loadRecruitList(); }
+    try { await SB.bulkUpdateBestsellerTasks(ids, { status: st }); sbToast("已批量" + (st === "published" ? "发布" : "取消发布") + " " + ids.length + " 个任务"); loadBestsellerList(); }
     catch (e) { sbToast("批量操作失败", false); }
   }
-  async function bulkSetRecruitBound(b) {
+  async function bulkSetBestsellerBound(b) {
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选任务", false);
-    try { await SB.bulkUpdateRecruitTasks(ids, { bound: b, bound_at: b ? new Date().toISOString() : null }); sbToast("已批量" + (b ? "标记绑定" : "取消绑定") + " " + ids.length + " 个任务"); loadRecruitList(); }
+    try { await SB.bulkUpdateBestsellerTasks(ids, { bound: b, bound_at: b ? new Date().toISOString() : null }); sbToast("已批量" + (b ? "标记绑定" : "取消绑定") + " " + ids.length + " 个任务"); loadBestsellerList(); }
     catch (e) { sbToast("批量操作失败", false); }
   }
 
-  async function copyRecruitSps(t, spuList) {
+  async function copyBestsellerSps(t, spuList) {
     if (!spuList.length) return sbToast("该任务暂无SPU可复制", false);
     try {
       await navigator.clipboard.writeText(spuList.join(","));
@@ -3916,29 +3914,29 @@ let bestsellerTasks = [];
     } catch (e) { sbToast("复制失败", false); }
   }
 
-  async function confirmDeleteRecruit(t) {
+  async function confirmDeleteBestseller(t) {
     if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
     try {
-      await SB.removeRecruitTask(t.id);
+      await SB.removeBestsellerTask(t.id);
       sbToast("已移入回收站");
-      loadRecruitList();
+      loadBestsellerList();
     } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
   }
 
   // 批量删除 → 移入回收站
-  async function bulkDeleteRecruit() {
+  async function bulkDeleteBestseller() {
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选要删除的任务", false);
     if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
     try {
-      await SB.bulkUpdateRecruitTasks(ids, { deleted_at: new Date().toISOString() });
+      await SB.bulkUpdateBestsellerTasks(ids, { deleted_at: new Date().toISOString() });
       sbToast("已移入回收站 " + ids.length + " 个任务");
-      loadRecruitList();
+      loadBestsellerList();
     } catch (e) { sbToast("操作失败", false); }
   }
 
   // ===== 回收站 =====
-  async function openRecruitTrash() {
+  async function openBestsellerTrash() {
     bestsellerInTrash = true;
     const main = document.querySelector("#bestseller-main-area");
     const trash = document.querySelector("#bestseller-trash-view");
@@ -3947,20 +3945,20 @@ let bestsellerTasks = [];
     const toggle = document.querySelector("#bestseller-trash-toggle");
     if (toggle) toggle.textContent = "🗑 回收站";
     try {
-      bestsellerTrash = await SB.listRecruitTrash();
+      bestsellerTrash = await SB.listBestsellerTrash();
       bestsellerTrashSelected.clear();
-      renderRecruitTrash();
+      renderBestsellerTrash();
     } catch (e) { sbToast("加载回收站失败", false); }
   }
-  function closeRecruitTrash() {
+  function closeBestsellerTrash() {
     bestsellerInTrash = false;
     const main = document.querySelector("#bestseller-main-area");
     const trash = document.querySelector("#bestseller-trash-view");
     if (main) main.classList.remove("hidden");
     if (trash) trash.classList.add("hidden");
-    loadRecruitList();
+    loadBestsellerList();
   }
-  function renderRecruitTrash() {
+  function renderBestsellerTrash() {
     const box = document.querySelector("#bestseller-trash-list");
     const cnt = document.querySelector("#bestseller-trash-count");
     const ca = document.querySelector("#bestseller-trash-checkall");
@@ -4008,7 +4006,7 @@ let bestsellerTasks = [];
   }
   async function restoreTrashOne(t) {
     try {
-      await SB.restoreRecruitTask(t.id);
+      await SB.restoreBestsellerTask(t.id);
       sbToast("已恢复");
       const back = document.querySelector("#bestseller-trash-back");
       if (back) back.click();
@@ -4017,36 +4015,36 @@ let bestsellerTasks = [];
   async function purgeTrashOne(t) {
     if (!confirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！")) return;
     try {
-      if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {});
-      await SB.purgeRecruitTasks([t.id]);
+      if (t.image_path) await SB.deleteBestsellerImage(t.image_path).catch(() => {});
+      await SB.purgeBestsellerTasks([t.id]);
       sbToast("已永久删除");
-      openRecruitTrash();
+      openBestsellerTrash();
     } catch (e) { sbToast("永久删除失败", false); }
   }
-  async function bulkRestoreRecruit() {
+  async function bulkRestoreBestseller() {
     const ids = [...bestsellerTrashSelected];
     if (!ids.length) return sbToast("请先勾选要恢复的任务", false);
     try {
-      await SB.bulkRestoreRecruitTasks(ids);
+      await SB.bulkRestoreBestsellerTasks(ids);
       sbToast("已恢复 " + ids.length + " 个任务");
       const back = document.querySelector("#bestseller-trash-back");
       if (back) back.click();
     } catch (e) { sbToast("批量恢复失败", false); }
   }
-  async function bulkPurgeRecruit() {
+  async function bulkPurgeBestseller() {
     const ids = [...bestsellerTrashSelected];
     if (!ids.length) return sbToast("请先勾选要永久删除的任务", false);
     if (!confirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！")) return;
     try {
       const inTrash = bestsellerTrash.filter(t => ids.includes(t.id));
-      for (const t of inTrash) { if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {}); }
-      await SB.purgeRecruitTasks(ids);
+      for (const t of inTrash) { if (t.image_path) await SB.deleteBestsellerImage(t.image_path).catch(() => {}); }
+      await SB.purgeBestsellerTasks(ids);
       sbToast("已永久删除 " + ids.length + " 个任务");
-      openRecruitTrash();
+      openBestsellerTrash();
     } catch (e) { sbToast("永久删除失败", false); }
   }
 
-  function exportRecruitExcel() {
+  function exportBestsellerExcel() {
     if (!bestsellerTasks.length) return sbToast("暂无招品任务可导出", false);
     if (typeof XLSX === "undefined") return sbToast("导出组件未加载，请联网后重试", false);
     const rows = [];
@@ -4067,3 +4065,5 @@ let bestsellerTasks = [];
   }
 
 
+
+})();
