@@ -881,14 +881,23 @@ const SB = (() => {
       const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
       const { data, error } = await client.from(tbl).select("id, name, sort_order").order("sort_order").order("name");
       if (error) throw new Error(error.message || "读取类目失败");
-      return data || [];
+      const list = data || [];
+      // 兜底：把前台类目(categories)全部补进池子，保证「标签管理的所有类目」都显示（去重）
+      const { data: all, error: aerr } = await client.from("categories").select("id, name, sort_order").order("sort_order").order("name");
+      if (!aerr && all) {
+        const have = new Set(list.map(c => c.name));
+        all.forEach(c => { if (!have.has(c.name)) { list.push({ id: c.id, name: c.name, sort_order: c.sort_order }); have.add(c.name); } });
+      }
+      return list;
     },
     async addZoneCat(zone, name) {
       const n = (name || "").trim();
       if (!n) throw new Error("类目名不能为空");
       const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
       const { error } = await client.from(tbl).insert({ name: n });
-      if (error) throw new Error((error.code === "23505") ? "该类目已存在" : (error.message || "新增失败"));
+      if (error && error.code !== "23505") throw new Error(error.message || "新增失败");
+      // 同步写入前台类目表（幂等），保证「标签管理」与专区类目池保持一致
+      try { await client.from("categories").upsert({ name: n }, { onConflict: "name" }); } catch (e) {}
     },
     async renameZoneCat(zone, id, name, oldName) {
       const n = (name || "").trim();
