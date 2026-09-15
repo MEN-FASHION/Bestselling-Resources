@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915AD">
+<link rel="stylesheet" href="css/style.css?v=20260915AF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -450,6 +450,13 @@
               <input type="file" id="bestseller-url-match-input" accept=".xlsx,.xls,.csv" hidden>
               <span id="bestseller-url-match-result" class="url-match-result"></span>
             </div></div>
+          <div class="rg-row"><label class="field">直接用主图URL导入（可选；上传含「竞品Goods ID/竞品SKUID/站点/最新上榜时间/竞品链接/主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
+            <div class="rg-row-inline">
+              <button id="bestseller-urlimport-btn" class="btn-primary" type="button">上传Excel直接导入（主图URL）</button>
+              <input type="file" id="bestseller-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
+              <span id="bestseller-urlimport-result" class="url-match-result"></span>
+            </div>
+            <div id="bestseller-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
           <div class="rg-row"><label class="field">所属类目（可选，用于前台左栏筛选）</label>
             <div class="cat-pick-wrap">
               <input id="bestseller-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
@@ -504,8 +511,8 @@
       </div>
 
       <div class="panel-card hidden" id="perm-card">
-        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 设置用户角色，并为各管理员分配招品回品 / BESTSELLER 专区类目权限）</span></h2>
-        <p class="hint">选择下方用户，为你指定其【角色】，并勾选其可管理的【专区类目】后保存。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
+        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 设置用户角色，并为其分配可管理的类目权限）</span></h2>
+        <p class="hint">选择下方用户，指定其【角色】，并勾选其可管理的【类目】后保存。授权类目对「视觉专区 / 趋势专区 / 招品回品 / BESTSELLER」四个专区统一生效（只需设置一次）。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
         <div class="rg-row"><label class="field">选择用户</label>
           <select id="perm-user" class="input"></select>
           <label class="field" style="margin-left:8px">角色</label>
@@ -517,12 +524,8 @@
           <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
         </div>
         <div class="perm-zone">
-          <h4 class="perm-zone-title">招品回品专区类目</h4>
-          <div id="perm-recruit-cats" class="perm-cats"><span class="hint">加载中…</span></div>
-        </div>
-        <div class="perm-zone">
-          <h4 class="perm-zone-title">BESTSELLER 专区类目</h4>
-          <div id="perm-bestseller-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+          <h4 class="perm-zone-title">可管理类目（跨专区统一生效）</h4>
+          <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
         </div>
         <div class="rg-btnrow">
           <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
@@ -710,8 +713,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260915AD"></script>
-  <script src="js/supabase.js?v=20260915AD"></script>
-  <script src="js/admin.js?v=20260915AD"></script>
+  <script src="js/config.js?v=20260915AF"></script>
+  <script src="js/supabase.js?v=20260915AF"></script>
+  <script src="js/admin.js?v=20260915AF"></script>
 </body>
 </html>

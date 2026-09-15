@@ -1544,6 +1544,18 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* 前台BESTSELLER卡片：竞品外链角标（新标签打开） */
 .recruit-ext { position:absolute;left:4px;bottom:4px;z-index:3;display:inline-block;background:rgba(201,162,86,.95);color:#1a1408;font-size:11px;line-height:1;padding:4px 8px;border-radius:6px;text-decoration:none;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.25) }
 .recruit-ext:hover { background:#d9b96a;color:#221a08 }
+/* BESTSELLER 竞品信息悬浮浮层（鼠标悬停图片时展示 Goods ID/SKUID/站点/最新上榜时间） */
+.bestseller-cinfo { position:absolute;left:6px;right:6px;bottom:6px;z-index:4;background:rgba(10,12,18,.88);backdrop-filter:blur(4px);border-radius:8px;padding:8px 10px;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none;border:1px solid rgba(201,162,86,.25) }
+.recruit-img:hover .bestseller-cinfo { opacity:1;transform:translateY(0) }
+.bestseller-cinfo-t { font-size:11px;color:#c9a256;font-weight:700;margin-bottom:4px;letter-spacing:.5px }
+.bestseller-cinfo-line { font-size:12px;color:#e8e4da;line-height:1.6 }
+.bestseller-cinfo-line + .bestseller-cinfo-line { border-top:1px dashed rgba(255,255,255,.08);padding-top:3px;margin-top:3px }
+.bs-clickable { cursor:pointer }
+.recruit-img.bs-clickable:hover .recruit-thumb { filter:brightness(1.05);transform:scale(1.01) }
+
+/* BESTSELLER 主图URL导入预览提交栏 */
+.bestseller-pre-commit { grid-column:1 / -1;display:flex;justify-content:center;padding:10px 0 2px }
+.bestseller-pre-commit .btn-primary { font-size:13px;padding:8px 18px }
 
 .bestseller-filters { display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 }
 

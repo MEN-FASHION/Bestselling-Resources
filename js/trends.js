@@ -591,6 +591,7 @@
           '<span class="recruit-ph">图片加载中</span>' +
           '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
           (t.url ? '<a class="recruit-ext" href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener nofollow">🔗打开链接</a>' : '') +
+          '<div class="bestseller-cinfo"><div class="bestseller-cinfo-inner"></div></div>' +
         '</div>' +
         '<div class="recruit-body">' +
           '<div class="recruit-spu-sub"></div>' +
@@ -607,17 +608,43 @@
       const im = card.querySelector(".recruit-thumb");
       const ph = card.querySelector(".recruit-ph");
       card.querySelector(".recruit-no").textContent = seq;
-      if (t.image_path) {
+      if (t.main_img_url) {
+        // 直接用主图URL显示
+        im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
+        im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
+        im.src = t.main_img_url;
+      } else if (t.image_path) {
         SB.bestsellerImageUrl(t.image_path).then(u => {
           im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
           im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
           im.src = u;
         }).catch(() => { ph.textContent = "图片暂不可见"; });
       } else { ph.textContent = "暂无图片"; }
+      // 鼠标悬停图片展示竞品信息（Goods ID / SKUID / 站点 / 最新上榜时间）
+      const cinfo = card.querySelector(".bestseller-cinfo");
+      if (cinfo && (t.goods_id || t.sku_id || t.site || t.rank_time)) {
+        const lines = [];
+        if (t.goods_id) lines.push("竞品Goods ID：" + escapeHtml(t.goods_id));
+        if (t.sku_id) lines.push("竞品SKUID：" + escapeHtml(t.sku_id));
+        if (t.site) lines.push("站点：" + escapeHtml(t.site));
+        if (t.rank_time) lines.push("最新上榜时间：" + escapeHtml(t.rank_time));
+        cinfo.querySelector(".bestseller-cinfo-inner").innerHTML = '<div class="bestseller-cinfo-t">竞品信息</div>' + lines.map(l => '<div class="bestseller-cinfo-line">' + l + '</div>').join("");
+      }
+      // 点击图片跳转竞品链接（main_img_url 外链或 url）
+      if (img) {
+        img.classList.add("bs-clickable");
+      }
       const subEl = card.querySelector(".recruit-spu-sub");
       if (mySpus.length) { subEl.textContent = "我已上传 " + mySpus.length + " 个SPU"; } else { subEl.textContent = "尚未上传货品SPU"; }
       const tip = mySpus.length ? ("我上传的货品SPU：\n" + mySpus.join("\n")) : "尚未上传货品SPU";
       img.title = tip;
+// 点击图片跳转竞品链接（BESTSELLER 主图URL/竞品链接）
+      if (img) {
+        img.style.cursor = t.url ? "pointer" : img.style.cursor;
+        if (t.url) {
+          img.addEventListener("click", () => { window.open(t.url, "_blank", "noopener,noreferrer"); });
+        }
+      }
       const form = card.querySelector(".recruit-form");
       const ops = card.querySelector(".recruit-ops");
       const inp = card.querySelector(".recruit-spu-input");

@@ -804,6 +804,11 @@ const SB = (() => {
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
         tags: (x && x.tags) || [], category: (x && x.category) || "",
         url: (x && x.url) || null,
+        main_img_url: (x && x.main_img_url) || null,
+        goods_id: (x && x.goods_id) || null,
+        sku_id: (x && x.sku_id) || null,
+        site: (x && x.site) || null,
+        rank_time: (x && x.rank_time) || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("bestseller_tasks").insert(rows);
@@ -925,20 +930,20 @@ const SB = (() => {
     },
 
     // ============ 超管权限分配（zone_permissions） ============
-    // 读取某管理员在某专区被授权的类目名列表
+    // 读取某管理员被授权的类目名列表（跨专区共享同一套，不区分 zone）
     async listUserPermissions(userId, zone) {
-      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", userId).eq("zone", zone);
+      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", userId);
       if (error) throw new Error(error.message || "读取权限失败");
-      return (data || []).map(d => d.category);
+      return [...new Set((data || []).map(d => d.category))];
     },
-    // 读取当前登录用户在指定专区的授权类目（后台发布下拉过滤用）
+    // 读取当前登录用户被授权的所有类目（四专区共用同一套，后台发布/上传下拉过滤用）
     async myZonePermissions(zone) {
       const s = await client.auth.getSession();
       const uid = s?.data?.session?.user?.id;
       if (!uid) return [];
-      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", uid).eq("zone", zone);
+      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", uid);
       if (error) return [];
-      return (data || []).map(d => d.category);
+      return [...new Set((data || []).map(d => d.category))];
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
@@ -951,13 +956,19 @@ const SB = (() => {
       const { error } = await client.from("profiles").update({ role }).eq("user_id", userId);
       if (error) throw new Error(error.message || "更新角色失败");
     },
-    // 超管：为某管理员写入某专区类目授权（整体覆盖）
+    // 超管：写入某管理员的类目授权（一套共享，跨专区共用）。zone 参数仅为兼容保留，
+    // 实际把类目同时写入 recruit/bestseller 两个 zone，保证四个专区读取都能命中同一套。
     async setUserPermissions(userId, zone, cats) {
-      // 先删该用户该专区旧的，再插入新的（整体覆盖）
-      const { error: de } = await client.from("zone_permissions").delete().eq("user_id", userId).eq("zone", zone);
+      // 先删该用户旧的全部权限行（不限 zone），再整体覆盖写入
+      const { error: de } = await client.from("zone_permissions").delete().eq("user_id", userId);
       if (de) throw new Error(de.message || "更新权限失败");
       if (!cats || !cats.length) return;
-      const rows = (cats || []).map(c => ({ user_id: userId, zone, category: c }));
+      const clean = [...new Set((cats || []).map(c => (c || "").trim()).filter(Boolean))];
+      if (!clean.length) return;
+      const rows = [];
+      ["recruit", "bestseller"].forEach(z => {
+        clean.forEach(c => rows.push({ user_id: userId, zone: z, category: c }));
+      });
       const { error } = await client.from("zone_permissions").insert(rows);
       if (error) throw new Error(error.message || "更新权限失败");
     },

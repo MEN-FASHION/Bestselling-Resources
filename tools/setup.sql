@@ -695,6 +695,15 @@ alter table public.bestseller_tasks add column if not exists category text defau
 -- 专区任务内链/外链（BESTSELLER 差异化：Excel 按「竞品ID」匹配文件名后绑定网页链接，前台卡片可点击打开）
 alter table public.recruit_tasks add column if not exists url text;
 alter table public.bestseller_tasks add column if not exists url text;
+alter table public.recruit_tasks add column if not exists url text;
+alter table public.bestseller_tasks add column if not exists url text;
+-- BESTSELLER 差异化：直接用主图URL + 竞品商品信息（2026-09新增）
+alter table public.bestseller_tasks add column if not exists main_img_url text;   -- 主图URL（优先显示，替代上传文件）
+alter table public.bestseller_tasks add column if not exists goods_id text;      -- 竞品Goods ID
+alter table public.bestseller_tasks add column if not exists sku_id text;        -- 竞品SKUID
+alter table public.bestseller_tasks add column if not exists site text;          -- 站点
+alter table public.bestseller_tasks add column if not exists rank_time text;     -- 最新上榜时间
+alter table public.recruit_tasks add column if not exists main_img_url text;     -- 招品同步兼容（可选）
 
 -- ---------- 招品回品专区类目表（独立于视觉专区类目，可增删改） ----------
 create table if not exists public.recruit_categories (

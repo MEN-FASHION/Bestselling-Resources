@@ -374,6 +374,14 @@
   async function loadCats() {
     let cats = [];
     try { cats = await SB.listActiveCats(); } catch (e) {}
+    // 普通管理员：只显示被授权（共享一套）的类目；超管/访客显示全部
+    if (currentRole === "admin") {
+      try {
+        const mine = await SB.myZonePermissions();
+        const set = new Set(mine.map(s => (s || "").trim()));
+        cats = cats.filter(c => set.has((c || "").trim()));
+      } catch (e) {}
+    }
     const sel = $("#cat-select");
     sel.innerHTML = "";
     sel.add(new Option("── 请选择类目 ──", ""));
@@ -2483,8 +2491,17 @@
   }
   async function loadTrendCatOptions() {
     try {
-      const cats = await SB.listActiveCats().catch(() => []);
-      trendCatOptions = (cats || []).map(c => (typeof c === "string" ? c : (c && c.name) || ""));
+      let cats = await SB.listActiveCats().catch(() => []);
+      cats = (cats || []).map(c => (typeof c === "string" ? c : (c && c.name) || "")).filter(Boolean);
+      // 普通管理员：只显示被授权（共享一套）的类目；超管/访客显示全部
+      if (currentRole === "admin") {
+        try {
+          const mine = await SB.myZonePermissions();
+          const set = new Set((mine || []).map(s => (s || "").trim()));
+          cats = cats.filter(c => set.has((c || "").trim()));
+        } catch (e) {}
+      }
+      trendCatOptions = cats;
       renderCatResults();
     } catch (e) {}
   }
@@ -3609,25 +3626,25 @@ let recruitTasks = [];
     const roleSel = $("#perm-role");
     if (roleSel) roleSel.value = user.role || "visitor";
     const uid = user.user_id;
-    const [rc, bc, rperm, bperm] = await Promise.all([
+    // 类目池子 = 标签管理的全量类目（跨专区同一套），授权只勾一次、四专区共用
+    const [allCats, perm] = await Promise.all([
       SB.listZoneCats("recruit").catch(() => []),
-      SB.listZoneCats("bestseller").catch(() => []),
-      SB.listUserPermissions(uid, "recruit").catch(() => []),
-      SB.listUserPermissions(uid, "bestseller").catch(() => []),
+      SB.listUserPermissions(uid).catch(() => []),
     ]);
-    renderPermCats("recruit", rc, rperm);
-    renderPermCats("bestseller", bc, bperm);
+    renderPermCats(allCats, perm);
   }
-  function renderPermCats(zone, cats, checked) {
-    const box = zone === "bestseller" ? $("#perm-bestseller-cats") : $("#perm-recruit-cats");
+  function renderPermCats(cats, checked) {
+    const box = $("#perm-cats");
     if (!box) return;
     box.innerHTML = "";
-    if (!cats.length) { box.innerHTML = '<span class="hint">该专区暂无类目，请先到发布面板「类目设置」新增。</span>'; return; }
+    if (!cats.length) { box.innerHTML = '<span class="hint">暂无类目，请先到「标签管理/类目设置」新增。</span>'; return; }
+    const norm = s => (s || "").trim();
+    const chk = new Set((checked || []).map(norm));
     cats.forEach(c => {
       const lab = document.createElement("label");
       lab.className = "perm-cat-item";
       const cb = document.createElement("input");
-      cb.type = "checkbox"; cb.value = c.name; cb.checked = checked.some(x => (x || "").trim() === (c.name || "").trim());
+      cb.type = "checkbox"; cb.value = c.name; cb.checked = chk.has(norm(c.name));
       lab.appendChild(cb); lab.appendChild(document.createTextNode(c.name));
       box.appendChild(lab);
     });
@@ -3645,12 +3662,11 @@ let recruitTasks = [];
       const uid = $("#perm-user")?.value;
       if (!uid) return sbToast("请先选择用户", false);
       const role = $("#perm-role")?.value || "visitor";
-      const rcats = [...document.querySelectorAll("#perm-recruit-cats input:checked")].map(i => i.value);
-      const bcats = [...document.querySelectorAll("#perm-bestseller-cats input:checked")].map(i => i.value);
+      const cats = [...document.querySelectorAll("#perm-cats input:checked")].map(i => i.value);
       try {
         await SB.setUserRole(uid, role);
-        await SB.setUserPermissions(uid, "recruit", rcats);
-        await SB.setUserPermissions(uid, "bestseller", bcats);
+        // 一套共享类目授权，四专区共用
+        await SB.setUserPermissions(uid, "", cats);
         sbToast("角色与权限已保存");
         await loadPermPanel();
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
@@ -3734,6 +3750,102 @@ let bestsellerTasks = [];
     };
     reader.readAsArrayBuffer(file);
   }
+// BESTSELLER：直接用主图URL批量导入（表格列：竞品Goods ID / 竞品SKUID / 站点 / 最新上榜时间 / 竞品链接 / 主图URL）
+  async function handleBestsellerUrlImport(files) {
+    if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
+    if (!files || !files.length) return;
+    const file = files[0];
+    const mr = document.querySelector("#bestseller-urlimport-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        if (!rows.length) return sbToast("表格没有数据行", false);
+        // 列名容错映射
+        let goodsKey = null, skuKey = null, siteKey = null, rankKey = null, linkKey = null, imgKey = null;
+        if (rows.length) {
+          const keys = Object.keys(rows[0]);
+          for (const k of keys) {
+            const lk = String(k).toLowerCase().replace(/\s+/g, "");
+            if (!goodsKey && (lk.includes("goods") || lk.includes("竞品goodsid") || lk.includes("商品id"))) goodsKey = k;
+            if (!skuKey && (lk.includes("sku") || lk.includes("竞品skuid"))) skuKey = k;
+            if (!siteKey && (lk.includes("站点") || lk.includes("site"))) siteKey = k;
+            if (!rankKey && (lk.includes("上榜") || lk.includes("rank") || lk.includes("上榜时间") || lk.includes("时间"))) rankKey = k;
+            if (!linkKey && (lk.includes("竞品链接") || lk.includes("链接") || lk.includes("url"))) linkKey = k;
+            if (!imgKey && (lk.includes("主图") || lk.includes("图片") || lk.includes("img") || lk.includes("imageurl"))) imgKey = k;
+          }
+        }
+        if (!imgKey) return sbToast("未找到「主图URL」列，请检查表头", false);
+        const imgs = [];  // 暂存待导入卡片，主图URL为必要字段
+        rows.forEach(r => {
+          const main_img_url = String(r[imgKey] || "").trim();
+          if (!main_img_url) return;
+          imgs.push({
+            main_img_url,
+            goods_id: goodsKey ? String(r[goodsKey] || "").trim() : "",
+            sku_id: skuKey ? String(r[skuKey] || "").trim() : "",
+            site: siteKey ? String(r[siteKey] || "").trim() : "",
+            rank_time: rankKey ? String(r[rankKey] || "").trim() : "",
+            url: linkKey ? String(r[linkKey] || "").trim() : "",
+            task_id: "",
+            image_path: "",
+          });
+        });
+        if (!imgs.length) return sbToast("表格中没有有效的「主图URL」数据行", false);
+        const cat = document.querySelector("#bestseller-category")?.value || "";
+        imgs.forEach(x => x.category = cat);
+        if (mr) { mr.textContent = "解析成功 " + imgs.length + " 行，准备导入"; mr.className = "url-match-result ok"; }
+        sbToast("已解析 " + imgs.length + " 条竞品信息", true);
+        buildBestsellerUrlImport(imgs, mr);
+      } catch (e) {
+        if (mr) { mr.textContent = "表格解析失败，请检查文件格式"; mr.className = "url-match-result"; }
+        sbToast("表格解析失败，请检查文件格式", false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  // 将解析出的主图URL卡片以预览形式展示，确认后一键写入
+  let bsUrlImportPending = [];
+  function buildBestsellerUrlImport(imgs, mr) {
+    bsUrlImportPending = imgs;
+    const pre = document.querySelector("#bestseller-urlimport-preview");
+    if (pre) {
+      pre.classList.remove("hidden");
+      pre.innerHTML = "";
+      imgs.forEach((x) => {
+        const cell = document.createElement("div");
+        cell.className = "bestseller-pre-cell";
+        const im = document.createElement("img");
+        im.src = x.main_img_url;
+        const lbl = document.createElement("div");
+        lbl.className = "bestseller-pre-url";
+        lbl.innerHTML = `<span>${x.goods_id || ""}${x.sku_id ? " · " + x.sku_id : ""}</span>${x.url ? '<span class="purl">🔗 已绑定链接</span>' : ""}`;
+        cell.appendChild(im); cell.appendChild(lbl);
+        pre.appendChild(cell);
+      });
+      const row = document.createElement("div");
+      row.className = "bestseller-pre-commit";
+      row.innerHTML = '<button id="bestseller-urlimport-commit" class="btn-primary" type="button">导入这 ' + imgs.length + ' 条竞品卡片</button>';
+      pre.appendChild(row);
+      row.querySelector("#bestseller-urlimport-commit").onclick = () => commitBestsellerUrlImport();
+    }
+    if (mr) mr.textContent = "下方为预览（共 " + imgs.length + " 行），点「导入」写入任务卡片";
+  }
+  async function commitBestsellerUrlImport() {
+    if (!bsUrlImportPending.length) return sbToast("没有待导入数据", false);
+    const cat = document.querySelector("#bestseller-category")?.value || "";
+    const rows = bsUrlImportPending.map(x => ({ ...x, category: cat || x.category, status: "published", title: "" }));
+    try {
+      await SB.addBestsellerTasks(rows);
+      bsUrlImportPending = [];
+      const pre = document.querySelector("#bestseller-urlimport-preview");
+      if (pre) { pre.classList.add("hidden"); pre.innerHTML = ""; }
+      sbToast("已导入 " + rows.length + " 条竞品任务卡片", true);
+      loadBestsellerList();
+    } catch (e) { sbToast("导入失败：" + (e.message || ""), false); }
+  }
 
   function bindBestseller() {
     const upBtn = document.querySelector("#bestseller-save");
@@ -3771,6 +3883,15 @@ let bestsellerTasks = [];
       bUrlBtn.addEventListener("click", () => bUrlInput.click());
       bUrlInput.addEventListener("change", () => {
         if (bUrlInput.files && bUrlInput.files.length) { handleBestsellerUrlMatch([...bUrlInput.files]); bUrlInput.value = ""; }
+      });
+    }
+    // 直接用主图URL导入：点击打开文件选择，选中后解析为卡片
+    const iBtn = document.querySelector("#bestseller-urlimport-btn");
+    const iInput = document.querySelector("#bestseller-urlimport-input");
+    if (iBtn && iInput) {
+      iBtn.addEventListener("click", () => iInput.click());
+      iInput.addEventListener("change", () => {
+        if (iInput.files && iInput.files.length) { handleBestsellerUrlImport([...iInput.files]); iInput.value = ""; }
       });
     }
     // 筛选
@@ -3909,7 +4030,11 @@ let bestsellerTasks = [];
           '</div>' +
         '</div>';
       const img = card.querySelector(".bestseller-acard-img");
-      if (t.image_path) {
+      if (t.main_img_url) {
+        img.onload = () => img.classList.add("loaded");
+        img.onerror = () => { img.classList.remove("loaded"); img.src = ""; };
+        img.src = t.main_img_url;
+      } else if (t.image_path) {
         SB.bestsellerImageUrl(t.image_path).then(u => {
           img.onload = () => img.classList.add("loaded");
           img.onerror = () => { img.classList.remove("loaded"); img.src = ""; };
@@ -4064,7 +4189,11 @@ let bestsellerTasks = [];
           '</div>' +
         '</div>';
       const img = card.querySelector(".bestseller-acard-img");
-      if (t.image_path) {
+      if (t.main_img_url) {
+        img.onload = () => img.classList.add("loaded");
+        img.onerror = () => { img.classList.remove("loaded"); img.src = ""; };
+        img.src = t.main_img_url;
+      } else if (t.image_path) {
         SB.bestsellerImageUrl(t.image_path).then(u => {
           img.onload = () => img.classList.add("loaded");
           img.onerror = () => { img.classList.remove("loaded"); img.src = ""; };
