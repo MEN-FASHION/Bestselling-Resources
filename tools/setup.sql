@@ -771,6 +771,17 @@ create policy "super delete zone_permissions"
   on public.zone_permissions for delete to authenticated
   using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
 
+-- ---------- 安全函数：判定当前登录用户是否为超级管理员（用 security definer，避免 RLS 自引用递归） ----------
+create or replace function public.is_super_admin()
+returns boolean
+language sql security definer stable
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.user_id = auth.uid() and p.role = 'super_admin'
+  );
+$$;
+
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));
@@ -779,13 +790,13 @@ alter table public.profiles add constraint profiles_role_check check (role in ('
 drop policy if exists "super read all profiles" on public.profiles;
 create policy "super read all profiles"
   on public.profiles for select to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+  using (public.is_super_admin());
 
 drop policy if exists "super update profiles role" on public.profiles;
 create policy "super update profiles role"
   on public.profiles for update to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
 
 -- ---------- 初始化专区类目：把前台类目(categories)复制进招品/BESTSELLER两张独立表（幂等去重） ----------
 insert into public.recruit_categories (name, sort_order)
