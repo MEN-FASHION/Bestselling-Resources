@@ -729,6 +729,18 @@
       mask.innerHTML = inner || `<div class="hcap-empty">暂无标签</div>`;
       holder.appendChild(mask);
       cell.appendChild(holder);
+      // 图片外链角标：有外链时在卡片右上角显示「开」标识，点击直接打开该外链（不触发灯箱）
+      if (img && img.url && String(img.url).trim()) {
+        const lbadge = document.createElement("a");
+        lbadge.className = "cell-link-badge";
+        lbadge.href = String(img.url).trim();
+        lbadge.target = "_blank";
+        lbadge.rel = "noopener noreferrer";
+        lbadge.title = "打开外链：" + String(img.url).trim();
+        lbadge.textContent = "开";
+        lbadge.addEventListener("click", (e) => e.stopPropagation());
+        cell.appendChild(lbadge);
+      }
       cell.onclick = () => openLightbox(idx);
       holder.style.background = "var(--shade)";
       grid.appendChild(cell);

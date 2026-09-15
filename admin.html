@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915W">
+<link rel="stylesheet" href="css/style.css?v=20260915Y">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -66,6 +66,8 @@
           <a class="nav-item" data-target="trend-card">趋势专区</a>
           <a class="nav-item" data-target="notice-card">公告管理</a>
           <a class="nav-item" data-target="recruit-card">招品回品</a>
+          <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
+          <a class="nav-item" data-target="perm-card" data-super="1">权限管理</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -374,6 +376,12 @@
           </div>
           <div class="rg-row"><label class="field">任务ID（选填；留空则每张图创建「未发布」草稿卡片，之后再单独/批量填写）</label>
             <input id="recruit-taskid" class="input" placeholder="例如：RC2026001，多个可用英文逗号分隔，按顺序对应图片"></div>
+          <div class="rg-row"><label class="field">所属类目（可选，用于前台左栏筛选）</label>
+            <div class="cat-pick-wrap">
+              <input id="recruit-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
+              <select id="recruit-category" class="input cat-pick-select"></select>
+              <button id="recruit-cat-mgr" class="btn-ghost small" type="button">类目设置</button>
+            </div></div>
           <div class="rg-btnrow">
             <button id="recruit-save" class="btn-primary" type="button">上传生成任务卡片</button>
             <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
@@ -418,6 +426,94 @@
             </div>
           </div>
           <div id="recruit-trash-list" class="recruit-grid-admin recruit-list"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="bestseller-card">
+        <h2>⑨ BESTSELLER <span class="hint-inline">（BESTSELLER 专区独立任务，商家前台按序号递交货品SPU）</span><span class="head-right"><button id="bestseller-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+
+        <div id="bestseller-main-area">
+        <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
+        <div class="bestseller-upload">
+          <div class="rg-row"><label class="field">批量上传BESTSELLER图片（可多选，每张图片生成一个独立任务卡片）</label>
+            <div id="bestseller-img-dropzone" class="dropzone">
+              <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽多张BESTSELLER图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG，可多选批量上传</p></div>
+              <input type="file" id="bestseller-img-input" accept="image/*" multiple hidden>
+            </div>
+            <div id="bestseller-upload-preview" class="bestseller-upload-pre bestseller-pre hidden"></div>
+          </div>
+          <div class="rg-row"><label class="field">任务ID（选填；留空则每张图创建「未发布」草稿卡片，之后再单独/批量填写）</label>
+            <input id="bestseller-taskid" class="input" placeholder="例如：RC2026001，多个可用英文逗号分隔，按顺序对应图片"></div>
+          <div class="rg-row"><label class="field">所属类目（可选，用于前台左栏筛选）</label>
+            <div class="cat-pick-wrap">
+              <input id="bestseller-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
+              <select id="bestseller-category" class="input cat-pick-select"></select>
+              <button id="bestseller-cat-mgr" class="btn-ghost small" type="button">类目设置</button>
+            </div></div>
+          <div class="rg-btnrow">
+            <button id="bestseller-save" class="btn-primary" type="button">上传生成任务卡片</button>
+            <button id="bestseller-refresh" class="btn-ghost" type="button">刷新列表</button>
+          </div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <!-- 筛选 + 批量操作工具条 -->
+        <div class="bestseller-toolbar">
+          <div class="bestseller-filters" id="bestseller-filters">
+            <button class="bestseller-filter active" data-st="">全部</button>
+            <button class="bestseller-filter" data-st="published">已发布</button>
+            <button class="bestseller-filter" data-st="submitted">已上传</button>
+            <button class="bestseller-filter" data-st="bound">已绑定</button>
+          </div>
+          <div class="bestseller-batchops">
+            <label class="bestseller-count-label"><input type="checkbox" id="bestseller-checkall"> 全选</label>
+            <span id="bestseller-count" class="hint-inline">加载中…</span>
+            <button id="bestseller-batch-pub" class="btn-ghost small" type="button">批量发布</button>
+            <button id="bestseller-batch-bound" class="btn-ghost small" type="button">批量标记已绑定</button>
+            <button id="bestseller-batch-unbound" class="btn-ghost small" type="button">取消已绑定</button>
+            <button id="bestseller-batch-del" class="btn-ghost small" type="button">批量删除</button>
+            <button id="bestseller-export" class="btn-ghost small" type="button">导出 Excel</button>
+          </div>
+        </div>
+        <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
+        <div id="bestseller-list" class="bestseller-grid-admin bestseller-list"></div>
+        </div><!-- /bestseller-main-area -->
+
+        <!-- 回收站视图 -->
+        <div id="bestseller-trash-view" class="hidden">
+          <div class="bestseller-toolbar">
+            <div class="bestseller-filters">
+              <button id="bestseller-trash-back" class="btn-ghost small" type="button">← 返回BESTSELLER列表</button>
+              <span class="hint-inline">回收站：已删除的任务可恢复或永久删除</span>
+            </div>
+            <div class="bestseller-batchops">
+              <label class="bestseller-count-label"><input type="checkbox" id="bestseller-trash-checkall"> 全选</label>
+              <span id="bestseller-trash-count" class="hint-inline">加载中…</span>
+              <button id="bestseller-trash-restore" class="btn-ghost small" type="button">批量恢复</button>
+              <button id="bestseller-trash-purge" class="btn-danger small" type="button">永久删除</button>
+            </div>
+          </div>
+          <div id="bestseller-trash-list" class="bestseller-grid-admin bestseller-list"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="perm-card">
+        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 为各管理员分配招品回品 / BESTSELLER 专区类目权限）</span></h2>
+        <p class="hint">选择下方管理员，勾选其可管理的类目并保存。未授权的类目对ta在后台不可见、也无法发布任务。权限仅约束后台发布，不影响前台浏览。</p>
+        <div class="rg-row"><label class="field">选择管理员</label>
+          <select id="perm-user" class="input"></select>
+          <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
+        </div>
+        <div class="perm-zone">
+          <h4 class="perm-zone-title">招品回品专区类目</h4>
+          <div id="perm-recruit-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="perm-zone">
+          <h4 class="perm-zone-title">BESTSELLER 专区类目</h4>
+          <div id="perm-bestseller-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="rg-btnrow">
+          <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
         </div>
       </div>
 
@@ -578,11 +674,32 @@
     </div>
   </div>
 
+  <div id="zone-cat-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span id="zone-cat-title" class="modal-title">类目设置</span>
+        <button type="button" id="zone-cat-close" class="modal-close">×</button>
+      </div>
+      <div class="zone-cat-body">
+        <div class="rg-row"><label class="field">新增类目</label>
+          <div class="cat-pick-wrap">
+            <input id="zone-cat-new" class="input" placeholder="输入新类目名，如 T恤">
+            <button id="zone-cat-add" class="btn-primary small" type="button">新增</button>
+          </div>
+        </div>
+        <div class="rg-row"><label class="field">搜索类目</label>
+          <input id="zone-cat-filter" class="input" placeholder="输入关键词过滤当前列表…">
+        </div>
+        <div id="zone-cat-list" class="zone-cat-list"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260915W"></script>
-  <script src="js/supabase.js?v=20260915W"></script>
-  <script src="js/admin.js?v=20260915W"></script>
+  <script src="js/config.js?v=20260915Y"></script>
+  <script src="js/supabase.js?v=20260915Y"></script>
+  <script src="js/admin.js?v=20260915Y"></script>
 </body>
 </html>

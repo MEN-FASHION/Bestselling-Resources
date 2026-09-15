@@ -13,6 +13,13 @@
   let recruitTasks = [];   // 招品任务清单
   let recruitSubs = [];    // 全部提交（前台悬浮显示用）
   let recruitCurUid = "";  // 当前登录商家 ID（前台只看自己的提交）
+  let recruitCats = [];    // 招品专区类目（独立于趋势类目）
+  let recruitCat = "全部"; // 招品当前选中类目
+  let bestsellerTasks = [];   // BESTSELLER 任务清单
+  let bestsellerSubs = [];    // 全部提交
+  let bestsellerCurUid = "";  // 当前登录商家 ID
+  let bestsellerCats = [];    // BESTSELLER 专区类目
+  let bestsellerCat = "全部"; // BESTSELLER 当前选中类目
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -72,6 +79,7 @@
     // ===== 公告弹窗事件 =====
     document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => {
       if (a.dataset.viewtab === "recruit") a.addEventListener("click", goRecruit);
+      else if (a.dataset.viewtab === "bestseller") a.addEventListener("click", goBestseller);
       else if (a.dataset.viewtab === "trend") a.addEventListener("click", goTrend);
     });
     window.addEventListener("hashchange", () => showMain());
@@ -286,19 +294,28 @@
   function showMain() {
     $("#login-view").classList.add("hidden");
     $("#logout-btn").classList.remove("hidden");
-    const rec = location.hash === "#recruit";
-    $("#trend-view").classList.toggle("hidden", rec);
+    const hash = (location.hash || "").replace("#", "");
+    const rec = hash === "recruit";
+    const bs = hash === "bestseller";
+    $("#trend-view").classList.toggle("hidden", rec || bs);
     $("#recruit-view").classList.toggle("hidden", !rec);
+    $("#bestseller-view").classList.toggle("hidden", !bs);
     const brand = $("#front-brand");
-    if (brand) brand.textContent = (CONFIG.siteTitle || "TREND BANK") + (rec ? " · 招品回品" : " · 趋势专区");
-    document.title = (CONFIG.siteTitle || "TREND BANK") + (rec ? " · 招品回品" : " · 趋势专区");
-    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", (a.dataset.viewtab === "trend") !== rec));
-    if (rec) loadRecruitView(); else loadTrends();
+    const zoneName = bs ? " · BESTSELLER" : (rec ? " · 招品回品" : " · 趋势专区");
+    if (brand) brand.textContent = (CONFIG.siteTitle || "TREND BANK") + zoneName;
+    document.title = (CONFIG.siteTitle || "TREND BANK") + zoneName;
+    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", (a.dataset.viewtab === "trend") !== (rec || bs) || (a.dataset.viewtab === "recruit" && rec) || (a.dataset.viewtab === "bestseller" && bs)));
+    if (rec) loadRecruitView(); else if (bs) loadBestsellerView(); else loadTrends();
   }
   function showTrend() { showMain(); }
   function goRecruit(e) {
     if (e) { e.preventDefault(); }
     location.hash = "recruit";
+    showMain();
+  }
+  function goBestseller(e) {
+    if (e) { e.preventDefault(); }
+    location.hash = "bestseller";
     showMain();
   }
   function goTrend(e) {
@@ -418,12 +435,30 @@
     try {
       recruitCurUid = "";
       try { const sess = await SB.getSession(); recruitCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
-      recruitTasks = await SB.listRecruitTasks({ status: "published" });  // 前台只显示已发布
-      recruitSubs = await SB.listAllRecruitSubmissions().catch(() => []);
+      [recruitTasks, recruitSubs, recruitCats] = await Promise.all([
+        SB.listRecruitTasks({ status: "published" }),  // 前台只显示已发布
+        SB.listAllRecruitSubmissions().catch(() => []),
+        SB.listZoneCats("recruit").catch(() => []),
+      ]);
+      renderRecruitCatMenu();
       renderRecruitCards();
     } catch (e) {
       toast("加载招品失败", false);
     }
+  }
+  function renderRecruitCatMenu() {
+    const menu = $("#recruit-cat-menu");
+    if (!menu) return;
+    const used = [...new Set(recruitTasks.map(t => t.category || "").filter(Boolean))];
+    const cats = ["全部"].concat(recruitCats.map(c => c.name).filter(n => used.includes(n)));
+    menu.innerHTML = "";
+    cats.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "cat-menu-item" + (c === recruitCat ? " active" : "");
+      b.textContent = c;
+      b.onclick = () => { recruitCat = c; renderRecruitCatMenu(); renderRecruitCards(); };
+      menu.appendChild(b);
+    });
   }
   function recruitSubsFor(taskId) {
     return recruitSubs.filter(s => s.recruit_task_id === taskId);
@@ -432,11 +467,12 @@
     const box = $("#recruit-list");
     if (!box) return;
     box.innerHTML = "";
-    if (!recruitTasks.length) {
-      box.innerHTML = '<p class="empty-tip">暂无招品任务。</p>';
+    const list = recruitTasks.filter(t => recruitCat === "全部" || !recruitCat || t.category === recruitCat);
+    if (!list.length) {
+      box.innerHTML = '<p class="empty-tip">该分类暂无招品任务。</p>';
       return;
     }
-    recruitTasks.forEach((t, idx) => {
+    list.forEach((t, idx) => {
       const mySub = recruitSubsFor(t.id).find(s => s.user_id === recruitCurUid);
       const mySpus = (mySub && mySub.spus) ? mySub.spus.filter(Boolean) : [];
       const seq = idx + 1;
@@ -504,6 +540,100 @@
     } catch (e) {
       toast("保存失败：" + (e.message || ""), false);
     }
+  }
+
+  async function loadBestsellerView() {
+    try {
+      bestsellerCurUid = "";
+      try { const sess = await SB.getSession(); bestsellerCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
+      [bestsellerTasks, bestsellerSubs, bestsellerCats] = await Promise.all([
+        SB.listBestsellerTasks({ status: "published" }),
+        SB.listAllBestsellerSubmissions().catch(() => []),
+        SB.listZoneCats("bestseller").catch(() => []),
+      ]);
+      renderBestsellerCatMenu();
+      renderBestsellerCards();
+    } catch (e) { toast("加载BESTSELLER失败", false); }
+  }
+  function renderBestsellerCatMenu() {
+    const menu = $("#bestseller-cat-menu");
+    if (!menu) return;
+    const used = [...new Set(bestsellerTasks.map(t => t.category || "").filter(Boolean))];
+    const cats = ["全部"].concat(bestsellerCats.map(c => c.name).filter(n => used.includes(n)));
+    menu.innerHTML = "";
+    cats.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "cat-menu-item" + (c === bestsellerCat ? " active" : "");
+      b.textContent = c;
+      b.onclick = () => { bestsellerCat = c; renderBestsellerCatMenu(); renderBestsellerCards(); };
+      menu.appendChild(b);
+    });
+  }
+  function bestsellerSubsFor(taskId) {
+    return bestsellerSubs.filter(s => s.bestseller_task_id === taskId);
+  }
+  function renderBestsellerCards() {
+    const box = $("#bestseller-list");
+    if (!box) return;
+    box.innerHTML = "";
+    const list = bestsellerTasks.filter(t => bestsellerCat === "全部" || !bestsellerCat || t.category === bestsellerCat);
+    if (!list.length) { box.innerHTML = '<p class="empty-tip">该分类暂无BESTSELLER任务。</p>'; return; }
+    list.forEach((t, idx) => {
+      const mySub = bestsellerSubsFor(t.id).find(s => s.user_id === bestsellerCurUid);
+      const mySpus = (mySub && mySub.spus) ? mySub.spus.filter(Boolean) : [];
+      const seq = idx + 1;
+      const card = document.createElement("div");
+      card.className = "recruit-card";
+      card.innerHTML =
+        '<div class="recruit-img">' +
+          '<img class="recruit-thumb" alt="">' +
+          '<span class="recruit-ph">图片加载中</span>' +
+          '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
+        '</div>' +
+        '<div class="recruit-body">' +
+          '<div class="recruit-spu-sub"></div>' +
+          '<div class="recruit-form hidden">' +
+            '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
+            '<button type="button" class="btn-primary rec-save">保存</button>' +
+          '</div>' +
+          '<div class="recruit-ops">' +
+            '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
+            '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
+          '</div>' +
+        '</div>';
+      const img = card.querySelector(".recruit-img");
+      const im = card.querySelector(".recruit-thumb");
+      const ph = card.querySelector(".recruit-ph");
+      card.querySelector(".recruit-no").textContent = seq;
+      if (t.image_path) {
+        SB.bestsellerImageUrl(t.image_path).then(u => {
+          im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
+          im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
+          im.src = u;
+        }).catch(() => { ph.textContent = "图片暂不可见"; });
+      } else { ph.textContent = "暂无图片"; }
+      const subEl = card.querySelector(".recruit-spu-sub");
+      if (mySpus.length) { subEl.textContent = "我已上传 " + mySpus.length + " 个SPU"; } else { subEl.textContent = "尚未上传货品SPU"; }
+      const tip = mySpus.length ? ("我上传的货品SPU：\n" + mySpus.join("\n")) : "尚未上传货品SPU";
+      img.title = tip;
+      const form = card.querySelector(".recruit-form");
+      const ops = card.querySelector(".recruit-ops");
+      const inp = card.querySelector(".recruit-spu-input");
+      const openForm = (prefill) => { inp.value = mySpus.length && prefill ? mySpus.join(",") : ""; ops.classList.add("hidden"); form.classList.remove("hidden"); inp.focus(); };
+      card.querySelector(".rec-upload").addEventListener("click", () => openForm(false));
+      card.querySelector(".rec-edit").addEventListener("click", () => openForm(true));
+      card.querySelector(".rec-save").addEventListener("click", () => saveMyBsSpu(t, card));
+      box.appendChild(card);
+    });
+  }
+  async function saveMyBsSpu(t, card) {
+    const inp = card.querySelector(".recruit-spu-input");
+    const raw = inp ? inp.value.trim() : "";
+    if (!raw) return toast("请填写货品SPU", false);
+    const spus = raw.split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
+    if (!spus.length) return toast("请填写货品SPU", false);
+    try { await SB.upsertBestsellerSubmission(t.id, spus); toast("已保存 " + spus.length + " 个SPU"); loadBestsellerView(); }
+    catch (e) { toast("保存失败：" + (e.message || ""), false); }
   }
 
   function escapeHtml(s) {

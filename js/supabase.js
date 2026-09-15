@@ -647,7 +647,8 @@ const SB = (() => {
       const rows = list.map(x => ({
         title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
-        tags: (x && x.tags) || [], uploaded_by: s?.data?.session?.user?.id || null,
+        tags: (x && x.tags) || [], category: (x && x.category) || "",
+        uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("recruit_tasks").insert(rows);
       if (error) throw new Error(error.message || "批量保存招品任务失败");
@@ -716,6 +717,233 @@ const SB = (() => {
       );
       if (error) throw new Error(error.message || "保存SPU失败");
       return arr;
+    },
+    // ============ BESTSELLER 专区（BESTSELLER 图片存 R2 受控代理 + 任务表 + 提交表） ============
+    // 后台：上传BESTSELLER 图片（经 Worker 存 R2，返回 bestsellers/ 相对路径）
+    async uploadBestsellerImage(file) {
+      const token = await currentToken();
+      const f = await compressImage(file);
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/bestseller/upload", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "图片上传失败");
+      return j.path;
+    },
+    // 前台/后台：BESTSELLER 图片受控 URL（需登录、经 Worker 鉴权、防下载）
+    async bestsellerImageUrl(path) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/bestseller/img?path=" + encodeURIComponent(path);
+      return base + "/bestseller/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
+    },
+    // 后台：删除BESTSELLER 图片（经 Worker 从 R2 删除）
+    async deleteBestsellerImage(path) {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/bestseller/delete?path=" + encodeURIComponent(path), {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "删除失败");
+    },
+    
+    
+    
+    
+    // 读取BESTSELLER 任务清单（登录可见；默认排除已删除软删除项）
+    async listBestsellerTasks(filter) {
+      // 优先走带软删除/状态过滤的新表查询；旧表缺列时 PostgREST 会返回 400，这里降级为无损查询
+      try {
+        let q = client.from("bestseller_tasks").select("*");
+        q = q.is("deleted_at", null);
+        if (filter && filter.status) q = q.eq("status", filter.status);
+        q = q.order("created_at", { ascending: true });
+        const { data, error } = await q;
+        if (!error) return data || [];
+      } catch (e) {}
+      // 降级：线上表缺少 status / deleted_at 列时的安全读取
+      const q2 = client.from("bestseller_tasks").select("*").order("created_at", { ascending: true });
+      const res = await q2;
+      if (res.error) throw new Error(res.error.message || "读取BESTSELLER 任务失败");
+      let rows = res.data || [];
+      if (filter && filter.status) rows = rows.filter(r => (r.status == null ? "published" : r.status) === filter.status);
+      rows = rows.filter(r => !r.deleted_at);
+      return rows;
+    },
+    // 后台：读取回收站（已软删除的任务）
+    async listBestsellerTrash() {
+      try {
+        const { data, error } = await client.from("bestseller_tasks").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+        if (!error) return data || [];
+      } catch (e) {}
+      // 旧表无 deleted_at 列 → 无回收站概念
+      return [];
+    },
+    // 后台：新增BESTSELLER 任务（序号由系统按创建顺序自动生成，无需传入）
+    async addBestsellerTask({ title, task_id, image_path, status, tags }) {
+      const s = await client.auth.getSession();
+      const { error } = await client.from("bestseller_tasks").insert({
+        title: title || "", task_id: String(task_id || "").trim(),
+        image_path: image_path || "", status: status || "draft",
+        tags: tags || [], uploaded_by: s?.data?.session?.user?.id || null,
+      });
+      if (error) throw new Error(error.message || "保存BESTSELLER 任务失败");
+    },
+    // 后台：批量新增BESTSELLER 任务（上传多张图后一次生成多条卡片）
+    async addBestsellerTasks(list) {
+      if (!list || !list.length) return;
+      const s = await client.auth.getSession();
+      const rows = list.map(x => ({
+        title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
+        image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
+        tags: (x && x.tags) || [], category: (x && x.category) || "",
+        uploaded_by: s?.data?.session?.user?.id || null,
+      }));
+      const { error } = await client.from("bestseller_tasks").insert(rows);
+      if (error) throw new Error(error.message || "批量保存BESTSELLER 任务失败");
+    },
+    // 后台：更新BESTSELLER 任务
+    async updateBestsellerTask(id, patch) {
+      const { error } = await client.from("bestseller_tasks").update(Object.assign({}, patch)).eq("id", id);
+      if (error) throw new Error(error.message || "更新BESTSELLER 任务失败");
+    },
+    // 后台：批量更新（用于批量发布/批量绑定）
+    async bulkUpdateBestsellerTasks(ids, patch) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("bestseller_tasks").update(Object.assign({}, patch)).in("id", ids);
+      if (error) throw new Error(error.message || "批量更新BESTSELLER 任务失败");
+    },
+    // 后台：软删除BESTSELLER 任务 → 移入回收站（不删图片与提交记录）
+    async removeBestsellerTask(id) {
+      const { error } = await client.from("bestseller_tasks").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw new Error(error.message || "移入回收站失败");
+    },
+    // 后台：从回收站恢复BESTSELLER 任务
+    async restoreBestsellerTask(id) {
+      const { error } = await client.from("bestseller_tasks").update({ deleted_at: null }).eq("id", id);
+      if (error) throw new Error(error.message || "恢复BESTSELLER 任务失败");
+    },
+    // 后台：批量从回收站恢复
+    async bulkRestoreBestsellerTasks(ids) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("bestseller_tasks").update({ deleted_at: null }).in("id", ids);
+      if (error) throw new Error(error.message || "批量恢复失败");
+    },
+    // 后台：永久删除（硬删除，连带提交记录 cascade）
+    async purgeBestsellerTasks(ids) {
+      if (!ids || !ids.length) return;
+      const { error } = await client.from("bestseller_tasks").delete().in("id", ids);
+      if (error) throw new Error(error.message || "永久删除失败");
+    },
+    // 后台：读取全部提交（含 user_id，供看所有用户SPU/导出）
+    
+    // 前台：当前用户对某任务的提交记录
+    // 前台/后台：读取全部商家提交记录（用于悬浮显示与看板统计）
+    async listAllBestsellerSubmissions() {
+      try {
+        const { data, error } = await client.from("bestseller_submissions").select("*").order("created_at", { ascending: false });
+        if (!error) return data || [];
+      } catch (e) {}
+      return [];
+    },
+    async myBestsellerSubmission(taskId) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return null;
+      const { data, error } = await client.from("bestseller_submissions").select("*").eq("bestseller_task_id", taskId).eq("user_id", uid).maybeSingle();
+      if (error) return null;
+      return data || null;
+    },
+    // 前台：当前用户保存某任务的货品SPU（upsert，一个任务一条）
+    async upsertBestsellerSubmission(taskId, spus) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) throw new Error("未登录");
+      const arr = [...new Set((spus || []).map(x => String(x).trim()).filter(Boolean))];
+      const { error } = await client.from("bestseller_submissions").upsert(
+        { bestseller_task_id: taskId, user_id: uid, spus: arr, updated_at: new Date().toISOString() },
+        { onConflict: "bestseller_task_id,user_id" }
+      );
+      if (error) throw new Error(error.message || "保存SPU失败");
+      return arr;
+    },
+
+    // ============ 专区类目（招品/BESTSELLER，各自独立，可增删改） ============
+    // 读取某专区的全部类目（前台左栏 + 后台发布下拉共用）
+    async listZoneCats(zone) {
+      const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
+      const { data, error } = await client.from(tbl).select("id, name, sort_order").order("sort_order").order("name");
+      if (error) throw new Error(error.message || "读取类目失败");
+      return data || [];
+    },
+    async addZoneCat(zone, name) {
+      const n = (name || "").trim();
+      if (!n) throw new Error("类目名不能为空");
+      const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
+      const { error } = await client.from(tbl).insert({ name: n });
+      if (error) throw new Error((error.code === "23505") ? "该类目已存在" : (error.message || "新增失败"));
+    },
+    async renameZoneCat(zone, id, name, oldName) {
+      const n = (name || "").trim();
+      if (!n) throw new Error("类目名不能为空");
+      const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
+      const { error } = await client.from(tbl).update({ name: n }).eq("id", id);
+      if (error) throw new Error(error.message || "改名失败");
+      // 同步更新任务表里已用该类目（旧名→新名）
+      const taskTbl = zone === "bestseller" ? "bestseller_tasks" : "recruit_tasks";
+      if (oldName && oldName !== n) {
+        const { error: e2 } = await client.from(taskTbl).update({ category: n }).eq("category", oldName);
+        if (e2) throw new Error(e2.message || "改名失败");
+      }
+    },
+    async removeZoneCat(zone, id, oldName) {
+      const tbl = zone === "bestseller" ? "bestseller_categories" : "recruit_categories";
+      const { error } = await client.from(tbl).delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+      // 同步清空任务表里用了该类目的任务的类目
+      const taskTbl = zone === "bestseller" ? "bestseller_tasks" : "recruit_tasks";
+      if (oldName) {
+        const { error: e2 } = await client.from(taskTbl).update({ category: "" }).eq("category", oldName);
+        if (e2) throw new Error(e2.message || "删除失败");
+      }
+    },
+
+    // ============ 超管权限分配（zone_permissions） ============
+    // 读取某管理员在某专区被授权的类目名列表
+    async listUserPermissions(userId, zone) {
+      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", userId).eq("zone", zone);
+      if (error) throw new Error(error.message || "读取权限失败");
+      return (data || []).map(d => d.category);
+    },
+    // 读取当前登录用户在指定专区的授权类目（后台发布下拉过滤用）
+    async myZonePermissions(zone) {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return [];
+      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", uid).eq("zone", zone);
+      if (error) return [];
+      return (data || []).map(d => d.category);
+    },
+    // 超管：读取所有注册管理员/超管清单（权限管理页）
+    async listAdminUsers() {
+      const { data, error } = await client.from("profiles").select("user_id, email, role").in("role", ["admin", "super_admin"]);
+      if (error) throw new Error(error.message || "读取用户失败");
+      return data || [];
+    },
+    // 超管：为某管理员写入某专区类目授权（整体覆盖）
+    async setUserPermissions(userId, zone, cats) {
+      // 先删该用户该专区旧的，再插入新的（整体覆盖）
+      const { error: de } = await client.from("zone_permissions").delete().eq("user_id", userId).eq("zone", zone);
+      if (de) throw new Error(de.message || "更新权限失败");
+      if (!cats || !cats.length) return;
+      const rows = (cats || []).map(c => ({ user_id: userId, zone, category: c }));
+      const { error } = await client.from("zone_permissions").insert(rows);
+      if (error) throw new Error(error.message || "更新权限失败");
     },
   };
 })();

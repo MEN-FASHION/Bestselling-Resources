@@ -8,7 +8,7 @@
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
   email text,
-  role text not null default 'visitor' check (role in ('visitor', 'admin', 'super_admin')),
+  role text not null default 'visitor' check (role in ('visitor', 'admin')),
   created_at timestamptz not null default now()
 );
 
@@ -79,7 +79,7 @@ create policy "admin insert images"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 仅管理员可更新图片（用于批量打渠道标签）
@@ -89,11 +89,11 @@ create policy "admin update images"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 仅管理员可删除图片
@@ -103,7 +103,7 @@ create policy "admin delete images"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- ---------- 3.5 前台类目表（categories：管理员显式添加，含展示顺序） ----------
@@ -136,7 +136,7 @@ create policy "admin write categories"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin update categories" on public.categories;
@@ -145,11 +145,11 @@ create policy "admin update categories"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin delete categories" on public.categories;
@@ -158,7 +158,7 @@ create policy "admin delete categories"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- ---------- 3.6 站点设置表（前台访问模式开关） ----------
@@ -199,11 +199,11 @@ create policy "admin update settings"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- ---------- 3.7 标签定义表（风格/元素标签，后台可自定义增删） ----------
@@ -251,7 +251,7 @@ create policy "admin write tag_defs"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin update tag_defs" on public.tag_defs;
@@ -260,11 +260,11 @@ create policy "admin update tag_defs"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin delete tag_defs" on public.tag_defs;
@@ -273,7 +273,7 @@ create policy "admin delete tag_defs"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 预设风格/元素标签（首次建库时写入，可重复执行；已有则不覆盖）
@@ -350,7 +350,7 @@ create policy "admin insert trends"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin update trends" on public.trends;
@@ -359,11 +359,11 @@ create policy "admin update trends"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 drop policy if exists "admin delete trends" on public.trends;
@@ -372,7 +372,7 @@ create policy "admin delete trends"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- ============================================================
@@ -409,7 +409,7 @@ create policy "admin read all announcements"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 仅管理员可新增公告
@@ -419,7 +419,7 @@ create policy "admin insert announcements"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 仅管理员可更新公告
@@ -429,11 +429,11 @@ create policy "admin update announcements"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- 仅管理员可删除公告
@@ -443,7 +443,7 @@ create policy "admin delete announcements"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'admin')
   );
 
 -- ---------- 公告已读记录 ----------
@@ -509,20 +509,20 @@ drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
 create policy "admin insert recruit_tasks"
   on public.recruit_tasks for insert
   to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 drop policy if exists "admin update recruit_tasks" on public.recruit_tasks;
 create policy "admin update recruit_tasks"
   on public.recruit_tasks for update
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 drop policy if exists "admin delete recruit_tasks" on public.recruit_tasks;
 create policy "admin delete recruit_tasks"
   on public.recruit_tasks for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.recruit_submissions (
@@ -548,7 +548,7 @@ drop policy if exists "admin read all recruit submissions" on public.recruit_sub
 create policy "admin read all recruit submissions"
   on public.recruit_submissions for select
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- 用户可提交/更新自己的记录
 drop policy if exists "upsert own recruit submissions" on public.recruit_submissions;
@@ -569,7 +569,7 @@ drop policy if exists "admin delete recruit submissions" on public.recruit_submi
 create policy "admin delete recruit submissions"
   on public.recruit_submissions for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- 所有登录商家可读取全部提交（前台悬浮任务ID/图片时显示已提交的货品SPU，避免重复提交）
 drop policy if exists "authenticated read all recruit submissions" on public.recruit_submissions;
@@ -612,20 +612,20 @@ drop policy if exists "admin insert bestseller_tasks" on public.bestseller_tasks
 create policy "admin insert bestseller_tasks"
   on public.bestseller_tasks for insert
   to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 drop policy if exists "admin update bestseller_tasks" on public.bestseller_tasks;
 create policy "admin update bestseller_tasks"
   on public.bestseller_tasks for update
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 drop policy if exists "admin delete bestseller_tasks" on public.bestseller_tasks;
 create policy "admin delete bestseller_tasks"
   on public.bestseller_tasks for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.bestseller_submissions (
@@ -651,7 +651,7 @@ drop policy if exists "admin read all bestseller submissions" on public.bestsell
 create policy "admin read all bestseller submissions"
   on public.bestseller_submissions for select
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- 用户可提交/更新自己的记录
 drop policy if exists "upsert own bestseller submissions" on public.bestseller_submissions;
@@ -672,7 +672,7 @@ drop policy if exists "admin delete bestseller submissions" on public.bestseller
 create policy "admin delete bestseller submissions"
   on public.bestseller_submissions for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'admin'));
 
 -- 所有登录商家可读取全部提交（前台悬浮任务ID/图片时显示已提交的货品SPU，避免重复提交）
 drop policy if exists "authenticated read all bestseller submissions" on public.bestseller_submissions;
@@ -681,96 +681,3 @@ create policy "authenticated read all bestseller submissions"
   to authenticated
   using (true);
 
--- ============================================================
--- 专区类目与超管权限体系（分类目 / 权限分配）
--- ============================================================
--- ---------- 给招品/BESTSELLER 任务表补 category 列（幂等） ----------
-alter table public.recruit_tasks add column if not exists category text default '';
-alter table public.bestseller_tasks add column if not exists category text default '';
-
--- ---------- 招品回品专区类目表（独立于视觉专区类目，可增删改） ----------
-create table if not exists public.recruit_categories (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  sort_order int not null default 1,
-  created_at timestamptz not null default now()
-);
-alter table public.recruit_categories enable row level security;
--- 登录用户可读（前台左栏需要）
-drop policy if exists "authenticated read recruit_categories" on public.recruit_categories;
-create policy "authenticated read recruit_categories"
-  on public.recruit_categories for select to authenticated using (true);
--- 管理员/超管可增删改
-drop policy if exists "admin insert recruit_categories" on public.recruit_categories;
-create policy "admin insert recruit_categories"
-  on public.recruit_categories for insert to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-drop policy if exists "admin update recruit_categories" on public.recruit_categories;
-create policy "admin update recruit_categories"
-  on public.recruit_categories for update to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-drop policy if exists "admin delete recruit_categories" on public.recruit_categories;
-create policy "admin delete recruit_categories"
-  on public.recruit_categories for delete to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-
--- ---------- BESTSELLER 专区类目表 ----------
-create table if not exists public.bestseller_categories (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  sort_order int not null default 1,
-  created_at timestamptz not null default now()
-);
-alter table public.bestseller_categories enable row level security;
-drop policy if exists "authenticated read bestseller_categories" on public.bestseller_categories;
-create policy "authenticated read bestseller_categories"
-  on public.bestseller_categories for select to authenticated using (true);
-drop policy if exists "admin insert bestseller_categories" on public.bestseller_categories;
-create policy "admin insert bestseller_categories"
-  on public.bestseller_categories for insert to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-drop policy if exists "admin update bestseller_categories" on public.bestseller_categories;
-create policy "admin update bestseller_categories"
-  on public.bestseller_categories for update to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-drop policy if exists "admin delete bestseller_categories" on public.bestseller_categories;
-create policy "admin delete bestseller_categories"
-  on public.bestseller_categories for delete to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
-
--- ---------- 专区类目权限分配表（超管分配：哪个管理员可管理哪个专区的哪些类目） ----------
--- 普通管理员只能发布/管理自己获授权的类目；超管不受此表限制
-create table if not exists public.zone_permissions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  zone text not null check (zone in ('recruit', 'bestseller')),
-  category text not null,
-  created_at timestamptz not null default now(),
-  unique (user_id, zone, category)
-);
-alter table public.zone_permissions enable row level security;
--- 登录用户可读自己的权限（前台/后台按权限过滤发布下拉）
-drop policy if exists "authenticated read own zone_permissions" on public.zone_permissions;
-create policy "authenticated read own zone_permissions"
-  on public.zone_permissions for select to authenticated
-  using (auth.uid() = user_id);
--- 超管可读取全部权限（权限管理页需要）
-drop policy if exists "super read all zone_permissions" on public.zone_permissions;
-create policy "super read all zone_permissions"
-  on public.zone_permissions for select to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
--- 超管可写权限
-drop policy if exists "super insert zone_permissions" on public.zone_permissions;
-create policy "super insert zone_permissions"
-  on public.zone_permissions for insert to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
-drop policy if exists "super delete zone_permissions" on public.zone_permissions;
-create policy "super delete zone_permissions"
-  on public.zone_permissions for delete to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
-
--- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
-alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));
