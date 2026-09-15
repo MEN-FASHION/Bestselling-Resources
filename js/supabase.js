@@ -929,11 +929,16 @@ const SB = (() => {
       if (error) return [];
       return (data || []).map(d => d.category);
     },
-    // 超管：读取所有注册管理员/超管清单（权限管理页）
+    // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role").in("role", ["admin", "super_admin"]);
+      const { data, error } = await client.from("profiles").select("user_id, email, role").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
       return data || [];
+    },
+    // 超管：设置某用户角色（visitor / admin / super_admin）
+    async setUserRole(userId, role) {
+      const { error } = await client.from("profiles").update({ role }).eq("user_id", userId);
+      if (error) throw new Error(error.message || "更新角色失败");
     },
     // 超管：为某管理员写入某专区类目授权（整体覆盖）
     async setUserPermissions(userId, zone, cats) {

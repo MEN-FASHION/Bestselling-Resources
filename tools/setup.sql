@@ -774,3 +774,26 @@ create policy "super delete zone_permissions"
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));
+
+-- ---------- profiles：超管可读所有用户 & 更新任何用户角色（权限管理） ----------
+drop policy if exists "super read all profiles" on public.profiles;
+create policy "super read all profiles"
+  on public.profiles for select to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+
+drop policy if exists "super update profiles role" on public.profiles;
+create policy "super update profiles role"
+  on public.profiles for update to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'))
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+
+-- ---------- 初始化专区类目：把前台类目(categories)复制进招品/BESTSELLER两张独立表（幂等去重） ----------
+insert into public.recruit_categories (name, sort_order)
+select c.name, c.sort_order
+from public.categories c
+on conflict (name) do nothing;
+
+insert into public.bestseller_categories (name, sort_order)
+select c.name, c.sort_order
+from public.categories c
+on conflict (name) do nothing;

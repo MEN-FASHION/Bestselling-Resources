@@ -3592,12 +3592,16 @@ let recruitTasks = [];
     sel.innerHTML = "";
     permUsers.forEach(u => {
       const o = document.createElement("option");
-      o.value = u.user_id; o.textContent = u.email + (u.role === "super_admin" ? "（超管）" : "");
+      o.value = u.user_id; o.textContent = u.email + "（" + (u.role === "super_admin" ? "超管" : u.role === "admin" ? "管理员" : "访客") + "）";
       sel.appendChild(o);
     });
-    if (permUsers.length) { await loadPermForUser(permUsers[0].user_id); }
+    if (permUsers.length) { await loadPermForUser(permUsers[0]); }
   }
-  async function loadPermForUser(uid) {
+  async function loadPermForUser(user) {
+    if (!user) return;
+    const roleSel = $("#perm-role");
+    if (roleSel) roleSel.value = user.role || "visitor";
+    const uid = user.user_id;
     const [rc, bc, rperm, bperm] = await Promise.all([
       SB.listZoneCats("recruit").catch(() => []),
       SB.listZoneCats("bestseller").catch(() => []),
@@ -3623,19 +3627,25 @@ let recruitTasks = [];
   }
   function bindPermission() {
     const sel = $("#perm-user");
-    if (sel) sel.onchange = () => { if (sel.value) loadPermForUser(sel.value); };
+    if (sel) sel.onchange = () => {
+      const u = permUsers.find(x => x.user_id === sel.value);
+      if (u) loadPermForUser(u);
+    };
     const ref = $("#perm-refresh");
     if (ref) ref.onclick = loadPermPanel;
     const save = $("#perm-save");
     if (save) save.onclick = async () => {
       const uid = $("#perm-user")?.value;
-      if (!uid) return sbToast("请先选择管理员", false);
+      if (!uid) return sbToast("请先选择用户", false);
+      const role = $("#perm-role")?.value || "visitor";
       const rcats = [...document.querySelectorAll("#perm-recruit-cats input:checked")].map(i => i.value);
       const bcats = [...document.querySelectorAll("#perm-bestseller-cats input:checked")].map(i => i.value);
       try {
+        await SB.setUserRole(uid, role);
         await SB.setUserPermissions(uid, "recruit", rcats);
         await SB.setUserPermissions(uid, "bestseller", bcats);
-        sbToast("权限已保存");
+        sbToast("角色与权限已保存");
+        await loadPermPanel();
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
   }

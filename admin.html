@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915Z">
+<link rel="stylesheet" href="css/style.css?v=20260915AA">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -498,10 +498,16 @@
       </div>
 
       <div class="panel-card hidden" id="perm-card">
-        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 为各管理员分配招品回品 / BESTSELLER 专区类目权限）</span></h2>
-        <p class="hint">选择下方管理员，勾选其可管理的类目并保存。未授权的类目对ta在后台不可见、也无法发布任务。权限仅约束后台发布，不影响前台浏览。</p>
-        <div class="rg-row"><label class="field">选择管理员</label>
+        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 设置用户角色，并为各管理员分配招品回品 / BESTSELLER 专区类目权限）</span></h2>
+        <p class="hint">选择下方用户，为你指定其【角色】，并勾选其可管理的【专区类目】后保存。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
+        <div class="rg-row"><label class="field">选择用户</label>
           <select id="perm-user" class="input"></select>
+          <label class="field" style="margin-left:8px">角色</label>
+          <select id="perm-role" class="input">
+            <option value="visitor">访客</option>
+            <option value="admin">管理员</option>
+            <option value="super_admin">超级管理员</option>
+          </select>
           <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
         </div>
         <div class="perm-zone">
@@ -699,7 +705,7 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="js/config.js?v=20260915Z"></script>
-  <script src="js/supabase.js?v=20260915Z"></script>
-  <script src="js/admin.js?v=20260915Z"></script>
+  <script src="js/supabase.js?v=20260915AA"></script>
+  <script src="js/admin.js?v=20260915AA"></script>
 </body>
 </html>
