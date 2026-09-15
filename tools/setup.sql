@@ -58,12 +58,15 @@ alter table public.images add column if not exists url text;   -- 图片外链�
 
 alter table public.images enable row level security;
 
--- 已登录用户可读取（前台访客浏览）
+-- 已登录用户可读取（前台访客浏览；后台管理员仅能看到自己上传的图，超管看全部）
+-- 注：公开浏览走下面 anon 策略（using true），不受此隔离影响
 drop policy if exists "authenticated read images" on public.images;
 create policy "authenticated read images"
   on public.images for select
   to authenticated
-  using (true);
+  using (
+    public.is_super_admin() or uploaded_by = auth.uid()
+  );
 
 -- （公开浏览模式）匿名用户也可读取清单（图片本体仍由 Worker 鉴权，公开模式下才放行）
 drop policy if exists "anon read images" on public.images;
@@ -83,27 +86,29 @@ create policy "admin insert images"
   );
 
 -- 仅管理员可更新图片（用于批量打渠道标签）
+-- 隔离：普通管理员只能更新「自己上传」的图（uploaded_by = auth.uid()）；超管可更新全部
 drop policy if exists "admin update images" on public.images;
 create policy "admin update images"
   on public.images for update
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.is_super_admin() or (exists (select 1 from public.profiles p
+      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
   )
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.is_super_admin() or (exists (select 1 from public.profiles p
+      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
   );
 
 -- 仅管理员可删除图片
+-- 隔离：普通管理员只能删除「自己上传」的图；超管可删除全部
 drop policy if exists "admin delete images" on public.images;
 create policy "admin delete images"
   on public.images for delete
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.is_super_admin() or (exists (select 1 from public.profiles p
+      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
   );
 
 -- ---------- 3.5 前台类目表（categories：管理员显式添加，含展示顺序） ----------
@@ -515,14 +520,14 @@ drop policy if exists "admin update recruit_tasks" on public.recruit_tasks;
 create policy "admin update recruit_tasks"
   on public.recruit_tasks for update
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()))
+  with check (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete recruit_tasks" on public.recruit_tasks;
 create policy "admin delete recruit_tasks"
   on public.recruit_tasks for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.recruit_submissions (
@@ -618,14 +623,14 @@ drop policy if exists "admin update bestseller_tasks" on public.bestseller_tasks
 create policy "admin update bestseller_tasks"
   on public.bestseller_tasks for update
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')))
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()))
+  with check (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete bestseller_tasks" on public.bestseller_tasks;
 create policy "admin delete bestseller_tasks"
   on public.bestseller_tasks for delete
   to authenticated
-  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.bestseller_submissions (
@@ -687,6 +692,9 @@ create policy "authenticated read all bestseller submissions"
 -- ---------- 给招品/BESTSELLER 任务表补 category 列（幂等） ----------
 alter table public.recruit_tasks add column if not exists category text default '';
 alter table public.bestseller_tasks add column if not exists category text default '';
+-- 专区任务内链/外链（BESTSELLER 差异化：Excel 按「竞品ID」匹配文件名后绑定网页链接，前台卡片可点击打开）
+alter table public.recruit_tasks add column if not exists url text;
+alter table public.bestseller_tasks add column if not exists url text;
 
 -- ---------- 招品回品专区类目表（独立于视觉专区类目，可增删改） ----------
 create table if not exists public.recruit_categories (

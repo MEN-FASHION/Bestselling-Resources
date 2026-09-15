@@ -590,6 +590,7 @@
           '<img class="recruit-thumb" alt="">' +
           '<span class="recruit-ph">图片加载中</span>' +
           '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
+          (t.url ? '<a class="recruit-ext" href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener nofollow">🔗打开链接</a>' : '') +
         '</div>' +
         '<div class="recruit-body">' +
           '<div class="recruit-spu-sub"></div>' +

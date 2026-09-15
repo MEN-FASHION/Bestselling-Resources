@@ -648,6 +648,7 @@ const SB = (() => {
         title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
         tags: (x && x.tags) || [], category: (x && x.category) || "",
+        url: (x && x.url) || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("recruit_tasks").insert(rows);
@@ -802,6 +803,7 @@ const SB = (() => {
         title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
         tags: (x && x.tags) || [], category: (x && x.category) || "",
+        url: (x && x.url) || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("bestseller_tasks").insert(rows);

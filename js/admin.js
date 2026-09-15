@@ -3670,12 +3670,62 @@ let bestsellerTasks = [];
       cell.className = "bestseller-pre-cell";
       const im = document.createElement("img");
       im.src = URL.createObjectURL(f);
+      const linked = f._url ? `<span class="purl">🔗 已匹配链接</span>` : "";
+      const lbl = document.createElement("div");
+      lbl.className = "bestseller-pre-url"; lbl.innerHTML = linked;
       const rm = document.createElement("button");
       rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
       rm.onclick = () => { bestsellerImgFiles.splice(i, 1); renderBestsellerPre(); };
-      cell.appendChild(im); cell.appendChild(rm);
+      cell.appendChild(im); cell.appendChild(lbl); cell.appendChild(rm);
       pre.appendChild(cell);
     });
+  }
+
+  function handleBestsellerUrlMatch(files) {
+    if (!bestsellerImgFiles.length) return sbToast("请先选择BESTSELLER图片，再上传匹配链接表格", false);
+    if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
+    if (!files || !files.length) return;
+    const file = files[0];
+    const mr = document.querySelector("#bestseller-url-match-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        // 找「竞品ID」列与「网页链接」列（大小写/中文容错）
+        let idKey = null, urlKey = null;
+        if (rows.length) {
+          const keys = Object.keys(rows[0]);
+          for (const k of keys) {
+            const lk = String(k).toLowerCase();
+            if (!idKey && (lk === "竞品id" || lk === "id" || lk === "name" || lk === "竞品编号")) idKey = k;
+            if (!urlKey && (lk === "网页链接" || lk === "url" || lk === "链接" || lk === "外链" || lk === "link" || lk === "网页url")) urlKey = k;
+          }
+        }
+        if (!idKey || !urlKey) return sbToast("未找到「竞品ID」列和「网页链接」列，请检查表头", false);
+        const map = {};
+        rows.forEach(r => {
+          const n = stripExt(String(r[idKey] || "").trim());
+          const u = String(r[urlKey] || "").trim();
+          if (n && u) map[n] = u;
+        });
+        if (!Object.keys(map).length) return sbToast("表格中没有可匹配的（竞品ID+网页链接）数据", false);
+        let matched = 0;
+        bestsellerImgFiles.forEach(f => {
+          const n = stripExt(f.name);
+          if (map[n]) { f._url = map[n]; matched++; }
+        });
+        let un = 0;
+        bestsellerImgFiles.forEach(f => { if (!f._url) un++; });
+        renderBestsellerPre();
+        if (mr) { mr.textContent = "匹配成功 " + matched + " 张" + (un ? "；" + un + " 张未匹配到链接" : ""); mr.className = "url-match-result" + (matched ? " ok" : ""); }
+        sbToast("已匹配 " + matched + " 张图片链接" + (un ? "，" + un + " 张未匹配" : ""), matched > 0);
+      } catch (e) {
+        sbToast("表格解析失败，请检查文件格式", false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
   }
 
   function bindBestseller() {
@@ -3707,6 +3757,15 @@ let bestsellerTasks = [];
     }
     if (upBtn) upBtn.addEventListener("click", saveBestsellerTasks);
     if (refresh) refresh.addEventListener("click", loadBestsellerList);
+    // 绑定竞品链接：点击打开文件选择，选中后解析绑定
+    const bUrlBtn = document.querySelector("#bestseller-url-match-btn");
+    const bUrlInput = document.querySelector("#bestseller-url-match-input");
+    if (bUrlBtn && bUrlInput) {
+      bUrlBtn.addEventListener("click", () => bUrlInput.click());
+      bUrlInput.addEventListener("change", () => {
+        if (bUrlInput.files && bUrlInput.files.length) { handleBestsellerUrlMatch([...bUrlInput.files]); bUrlInput.value = ""; }
+      });
+    }
     // 筛选
     document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => {
       b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
@@ -3755,7 +3814,7 @@ let bestsellerTasks = [];
     for (let i = 0; i < files.length; i++) {
       try {
         const imagePath = await SB.uploadBestsellerImage(files[i]);
-        rows.push({ task_id: ids[i] || "", image_path: imagePath, status: ids[i] ? "published" : "draft", category: cat });
+        rows.push({ task_id: ids[i] || "", image_path: imagePath, status: ids[i] ? "published" : "draft", category: cat, url: files[i]._url || "" });
       } catch (e) { uploadErr = true; }
     }
     if (!rows.length) { sbToast("图片上传失败，请重试", false); return; }

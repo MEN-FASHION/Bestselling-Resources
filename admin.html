@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915AA">
+<link rel="stylesheet" href="css/style.css?v=20260915AB">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -444,6 +444,12 @@
           </div>
           <div class="rg-row"><label class="field">任务ID（选填；留空则每张图创建「未发布」草稿卡片，之后再单独/批量填写）</label>
             <input id="bestseller-taskid" class="input" placeholder="例如：RC2026001，多个可用英文逗号分隔，按顺序对应图片"></div>
+          <div class="rg-row"><label class="field">绑定竞品链接（可选；先选好图片，再上传含「竞品ID」+「网页链接」两列的Excel表格，按图片文件名自动匹配绑定）</label>
+            <div class="rg-row-inline">
+              <button id="bestseller-url-match-btn" class="btn-primary" type="button">上传Excel绑定竞品链接</button>
+              <input type="file" id="bestseller-url-match-input" accept=".xlsx,.xls,.csv" hidden>
+              <span id="bestseller-url-match-result" class="url-match-result"></span>
+            </div></div>
           <div class="rg-row"><label class="field">所属类目（可选，用于前台左栏筛选）</label>
             <div class="cat-pick-wrap">
               <input id="bestseller-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
@@ -704,8 +710,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260915Z"></script>
-  <script src="js/supabase.js?v=20260915AA"></script>
-  <script src="js/admin.js?v=20260915AA"></script>
+  <script src="js/config.js?v=20260915AB"></script>
+  <script src="js/supabase.js?v=20260915AB"></script>
+  <script src="js/admin.js?v=20260915AB"></script>
 </body>
 </html>
