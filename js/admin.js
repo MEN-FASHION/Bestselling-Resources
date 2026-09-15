@@ -155,6 +155,10 @@
       if (n.dataset.super === "1") { n.classList.toggle("hidden", !isSuper); return; }
       n.classList.toggle("hidden", !canManage && n.dataset.target !== "manage-card");
     });
+    // 类目设置等超管专属按钮（data-super="1"）仅超管可见
+    document.querySelectorAll("#admin-panel [data-super='1']:not(.nav-item)").forEach(n => {
+      n.classList.toggle("hidden", !isSuper);
+    });
   }
 
   // ================= 登录 / 退出 =================
@@ -3479,7 +3483,10 @@ let recruitTasks = [];
     if (currentRole === "admin") {
       let mine = [];
       try { mine = await SB.myZonePermissions(zone); } catch (e) { mine = []; }
-      cats = cats.filter(c => mine.includes(c.name));
+      // 归一化（去首尾空格）比对，避免因空格等细微差异导致授权类目匹配不上
+      const norm = s => (s || "").trim();
+      const mineSet = new Set(mine.map(norm));
+      cats = cats.filter(c => mineSet.has(norm(c.name)));
     }
     sel.innerHTML = "";
     const opt0 = document.createElement("option");
@@ -3620,7 +3627,7 @@ let recruitTasks = [];
       const lab = document.createElement("label");
       lab.className = "perm-cat-item";
       const cb = document.createElement("input");
-      cb.type = "checkbox"; cb.value = c.name; cb.checked = checked.includes(c.name);
+      cb.type = "checkbox"; cb.value = c.name; cb.checked = checked.some(x => (x || "").trim() === (c.name || "").trim());
       lab.appendChild(cb); lab.appendChild(document.createTextNode(c.name));
       box.appendChild(lab);
     });
