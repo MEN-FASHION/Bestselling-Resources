@@ -164,9 +164,64 @@
     });
   });
 
+  // 前台图片"观看无印、下载带水印"：把图片绘制到 canvas 并叠加品牌水印后下载。
+  // 页面展示仍用原图（无水印），仅当用户触发下载（右键等）时生成带水印版。
+  function downloadWatermarked(src, filename) {
+    if (!src) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) return;
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        // 低调水印：顶部来源标注 + 右下角站名，均横向、半透明、不铺满
+        const fsTop = Math.max(14, Math.round(Math.min(w, h) * 0.032));
+        const fsCorner = Math.max(12, Math.round(Math.min(w, h) * 0.024));
+        // 顶部居中横幅：图片来源网络 · 仅供参考学习
+        ctx.font = "500 " + fsTop + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "top";
+        ctx.fillStyle = "rgba(255,255,255,0.38)";
+        ctx.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx.lineWidth = 1;
+        const topTxt = "图片来源网络 · 仅供参考学习";
+        const topY = Math.max(8, Math.round(h * 0.02));
+        ctx.strokeText(topTxt, w / 2, topY);
+        ctx.fillText(topTxt, w / 2, topY);
+        // 右下角横幅：newtrend.top
+        ctx.font = "500 " + fsCorner + "px sans-serif";
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = "rgba(255,255,255,0.38)";
+        const cornerTxt = "newtrend.top";
+        const cx = w - Math.max(10, Math.round(w * 0.02));
+        const cy = h - Math.max(10, Math.round(h * 0.03));
+        ctx.strokeText(cornerTxt, cx, cy);
+        ctx.fillText(cornerTxt, cx, cy);
+        c.toBlob((blob) => {
+          if (!blob) return;
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = (filename.replace(/[\\/:*?"<>|]/g, "_") || "image") + ".png";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 600);
+        }, "image/png");
+      } catch (err) { /* 水印失败则静默 */ }
+    };
+    img.onerror = () => {};
+    img.src = src; // 保留完整 src（含鉴权 token 或 blob: 地址）
+  }
+
   function setupAntiDownload() {
     document.addEventListener("contextmenu", (e) => {
-      if (e.target.tagName === "IMG") e.preventDefault();
+      if (e.target.tagName === "IMG") {
+        e.preventDefault();
+        // 右键图片：屏蔽系统"另存为"，改为下载带水印版
+        downloadWatermarked(e.target.currentSrc || e.target.src, e.target.alt || "image");
+      }
     });
     document.addEventListener("dragstart", (e) => {
       if (e.target.tagName === "IMG") e.preventDefault();

@@ -68,12 +68,9 @@ create policy "authenticated read images"
     public.is_super_admin() or uploaded_by = auth.uid()
   );
 
--- （公开浏览模式）匿名用户也可读取清单（图片本体仍由 Worker 鉴权，公开模式下才放行）
+-- 已收紧：移除匿名读取图片清单的策略（防爬加固）
+-- 访客与登录用户均需通过 authenticated 策略读取图片；不存在匿名可读
 drop policy if exists "anon read images" on public.images;
-create policy "anon read images"
-  on public.images for select
-  to anon
-  using (true);
 
 -- 仅管理员可新增图片
 drop policy if exists "admin insert images" on public.images;

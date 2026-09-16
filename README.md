@@ -147,3 +147,14 @@ gallery-site/
 ├── worker/worker.js     Cloudflare Worker 源码（部署到 Cloudflare，含趋势端点）
 └── tools/setup.sql      Supabase 数据库初始化（含 trends 表）
 ```
+
+## 内容防爬 / 防复制（本版新增）
+
+- **下载水印**：前台图片「观看无印、下载带水印」。页面展示仍为无水印原图；当用户触发下载（右键等）时，前端用 canvas 重新绘制，叠加两处半透明水印——
+  - 顶部居中：`图片来源网络 · 仅供参考学习`
+  - 右下角：`newtrend.top`
+  - 覆盖视觉专区（js/frontend.js）与趋势专区（js/trends.js）；拖拽、Ctrl+S、长按仍禁用。
+- **图片表匿名读收紧**：已移除 `images` 表的匿名读取策略（原 `anon read images`），未登录用户不再能读取图片清单/元数据，需登录后经登录态策略读取。可用脚本 `restrict_images_anon.sql` 在 Supabase SQL Editor 一键执行（旧库也适用）。
+- **图片读取限流 + 审计**：图片服务按来源 IP 做窗口限流（每 IP 每分钟 120 次，超限返回 429 并打印审计日志），用于防脚本化批量拉取，正常用户零影响。
+
+> **部署**：覆盖仓库 `js/frontend.js`、`js/trends.js`、`worker/worker.js` 并重新部署图片服务；执行 `restrict_images_anon.sql`（或重跑 `tools/setup.sql`，均为幂等）；前台强刷。

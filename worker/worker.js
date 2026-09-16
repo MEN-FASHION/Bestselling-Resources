@@ -15,6 +15,8 @@
 // Supabase 用户查询：通过令牌换 user id（带短期缓存，避免每张图片请求都重复鉴权）
 // 同一令牌 5 分钟内只校验一次，大幅减少一页多图时的鉴权往返
 const _uidCache = new Map();
+// 图片读取限流计数器：ip -> { count, resetAt }（内存级，零成本，防批量抓取）
+const _imgHits = new Map();
 async function getUserId(token, env) {
   if (!token) return null;
   const now = Date.now();
@@ -44,6 +46,13 @@ async function getRole(userId, token, env) {
   if (!res.ok) return null;
   const rows = await res.json();
   return rows && rows.length ? rows[0].role : null;
+}
+
+// 管理员判定：admin 与 super_admin 均具备管理员权限（超管拥有全部权限）
+// 归一化：去首尾空格 + 转小写，避免角色值含空格/大小写差异导致误判
+function isAdminRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  return r === "admin" || r === "super_admin";
 }
 
 // CORS 头
@@ -106,6 +115,25 @@ async function isPublicAccess(env) {
     return obj;
   }
 
+  // ---------- 图片读取限流 + 异常审计（防批量、事后兜底）----------
+  // 每 IP 每分钟图片请求上限，超过则 429 并记录审计日志（内存级，零成本）
+  if (method === "GET" && path.startsWith("images/")) {
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    const now = Date.now();
+    const WLIM = 120;      // 每分钟上限（可自行调整）
+    const WWIN = 60000;    // 窗口：1 分钟
+    let h = _imgHits.get(ip);
+    if (!h || now > h.resetAt) { h = { count: 0, resetAt: now + WWIN }; _imgHits.set(ip, h); }
+    h.count++;
+    if (h.count > WLIM) {
+      console.log("[IMG-AUDIT] rate-limit ip=" + ip + " count=" + h.count + " path=" + path);
+      return json({ error: "请求过于频繁" }, 429, CORS);
+    }
+    if (h.count === Math.floor(WLIM * 0.9)) {
+      console.log("[IMG-AUDIT] near-limit ip=" + ip + " count=" + h.count);
+    }
+  }
+
   // ---------- 1. GET 看图：登录即可；公开浏览模式下免登录 ----------
   if (method === "GET" && path.startsWith("images/")) {
     if (!userId) {
@@ -131,7 +159,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -154,7 +182,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path.startsWith("images/")) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const rawPath = url.pathname.replace(/^\//, "");
     // 先删解码后路径，若不存在再删原始编码路径，兼容新旧存储
     await env.IMAGES.delete(path).catch(() => {});
@@ -168,7 +196,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "trend/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -242,7 +270,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "trend/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -256,7 +284,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "notice/uploadimg") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -296,7 +324,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "recruit/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -336,7 +364,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "recruit/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -348,7 +376,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "bestseller/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -388,7 +416,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "bestseller/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("bestsellers/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
