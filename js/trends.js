@@ -21,6 +21,11 @@
   let bestsellerCats = [];    // BESTSELLER 专区类目
   let bestsellerCat = "全部"; // BESTSELLER 当前选中类目
   let catVisibility = {};    // 各专区各类目是否前台可见
+  // —— 分享预览（方案A）：管理员分享类目链接，未登录可浏览该类目缩略图 ——
+  const shareQ = new URLSearchParams(location.search);
+  const shareZone = shareQ.get("zone");
+  const shareCat = (shareQ.get("cat") || "").trim();
+  const isSharePreview = () => !window.__loggedIn && !!shareCat && (shareZone === "recruit" || shareZone === "bestseller");
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -355,8 +360,15 @@
     $("#login-view").classList.add("hidden");
     $("#logout-btn").classList.remove("hidden");
     const hash = (location.hash || "").replace("#", "");
-    const rec = hash === "recruit";
-    const bs = hash === "bestseller";
+    let rec = hash === "recruit";
+    let bs = hash === "bestseller";
+    // 分享预览（方案A）：URL 带 ?zone= & cat= 且未登录时，强制锁定到对应专区与类目
+    if (isSharePreview() && shareZone === "recruit") { rec = true; bs = false; }
+    else if (isSharePreview() && shareZone === "bestseller") { rec = false; bs = true; }
+    if (isSharePreview() && shareCat) {
+      if (shareZone === "recruit") recruitCat = shareCat;
+      else if (shareZone === "bestseller") bestsellerCat = shareCat;
+    }
     $("#trend-view").classList.toggle("hidden", rec || bs);
     $("#recruit-view").classList.toggle("hidden", !rec);
     $("#bestseller-view").classList.toggle("hidden", !bs);
@@ -510,6 +522,8 @@
         SB.listAllRecruitSubmissions().catch(() => []),
         SB.listZoneCats("recruit").catch(() => []),
       ]);
+      // 后台标记「无需回品」的任务前台不展示
+      recruitTasks = recruitTasks.filter(t => !t.flag_no_refill);
       renderRecruitCatMenu();
       renderRecruitCards();
     } catch (e) {
@@ -539,7 +553,9 @@
     box.innerHTML = "";
     const list = recruitTasks.filter(t => catCatVisible("recruit", t.category) && (recruitCat === "全部" || !recruitCat || t.category === recruitCat));
     if (!list.length) {
-      box.innerHTML = '<p class="empty-tip">该分类暂无招品任务。</p>';
+      box.innerHTML = isSharePreview()
+        ? '<div class="share-preview-tip">该分类暂无已发布内容。登录后查看全部招品任务。<a href="#recruit" onclick="location.hash=\"recruit\"">去登录</a></div>'
+        : '<p class="empty-tip">该分类暂无招品任务。</p>';
       return;
     }
     list.forEach((t, idx) => {
@@ -548,22 +564,25 @@
       const seq = idx + 1;
       const card = document.createElement("div");
       card.className = "recruit-card";
+      const previewMode = isSharePreview();
       card.innerHTML =
         '<div class="recruit-img">' +
           '<img class="recruit-thumb" alt="">' +
           '<span class="recruit-ph">图片加载中</span>' +
-          '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
+          '<span class="recruit-no"></span>' + (mySpus.length && !previewMode ? '<span class="recruit-done">已上传</span>' : '') +
         '</div>' +
         '<div class="recruit-body">' +
-          '<div class="recruit-spu-sub"></div>' +
-          '<div class="recruit-form hidden">' +
-            '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
-            '<button type="button" class="btn-primary rec-save">保存</button>' +
-          '</div>' +
-          '<div class="recruit-ops">' +
-            '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
-            '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
-          '</div>' +
+          (!previewMode
+            ? '<div class="recruit-spu-sub"></div>' +
+              '<div class="recruit-form hidden">' +
+                '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
+                '<button type="button" class="btn-primary rec-save">保存</button>' +
+              '</div>' +
+              '<div class="recruit-ops">' +
+                '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
+                '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
+              '</div>'
+            : '<div class="recruit-share-cta">登录后查看高清与提交SPU <a href="#recruit">登录/注册</a></div>') +
         '</div>';
       const img = card.querySelector(".recruit-img");
       const im = card.querySelector(".recruit-thumb");
@@ -577,6 +596,14 @@
         }).catch(() => { ph.textContent = "图片暂不可见"; });
       } else {
         ph.textContent = "暂无图片";
+      }
+      if (previewMode) {
+        im.addEventListener("click", () => {
+          location.hash = "recruit";
+          toast("请登录后查看高清原图与提交SPU");
+        });
+        box.appendChild(card);
+        return;
       }
       const subEl = card.querySelector(".recruit-spu-sub");
       if (mySpus.length) { subEl.textContent = "我已上传 " + mySpus.length + " 个SPU"; } else { subEl.textContent = "尚未上传货品SPU"; }
@@ -622,6 +649,8 @@
         SB.listAllBestsellerSubmissions().catch(() => []),
         SB.listZoneCats("bestseller").catch(() => []),
       ]);
+      // 后台标记「无需回品」的任务前台不展示
+      bestsellerTasks = bestsellerTasks.filter(t => !t.flag_no_refill);
       renderBestsellerCatMenu();
       renderBestsellerCards();
     } catch (e) { toast("加载BESTSELLER失败", false); }
@@ -648,31 +677,39 @@
     if (!box) return;
     box.innerHTML = "";
     const list = bestsellerTasks.filter(t => catCatVisible("bestseller", t.category) && (bestsellerCat === "全部" || !bestsellerCat || t.category === bestsellerCat));
-    if (!list.length) { box.innerHTML = '<p class="empty-tip">该分类暂无BESTSELLER任务。</p>'; return; }
+    if (!list.length) {
+      box.innerHTML = isSharePreview()
+        ? '<div class="share-preview-tip">该分类暂无已发布内容。登录后查看全部BESTSELLER任务。<a href="#bestseller">去登录</a></div>'
+        : '<p class="empty-tip">该分类暂无BESTSELLER任务。</p>';
+      return;
+    }
     list.forEach((t, idx) => {
       const mySub = bestsellerSubsFor(t.id).find(s => s.user_id === bestsellerCurUid);
       const mySpus = (mySub && mySub.spus) ? mySub.spus.filter(Boolean) : [];
       const seq = idx + 1;
       const card = document.createElement("div");
       card.className = "recruit-card";
+      const previewMode = isSharePreview();
       card.innerHTML =
         '<div class="recruit-img">' +
           '<img class="recruit-thumb" alt="">' +
           '<span class="recruit-ph">图片加载中</span>' +
-          '<span class="recruit-no"></span>' + (mySpus.length ? '<span class="recruit-done">已上传</span>' : '') +
-          (t.url ? '<a class="recruit-ext" href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener nofollow">🔗打开链接</a>' : '') +
-          '<div class="bestseller-cinfo"><div class="bestseller-cinfo-inner"></div></div>' +
+          '<span class="recruit-no"></span>' + (mySpus.length && !previewMode ? '<span class="recruit-done">已上传</span>' : '') +
+          (!previewMode && t.url ? '<a class="recruit-ext" href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener nofollow">🔗打开链接</a>' : '') +
+          (previewMode ? '' : '<div class="bestseller-cinfo"><div class="bestseller-cinfo-inner"></div></div>') +
         '</div>' +
         '<div class="recruit-body">' +
-          '<div class="recruit-spu-sub"></div>' +
-          '<div class="recruit-form hidden">' +
-            '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
-            '<button type="button" class="btn-primary rec-save">保存</button>' +
-          '</div>' +
-          '<div class="recruit-ops">' +
-            '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
-            '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
-          '</div>' +
+          (!previewMode
+            ? '<div class="recruit-spu-sub"></div>' +
+              '<div class="recruit-form hidden">' +
+                '<input class="recruit-spu-input" placeholder="填写货品SPU，多个用英文逗号分隔">' +
+                '<button type="button" class="btn-primary rec-save">保存</button>' +
+              '</div>' +
+              '<div class="recruit-ops">' +
+                '<button type="button" class="btn-ghost rec-upload">上传货品SPU</button>' +
+                '<button type="button" class="btn-ghost rec-edit">编辑</button>' +
+              '</div>'
+            : '<div class="recruit-share-cta">登录后查看高清与提交SPU <a href="#bestseller">登录/注册</a></div>') +
         '</div>';
       const img = card.querySelector(".recruit-img");
       const im = card.querySelector(".recruit-thumb");
@@ -690,6 +727,15 @@
           im.src = u;
         }).catch(() => { ph.textContent = "图片暂不可见"; });
       } else { ph.textContent = "暂无图片"; }
+      // 分享预览：只展示缩略图，隐藏商品信息/外链/SPU，点图弹登录
+      if (previewMode) {
+        im.addEventListener("click", () => {
+          location.hash = "bestseller";
+          toast("请登录后查看高清原图与提交SPU");
+        });
+        box.appendChild(card);
+        return;
+      }
       // 鼠标悬停图片展示商品信息（ID / SKUID / 站点 / 最新上榜时间）
       const cinfo = card.querySelector(".bestseller-cinfo");
       if (cinfo && (t.goods_id || t.sku_id || t.site || t.rank_time)) {

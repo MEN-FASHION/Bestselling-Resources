@@ -3021,6 +3021,28 @@ let recruitTasks = [];
     });
   }
 
+  // 复制专区类目分享链接（方案A）：trends.html?zone=recruit|bestseller&cat=类目名
+  function copyZoneCatLink(zone, cat) {
+    const c = (cat || "").trim();
+    if (!c) { sbToast("请先选择一个类目", false); return; }
+    const base = new URL(window.location.href);
+    const link = base.origin + base.pathname.replace(/\/[^\/]*$/, "/trends.html") + "?zone=" + encodeURIComponent(zone) + "&cat=" + encodeURIComponent(c);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(() => sbToast("已复制「" + c + "」分享链接")).catch(() => prompt("复制分享链接：", link));
+    } else {
+      prompt("复制分享链接：", link);
+    }
+  }
+  function bindShareCatBtn(btnId, zone, catPickerId) {
+    const btn = document.querySelector("#" + btnId);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const sel = document.querySelector(catPickerId);
+      const cat = sel ? sel.value : "";
+      copyZoneCatLink(zone, cat);
+    });
+  }
+
   function bindRecruit() {
     const upBtn = document.querySelector("#recruit-save");
     const refresh = document.querySelector("#recruit-refresh");
@@ -3054,6 +3076,8 @@ let recruitTasks = [];
     document.querySelectorAll("#recruit-filters .recruit-filter").forEach(b => {
       b.onclick = () => { recruitFilter = b.dataset.st || ""; renderRecruitList(); };
     });
+    // 复制分类分享链接
+    bindShareCatBtn("recruit-share-cat", "recruit", "#recruit-flag-cat-filter");
     // 标记筛选
     const rf = document.querySelector("#recruit-flag-filter");
     if (rf) rf.addEventListener("change", () => { recruitFlagFilter = rf.value || ""; renderRecruitList(); });
@@ -3147,10 +3171,12 @@ let recruitTasks = [];
     const cnt = document.querySelector("#recruit-count");
     const ca = document.querySelector("#recruit-checkall");
     if (!box) return;
+    document.querySelectorAll("#recruit-filters .recruit-filter").forEach(b => b.classList.toggle("active", (b.dataset.st || "") === recruitFilter));
     let list = recruitTasks;
     if (recruitFilter === "published") list = list.filter(t => t.status === "published" && !t.bound);
     else if (recruitFilter === "submitted") list = list.filter(t => t.status === "published" && recruitSubsFor(t.id).length > 0 && !t.bound);
     else if (recruitFilter === "bound") list = list.filter(t => t.bound);
+    else if (recruitFilter === "no_refill") list = list.filter(t => t.flag_no_refill);
     if (recruitFlagFilter) list = list.filter(t => taskHasFlag(t, recruitFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));
@@ -3173,7 +3199,7 @@ let recruitTasks = [];
       const card = document.createElement("div");
       card.className = "recruit-acard" + (recruitSelected.has(t.id) ? " sel" : "");
       const chip = st === "bound" ? recruitStatusChip("chip-bound", "已绑定")
-        : st === "submitted" ? recruitStatusChip("chip-sub", "已上传")
+        : st === "submitted" ? recruitStatusChip("chip-sub", "商家已上传")
         : st === "published" ? recruitStatusChip("chip-pub", "已发布")
         : recruitStatusChip("chip-draft", "未发布");
       card.innerHTML =
@@ -3240,7 +3266,7 @@ let recruitTasks = [];
     if (!el) return;
     el.innerHTML = "";
     const s = document.createElement("span");
-    if (hasSubs) { s.className = "rcac-tag-chip rcac-sub-up"; s.textContent = "已传SPU · 已上传"; }
+    if (hasSubs) { s.className = "rcac-tag-chip rcac-sub-up"; s.textContent = "已传SPU · 商家已上传"; }
     else { s.className = "rcac-tag-empty"; s.textContent = "未传SPU"; }
     el.appendChild(s);
   }
@@ -4135,6 +4161,8 @@ let bestsellerTasks = [];
     document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => {
       b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
     });
+    // 复制分类分享链接
+    bindShareCatBtn("bestseller-share-cat", "bestseller", "#bestseller-flag-cat-filter");
     // 标记筛选
     const bf = document.querySelector("#bestseller-flag-filter");
     if (bf) bf.addEventListener("change", () => { bestsellerFlagFilter = bf.value || ""; renderBestsellerList(); });
@@ -4198,10 +4226,12 @@ let bestsellerTasks = [];
     const cnt = document.querySelector("#bestseller-count");
     const ca = document.querySelector("#bestseller-checkall");
     if (!box) return;
+    document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => b.classList.toggle("active", (b.dataset.st || "") === bestsellerFilter));
     let list = bestsellerTasks;
     if (bestsellerFilter === "published") list = list.filter(t => t.status === "published" && !t.bound);
     else if (bestsellerFilter === "submitted") list = list.filter(t => t.status === "published" && bestsellerSubsFor(t.id).length > 0 && !t.bound);
     else if (bestsellerFilter === "bound") list = list.filter(t => t.bound);
+    else if (bestsellerFilter === "no_refill") list = list.filter(t => t.flag_no_refill);
     if (bestsellerFlagFilter) list = list.filter(t => taskHasFlag(t, bestsellerFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));
@@ -4224,7 +4254,7 @@ let bestsellerTasks = [];
       const card = document.createElement("div");
       card.className = "bestseller-acard" + (bestsellerSelected.has(t.id) ? " sel" : "");
       const chip = st === "bound" ? bestsellerStatusChip("chip-bound", "已绑定")
-        : st === "submitted" ? bestsellerStatusChip("chip-sub", "已上传")
+        : st === "submitted" ? bestsellerStatusChip("chip-sub", "商家已上传")
         : st === "published" ? bestsellerStatusChip("chip-pub", "已发布")
         : bestsellerStatusChip("chip-draft", "未发布");
       card.innerHTML =
@@ -4295,7 +4325,7 @@ let bestsellerTasks = [];
     if (!el) return;
     el.innerHTML = "";
     const s = document.createElement("span");
-    if (hasSubs) { s.className = "rcac-tag-chip rcac-sub-up"; s.textContent = "已传SPU · 已上传"; }
+    if (hasSubs) { s.className = "rcac-tag-chip rcac-sub-up"; s.textContent = "已传SPU · 商家已上传"; }
     else { s.className = "rcac-tag-empty"; s.textContent = "未传SPU"; }
     el.appendChild(s);
   }

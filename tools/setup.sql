@@ -512,6 +512,13 @@ create policy "authenticated read recruit_tasks"
   to authenticated
   using (true);
 
+-- 方案A：未登录可读已发布的招品任务（分享类目缩略图预览）；仅已发布，草稿/敏感不可见
+drop policy if exists "anon read published recruit_tasks" on public.recruit_tasks;
+create policy "anon read published recruit_tasks"
+  on public.recruit_tasks for select
+  to anon
+  using (published = true and deleted_at is null);
+
 -- 仅管理员可增/改/删招品任务
 drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
 create policy "admin insert recruit_tasks"
@@ -614,6 +621,13 @@ create policy "authenticated read bestseller_tasks"
   on public.bestseller_tasks for select
   to authenticated
   using (true);
+
+-- 方案A：未登录可读已发布的BESTSELLER任务（分享类目缩略图预览）
+drop policy if exists "anon read published bestseller_tasks" on public.bestseller_tasks;
+create policy "anon read published bestseller_tasks"
+  on public.bestseller_tasks for select
+  to anon
+  using (published = true and deleted_at is null);
 
 -- 仅管理员可增/改/删BESTSELLER任务
 drop policy if exists "admin insert bestseller_tasks" on public.bestseller_tasks;
