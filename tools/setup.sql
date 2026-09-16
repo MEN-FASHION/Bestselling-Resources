@@ -700,6 +700,15 @@ alter table public.recruit_tasks add column if not exists url text;
 alter table public.bestseller_tasks add column if not exists url text;
 alter table public.recruit_tasks add column if not exists url text;
 alter table public.bestseller_tasks add column if not exists url text;
+-- 后台审核标记（IP/品牌/类目错放/无需回品，仅后台可见，前台不展示）——2026-09新增
+alter table public.recruit_tasks add column if not exists flag_ip boolean not null default false;        -- 涉IP/版权
+alter table public.recruit_tasks add column if not exists flag_brand boolean not null default false;     -- 涉品牌
+alter table public.recruit_tasks add column if not exists flag_cat_mismatch boolean not null default false; -- 类目错放
+alter table public.recruit_tasks add column if not exists flag_no_refill boolean not null default false; -- 无需回品
+alter table public.bestseller_tasks add column if not exists flag_ip boolean not null default false;
+alter table public.bestseller_tasks add column if not exists flag_brand boolean not null default false;
+alter table public.bestseller_tasks add column if not exists flag_cat_mismatch boolean not null default false;
+alter table public.bestseller_tasks add column if not exists flag_no_refill boolean not null default false;
 -- BESTSELLER 差异化：直接用主图URL + 竞品商品信息（2026-09新增）
 alter table public.bestseller_tasks add column if not exists main_img_url text;   -- 主图URL（优先显示，替代上传文件）
 alter table public.bestseller_tasks add column if not exists goods_id text;      -- 竞品Goods ID

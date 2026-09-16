@@ -1078,6 +1078,21 @@ select.input {
 .recruit-acard-del:hover{background:#c0392b}
 .recruit-acard-check{position:absolute;bottom:6px;right:6px}
 .recruit-acard-check input{width:16px;height:16px;accent-color:var(--gold);cursor:pointer}
+/* 图片上四个审核标记（IP/品牌/类目错放/无需回品）——仅后台可见 */
+.recruit-acard-flags{position:absolute;left:6px;bottom:6px;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 26px);z-index:2}
+.rcflag-item{display:inline-flex;align-items:center;gap:2px;font-size:10px;line-height:1;padding:2px 5px;border-radius:999px;background:rgba(0,0,0,.55);color:#cfc9bd;border:1px solid rgba(255,255,255,.18);cursor:pointer;user-select:none}
+.rcflag-item input{display:none}
+.rcflag-item.on{background:rgba(217,168,73,.85);color:#241c10;border-color:#f4c95d;font-weight:600}
+.recruit-acard-flags .rcflag-item:hover{border-color:var(--gold)}
+/* 标记统计组件（招品回品 / BESTSELLER 顶部共用） */
+.recruit-flag-stats{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.recruit-flag-stats-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.recruit-flag-cat{font-size:13px;color:var(--sub)}
+.recruit-flag-cat select{margin-left:6px;background:var(--shade);color:var(--txt);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 8px;font-size:12px}
+.recruit-flag-total{font-size:12px;color:#9a927f}
+.recruit-flag-charts{display:flex;flex-direction:column;gap:8px}
+.recruit-flag-filter{font-size:12px;color:var(--sub)}
+.recruit-flag-filter select{margin-left:4px;background:var(--shade);color:var(--txt);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:3px 7px;font-size:12px}
 .recruit-acard-body{padding:10px 12px 12px}
 .recruit-acard-tid{font-size:13px;color:#e8e2d6;margin-bottom:6px;font-weight:600;word-break:break-all}
 .recruit-acard-strow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}

@@ -2995,6 +2995,8 @@ let recruitTasks = [];
   let recruitAllSubs = [];
   let recruitImgFiles = [];   // 批量待上传图片
   let recruitFilter = "";     // "" | published | submitted | bound
+  let recruitFlagFilter = ""; // 标记筛选 "" | ip | brand | cat_mismatch | no_refill
+  let recruitFlagCat = "";    // 标记统计类目筛选（"" = 全部类目）
   let recruitSelected = new Set();  // 卡片勾选
   let recruitTrash = [];              // 回收站任务
   let recruitTrashSelected = new Set();  // 回收站勾选
@@ -3052,6 +3054,12 @@ let recruitTasks = [];
     document.querySelectorAll("#recruit-filters .recruit-filter").forEach(b => {
       b.onclick = () => { recruitFilter = b.dataset.st || ""; renderRecruitList(); };
     });
+    // 标记筛选
+    const rf = document.querySelector("#recruit-flag-filter");
+    if (rf) rf.addEventListener("change", () => { recruitFlagFilter = rf.value || ""; renderRecruitList(); });
+    // 标记统计类目筛选
+    const rfc = document.querySelector("#recruit-flag-cat-filter");
+    if (rfc) rfc.addEventListener("change", () => { recruitFlagCat = rfc.value || ""; renderRecruitFlagStats(); });
     // 全选
     const ca = document.querySelector("#recruit-checkall");
     if (ca) ca.onchange = () => { recruitSelected.clear(); if (ca.checked) recruitTasks.forEach(t => recruitSelected.add(t.id)); renderRecruitList(); };
@@ -3117,6 +3125,8 @@ let recruitTasks = [];
     try {
       recruitTasks = await SB.listRecruitTasks();
       recruitAllSubs = await SB.listAllRecruitSubmissions().catch(() => []);
+      fillTaskFlagCatSelect(recruitTasks, "#recruit-flag-cat-filter");
+      renderRecruitFlagStats();
       renderRecruitList();
     } catch (e) { sbToast("加载招品列表失败", false); }
   }
@@ -3141,6 +3151,7 @@ let recruitTasks = [];
     if (recruitFilter === "published") list = list.filter(t => t.status === "published" && !t.bound);
     else if (recruitFilter === "submitted") list = list.filter(t => t.status === "published" && recruitSubsFor(t.id).length > 0 && !t.bound);
     else if (recruitFilter === "bound") list = list.filter(t => t.bound);
+    if (recruitFlagFilter) list = list.filter(t => taskHasFlag(t, recruitFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));
     recruitSelected = new Set([...recruitSelected].filter(id => valid.has(id)));
@@ -3171,6 +3182,7 @@ let recruitTasks = [];
           '<span class="recruit-acard-no">' + seq + '</span>' +
           '<span class="recruit-acard-del" title="删除">×</span>' +
           '<span class="recruit-acard-check"><input type="checkbox" class="recruit-check"' + (recruitSelected.has(t.id) ? ' checked' : '') + '></span>' +
+          '<div class="recruit-acard-flags">' + taskFlagBoxHTML(t, "recruit") + '</div>' +
         '</div>' +
         '<div class="recruit-acard-body">' +
           '<div class="recruit-acard-tid" title="任务ID：' + escAttr(t.task_id || "") + '">任务ID：' + escHtml(t.task_id || "（未填写）") + '</div>' +
@@ -3217,6 +3229,7 @@ let recruitTasks = [];
       });
       // 已传SPU 状态区
       renderRecruitSpsStatus(card, spuList.length);
+      bindTaskFlagBoxes(card, t, "recruit", renderRecruitList, renderRecruitFlagStats);
       box.appendChild(card);
     });
   }
@@ -3395,19 +3408,121 @@ let recruitTasks = [];
     } catch (e) { sbToast("永久删除失败", false); }
   }
 
+  /* ============================================================
+   * 审核标记（IP / 品牌 / 类目错放 / 无需回品）—— 招品回品 + BESTSELLER 共用
+   * ============================================================ */
+  const TASK_FLAG_DEFS = [
+    { key: "flag_ip", val: "ip", label: "IP" },
+    { key: "flag_brand", val: "brand", label: "品牌" },
+    { key: "flag_cat_mismatch", val: "cat_mismatch", label: "类目错放" },
+    { key: "flag_no_refill", val: "no_refill", label: "无需回品" },
+  ];
+  function taskHasFlag(t, flagVal) {
+    if (!t) return false;
+    const d = TASK_FLAG_DEFS.find(x => x.val === flagVal);
+    return d ? !!t[d.key] : false;
+  }
+  function flagText(t, flagVal) { return taskHasFlag(t, flagVal) ? "√" : ""; }
+  // 打标框 HTML：图片右下角四个可勾选项
+  function taskFlagBoxHTML(t, zone) {
+    const pfx = zone === "bestseller" ? "bsflag" : "rcflag";
+    let h = "";
+    TASK_FLAG_DEFS.forEach(d => {
+      const on = taskHasFlag(t, d.val);
+      h += '<label class="rcflag-item' + (on ? " on" : "") + '" title="' + d.label + '"><input type="checkbox" class="rcflag-cb" data-flag="' + d.val + '" data-pfx="' + pfx + '"' + (on ? " checked" : "") + '><span>' + d.label + '</span></label>';
+    });
+    return h;
+  }
+  // 勾选打标 / 取消打标（写库）
+  function bindTaskFlagBoxes(card, t, zone, rerenderList, rerenderStats) {
+    card.querySelectorAll(".rcflag-cb").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const d = TASK_FLAG_DEFS.find(x => x.val === cb.dataset.flag);
+        if (!d) return;
+        const patch = {}; patch[d.key] = cb.checked;
+        const upd = zone === "bestseller" ? SB.updateBestsellerTask : SB.updateRecruitTask;
+        upd(t.id, patch).then(() => {
+          t[d.key] = cb.checked;
+          cb.parentElement.classList.toggle("on", cb.checked);
+          sbToast("已" + (cb.checked ? "标记" : "取消标记") + "「" + d.label + "」");
+          if (rerenderStats) rerenderStats();
+          if (rerenderList) {
+            // 若当前存在标记筛选且勾选状态与该筛选冲突则刷新；否则局部更新即可
+            const curFlag = zone === "bestseller" ? bestsellerFlagFilter : recruitFlagFilter;
+            if (curFlag && taskHasFlag(t, curFlag) === cb.checked) rerenderList();
+          }
+        }).catch(e => { cb.checked = !cb.checked; cb.parentElement.classList.toggle("on", cb.checked); sbToast("标记失败", false); });
+      });
+    });
+  }
+  function recomputeTaskFlags(t, patch) {
+    Object.keys(patch || {}).forEach(k => { if (k.indexOf("flag_") === 0) t[k] = patch[k]; });
+  }
+
+  // 标记统计：按类目算各标签数量（招品回品 / BESTSELLER 两个专区共用）
+  function computeTaskFlagStats(tasks, cat) {
+    const src = cat ? tasks.filter(t => (t.category || "") === cat) : tasks;
+    const total = src.length;
+    const counts = {};
+    TASK_FLAG_DEFS.forEach(d => { counts[d.val] = src.filter(t => taskHasFlag(t, d.val)).length; });
+    return { total, counts };
+  }
+  // 渲染某专区的标记统计图（顶部）
+  function renderTaskFlagStats(tasks, cat, chartsId, totalId) {
+    const box = document.querySelector(chartsId);
+    const tEl = document.querySelector(totalId);
+    if (!box) return;
+    const s = computeTaskFlagStats(tasks, cat);
+    if (tEl) tEl.textContent = "该类目共 " + s.total + " 个任务";
+    box.innerHTML = "";
+    TASK_FLAG_DEFS.forEach(d => {
+      const n = s.counts[d.val];
+      const pct = s.total ? Math.round(n / s.total * 100) : 0;
+      const row = document.createElement("div");
+      row.className = "hbar";
+      row.innerHTML = '<span class="hbar-name">' + d.label + '</span>' +
+        '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%"></div></div>' +
+        '<span class="hbar-num">' + n + '<i>' + pct + '%</i></span>';
+      box.appendChild(row);
+    });
+  }
+  function renderRecruitFlagStats() { renderTaskFlagStats(recruitTasks, recruitFlagCat, "#recruit-flag-charts", "#recruit-flag-total"); }
+  function renderBestsellerFlagStats() { renderTaskFlagStats(bestsellerTasks, bestsellerFlagCat, "#bestseller-flag-charts", "#bestseller-flag-total"); }
+
+  // 填充招品/BESTSELLER 标记统计的类目下拉（取当前任务去重类目）
+  function fillTaskFlagCatSelect(tasks, selId) {
+    const sel = document.querySelector(selId);
+    if (!sel) return;
+    const cats = [];
+    tasks.forEach(t => { if (t.category && cats.indexOf(t.category) < 0) cats.push(t.category); });
+    cats.sort((a, b) => (a < b ? -1 : 1));
+    sel.innerHTML = "";
+    const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "全部类目"; sel.appendChild(o0);
+    cats.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+  }
+
   function exportRecruitExcel() {
     if (!recruitTasks.length) return sbToast("暂无招品任务可导出", false);
     if (typeof XLSX === "undefined") return sbToast("导出组件未加载，请联网后重试", false);
     const rows = [];
     const pubRank = recruitTasks.slice().filter(x => x.status === "published").sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-    recruitTasks.forEach((t) => {
+    // 按当前标记筛选/类目统计口径；默认导出全部任务
+    const exportList = recruitFlagFilter
+      ? recruitTasks.filter(t => taskHasFlag(t, recruitFlagFilter))
+      : recruitTasks;
+    exportList.forEach((t) => {
       const seq = t.status === "published" ? (pubRank.indexOf(t) + 1) : "";
       const subs = recruitSubsFor(t.id);
+      const flagStr = TASK_FLAG_DEFS.filter(d => taskHasFlag(t, d.val)).map(d => d.label).join("、") || "无";
+      if (!subs.length) {
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        return;
+      }
       subs.forEach(s => {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
       });
     });
-    if (!rows.length) return sbToast("暂无商家提交数据可导出", false);
+    if (!rows.length) return sbToast("暂无数据可导出", false);
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "招品SPU汇总");
@@ -3746,6 +3861,8 @@ let recruitTasks = [];
 let bestsellerTasks = [];
   let bestsellerAllSubs = [];
   let bestsellerFilter = "";     // "" | published | submitted | bound
+  let bestsellerFlagFilter = ""; // 标记筛选 "" | ip | brand | cat_mismatch | no_refill
+  let bestsellerFlagCat = "";    // 标记统计类目筛选（"" = 全部类目）
   let bestsellerSelected = new Set();  // 卡片勾选
   let bestsellerTrash = [];              // 回收站任务
   let bestsellerTrashSelected = new Set();  // 回收站勾选
@@ -4018,6 +4135,12 @@ let bestsellerTasks = [];
     document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => {
       b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
     });
+    // 标记筛选
+    const bf = document.querySelector("#bestseller-flag-filter");
+    if (bf) bf.addEventListener("change", () => { bestsellerFlagFilter = bf.value || ""; renderBestsellerList(); });
+    // 标记统计类目筛选
+    const bfc = document.querySelector("#bestseller-flag-cat-filter");
+    if (bfc) bfc.addEventListener("change", () => { bestsellerFlagCat = bfc.value || ""; renderBestsellerFlagStats(); });
     // 全选
     const ca = document.querySelector("#bestseller-checkall");
     if (ca) ca.onchange = () => { bestsellerSelected.clear(); if (ca.checked) bestsellerTasks.forEach(t => bestsellerSelected.add(t.id)); renderBestsellerList(); };
@@ -4053,6 +4176,8 @@ let bestsellerTasks = [];
     try {
       bestsellerTasks = await SB.listBestsellerTasks();
       bestsellerAllSubs = await SB.listAllBestsellerSubmissions().catch(() => []);
+      fillTaskFlagCatSelect(bestsellerTasks, "#bestseller-flag-cat-filter");
+      renderBestsellerFlagStats();
       renderBestsellerList();
     } catch (e) { sbToast("加载招品列表失败", false); }
   }
@@ -4077,6 +4202,7 @@ let bestsellerTasks = [];
     if (bestsellerFilter === "published") list = list.filter(t => t.status === "published" && !t.bound);
     else if (bestsellerFilter === "submitted") list = list.filter(t => t.status === "published" && bestsellerSubsFor(t.id).length > 0 && !t.bound);
     else if (bestsellerFilter === "bound") list = list.filter(t => t.bound);
+    if (bestsellerFlagFilter) list = list.filter(t => taskHasFlag(t, bestsellerFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));
     bestsellerSelected = new Set([...bestsellerSelected].filter(id => valid.has(id)));
@@ -4107,6 +4233,7 @@ let bestsellerTasks = [];
           '<span class="bestseller-acard-no">' + seq + '</span>' +
           '<span class="bestseller-acard-del" title="删除">×</span>' +
           '<span class="bestseller-acard-check"><input type="checkbox" class="bestseller-check"' + (bestsellerSelected.has(t.id) ? ' checked' : '') + '></span>' +
+          '<div class="recruit-acard-flags">' + taskFlagBoxHTML(t, "bestseller") + '</div>' +
         '</div>' +
         '<div class="bestseller-acard-body">' +
           '<div class="bestseller-acard-tid" title="任务ID：' + escAttr(t.task_id || "") + '">任务ID：' + escHtml(t.task_id || "（未填写）") + '</div>' +
@@ -4157,6 +4284,7 @@ let bestsellerTasks = [];
       });
       // 已传SPU 状态区
       renderBestsellerSpsStatus(card, spuList.length);
+      bindTaskFlagBoxes(card, t, "bestseller", renderBestsellerList, renderBestsellerFlagStats);
       box.appendChild(card);
     });
   }
@@ -4344,18 +4472,26 @@ let bestsellerTasks = [];
     if (typeof XLSX === "undefined") return sbToast("导出组件未加载，请联网后重试", false);
     const rows = [];
     const pubRank = bestsellerTasks.slice().filter(x => x.status === "published").sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-    bestsellerTasks.forEach((t) => {
+    const exportList = bestsellerFlagFilter
+      ? bestsellerTasks.filter(t => taskHasFlag(t, bestsellerFlagFilter))
+      : bestsellerTasks;
+    exportList.forEach((t) => {
       const seq = t.status === "published" ? (pubRank.indexOf(t) + 1) : "";
       const subs = bestsellerSubsFor(t.id);
+      const flagStr = TASK_FLAG_DEFS.filter(d => taskHasFlag(t, d.val)).map(d => d.label).join("、") || "无";
+      if (!subs.length) {
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        return;
+      }
       subs.forEach(s => {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
       });
     });
-    if (!rows.length) return sbToast("暂无商家提交数据可导出", false);
+    if (!rows.length) return sbToast("暂无数据可导出", false);
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "招品SPU汇总");
-    XLSX.writeFile(wb, "招品回品SPU汇总.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "BESTSELLER汇总");
+    XLSX.writeFile(wb, "BESTSELLER汇总.xlsx");
     sbToast("已导出 " + rows.length + " 行");
   }
 

@@ -379,7 +379,20 @@
       </div>
 
       <div class="panel-card hidden" id="recruit-card">
-        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU）</span><span class="head-right"><button id="recruit-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU；图片可打「IP/品牌/类目错放/无需回品」审核标记，仅后台可见）</span><span class="head-right"><button id="recruit-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+
+        <!-- 顶部统计图表：按类目筛选，展示各标签情况 -->
+        <div class="recruit-flag-stats">
+          <div class="recruit-flag-stats-head">
+            <label class="recruit-flag-cat">标记统计 · 类目
+              <select id="recruit-flag-cat-filter" title="按类目筛选后只统计该类目任务"><option value="">全部类目</option></select>
+            </label>
+            <span class="recruit-flag-total" id="recruit-flag-total">加载中…</span>
+          </div>
+          <div class="recruit-flag-charts" id="recruit-flag-charts"></div>
+        </div>
+        <hr class="tag-sub-hr">
+        <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
 
         <div id="recruit-main-area">
         <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
@@ -415,6 +428,9 @@
             <button class="recruit-filter" data-st="bound">已绑定</button>
           </div>
           <div class="recruit-batchops">
+            <label class="recruit-flag-filter">标记
+              <select id="recruit-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
+            </label>
             <label class="recruit-count-label"><input type="checkbox" id="recruit-checkall"> 全选</label>
             <span id="recruit-count" class="hint-inline">加载中…</span>
             <button id="recruit-batch-pub" class="btn-ghost small" type="button">批量发布</button>
@@ -447,7 +463,20 @@
       </div>
 
       <div class="panel-card hidden" id="bestseller-card">
-        <h2>⑨ BESTSELLER <span class="hint-inline">（BESTSELLER 专区独立任务，商家前台按序号递交货品SPU）</span><span class="head-right"><button id="bestseller-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+        <h2>⑨ BESTSELLER <span class="hint-inline">（BESTSELLER 专区独立任务，商家前台按序号递交货品SPU；图片可打「IP/品牌/类目错放/无需回品」审核标记，仅后台可见）</span><span class="head-right"><button id="bestseller-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+
+        <!-- 顶部统计图表：按类目筛选，展示各标签情况 -->
+        <div class="recruit-flag-stats">
+          <div class="recruit-flag-stats-head">
+            <label class="recruit-flag-cat">标记统计 · 类目
+              <select id="bestseller-flag-cat-filter" title="按类目筛选后只统计该类目任务"><option value="">全部类目</option></select>
+            </label>
+            <span class="recruit-flag-total" id="bestseller-flag-total">加载中…</span>
+          </div>
+          <div class="recruit-flag-charts" id="bestseller-flag-charts"></div>
+        </div>
+        <hr class="tag-sub-hr">
+        <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
 
         <div id="bestseller-main-area">
         <!-- 批量上传区：上传 Excel（含主图URL + 信息）→ 每行生成一个独立任务卡片 -->
@@ -488,6 +517,9 @@
             <button class="bestseller-filter" data-st="bound">已绑定</button>
           </div>
           <div class="bestseller-batchops">
+            <label class="recruit-flag-filter">标记
+              <select id="bestseller-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
+            </label>
             <label class="bestseller-count-label"><input type="checkbox" id="bestseller-checkall"> 全选</label>
             <span id="bestseller-count" class="hint-inline">加载中…</span>
             <button id="bestseller-batch-pub" class="btn-ghost small" type="button">批量发布</button>

@@ -191,13 +191,15 @@
         const topY = Math.max(8, Math.round(h * 0.02));
         ctx.strokeText(topTxt, w / 2, topY);
         ctx.fillText(topTxt, w / 2, topY);
-        // 右下角横幅：newtrend.top
+        // 底部居中横幅：newtrend.top
         ctx.font = "500 " + fsCorner + "px sans-serif";
-        ctx.textBaseline = "bottom";
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.fillStyle = "rgba(255,255,255,0.38)";
+        ctx.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx.lineWidth = 1;
         const cornerTxt = "newtrend.top";
-        const cx = w - Math.max(10, Math.round(w * 0.02));
-        const cy = h - Math.max(10, Math.round(h * 0.03));
+        const cx = w / 2;
+        const cy = h - Math.max(12, Math.round(h * 0.035));
         ctx.strokeText(cornerTxt, cx, cy);
         ctx.fillText(cornerTxt, cx, cy);
         c.toBlob((blob) => {
