@@ -22,6 +22,7 @@
   let shootDefs = [];    // 拍摄方式标签定义
   let skinDefs = [];     // 肤色标签定义
   let dimSwitches = {};  // 各维度是否在前台展示
+  let catVisibility = {}; // 各专区各类目是否前台可见
 
   let activeCats = [];
   let usedCats = [];
@@ -404,12 +405,20 @@
       shootDefs = defs.filter(d => d.type === "shoot").map(d => d.name);
       skinDefs = defs.filter(d => d.type === "skin").map(d => d.name);
       try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
-      shownCats = activeCats.filter(c => usedCats.includes(c));
+      // 各专区各类目前台可见性（视觉专区 = visual；未配置默认可见）
+      try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
+      shownCats = activeCats.filter(c => usedCats.includes(c) && catCatVisible("visual", c));
       renderCatMenu(shownCats);
       await renderGrid(currentCat);
     } catch (e) {
       Auth.toast("加载失败，请检查网络或配置", false);
     }
+  }
+
+  // 某专区某类目是否前台可见（未配置默认可见）
+  function catCatVisible(zone, cat) {
+    const m = catVisibility && catVisibility[zone];
+    return !m || m[cat] !== false;
   }
 
   function renderCatMenu(cats) {
@@ -579,10 +588,10 @@
     try {
       imgs = await SB.listImages("全部");
     } catch (e) { Auth.toast("读取图片失败", false); }
-    const catImgs = imgs.slice();
+    const catImgs = imgs.filter(i => catCatVisible("visual", i.category));
     catCounts = {};
-    imgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
-    imgs = imgs.filter(_match);
+    catImgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
+    imgs = catImgs.filter(_match);
     renderTagBar(catImgs);
 
     const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene || curShoot || curSkin;

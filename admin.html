@@ -57,17 +57,13 @@
       <!-- 左侧菜单 -->
       <aside class="admin-side">
         <nav class="admin-nav">
-          <a class="nav-item" data-target="upload-card">上传图片</a>
           <a class="nav-item" data-target="manage-card">图片管理</a>
-          <a class="nav-item" data-target="access-card">前台访问设置</a>
           <a class="nav-item" data-target="tag-card">标签管理</a>
           <a class="nav-item" data-target="dash-card">数据看板</a>
-          <a class="nav-item" data-target="export-card">数据导出</a>
           <a class="nav-item" data-target="trend-card">趋势专区</a>
-          <a class="nav-item" data-target="notice-card">公告管理</a>
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
-          <a class="nav-item" data-target="perm-card" data-super="1">权限管理</a>
+          <a class="nav-item" data-target="super-card" data-super="1">超管权限</a>
         </nav>
       </aside>
     <main class="admin-main">
@@ -77,47 +73,7 @@
         <p class="hint">当前账号为访客角色，只能查看，不能上传或删除图片。如需成为管理员，请在 README 中查看设置方法。</p>
       </div>
 
-      <!-- 上传区 -->
-      <div class="panel-card hidden" id="upload-card">
-<div class="url-match-row top">
-          <button id="url-match-btn" class="btn-primary" type="button">上传链接Excel</button>
-          <input type="file" id="url-match-input" accept=".xlsx,.xls,.csv" hidden>
-          <span id="url-match-result" class="url-match-result"></span>
-          <span class="hint">上传含 <code>Name</code>（图片名，不含扩展名）+ <code>Url</code> 两列的 Excel/CSV，按文件名给待上传图片批量挂外链。</span>
-        </div>
-        <h2>① 上传图片</h2>
-        <div class="row">
-          <label class="field">分类（只能从已配置的类目中选择，新增类目请到「标签管理 → 前台类目」）</label>
-          <div class="cat-input-row">
-            <select id="cat-select" class="input"></select>
-          </div>
-        </div>
-        <div id="dropzone" class="dropzone">
-          <div class="dz-inner">
-            <span class="dz-icon">＋</span>
-            <p>拖拽图片到这里，或 <em>点击选择文件</em></p>
-            <p class="dz-sub">支持 jpg / png / webp / gif，可多选</p>
-          </div>
-          <input type="file" id="file-input" accept="image/*" multiple hidden>
-        </div>
-        <div id="pending-list" class="pending-list"></div>
-        
-        <button id="upload-btn" class="btn-primary" disabled>上传所选（0）</button>
-        <div id="progress" class="progress hidden"><div id="progress-bar" class="progress-bar"></div></div>
-      </div>
-
-      <!-- 前台访问设置 -->
-      <div class="panel-card hidden" id="access-card">
-        <h2>⑤ 前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h2>
-        <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
-        <label class="switch-row">
-          <input type="checkbox" id="public-access-toggle">
-          <span id="public-access-label">前台公开浏览（所有人可见）</span>
-        </label>
-        <button id="access-save" class="btn-primary" disabled>保存设置</button>
-      </div>
-
-      <!-- 图片管理区（与前台同款布局：左侧类目菜单 + 右侧网格，支持批量删除/批量打标） -->
+      <!-- 图片管理区（与前台同款布局：左侧类目菜单 + 右侧网格，支持批量删除/批量打标；上传图片在智能打标弹窗内） -->
       <div class="panel-card" id="manage-card">
         <h2>④ 图片管理 <span class="hint-inline">（前台同款布局，便于按类目定位；支持批量删除与批量打标签）</span></h2>
         <div class="manage-toolbar">
@@ -166,8 +122,8 @@
             <button id="cat-mgmt-add" class="btn-ghost">新增</button>
           </div>
           <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
-          <div class="order-block">
-            <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）</h3>
+          <div class="order-block" data-super="1">
+            <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）<span class="hint-inline">（仅超级管理员可设置）</span></h3>
             <div id="cat-order-box" class="cat-order-box"></div>
             <button id="cat-order-save" class="btn-primary" disabled>保存展示顺序</button>
           </div>
@@ -310,10 +266,12 @@
         <button id="trend-refresh" class="btn-ghost">刷新列表</button>
       </div>
 
-      <!-- 数据看板（各类标签统计图表） -->
-      <!-- 公告管理（编辑/发布/下架/删除公告，前台展示近一月未读） -->
-      <div class="panel-card hidden" id="notice-card">
-        <h2>⑦ 公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h2>
+      <!-- 超管权限（公告管理 + 权限管理 + 前台访问设置 + 数据导出，仅超级管理员可见） -->
+      <div class="panel-card hidden" id="super-card">
+        <h2>⑪ 超管权限 <span class="hint-inline">（超级管理员 · 公告管理 + 权限管理 + 前台访问设置 + 数据导出）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="super-sub">
+          <h3 class="tbs-title">公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h3>
         <div class="notice-form-box">
           <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
           <div class="notice-editor-wrap">
@@ -358,6 +316,65 @@
         </div>
         <div id="notice-list-box" class="notice-list-box">
           <p class="hint">点击「编辑」可回填到上方表单修改；「发布/下架」切换状态；「删除」移除公告。</p>
+        </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub">
+          <h3 class="tbs-title">权限管理（用户角色 / 类目分配） <span class="hint-inline">（超级管理员 · 设置用户角色，并为其分配可管理的类目权限）</span></h3>
+          <p class="hint">选择下方用户，指定其【角色】，并勾选其可管理的【类目】后保存。授权类目对「视觉专区 / 趋势专区 / 招品回品 / BESTSELLER」四个专区统一生效（只需设置一次）。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
+          <div class="rg-row"><label class="field">选择用户</label>
+            <select id="perm-user" class="input"></select>
+            <label class="field" style="margin-left:8px">角色</label>
+            <select id="perm-role" class="input">
+              <option value="visitor">访客</option>
+              <option value="admin">管理员</option>
+              <option value="super_admin">超级管理员</option>
+            </select>
+            <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
+          </div>
+          <div class="perm-zone">
+            <h4 class="perm-zone-title">可管理类目（跨专区统一生效）</h4>
+            <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+          </div>
+          <div class="rg-btnrow">
+            <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
+          </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub">
+          <h3 class="tbs-title">前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h3>
+          <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
+          <label class="switch-row">
+            <input type="checkbox" id="public-access-toggle">
+            <span id="public-access-label">前台公开浏览（所有人可见）</span>
+          </label>
+          <button id="access-save" class="btn-primary" disabled>保存设置</button>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
+            <h4 class="perm-zone-title">各专区 · 各类目 · 前台可见 <span class="hint-inline">（可随时关闭某专区某类目，前台该类目下内容立即隐藏；关闭仅影响前台展示，不影响后台数据）</span></h4>
+            <p class="hint">开启「展示」= 前台该类目可见；关闭「隐藏」= 前台该类目下内容不展示（用户看不见），可随时再开启。未配置的类目默认前台可见。</p>
+            <div id="cat-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
+          </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub">
+          <h3 class="tbs-title">数据导出 <span class="hint-inline">（仅管理员）按前台筛选条件导出 Excel，含图片与分类标签</span></h3>
+          <div class="export-toolbar">
+            <button id="export-excel" class="btn-ghost export-excel-btn" title="按当前筛选条件导出 Excel">导出 Excel</button>
+            <button id="export-reset" class="btn-ghost">清除筛选</button>
+            <span id="export-meta" class="hint-inline">加载中…</span>
+          </div>
+          <div class="export-filter">
+            <label class="export-cat">类目
+              <select id="export-cat" title="按类目筛选"><option value="">全部类目</option></select>
+            </label>
+            <div id="export-dims" class="export-dims"></div>
+          </div>
+          <p class="hint">筛选栏与前台一致：每个维度单选，选中后按「类目 + 六维度」组合过滤。点击【导出 Excel】将按当前筛选条件导出全部匹配图片（含图片链接、文件名、分类、渠道/风格/元素/场景/拍摄方式/肤色标签、外链）。</p>
+          <div id="export-grid" class="export-grid"></div>
         </div>
       </div>
 
@@ -502,28 +519,6 @@
         </div>
       </div>
 
-      <div class="panel-card hidden" id="perm-card">
-        <h2>⑩ 权限管理 <span class="hint-inline">（超级管理员 · 设置用户角色，并为其分配可管理的类目权限）</span></h2>
-        <p class="hint">选择下方用户，指定其【角色】，并勾选其可管理的【类目】后保存。授权类目对「视觉专区 / 趋势专区 / 招品回品 / BESTSELLER」四个专区统一生效（只需设置一次）。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
-        <div class="rg-row"><label class="field">选择用户</label>
-          <select id="perm-user" class="input"></select>
-          <label class="field" style="margin-left:8px">角色</label>
-          <select id="perm-role" class="input">
-            <option value="visitor">访客</option>
-            <option value="admin">管理员</option>
-            <option value="super_admin">超级管理员</option>
-          </select>
-          <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
-        </div>
-        <div class="perm-zone">
-          <h4 class="perm-zone-title">可管理类目（跨专区统一生效）</h4>
-          <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
-        </div>
-        <div class="rg-btnrow">
-          <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
-        </div>
-      </div>
-
       <div class="panel-card hidden" id="dash-card">
         <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
@@ -580,22 +575,7 @@
       </div>
 
       <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
-      <div class="panel-card hidden" id="export-card">
-        <h2>数据导出 <span class="hint-inline">（仅管理员）按前台筛选条件导出 Excel，含图片与分类标签</span></h2>
-        <div class="export-toolbar">
-          <button id="export-excel" class="btn-ghost export-excel-btn" title="按当前筛选条件导出 Excel">导出 Excel</button>
-          <button id="export-reset" class="btn-ghost">清除筛选</button>
-          <span id="export-meta" class="hint-inline">加载中…</span>
-        </div>
-        <div class="export-filter">
-          <label class="export-cat">类目
-            <select id="export-cat" title="按类目筛选"><option value="">全部类目</option></select>
-          </label>
-          <div id="export-dims" class="export-dims"></div>
-        </div>
-        <p class="hint">筛选栏与前台一致：每个维度单选，选中后按「类目 + 六维度」组合过滤。点击【导出 Excel】将按当前筛选条件导出全部匹配图片（含图片链接、文件名、分类、渠道/风格/元素/场景/拍摄方式/肤色标签、外链）。</p>
-        <div id="export-grid" class="export-grid"></div>
-      </div>
+      
     </main>
     </div>
 

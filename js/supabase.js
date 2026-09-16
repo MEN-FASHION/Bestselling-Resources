@@ -481,6 +481,25 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存失败");
     },
 
+    // 各专区 · 各类目 是否在前台可见（frontend_cat_visibility）
+    // 返回形如 { visual: {类目: true/false}, trend: {...}, recruit: {...}, bestseller: {...} }
+    // 未配置或缺失的类目默认为可见（true）
+    async getFrontendCatVisibility() {
+      const { data, error } = await client
+        .from("site_settings").select("frontend_cat_visibility").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_cat_visibility) return {};
+      return data.frontend_cat_visibility;
+    },
+    // zone: visual / trend / recruit / bestseller；visible=false 表示前台隐藏该类目下内容
+    async setFrontendCatVisibility(zone, cat, visible) {
+      const cur = await this.getFrontendCatVisibility();
+      if (!cur[zone]) cur[zone] = {};
+      cur[zone][cat] = !!visible;
+      const { error } = await client
+        .from("site_settings").update({ frontend_cat_visibility: cur, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+
     // ============ 公告 ============
     // 后台：读取全部公告（含草稿/下架）
     async listAnnouncements() {
@@ -927,6 +946,16 @@ const SB = (() => {
         const { error: e2 } = await client.from(taskTbl).update({ category: "" }).eq("category", oldName);
         if (e2) throw new Error(e2.message || "删除失败");
       }
+    },
+    // 读取某专区的类目名列表（前台访问设置可见性用）
+    // visual/trend 用前台类目表；recruit/bestseller 用各自专区类目表
+    async listZoneCatsForVis(zone) {
+      if (zone === "recruit" || zone === "bestseller") {
+        const list = await this.listZoneCats(zone);
+        return (list || []).map(c => c.name);
+      }
+      // visual/trend：前台类目表（含展示顺序）
+      return this.listActiveCats();
     },
 
     // ============ 超管权限分配（zone_permissions） ============

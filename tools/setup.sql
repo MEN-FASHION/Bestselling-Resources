@@ -182,6 +182,12 @@ on conflict (id) do nothing;
 alter table public.site_settings
   add column if not exists frontend_dims jsonb not null default '{"channel":true,"style":true,"element":true,"scene":true,"shoot":true,"skin":true}'::jsonb;
 
+-- 各专区 · 各类目 是否在前台可见（frontend_cat_visibility）
+-- 结构示例：{"visual":{"类目A":true,"类目B":false},"trend":{...},"recruit":{...},"bestseller":{...}}
+-- 缺省未配置 = 该类目前台可见；false = 前台隐藏该类目下内容
+alter table public.site_settings
+  add column if not exists frontend_cat_visibility jsonb not null default '{}'::jsonb;
+
 alter table public.site_settings enable row level security;
 
 -- 匿名与登录用户均可读取开关（前台首次加载需判断是否公开浏览）

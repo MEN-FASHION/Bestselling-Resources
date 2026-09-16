@@ -243,6 +243,26 @@ img { display: block; }
 .fds-switch.on { background: var(--gold); }
 .fds-switch.on i { left: 17px; }
 
+/* ---------- 超管权限面板：子区块分隔 ---------- */
+.super-sub { margin-top: 4px; }
+.super-sub .tbs-title { margin-bottom: 8px; }
+
+/* ---------- 前台访问设置：各专区各类目可见性 ---------- */
+.access-zone-block { margin-top: 6px; }
+.cat-visibility-box { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.cat-vis-zone { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--card); }
+.cat-vis-zone-head { font-size: 14px; font-weight: 600; color: var(--txt); margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+.cat-vis-zone-head .hint-inline { font-weight: 400; }
+.cat-vis-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.cat-vis-item { display: flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; user-select: none; }
+.cat-vis-item.on { border-color: var(--gold); }
+.cat-vis-item.off { opacity: .72; }
+.cat-vis-item .cvi-name { font-size: 13px; color: var(--txt); }
+.cat-vis-item .fds-switch { width: 32px; height: 18px; }
+.cat-vis-item .fds-switch i { width: 14px; height: 14px; }
+.cat-vis-item .fds-switch.on i { left: 16px; }
+.cat-vis-empty { font-size: 13px; color: var(--sub); }
+
 /* ---------- 灯箱 ---------- */
 .lightbox {
   position: fixed; inset: 0; z-index: 100;

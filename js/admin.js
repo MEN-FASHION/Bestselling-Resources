@@ -39,7 +39,7 @@
       if (sp) sp.classList.add("hidden");
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
-    [bindLogin, bindLogout, bindToken, bindUpload, bindManage, bindFavCats,
+    [bindLogin, bindLogout, bindToken, bindManage, bindFavCats,
      bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
@@ -51,7 +51,7 @@
     });
   }
   function switchPanel(target) {
-    const cards = ["manage-card", "upload-card", "access-card", "tag-card", "dash-card", "export-card", "trend-card", "notice-card", "recruit-card", "bestseller-card", "perm-card", "no-perm"];
+    const cards = ["manage-card", "tag-card", "dash-card", "trend-card", "recruit-card", "bestseller-card", "super-card", "no-perm"];
     cards.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
     const show = document.getElementById(target);
     if (show) show.classList.remove("hidden");
@@ -61,12 +61,11 @@
     });
     // 进入看板/标签管理时动态加载数据
     if (target === "dash-card") { buildDashCatFilter(); loadDashboard(); }
-    if (target === "export-card") { loadExportPanel(); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
-    if (target === "perm-card") { loadPermPanel(); }
+    if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
   }
 
   // ================= 前台预览（后台内嵌，无需另开页面） =================
@@ -372,6 +371,8 @@
   // ================= 分类下拉（常用类目优先） =================
   // 类目只能从已配置的「前台类目 + 常用类目」里选，不支持在传图时新增（防止误传出"露脸模特"这类残留类目）
   async function loadCats() {
+    const sel = $("#cat-select");
+    if (!sel) return; // 上传图片菜单已并入智能打标弹窗，面板元素不存在时跳过
     let cats = [];
     try { cats = await SB.listActiveCats(); } catch (e) {}
     // 普通管理员：只显示被授权（共享一套）的类目；超管/访客显示全部
@@ -382,7 +383,6 @@
         cats = cats.filter(c => set.has((c || "").trim()));
       } catch (e) {}
     }
-    const sel = $("#cat-select");
     sel.innerHTML = "";
     sel.add(new Option("── 请选择类目 ──", ""));
     // 常用类目排前面
@@ -2398,29 +2398,98 @@
   }
 
   // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
+  let catVisCfg = {};  // 各专区各类目可见性 { zone: {category: true/false} }
+  // 四个专区（key 与前端 readZone 一致）：视觉 / 趋势 / 招品 / BESTSELLER
+  const CAT_VIS_ZONES = [
+    { key: "visual", label: "视觉专区" },
+    { key: "trend", label: "趋势专区" },
+    { key: "recruit", label: "招品回品" },
+    { key: "bestseller", label: "BESTSELLER" }
+  ];
   async function loadAccess() {
-    if (!document.querySelector("#access-card")) return;
+    const toggle = document.querySelector("#public-access-toggle");
+    if (!toggle) return;
     try {
       const pub = await SB.getPublicAccess();
       document.querySelector("#public-access-toggle").checked = !!pub;
       document.querySelector("#access-save").disabled = true;
     } catch (e) { /* 忽略读取失败 */ }
+    await loadCatVisibility();
+  }
+  // 读取可见性配置 + 各专区类目池，渲染可见开关列表
+  async function loadCatVisibility() {
+    const box = document.querySelector("#cat-visibility-box");
+    if (!box) return;
+    try { catVisCfg = await SB.getFrontendCatVisibility(); } catch (e) { catVisCfg = {}; }
+    // 视觉/趋势专区：用前台类目表；招品/BESTSELLER：用各自专区类目表
+    const zonesMeta = { visual: "cats", trend: "cats", recruit: "recruit", bestseller: "bestseller" };
+    box.innerHTML = "";
+    for (const z of CAT_VIS_ZONES) {
+      const wrap = document.createElement("div");
+      wrap.className = "cat-vis-zone";
+      const head = document.createElement("div");
+      head.className = "cat-vis-zone-head";
+      head.textContent = z.label;
+      // 类目池
+      let cats = [];
+      try { cats = await SB.listZoneCatsForVis(z.key); } catch (e) {}
+      const visMap = catVisCfg[z.key] || {};
+      const listWrap = document.createElement("div");
+      listWrap.className = "cat-vis-list";
+      if (!cats.length) {
+        const empty = document.createElement("span");
+        empty.className = "cat-vis-empty";
+        empty.textContent = "暂无类目";
+        listWrap.appendChild(empty);
+      } else {
+        cats.forEach(cat => {
+          const item = document.createElement("div");
+          const on = visMap[cat] !== false; // 未配置默认可见
+          item.className = "cat-vis-item " + (on ? "on" : "off");
+          item.innerHTML = `<span class="cvi-name">${escHtml(cat)}</span><span class="fds-switch${on ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${on ? "展示" : "隐藏"}</span>`;
+          item.onclick = async () => {
+            const next = !on;
+            // 乐观更新 UI
+            item.className = "cat-vis-item " + (next ? "on" : "off");
+            item.querySelector(".fds-switch").classList.toggle("on", next);
+            item.querySelector(".cvi-state").textContent = next ? "展示" : "隐藏";
+            catVisCfg[z.key] = catVisCfg[z.key] || {};
+            catVisCfg[z.key][cat] = next;
+            try {
+              await SB.setFrontendCatVisibility(z.key, cat, next);
+              sbToast(`${z.label}「${cat}」已${next ? "开启前台展示" : "隐藏前台内容"}`);
+            } catch (e) {
+              // 回退
+              item.className = "cat-vis-item " + (on ? "on" : "off");
+              item.querySelector(".fds-switch").classList.toggle("on", on);
+              item.querySelector(".cvi-state").textContent = on ? "展示" : "隐藏";
+              sbToast("保存失败：" + (e.message || ""), false);
+            }
+          };
+          listWrap.appendChild(item);
+        });
+      }
+      wrap.appendChild(head);
+      wrap.appendChild(listWrap);
+      box.appendChild(wrap);
+    }
   }
   function bindAccess() {
     const toggle = document.querySelector("#public-access-toggle");
     const save = document.querySelector("#access-save");
-    if (!toggle || !save) return;
-    toggle.addEventListener("change", () => { save.disabled = false; });
-    save.addEventListener("click", async () => {
-      const val = toggle.checked;
-      try {
-        await SB.setPublicAccess(val);
-        sbToast(val ? "已开启公开浏览，前台免登录可见" : "已关闭公开浏览，前台需登录可见");
-        save.disabled = true;
-      } catch (e) {
-        sbToast("保存失败：" + (e.message || ""), false);
-      }
-    });
+    if (toggle && save) {
+      toggle.addEventListener("change", () => { save.disabled = false; });
+      save.addEventListener("click", async () => {
+        const val = toggle.checked;
+        try {
+          await SB.setPublicAccess(val);
+          sbToast(val ? "已开启公开浏览，前台免登录可见" : "已关闭公开浏览，前台需登录可见");
+          save.disabled = true;
+        } catch (e) {
+          sbToast("保存失败：" + (e.message || ""), false);
+        }
+      });
+    }
   }
 
   // ================= 趋势专区管理（上传 / 列表 / 删除） =================

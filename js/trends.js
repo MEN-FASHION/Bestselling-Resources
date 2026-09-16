@@ -20,6 +20,7 @@
   let bestsellerCurUid = "";  // 当前登录商家 ID
   let bestsellerCats = [];    // BESTSELLER 专区类目
   let bestsellerCat = "全部"; // BESTSELLER 当前选中类目
+  let catVisibility = {};    // 各专区各类目是否前台可见
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -354,16 +355,23 @@
 
   async function loadTrends() {
     try {
+      try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
       trends = await SB.listTrends();
       const active = await SB.listActiveCats().catch(() => []);
       const activeArr = (active || []).map(c => (typeof c === "string" ? c : (c && c.name) || ""));
       const used = [...new Set(trends.map(t => t.category || "").filter(Boolean))];
-      shownCats = activeArr.filter(c => used.includes(c));
+      shownCats = activeArr.filter(c => used.includes(c) && catCatVisible("trend", c));
       renderCatMenu();
       renderList();
     } catch (e) {
       toast("加载趋势失败，请检查网络", false);
     }
+  }
+
+  // 某专区某类目是否前台可见（未配置默认可见）
+  function catCatVisible(zone, cat) {
+    const m = catVisibility && catVisibility[zone];
+    return !m || m[cat] !== false;
   }
 
   function renderCatMenu() {
@@ -381,6 +389,7 @@
 
   function renderList() {
     const list = trends.filter(t =>
+      catCatVisible("trend", t.category) &&
       (curTag === "全部" || t.tag === curTag) &&
       (curCat === "全部" || !curCat || t.category === curCat)
     );
@@ -434,6 +443,7 @@
 
   async function loadRecruitView() {
     try {
+      try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
       recruitCurUid = "";
       try { const sess = await SB.getSession(); recruitCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
       [recruitTasks, recruitSubs, recruitCats] = await Promise.all([
@@ -451,7 +461,7 @@
     const menu = $("#recruit-cat-menu");
     if (!menu) return;
     const used = [...new Set(recruitTasks.map(t => t.category || "").filter(Boolean))];
-    const cats = ["全部"].concat(recruitCats.map(c => c.name).filter(n => used.includes(n)));
+    const cats = ["全部"].concat(recruitCats.map(c => c.name).filter(n => used.includes(n) && catCatVisible("recruit", n)));
     menu.innerHTML = "";
     cats.forEach(c => {
       const b = document.createElement("button");
@@ -468,7 +478,7 @@
     const box = $("#recruit-list");
     if (!box) return;
     box.innerHTML = "";
-    const list = recruitTasks.filter(t => recruitCat === "全部" || !recruitCat || t.category === recruitCat);
+    const list = recruitTasks.filter(t => catCatVisible("recruit", t.category) && (recruitCat === "全部" || !recruitCat || t.category === recruitCat));
     if (!list.length) {
       box.innerHTML = '<p class="empty-tip">该分类暂无招品任务。</p>';
       return;
@@ -545,6 +555,7 @@
 
   async function loadBestsellerView() {
     try {
+      try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
       bestsellerCurUid = "";
       try { const sess = await SB.getSession(); bestsellerCurUid = (sess && sess.user && sess.user.id) || ""; } catch (e) {}
       [bestsellerTasks, bestsellerSubs, bestsellerCats] = await Promise.all([
@@ -560,7 +571,7 @@
     const menu = $("#bestseller-cat-menu");
     if (!menu) return;
     const used = [...new Set(bestsellerTasks.map(t => t.category || "").filter(Boolean))];
-    const cats = ["全部"].concat(bestsellerCats.map(c => c.name).filter(n => used.includes(n)));
+    const cats = ["全部"].concat(bestsellerCats.map(c => c.name).filter(n => used.includes(n) && catCatVisible("bestseller", n)));
     menu.innerHTML = "";
     cats.forEach(c => {
       const b = document.createElement("button");
@@ -577,7 +588,7 @@
     const box = $("#bestseller-list");
     if (!box) return;
     box.innerHTML = "";
-    const list = bestsellerTasks.filter(t => bestsellerCat === "全部" || !bestsellerCat || t.category === bestsellerCat);
+    const list = bestsellerTasks.filter(t => catCatVisible("bestseller", t.category) && (bestsellerCat === "全部" || !bestsellerCat || t.category === bestsellerCat));
     if (!list.length) { box.innerHTML = '<p class="empty-tip">该分类暂无BESTSELLER任务。</p>'; return; }
     list.forEach((t, idx) => {
       const mySub = bestsellerSubsFor(t.id).find(s => s.user_id === bestsellerCurUid);
