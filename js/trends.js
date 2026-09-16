@@ -43,6 +43,13 @@
     t._timer = setTimeout(() => t.classList.remove("show"), 2600);
   }
 
+  // 登录横幅：仅招品回品 / BESTSELLER 专区显示，趋势/视觉专区不显示
+  function setBanner(visible) {
+    const b = document.getElementById("login-banner");
+    if (!b) return;
+    b.classList.toggle("hidden", !visible || !!window.__loggedIn);
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     $("#site-title").textContent = CONFIG.siteTitle || "TREND BANK";
     document.title = (CONFIG.siteTitle || "TREND BANK") + " · 趋势专区";
@@ -60,6 +67,9 @@
 
     $("#login-form").addEventListener("submit", onLogin);
     $("#logout-btn").onclick = onLogout;
+    // 登入横幅"立即登录"→ 进入登录页
+    const lbGoto = document.getElementById("lb-goto");
+    if (lbGoto) lbGoto.addEventListener("click", (e) => { e.preventDefault(); showLogin(); });
     $("#pdf-close").onclick = closePdf;
     $("#pdf-prev").onclick = () => goPage(-1);
     $("#pdf-next").onclick = () => goPage(1);
@@ -95,6 +105,15 @@
       else if (a.dataset.viewtab === "trend") a.addEventListener("click", goTrend);
     });
     window.addEventListener("hashchange", () => showMain());
+
+    // 未登录：点击跳转"视觉专区/返回视觉专区"(index.html)时强制回登录页，不允许跳到视觉专区
+    document.querySelectorAll('a[href="index.html"]').forEach(a => {
+      a.addEventListener("click", (e) => {
+        if (window.__loggedIn) return; // 已登录正常跳转
+        e.preventDefault();
+        showLogin(); // 未登录一律回登录
+      });
+    });
 
     $("#notice-tab").addEventListener("click", function (e) {
       e.preventDefault();
@@ -364,6 +383,7 @@
     $("#login-view").classList.remove("hidden");
     $("#trend-view").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
+    setBanner(false);
   }
   function showMain() {
     $("#login-view").classList.add("hidden");
@@ -389,20 +409,34 @@
     const activeTab = bs ? "bestseller" : (rec ? "recruit" : "trend");
     document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", a.dataset.viewtab === activeTab));
     if (rec) loadRecruitView(); else if (bs) loadBestsellerView(); else loadTrends();
+    // 横幅仅招品回品 / BESTSELLER 显示
+    setBanner(rec || bs);
   }
   function showTrend() { showMain(); }
+  // 未登录：仅当跳转目标是"分享目标专区"时才放行，否则回登录页
+  function guardZone(zone) {
+    if (window.__loggedIn) return true;
+    // 分享预览仅在分享目标专区放行；趋势专区/其它专区一律回登录
+    if (zone === "trend") { showLogin(); return false; }
+    if (hasShareTarget() && shareZone === zone) return true;
+    showLogin();
+    return false;
+  }
   function goRecruit(e) {
     if (e) { e.preventDefault(); }
+    if (!guardZone("recruit")) return;
     location.hash = "recruit";
     showMain();
   }
   function goBestseller(e) {
     if (e) { e.preventDefault(); }
+    if (!guardZone("bestseller")) return;
     location.hash = "bestseller";
     showMain();
   }
   function goTrend(e) {
     if (e) { e.preventDefault(); }
+    if (!guardZone("trend")) return;
     location.hash = "";
     showMain();
   }
