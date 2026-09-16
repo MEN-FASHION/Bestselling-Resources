@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 视觉专区</title>
-<link rel="stylesheet" href="css/style.css?v=20260915AF">
+<link rel="stylesheet" href="css/style.css?v=20260915AJ">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -130,7 +130,7 @@
   </div>
 
 <!-- ================= 免责协议（首次访问确认 + 底部随时可查看） ================= -->
-  <div id="legal-overlay" class="legal-overlay hidden">
+  <div id="legal-overlay" class="legal-overlay">
     <div class="legal-dialog">
       <div class="legal-head">
         <h2 class="legal-title">TREND BANK 网站服务与用户协议</h2>
@@ -232,6 +232,17 @@
       </div>
     </div>
   </div>
+<script>
+(function(){
+  try{
+    var a = localStorage.getItem('btrLegalV1');
+    if(a && a !== 'false'){
+      var o = document.getElementById('legal-overlay');
+      if(o){ o.classList.add('hidden'); }
+    }
+  }catch(e){}
+})();
+</script>
 
   <!-- ================= 底部：协议入口 ================= -->
   <footer class="site-footer">
@@ -244,8 +255,8 @@
     </nav>
   </footer>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260915AF"></script>
-  <script src="js/supabase.js?v=20260915AF"></script>
-  <script src="js/frontend.js?v=20260915AF"></script>
+  <script src="js/config.js?v=20260915AJ"></script>
+  <script src="js/supabase.js?v=20260915AJ"></script>
+  <script src="js/frontend.js?v=20260915AJ"></script>
 </body>
 </html>

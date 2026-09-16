@@ -3507,7 +3507,8 @@ let recruitTasks = [];
     }
     sel.innerHTML = "";
     const opt0 = document.createElement("option");
-    opt0.value = ""; opt0.textContent = "（不限类目）";
+    // BESTSELLER 类目必选：默认占位提示，不提供"不限类目"免选
+    opt0.value = ""; opt0.textContent = zone === "bestseller" ? "（请选择上传类目）" : "（不限类目）";
     sel.appendChild(opt0);
     cats.forEach(c => {
       const o = document.createElement("option");
@@ -3538,7 +3539,7 @@ let recruitTasks = [];
     });
   }
   function loadRecruitCatPicker() { fillZoneCatSelect("recruit"); bindZoneCatSearch("recruit"); }
-  function loadBestsellerCatPicker() { fillZoneCatSelect("bestseller"); bindZoneCatSearch("bestseller"); }
+  function loadBestsellerCatPicker() { fillZoneCatSelect("bestseller"); }  // BESTSELLER 只保留下拉选择，不提供类目搜索框
 
   // ================= 专区类目：类目设置弹窗（新增/改名/删除/搜索） =================
   let zoneCatModalZone = "recruit";
@@ -3675,82 +3676,13 @@ let recruitTasks = [];
   // ================= BESTSELLER 专区：后台管理 =================
 let bestsellerTasks = [];
   let bestsellerAllSubs = [];
-  let bestsellerImgFiles = [];   // 批量待上传图片
   let bestsellerFilter = "";     // "" | published | submitted | bound
   let bestsellerSelected = new Set();  // 卡片勾选
   let bestsellerTrash = [];              // 回收站任务
   let bestsellerTrashSelected = new Set();  // 回收站勾选
   let bestsellerInTrash = false;         // 是否处于回收站视图
 
-  function renderBestsellerPre() {
-    const pre = document.querySelector("#bestseller-upload-preview");
-    if (!pre) return;
-    if (!bestsellerImgFiles.length) { pre.classList.add("hidden"); pre.innerHTML = ""; return; }
-    pre.classList.remove("hidden");
-    pre.innerHTML = "";
-    bestsellerImgFiles.forEach((f, i) => {
-      const cell = document.createElement("div");
-      cell.className = "bestseller-pre-cell";
-      const im = document.createElement("img");
-      im.src = URL.createObjectURL(f);
-      const linked = f._url ? `<span class="purl">🔗 已匹配链接</span>` : "";
-      const lbl = document.createElement("div");
-      lbl.className = "bestseller-pre-url"; lbl.innerHTML = linked;
-      const rm = document.createElement("button");
-      rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
-      rm.onclick = () => { bestsellerImgFiles.splice(i, 1); renderBestsellerPre(); };
-      cell.appendChild(im); cell.appendChild(lbl); cell.appendChild(rm);
-      pre.appendChild(cell);
-    });
-  }
-
-  function handleBestsellerUrlMatch(files) {
-    if (!bestsellerImgFiles.length) return sbToast("请先选择BESTSELLER图片，再上传匹配链接表格", false);
-    if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
-    if (!files || !files.length) return;
-    const file = files[0];
-    const mr = document.querySelector("#bestseller-url-match-result");
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        // 找「竞品ID」列与「网页链接」列（大小写/中文容错）
-        let idKey = null, urlKey = null;
-        if (rows.length) {
-          const keys = Object.keys(rows[0]);
-          for (const k of keys) {
-            const lk = String(k).toLowerCase();
-            if (!idKey && (lk === "竞品id" || lk === "id" || lk === "name" || lk === "竞品编号")) idKey = k;
-            if (!urlKey && (lk === "网页链接" || lk === "url" || lk === "链接" || lk === "外链" || lk === "link" || lk === "网页url")) urlKey = k;
-          }
-        }
-        if (!idKey || !urlKey) return sbToast("未找到「竞品ID」列和「网页链接」列，请检查表头", false);
-        const map = {};
-        rows.forEach(r => {
-          const n = stripExt(String(r[idKey] || "").trim());
-          const u = String(r[urlKey] || "").trim();
-          if (n && u) map[n] = u;
-        });
-        if (!Object.keys(map).length) return sbToast("表格中没有可匹配的（竞品ID+网页链接）数据", false);
-        let matched = 0;
-        bestsellerImgFiles.forEach(f => {
-          const n = stripExt(f.name);
-          if (map[n]) { f._url = map[n]; matched++; }
-        });
-        let un = 0;
-        bestsellerImgFiles.forEach(f => { if (!f._url) un++; });
-        renderBestsellerPre();
-        if (mr) { mr.textContent = "匹配成功 " + matched + " 张" + (un ? "；" + un + " 张未匹配到链接" : ""); mr.className = "url-match-result" + (matched ? " ok" : ""); }
-        sbToast("已匹配 " + matched + " 张图片链接" + (un ? "，" + un + " 张未匹配" : ""), matched > 0);
-      } catch (e) {
-        sbToast("表格解析失败，请检查文件格式", false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-// BESTSELLER：直接用主图URL批量导入（表格列：竞品Goods ID / 竞品SKUID / 站点 / 最新上榜时间 / 竞品链接 / 主图URL）
+// BESTSELLER：直接用主图URL批量导入（表格列：Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL）
   async function handleBestsellerUrlImport(files) {
     if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
     if (!files || !files.length) return;
@@ -3797,7 +3729,7 @@ let bestsellerTasks = [];
         const cat = document.querySelector("#bestseller-category")?.value || "";
         imgs.forEach(x => x.category = cat);
         if (mr) { mr.textContent = "解析成功 " + imgs.length + " 行，准备导入"; mr.className = "url-match-result ok"; }
-        sbToast("已解析 " + imgs.length + " 条竞品信息", true);
+        sbToast("已解析 " + imgs.length + " 条信息", true);
         buildBestsellerUrlImport(imgs, mr);
       } catch (e) {
         if (mr) { mr.textContent = "表格解析失败，请检查文件格式"; mr.className = "url-match-result"; }
@@ -3827,7 +3759,7 @@ let bestsellerTasks = [];
       });
       const row = document.createElement("div");
       row.className = "bestseller-pre-commit";
-      row.innerHTML = '<button id="bestseller-urlimport-commit" class="btn-primary" type="button">导入这 ' + imgs.length + ' 条竞品卡片</button>';
+      row.innerHTML = '<button id="bestseller-urlimport-commit" class="btn-primary" type="button">导入这 ' + imgs.length + ' 条卡片</button>';
       pre.appendChild(row);
       row.querySelector("#bestseller-urlimport-commit").onclick = () => commitBestsellerUrlImport();
     }
@@ -3836,56 +3768,153 @@ let bestsellerTasks = [];
   async function commitBestsellerUrlImport() {
     if (!bsUrlImportPending.length) return sbToast("没有待导入数据", false);
     const cat = document.querySelector("#bestseller-category")?.value || "";
-    const rows = bsUrlImportPending.map(x => ({ ...x, category: cat || x.category, status: "published", title: "" }));
+    if (!cat) { sbToast("请先选择上传类目再导入", false); return; }   // 类目必选：不选无法导入
+    const rows = bsUrlImportPending.map(x => ({ ...x, category: cat, status: "published", title: "" }));
     try {
       await SB.addBestsellerTasks(rows);
       bsUrlImportPending = [];
       const pre = document.querySelector("#bestseller-urlimport-preview");
       if (pre) { pre.classList.add("hidden"); pre.innerHTML = ""; }
-      sbToast("已导入 " + rows.length + " 条竞品任务卡片", true);
+      sbToast("已导入 " + rows.length + " 条任务卡片", true);
       loadBestsellerList();
     } catch (e) { sbToast("导入失败：" + (e.message || ""), false); }
   }
 
+  // BESTSELLER：批量上传图片（图片文件 + 一个表格，按图片文件名匹配「SKUID」绑定信息与链接）
+  let bsImgPending = [];   // 待导入的图片文件数组
+  let bsImgMatchRows = []; // 解析到的表格匹配行
+  async function handleBestsellerImgImport(images, xlsxFile) {
+    if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
+    if (!images || !images.length) return sbToast("请先选择要上传的图片", false);
+    if (!xlsxFile) return sbToast("请选择匹配表格", false);
+    const mr = document.querySelector("#bestseller-imgimport-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        if (!rows.length) return sbToast("表格没有数据行", false);
+        // 列名容错映射（图片文件名去扩展名后用于匹配「SKUID」）
+        let goodsKey = null, skuKey = null, siteKey = null, rankKey = null, linkKey = null;
+        if (rows.length) {
+          const keys = Object.keys(rows[0]);
+          for (const k of keys) {
+            const lk = String(k).toLowerCase().replace(/\s+/g, "");
+            if (!goodsKey && (lk.includes("goods") || lk.includes("竞品goodsid") || lk.includes("商品id"))) goodsKey = k;
+            if (!skuKey && (lk.includes("sku") || lk.includes("竞品skuid"))) skuKey = k;
+            if (!siteKey && (lk.includes("站点") || lk.includes("site"))) siteKey = k;
+            if (!rankKey && (lk.includes("上榜") || lk.includes("rank") || lk.includes("上榜时间") || lk.includes("时间"))) rankKey = k;
+            if (!linkKey && (lk.includes("竞品链接") || lk.includes("链接") || lk.includes("url"))) linkKey = k;
+          }
+        }
+        if (!skuKey && !goodsKey) return sbToast("未找到「SKUID」列，请检查表头", false);
+        // 建立 sku_id -> 表格行 映射（去空格归一化），优先用SKUID，缺SKUID才回退GoodsID
+        const map = {};
+        rows.forEach(r => {
+          const sid = String(r[skuKey || goodsKey] || "").trim();
+          if (!sid) return;
+          const key = sid.replace(/\s+/g, "");
+          if (!map[key]) map[key] = {
+            goods_id: goodsKey ? String(r[goodsKey] || "").trim() : "",
+            sku_id: skuKey ? String(r[skuKey] || "").trim() : "",
+            site: siteKey ? String(r[siteKey] || "").trim() : "",
+            rank_time: rankKey ? String(r[rankKey] || "").trim() : "",
+            url: linkKey ? String(r[linkKey] || "").trim() : "",
+          };
+        });
+        // 按图片文件名（去扩展名）匹配 SKUID
+        const matched = [];
+        let unmatched = 0;
+        images.forEach(imgFile => {
+          let base = (imgFile.name || "").replace(/\.[^.]+$/, "").trim();
+          const key = base.replace(/\s+/g, "");
+          const row = map[key];
+          if (row) matched.push({ file: imgFile, info: row });
+          else unmatched++;
+        });
+        if (!matched.length) { if (mr) { mr.textContent = "没有图片能匹配到表格里的SKUID"; mr.className = "url-match-result"; } return sbToast("没有图片能匹配到SKUID，请核对文件名", false); }
+        bsImgPending = matched;
+        bsImgMatchRows = matched;
+        const cat = document.querySelector("#bestseller-category")?.value || "";
+        if (mr) { mr.textContent = "匹配成功 " + matched.length + " 张图片" + (unmatched ? "，" + unmatched + " 张未匹配被跳过" : "") + (cat ? "" : "（请先选择上传类目）"); mr.className = "url-match-result ok"; }
+        sbToast("匹配成功 " + matched.length + " 张图片" + (unmatched ? "，" + unmatched + " 张未匹配" : ""), true);
+        buildBestsellerImgImport(matched, mr);
+      } catch (e) {
+        if (mr) { mr.textContent = "表格解析失败，请检查文件格式"; mr.className = "url-match-result"; }
+        sbToast("表格解析失败，请检查文件格式", false);
+      }
+    };
+    reader.readAsArrayBuffer(xlsxFile);
+  }
+  function buildBestsellerImgImport(matched, mr) {
+    const pre = document.querySelector("#bestseller-imgimport-preview");
+    if (pre) {
+      pre.classList.remove("hidden");
+      pre.innerHTML = "";
+      matched.forEach((m) => {
+        const cell = document.createElement("div");
+        cell.className = "bestseller-pre-cell";
+        const im = document.createElement("img");
+        im.src = URL.createObjectURL(m.file);
+        const lbl = document.createElement("div");
+        lbl.className = "bestseller-pre-url";
+        lbl.innerHTML = `<span>${m.info.goods_id || ""}${m.info.sku_id ? " · " + m.info.sku_id : ""}</span>${m.info.url ? '<span class="purl">🔗 已绑定链接</span>' : ""}`;
+        cell.appendChild(im); cell.appendChild(lbl);
+        pre.appendChild(cell);
+      });
+      const row = document.createElement("div");
+      row.className = "bestseller-pre-commit";
+      row.innerHTML = '<button id="bestseller-imgimport-commit" class="btn-primary" type="button">上传并导入这 ' + matched.length + ' 张图片</button>';
+      pre.appendChild(row);
+      row.querySelector("#bestseller-imgimport-commit").onclick = () => commitBestsellerImgImport();
+    }
+    if (mr) mr.textContent = "下方为预览（共 " + matched.length + " 行），点「上传并导入」图片存R2并写入任务卡片";
+  }
+  async function commitBestsellerImgImport() {
+    if (!bsImgPending.length) return sbToast("没有待导入图片", false);
+    const cat = document.querySelector("#bestseller-category")?.value || "";
+    if (!cat) { sbToast("请先选择上传类目再导入", false); return; }   // 类目必选：不选无法导入
+    const commitBtn = document.querySelector("#bestseller-imgimport-commit");
+    if (commitBtn) { commitBtn.disabled = true; commitBtn.textContent = "正在上传…"; }
+    const rows = [];
+    for (const m of bsImgPending) {
+      try {
+        const path = await SB.uploadBestsellerImage(m.file);
+        rows.push({
+          image_path: path,
+          main_img_url: "",
+          goods_id: m.info.goods_id,
+          sku_id: m.info.sku_id,
+          site: m.info.site,
+          rank_time: m.info.rank_time,
+          url: m.info.url,
+          task_id: "",
+          category: cat,
+          status: "published",
+          title: "",
+        });
+      } catch (e) {
+        sbToast("图片上传失败：" + (e.message || m.file.name), false);
+        if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "上传并导入这 " + bsImgPending.length + " 张图片"; }
+        return;
+      }
+    }
+    try {
+      await SB.addBestsellerTasks(rows);
+      bsImgPending = []; bsImgMatchRows = [];
+      const pre = document.querySelector("#bestseller-imgimport-preview");
+      if (pre) { pre.classList.add("hidden"); pre.innerHTML = ""; }
+      sbToast("已导入 " + rows.length + " 条任务卡片", true);
+      loadBestsellerList();
+    } catch (e) { sbToast("导入失败：" + (e.message || ""), false); }
+    if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "上传并导入这 " + (rows.length || 0) + " 张图片"; }
+  }
+
   function bindBestseller() {
-    const upBtn = document.querySelector("#bestseller-save");
     const refresh = document.querySelector("#bestseller-refresh");
-    const imgDz = document.querySelector("#bestseller-img-dropzone");
-    const imgInput = document.querySelector("#bestseller-img-input");
-    const pre = document.querySelector("#bestseller-upload-preview");
-    if (imgDz && imgInput) {
-      imgDz.addEventListener("click", () => imgInput.click());
-      imgDz.addEventListener("dragover", (e) => e.preventDefault());
-      imgDz.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const fs = e.dataTransfer.files ? [...e.dataTransfer.files] : [];
-        if (fs.length) addBestsellerImgs(fs);
-      });
-      imgInput.addEventListener("change", () => {
-        if (imgInput.files && imgInput.files.length) addBestsellerImgs([...imgInput.files]);
-        imgInput.value = "";
-      });
-    }
-    function addBestsellerImgs(fs) {
-      const ok = fs.filter(f => /^image\//i.test(f.type || "") && /\.(jpe?g|png|webp)$/i.test(f.name || ""));
-      if (!ok.length) { sbToast("仅支持 JPG/PNG 图片", false); return; }
-      // 去重（按文件名）
-      const names = new Set(bestsellerImgFiles.map(x => x.name));
-      ok.forEach(f => { if (!names.has(f.name)) { bestsellerImgFiles.push(f); names.add(f.name); } });
-      renderBestsellerPre();
-    }
-    if (upBtn) upBtn.addEventListener("click", saveBestsellerTasks);
     if (refresh) refresh.addEventListener("click", loadBestsellerList);
-    // 绑定竞品链接：点击打开文件选择，选中后解析绑定
-    const bUrlBtn = document.querySelector("#bestseller-url-match-btn");
-    const bUrlInput = document.querySelector("#bestseller-url-match-input");
-    if (bUrlBtn && bUrlInput) {
-      bUrlBtn.addEventListener("click", () => bUrlInput.click());
-      bUrlInput.addEventListener("change", () => {
-        if (bUrlInput.files && bUrlInput.files.length) { handleBestsellerUrlMatch([...bUrlInput.files]); bUrlInput.value = ""; }
-      });
-    }
-    // 直接用主图URL导入：点击打开文件选择，选中后解析为卡片
+    // 批量上传（主图URL）：点击打开文件选择，选中后解析为卡片
     const iBtn = document.querySelector("#bestseller-urlimport-btn");
     const iInput = document.querySelector("#bestseller-urlimport-input");
     if (iBtn && iInput) {
@@ -3894,6 +3923,27 @@ let bestsellerTasks = [];
         if (iInput.files && iInput.files.length) { handleBestsellerUrlImport([...iInput.files]); iInput.value = ""; }
       });
     }
+    // 批量上传图片（图片文件 + 表格）：先选图片，再选表格，按文件名匹配SKUID
+    const imgBtn = document.querySelector("#bestseller-imgimport-btn");
+    const imgInput = document.querySelector("#bestseller-imgimport-input");
+    const xlsxBtn = document.querySelector("#bestseller-imgxlsx-btn");
+    const xlsxInput = document.querySelector("#bestseller-imgxlsx-input");
+    if (imgBtn && imgInput) imgBtn.addEventListener("click", () => imgInput.click());
+    if (xlsxBtn && xlsxInput) xlsxBtn.addEventListener("click", () => xlsxInput.click());
+    if (imgInput) imgInput.addEventListener("change", () => { /* 图片先暂存，等待表格 */ });
+    if (xlsxInput) xlsxInput.addEventListener("change", () => {
+      const imgs = imgInput && imgInput.files ? [...imgInput.files] : [];
+      if (imgs.length && xlsxInput.files && xlsxInput.files.length) {
+        handleBestsellerImgImport(imgs, xlsxInput.files[0]);
+        xlsxInput.value = "";
+      } else if (!imgs.length) {
+        sbToast("请先选择要上传的图片", false);
+      }
+    });
+    // 图片选择触发提示选表格
+    if (imgInput) imgInput.addEventListener("change", () => {
+      if (imgInput.files && imgInput.files.length) sbToast("已选 " + imgInput.files.length + " 张图片，请再选择匹配表格", true);
+    });
     // 筛选
     document.querySelectorAll("#bestseller-filters .bestseller-filter").forEach(b => {
       b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
@@ -3926,36 +3976,6 @@ let bestsellerTasks = [];
     if (trRestore) trRestore.onclick = () => bulkRestoreBestseller();
     const trPurge = document.querySelector("#bestseller-trash-purge");
     if (trPurge) trPurge.onclick = () => bulkPurgeBestseller();
-    renderBestsellerPre();
-  }
-
-  // 批量上传：多张图 → 生成多张「未发布」卡片，多任务ID按顺序填入
-  async function saveBestsellerTasks() {
-    if (!bestsellerImgFiles.length) return sbToast("请先选择招品图片", false);
-    const ids = (document.querySelector("#bestseller-taskid")?.value || "").replace(/[,，\s]+/g, " ").trim().split(/\s+/).filter(Boolean);
-    const cat = document.querySelector("#bestseller-category")?.value || "";
-    const files = bestsellerImgFiles.slice();
-    // 校验：任务ID数量不能多于图片数量（允许少于：多余的图留空草稿）
-    const rows = [];
-    let uploadErr = false;
-    sbToast("正在上传 " + files.length + " 张图片…");
-    for (let i = 0; i < files.length; i++) {
-      try {
-        const imagePath = await SB.uploadBestsellerImage(files[i]);
-        rows.push({ task_id: ids[i] || "", image_path: imagePath, status: ids[i] ? "published" : "draft", category: cat, url: files[i]._url || "" });
-      } catch (e) { uploadErr = true; }
-    }
-    if (!rows.length) { sbToast("图片上传失败，请重试", false); return; }
-    try {
-      await SB.addBestsellerTasks(rows);
-      bestsellerImgFiles = [];
-      renderBestsellerPre();
-      if (document.querySelector("#bestseller-taskid")) document.querySelector("#bestseller-taskid").value = "";
-      if (document.querySelector("#bestseller-category")) document.querySelector("#bestseller-category").value = "";
-      if (document.querySelector("#bestseller-cat-search")) document.querySelector("#bestseller-cat-search").value = "";
-      sbToast("已创建 " + rows.length + " 张招品任务卡片");
-      loadBestsellerList();
-    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
   }
 
   async function loadBestsellerList() {
