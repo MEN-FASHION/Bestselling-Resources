@@ -51,8 +51,8 @@
     });
   }
   function switchPanel(target) {
-    const cards = ["manage-card", "tag-card", "dash-card", "trend-card", "recruit-card", "bestseller-card", "super-card", "no-perm"];
-    cards.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
+    // 统一全隐藏所有后台面板，保证任意时刻只展示选中面板，杜绝内容堆叠
+    document.querySelectorAll("#admin-panel .panel-card").forEach(el => el.classList.add("hidden"));
     const show = document.getElementById(target);
     if (show) show.classList.remove("hidden");
     // 高亮当前菜单
@@ -3877,32 +3877,33 @@ let bestsellerTasks = [];
             if (!linkKey && (lk.includes("竞品链接") || lk.includes("链接") || lk.includes("url"))) linkKey = k;
           }
         }
-        if (!skuKey && !goodsKey) return sbToast("未找到「SKUID」列，请检查表头", false);
-        // 建立 sku_id -> 表格行 映射（去空格归一化），优先用SKUID，缺SKUID才回退GoodsID
-        const map = {};
+        if (!skuKey && !goodsKey) return sbToast("未找到「Goods ID / SKUID」列，请检查表头", false);
+        // 建立两张映射表：SKUID -> 行、GoodsID -> 行（去空格归一化）
+        const skuMap = {}, goodsMap = {};
         rows.forEach(r => {
-          const sid = String(r[skuKey || goodsKey] || "").trim();
-          if (!sid) return;
-          const key = sid.replace(/\s+/g, "");
-          if (!map[key]) map[key] = {
+          const info = {
             goods_id: goodsKey ? String(r[goodsKey] || "").trim() : "",
             sku_id: skuKey ? String(r[skuKey] || "").trim() : "",
             site: siteKey ? String(r[siteKey] || "").trim() : "",
             rank_time: rankKey ? String(r[rankKey] || "").trim() : "",
             url: linkKey ? String(r[linkKey] || "").trim() : "",
           };
+          const sid = info.sku_id.replace(/\s+/g, "");
+          const gid = info.goods_id.replace(/\s+/g, "");
+          if (sid && !skuMap[sid]) skuMap[sid] = { info, matchedBy: "SKUID" };
+          if (gid && !goodsMap[gid]) goodsMap[gid] = { info, matchedBy: "Goods ID" };
         });
-        // 按图片文件名（去扩展名）匹配 SKUID
+        // 按图片文件名（去扩展名）优先匹配 SKUID，匹配不到再回退 Goods ID
         const matched = [];
         let unmatched = 0;
         images.forEach(imgFile => {
           let base = (imgFile.name || "").replace(/\.[^.]+$/, "").trim();
           const key = base.replace(/\s+/g, "");
-          const row = map[key];
-          if (row) matched.push({ file: imgFile, info: row });
+          let hit = skuMap[key] || goodsMap[key];
+          if (hit) matched.push({ file: imgFile, info: hit.info, matchedBy: hit.matchedBy });
           else unmatched++;
         });
-        if (!matched.length) { if (mr) { mr.textContent = "没有图片能匹配到表格里的SKUID"; mr.className = "url-match-result"; } return sbToast("没有图片能匹配到SKUID，请核对文件名", false); }
+        if (!matched.length) { if (mr) { mr.textContent = "没有图片能匹配到表格里的Goods ID / SKUID"; mr.className = "url-match-result"; } return sbToast("没有图片能匹配到Goods ID / SKUID，请核对文件名", false); }
         bsImgPending = matched;
         bsImgMatchRows = matched;
         const cat = document.querySelector("#bestseller-category")?.value || "";
@@ -3928,7 +3929,7 @@ let bestsellerTasks = [];
         im.src = URL.createObjectURL(m.file);
         const lbl = document.createElement("div");
         lbl.className = "bestseller-pre-url";
-        lbl.innerHTML = `<span>${m.info.goods_id || ""}${m.info.sku_id ? " · " + m.info.sku_id : ""}</span>${m.info.url ? '<span class="purl">🔗 已绑定链接</span>' : ""}`;
+        lbl.innerHTML = `<span>${m.info.goods_id || ""}${m.info.sku_id ? " · " + m.info.sku_id : ""}${m.matchedBy ? "（" + m.matchedBy + "匹配）" : ""}</span>${m.info.url ? '<span class="purl">🔗 已绑定链接</span>' : ""}`;
         cell.appendChild(im); cell.appendChild(lbl);
         pre.appendChild(cell);
       });

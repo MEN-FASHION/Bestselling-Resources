@@ -306,7 +306,8 @@ img { display: block; }
 .ghost-chip.bad { color: var(--danger); border-color: rgba(207,90,87,.4); }
 .admin-body { display: flex; gap: 18px; align-items: flex-start; max-width: none; margin: 0 auto; padding: 18px 14px 70px; }
 .admin-side {
-  flex: 0 0 210px; position: sticky; top: 70px;
+  flex: 0 0 210px; position: sticky; top: 70px; align-self: flex-start;
+  max-height: calc(100vh - 88px); overflow-y: auto; scrollbar-width: thin;
   background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
   display: flex; flex-direction: column; gap: 4px;
 }
