@@ -385,11 +385,17 @@
     $("#recruit-view").classList.add("hidden");
     $("#bestseller-view").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
+    // 登录页隐藏顶部导航栏，避免专区菜单残留
+    const tb = document.getElementById("front-topbar");
+    if (tb) tb.classList.add("hidden");
     setBanner(false);
   }
   function showMain() {
     $("#login-view").classList.add("hidden");
     $("#logout-btn").classList.remove("hidden");
+    // 进入专区恢复顶部导航栏
+    const tb = document.getElementById("front-topbar");
+    if (tb) tb.classList.remove("hidden");
     const hash = (location.hash || "").replace("#", "");
     let rec = hash === "recruit";
     let bs = hash === "bestseller";
