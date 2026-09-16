@@ -32,16 +32,14 @@
         <p class="subtitle">趋势专区 · 登录后查看</p>
       </div>
       <form id="login-form" class="auth-form">
-        <h2 class="form-title">趋势专区登录</h2>
+        <h2 class="form-title" id="auth-title">趋势专区登录</h2>
         <label>邮箱</label>
         <input type="email" id="auth-email" placeholder="请输入邮箱" autocomplete="email" required>
         <label>密码</label>
         <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
         <button type="submit" class="btn-primary" id="auth-submit">进入趋势专区</button>
         <div class="auth-links">
-          <a href="index.html">← 返回视觉专区</a>
-          <span class="auth-sep">·</span>
-          <a href="admin.html">管理员入口 →</a>
+          <a href="#" id="auth-toggle-link" class="hidden">没有账号？注册一个</a>
         </div>
       </form>
     </div>

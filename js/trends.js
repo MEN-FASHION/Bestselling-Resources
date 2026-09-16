@@ -6,6 +6,7 @@
 
   let curTag = "全部";
   let curCat = "全部";
+  let authMode = "login"; // 登录页模式：login 登录 / register 注册
   let trends = [];
   let shownCats = [];
   // PDF 自绘预览状态
@@ -63,6 +64,14 @@
     setTimeout(hideSplash, 3000);
 
     $("#login-form").addEventListener("submit", onLogin);
+    const authToggle = $("#auth-toggle-link");
+    if (authToggle) authToggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      authMode = authMode === "login" ? "register" : "login";
+      authToggle.textContent = authMode === "login" ? "没有账号？注册一个" : "已有账号？去登录";
+      const t = $("#auth-title"); if (t) t.textContent = authMode === "login" ? "趋势专区登录" : "注册账号";
+      const s = $("#auth-submit"); if (s) s.textContent = authMode === "login" ? "进入趋势专区" : "注册并进入";
+    });
     $("#logout-btn").onclick = onLogout;
     // 登入横幅"立即登录"→ 进入登录页
     const lbGoto = document.getElementById("lb-goto");
@@ -453,6 +462,14 @@
     const pass = $("#auth-pass").value;
     if (!email || !pass) return toast("请填写邮箱和密码", false);
     try {
+      if (authMode === "register") {
+        const { error } = await SB.signUp(email, pass);
+        if (error) throw error;
+        window.__loggedIn = true;
+        toast("注册成功，已登录");
+        showTrend();
+        return;
+      }
       const { data, error } = await SB.signIn(email, pass);
       if (error) throw error;
       window.__loggedIn = true;
