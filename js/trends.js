@@ -382,6 +382,8 @@
   function showLogin() {
     $("#login-view").classList.remove("hidden");
     $("#trend-view").classList.add("hidden");
+    $("#recruit-view").classList.add("hidden");
+    $("#bestseller-view").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
     setBanner(false);
   }
