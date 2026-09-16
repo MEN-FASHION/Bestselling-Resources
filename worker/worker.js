@@ -46,6 +46,13 @@ async function getRole(userId, token, env) {
   return rows && rows.length ? rows[0].role : null;
 }
 
+// 管理员判定：admin 与 super_admin 均具备管理员权限（超管拥有全部权限）
+// 归一化：去首尾空格 + 转小写，避免角色值含空格/大小写差异导致误判
+function isAdminRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  return r === "admin" || r === "super_admin";
+}
+
 // CORS 头
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -131,7 +138,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -154,7 +161,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path.startsWith("images/")) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const rawPath = url.pathname.replace(/^\//, "");
     // 先删解码后路径，若不存在再删原始编码路径，兼容新旧存储
     await env.IMAGES.delete(path).catch(() => {});
@@ -168,7 +175,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "trend/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -242,7 +249,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "trend/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -256,7 +263,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "notice/uploadimg") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -296,7 +303,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "recruit/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -336,7 +343,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "recruit/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -348,7 +355,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "bestseller/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -388,7 +395,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "bestseller/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (role !== "admin") return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("bestsellers/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
