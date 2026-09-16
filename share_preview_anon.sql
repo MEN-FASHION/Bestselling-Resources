@@ -11,14 +11,14 @@ drop policy if exists "anon read published recruit_tasks" on public.recruit_task
 create policy "anon read published recruit_tasks"
   on public.recruit_tasks for select
   to anon
-  using (published = true and deleted_at is null);
+  using (status = 'published' and deleted_at is null);
 
 -- BESTSELLER
 drop policy if exists "anon read published bestseller_tasks" on public.bestseller_tasks;
 create policy "anon read published bestseller_tasks"
   on public.bestseller_tasks for select
   to anon
-  using (published = true and deleted_at is null);
+  using (status = 'published' and deleted_at is null);
 
 -- 校验
 select tablename, policyname, roles, cmd

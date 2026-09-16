@@ -517,7 +517,7 @@ drop policy if exists "anon read published recruit_tasks" on public.recruit_task
 create policy "anon read published recruit_tasks"
   on public.recruit_tasks for select
   to anon
-  using (published = true and deleted_at is null);
+  using (status = 'published' and deleted_at is null);
 
 -- 仅管理员可增/改/删招品任务
 drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
@@ -627,7 +627,7 @@ drop policy if exists "anon read published bestseller_tasks" on public.bestselle
 create policy "anon read published bestseller_tasks"
   on public.bestseller_tasks for select
   to anon
-  using (published = true and deleted_at is null);
+  using (status = 'published' and deleted_at is null);
 
 -- 仅管理员可增/改/删BESTSELLER任务
 drop policy if exists "admin insert bestseller_tasks" on public.bestseller_tasks;
