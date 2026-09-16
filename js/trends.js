@@ -25,7 +25,10 @@
   const shareQ = new URLSearchParams(location.search);
   const shareZone = shareQ.get("zone");
   const shareCat = (shareQ.get("cat") || "").trim();
-  const isSharePreview = () => !window.__loggedIn && !!shareCat && (shareZone === "recruit" || shareZone === "bestseller");
+  // 是否带分享类目目标（与登录态无关）：用于定位专区/类目
+  const hasShareTarget = () => !!shareCat && (shareZone === "recruit" || shareZone === "bestseller");
+  // 未登录时的分享预览模式：仅显示缩略图 + 登录引导
+  const isSharePreview = () => !window.__loggedIn && hasShareTarget();
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -365,10 +368,10 @@
     const hash = (location.hash || "").replace("#", "");
     let rec = hash === "recruit";
     let bs = hash === "bestseller";
-    // 分享预览（方案A）：URL 带 ?zone= & cat= 且未登录时，强制锁定到对应专区与类目
-    if (isSharePreview() && shareZone === "recruit") { rec = true; bs = false; }
-    else if (isSharePreview() && shareZone === "bestseller") { rec = false; bs = true; }
-    if (isSharePreview() && shareCat) {
+    // 分享目标：URL 带 ?zone= & cat= 时，无论登录与否都定位到对应专区与类目
+    if (hasShareTarget() && shareZone === "recruit") { rec = true; bs = false; }
+    else if (hasShareTarget() && shareZone === "bestseller") { rec = false; bs = true; }
+    if (hasShareTarget() && shareCat) {
       if (shareZone === "recruit") recruitCat = shareCat;
       else if (shareZone === "bestseller") bestsellerCat = shareCat;
     }
@@ -630,12 +633,10 @@
   async function saveMySpu(t, card, ops, form) {
     const inp = card.querySelector(".recruit-spu-input");
     const raw = inp ? inp.value.trim() : "";
-    if (!raw) return toast("请填写货品SPU", false);
     const spus = raw.split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
-    if (!spus.length) return toast("请填写货品SPU", false);
     try {
       await SB.upsertRecruitSubmission(t.id, spus);
-      toast("已保存 " + spus.length + " 个SPU");
+      toast(spus.length ? "已保存 " + spus.length + " 个SPU" : "已保存");
       loadRecruitView();
     } catch (e) {
       toast("保存失败：" + (e.message || ""), false);
@@ -777,10 +778,8 @@
   async function saveMyBsSpu(t, card) {
     const inp = card.querySelector(".recruit-spu-input");
     const raw = inp ? inp.value.trim() : "";
-    if (!raw) return toast("请填写货品SPU", false);
     const spus = raw.split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
-    if (!spus.length) return toast("请填写货品SPU", false);
-    try { await SB.upsertBestsellerSubmission(t.id, spus); toast("已保存 " + spus.length + " 个SPU"); loadBestsellerView(); }
+    try { await SB.upsertBestsellerSubmission(t.id, spus); toast(spus.length ? "已保存 " + spus.length + " 个SPU" : "已保存"); loadBestsellerView(); }
     catch (e) { toast("保存失败：" + (e.message || ""), false); }
   }
 

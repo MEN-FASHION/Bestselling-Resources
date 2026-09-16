@@ -713,7 +713,7 @@ const SB = (() => {
     async listAllRecruitSubmissions() {
       try {
         const { data, error } = await client.from("recruit_submissions").select("*").order("created_at", { ascending: false });
-        if (!error) return data || [];
+        if (!error) return (data || []).filter(d => (d.spus || []).length > 0);
       } catch (e) {}
       return [];
     },
@@ -873,7 +873,7 @@ const SB = (() => {
     async listAllBestsellerSubmissions() {
       try {
         const { data, error } = await client.from("bestseller_submissions").select("*").order("created_at", { ascending: false });
-        if (!error) return data || [];
+        if (!error) return (data || []).filter(d => (d.spus || []).length > 0);
       } catch (e) {}
       return [];
     },

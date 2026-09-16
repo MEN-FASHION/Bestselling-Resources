@@ -1741,3 +1741,22 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   .zone-flex { flex-direction: column; }
   .zone-side { flex: none; width: 100%; max-height: 240px; position: static; }
 }
+
+/* ===== 登录上传横幅 (前台) ===== */
+.login-banner {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 9px 16px; font-size: 13.5px; color: #fff;
+  background: linear-gradient(90deg,#2563eb,#4f46e5);
+  text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.login-banner .lb-icon { font-size: 16px; }
+.login-banner b { color: #ffe066; font-weight: 700; }
+.login-banner .lb-btn {
+  border:0; cursor:pointer; padding:5px 14px; border-radius:999px;
+  background:#fff; color:#2563eb; font-weight:600; font-size:12.5px;
+}
+.login-banner .lb-btn:hover { background:#eef2ff; }
+@media (max-width:720px){
+  .login-banner{ flex-wrap:wrap; gap:6px; font-size:12px; padding:7px 10px; }
+  .login-banner .lb-text{ flex:1 1 100%; }
+}

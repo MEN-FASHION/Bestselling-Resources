@@ -948,7 +948,7 @@
     authMode = authMode === "login" ? "register" : "login";
     $("#auth-toggle-link").textContent = authMode === "login" ? "没有账号？注册一个" : "已有账号？去登录";
     $("#auth-title").textContent = authMode === "login" ? "访客登录" : "注册账号";
-    $("#auth-submit").textContent = authMode === "login" ? "进入图鉴" : "注册并进入";
+    $("#auth-submit").textContent = authMode === "login" ? "进入网站" : "注册并进入";
   };
   $("#logout-btn").onclick = async () => { await SB.signOut(); refreshAuthUI(); };
 })();

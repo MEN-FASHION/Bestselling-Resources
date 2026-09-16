@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 趋势专区</title>
-<link rel="stylesheet" href="css/style.css?v=20260916B">
+<link rel="stylesheet" href="css/style.css?v=20260916C">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -62,6 +62,11 @@
         <button id="logout-btn" class="btn-ghost hidden">退出</button>
       </div>
     </div>
+    <div id="login-banner" class="login-banner hidden">
+    <span class="lb-icon">📈</span>
+    <span class="lb-text">登录并上传货品，可获得<b>流量加权</b>，持续触达更多浏览</span>
+    <button type="button" id="lb-goto" class="lb-btn">立即登录</button>
+  </div>
   </header>
 
   <section id="trend-view" class="gallery-view hidden">
@@ -167,8 +172,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260916B"></script>
-  <script src="js/supabase.js?v=20260916B"></script>
-  <script src="js/trends.js?v=20260916B"></script>
+  <script src="js/config.js?v=20260916C"></script>
+  <script src="js/supabase.js?v=20260916C"></script>
+  <script src="js/trends.js?v=20260916C"></script>
+  <script>
+  (function(){
+    function syncBanner(){
+      var b=document.getElementById('login-banner'); if(!b) return;
+      var logged=!!window.__loggedIn;
+      b.classList.toggle('hidden', logged);
+    }
+    var t=setInterval(syncBanner, 800);
+    window.addEventListener('load', function(){ setTimeout(syncBanner, 0); });
+    var g=document.getElementById('lb-goto');
+    if(g) g.addEventListener('click', function(){ location.hash=''; syncBanner(); });
+  })();
+  </script>
 </body>
 </html>
