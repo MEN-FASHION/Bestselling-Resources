@@ -2997,6 +2997,8 @@ let recruitTasks = [];
   let recruitFilter = "";     // "" | published | submitted | bound
   let recruitFlagFilter = ""; // 标记筛选 "" | ip | brand | cat_mismatch | no_refill
   let recruitFlagCat = "";    // 标记统计类目筛选（"" = 全部类目）
+  let recruitSideCat = "";    // 左侧类目菜单当前选中类目（"" = 全部）
+  let recruitSideCats = [];   // 左侧类目菜单类目列表
   let recruitSelected = new Set();  // 卡片勾选
   let recruitTrash = [];              // 回收站任务
   let recruitTrashSelected = new Set();  // 回收站勾选
@@ -3033,13 +3035,15 @@ let recruitTasks = [];
       prompt("复制分享链接：", link);
     }
   }
-  function bindShareCatBtn(btnId, zone, catPickerId) {
+  function bindShareCatBtn(btnId, zone, checkSide) {
     const btn = document.querySelector("#" + btnId);
     if (!btn) return;
     btn.addEventListener("click", () => {
-      const sel = document.querySelector(catPickerId);
-      const cat = sel ? sel.value : "";
-      copyZoneCatLink(zone, cat);
+      const cat = checkSide ? (zone === "bestseller" ? bestsellerSideCat : recruitSideCat) : "";
+      if (cat) { copyZoneCatLink(zone, cat); return; }
+      const sel = document.querySelector("#" + zone + "-flag-cat-filter");
+      const c = sel ? sel.value : "";
+      copyZoneCatLink(zone, c);
     });
   }
 
@@ -3077,7 +3081,7 @@ let recruitTasks = [];
       b.onclick = () => { recruitFilter = b.dataset.st || ""; renderRecruitList(); };
     });
     // 复制分类分享链接
-    bindShareCatBtn("recruit-share-cat", "recruit", "#recruit-flag-cat-filter");
+    bindShareCatBtn("recruit-share-cat", "recruit", true);
     // 标记筛选
     const rf = document.querySelector("#recruit-flag-filter");
     if (rf) rf.addEventListener("change", () => { recruitFlagFilter = rf.value || ""; renderRecruitList(); });
@@ -3150,6 +3154,7 @@ let recruitTasks = [];
       recruitTasks = await SB.listRecruitTasks();
       recruitAllSubs = await SB.listAllRecruitSubmissions().catch(() => []);
       fillTaskFlagCatSelect(recruitTasks, "#recruit-flag-cat-filter");
+      loadZoneCatSide("recruit");
       renderRecruitFlagStats();
       renderRecruitList();
     } catch (e) { sbToast("加载招品列表失败", false); }
@@ -3177,6 +3182,7 @@ let recruitTasks = [];
     else if (recruitFilter === "submitted") list = list.filter(t => t.status === "published" && recruitSubsFor(t.id).length > 0 && !t.bound);
     else if (recruitFilter === "bound") list = list.filter(t => t.bound);
     else if (recruitFilter === "no_refill") list = list.filter(t => t.flag_no_refill);
+    if (recruitSideCat) list = list.filter(t => (t.category || "") === recruitSideCat);
     if (recruitFlagFilter) list = list.filter(t => taskHasFlag(t, recruitFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));
@@ -3516,6 +3522,38 @@ let recruitTasks = [];
   function renderBestsellerFlagStats() { renderTaskFlagStats(bestsellerTasks, bestsellerFlagCat, "#bestseller-flag-charts", "#bestseller-flag-total"); }
 
   // 填充招品/BESTSELLER 标记统计的类目下拉（取当前任务去重类目）
+  function renderZoneCatSide(zone) {
+    const sideId = zone === "bestseller" ? "#bestseller-zone-side" : "#recruit-zone-side";
+    const side = document.querySelector(sideId);
+    if (!side) return;
+    const cats = (zone === "bestseller" ? bestsellerSideCats : recruitSideCats).slice().sort((a, b) => (a < b ? -1 : 1));
+    const cur = zone === "bestseller" ? bestsellerSideCat : recruitSideCat;
+    let html = '<div class="zs-title">前台类目 · 点击筛选 / 分享</div>';
+    html += '<div class="zs-item' + (cur === "" ? " on" : "") + '" data-cat="">全部类目</div>';
+    cats.forEach(c => {
+      html += '<div class="zs-item' + (cur === c ? " on" : "") + '" data-cat="' + c.replace(/"/g, "&quot;") + '"><span class="zs-name">' + c + '</span><button type="button" class="zs-link-btn" title="复制「' + c + '」前台分享链接">🔗</button></div>';
+    });
+    side.innerHTML = html;
+    side.querySelectorAll(".zs-item").forEach(item => {
+      const cat = item.getAttribute("data-cat") || "";
+      item.addEventListener("click", (ev) => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains("zs-link-btn")) return;
+        if (zone === "bestseller") { bestsellerSideCat = cat; renderZoneCatSide("bestseller"); renderBestsellerList(); }
+        else { recruitSideCat = cat; renderZoneCatSide("recruit"); renderRecruitList(); }
+      });
+      const linkBtn = item.querySelector(".zs-link-btn");
+      if (linkBtn) linkBtn.addEventListener("click", (ev) => { ev.stopPropagation(); copyZoneCatLink(zone, cat); });
+    });
+  }
+  async function loadZoneCatSide(zone) {
+    try {
+      const cats = await SB.listZoneCats(zone);
+      const arr = cats.map(c => c.name).filter(Boolean);
+      if (zone === "bestseller") bestsellerSideCats = arr; else recruitSideCats = arr;
+    } catch (e) {}
+    renderZoneCatSide(zone);
+  }
+
   function fillTaskFlagCatSelect(tasks, selId) {
     const sel = document.querySelector(selId);
     if (!sel) return;
@@ -3888,6 +3926,8 @@ let bestsellerTasks = [];
   let bestsellerAllSubs = [];
   let bestsellerFilter = "";     // "" | published | submitted | bound
   let bestsellerFlagFilter = ""; // 标记筛选 "" | ip | brand | cat_mismatch | no_refill
+  let bestsellerSideCat = "";    // 左侧类目菜单当前选中类目（"" = 全部）
+  let bestsellerSideCats = [];   // 左侧类目菜单类目列表
   let bestsellerFlagCat = "";    // 标记统计类目筛选（"" = 全部类目）
   let bestsellerSelected = new Set();  // 卡片勾选
   let bestsellerTrash = [];              // 回收站任务
@@ -4162,7 +4202,7 @@ let bestsellerTasks = [];
       b.onclick = () => { bestsellerFilter = b.dataset.st || ""; renderBestsellerList(); };
     });
     // 复制分类分享链接
-    bindShareCatBtn("bestseller-share-cat", "bestseller", "#bestseller-flag-cat-filter");
+    bindShareCatBtn("bestseller-share-cat", "bestseller", true);
     // 标记筛选
     const bf = document.querySelector("#bestseller-flag-filter");
     if (bf) bf.addEventListener("change", () => { bestsellerFlagFilter = bf.value || ""; renderBestsellerList(); });
@@ -4205,6 +4245,7 @@ let bestsellerTasks = [];
       bestsellerTasks = await SB.listBestsellerTasks();
       bestsellerAllSubs = await SB.listAllBestsellerSubmissions().catch(() => []);
       fillTaskFlagCatSelect(bestsellerTasks, "#bestseller-flag-cat-filter");
+      loadZoneCatSide("bestseller");
       renderBestsellerFlagStats();
       renderBestsellerList();
     } catch (e) { sbToast("加载招品列表失败", false); }
@@ -4232,6 +4273,7 @@ let bestsellerTasks = [];
     else if (bestsellerFilter === "submitted") list = list.filter(t => t.status === "published" && bestsellerSubsFor(t.id).length > 0 && !t.bound);
     else if (bestsellerFilter === "bound") list = list.filter(t => t.bound);
     else if (bestsellerFilter === "no_refill") list = list.filter(t => t.flag_no_refill);
+    if (bestsellerSideCat) list = list.filter(t => (t.category || "") === bestsellerSideCat);
     if (bestsellerFlagFilter) list = list.filter(t => taskHasFlag(t, bestsellerFlagFilter));
     // 同步勾选集
     const valid = new Set(list.map(t => t.id));

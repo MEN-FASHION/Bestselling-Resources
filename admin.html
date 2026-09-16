@@ -395,6 +395,9 @@
         <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
 
         <div id="recruit-main-area">
+        <div class="zone-flex">
+          <aside class="zone-side" id="recruit-zone-side" aria-label="类目菜单"></aside>
+          <div class="zone-main">
         <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
         <div class="recruit-upload">
           <div class="rg-row"><label class="field">批量上传招品图片（可多选，每张图片生成一个独立任务卡片）</label>
@@ -428,7 +431,7 @@
             <button class="recruit-filter" data-st="bound">已绑定</button>
             <button class="recruit-filter" data-st="no_refill">无需回品</button>
           </div>
-          <button id="recruit-share-cat" class="btn-ghost small" type="button" data-super="1" title="复制当前所选类目的前台分享链接">复制分类</button>
+          <button id="recruit-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
           <div class="recruit-batchops">
             <label class="recruit-flag-filter">标记
               <select id="recruit-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
@@ -444,6 +447,8 @@
         </div>
         <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
         <div id="recruit-list" class="recruit-grid-admin recruit-list"></div>
+          </div><!-- /zone-main -->
+        </div><!-- /zone-flex -->
         </div><!-- /recruit-main-area -->
 
         <!-- 回收站视图 -->
@@ -481,6 +486,9 @@
         <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
 
         <div id="bestseller-main-area">
+        <div class="zone-flex">
+          <aside class="zone-side" id="bestseller-zone-side" aria-label="类目菜单"></aside>
+          <div class="zone-main">
         <!-- 批量上传区：上传 Excel（含主图URL + 信息）→ 每行生成一个独立任务卡片 -->
         <div class="bestseller-upload">
           <div class="rg-row"><label class="field">批量上传 BESTSELLER（上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
@@ -519,7 +527,7 @@
             <button class="bestseller-filter" data-st="bound">已绑定</button>
             <button class="bestseller-filter" data-st="no_refill">无需回品</button>
           </div>
-          <button id="bestseller-share-cat" class="btn-ghost small" type="button" data-super="1" title="复制当前所选类目的前台分享链接">复制分类</button>
+          <button id="bestseller-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
           <div class="bestseller-batchops">
             <label class="recruit-flag-filter">标记
               <select id="bestseller-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
@@ -535,6 +543,8 @@
         </div>
         <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
         <div id="bestseller-list" class="bestseller-grid-admin bestseller-list"></div>
+          </div><!-- /zone-main -->
+        </div><!-- /zone-flex -->
         </div><!-- /bestseller-main-area -->
 
         <!-- 回收站视图 -->

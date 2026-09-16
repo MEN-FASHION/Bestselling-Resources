@@ -348,7 +348,10 @@
   }
 
   async function refreshUI() {
-    if (window.__loggedIn) { showTrend(); } else { showLogin(); }
+    if (window.__loggedIn) { showTrend(); } else if (isSharePreview()) {
+      // 分享预览（方案A）：未登录但带 ?zone= & cat= ，直接进入分享专区显示缩略图
+      showMain();
+    } else { showLogin(); }
     hideSplash();
   }
   function showLogin() {

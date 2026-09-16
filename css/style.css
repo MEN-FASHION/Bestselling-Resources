@@ -1726,3 +1726,18 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .perm-cat-item:hover { border-color: var(--gold); }
 .perm-cat-item input { accent-color: var(--gold); width: 14px; height: 14px; cursor: pointer; }
 .rg-btnrow { margin-top: 16px; display: flex; justify-content: flex-end; }
+
+/* 招品 / BESTSELLER 左侧类目菜单栏 */
+.zone-flex { display: flex; gap: 16px; align-items: flex-start; }
+.zone-side { flex: 0 0 176px; width: 176px; max-height: calc(100vh - 220px); overflow-y: auto; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; background: #fff; padding: 8px 6px; position: sticky; top: 8px; }
+.zone-side .zs-title { font-size: 12px; color: #999; padding: 6px 8px 10px; font-weight: 600; letter-spacing: .03em; }
+.zone-side .zs-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--txt); border: 1px solid transparent; }
+.zone-side .zs-item:hover { background: #f6f6f6; }
+.zone-side .zs-item.on { background: var(--gold-soft, #fdf6e8); border-color: var(--gold); color: var(--gold); font-weight: 600; }
+.zone-side .zs-link-btn { flex: 0 0 auto; font-size: 11px; color: #888; border: 1px solid rgba(0,0,0,.12); background: #fff; border-radius: 6px; padding: 2px 6px; cursor: pointer; line-height: 1.5; }
+.zone-side .zs-link-btn:hover { color: var(--gold); border-color: var(--gold); }
+.zone-main { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 720px) {
+  .zone-flex { flex-direction: column; }
+  .zone-side { flex: none; width: 100%; max-height: 240px; position: static; }
+}
