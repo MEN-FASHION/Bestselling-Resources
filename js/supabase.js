@@ -29,13 +29,14 @@ const SB = (() => {
     }
   }
 
-  // ---------- 上传前自动压缩：大图降到合理尺寸/高质量 JPEG，加快手机加载 ----------
-  // 仅对图片生效；已是小图或压缩不划算时保留原图；失败时回退原文件，绝不丢图。
+  // ---------- 上传前自动转 WebP：大图转成 WebP 节省空间，小图不转 ----------
+  // 仅对图片生效；默认转 WebP（同观感但体积更小）；已是小图或压缩不划算时保留原图；
+  // 失败时回退原文件，绝不丢图。
   async function compressImage(file) {
     if (!file || !/^image\//i.test(file.type || "")) return file;
     const MAX_EDGE = 1600;            // 最长边上限
-    const SMALL_BYTES = 300 * 1024;   // 小于 300KB 视为已足够小，直接返回
-    const CANVAS_MAX = 1920;          // 超过此尺寸才考虑压缩（避免无谓转码）
+    const SMALL_BYTES = 300 * 1024;   // 小于 300KB 视为已足够小，直接返回原图（不转）
+    const CANVAS_MAX = 1920;          // 超过此尺寸才考虑转码（避免无谓变换）
     if (file.size <= SMALL_BYTES) return file;
     try {
       const dataUrl = await new Promise((resolve, reject) => {
@@ -63,10 +64,11 @@ const SB = (() => {
       ctx.fillStyle = "#ffffff";           // 白底，避免透明 PNG 转 JPEG 变黑底
       ctx.fillRect(0, 0, cw, ch);
       ctx.drawImage(img, 0, 0, cw, ch);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
-      if (!blob || blob.size >= file.size) return file;   // 压缩不划算则保留原图
+      // 默认转 WebP：同观感、体积更小，现代浏览器与移动端全支持，观看无差异
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
+      if (!blob || blob.size >= file.size) return file;   // 转码不划算则保留原图
       // 保留原文件名，仅替换内容与 MIME，避免影响去重/命名逻辑
-      return new File([blob], file.name, { type: "image/jpeg" });
+      return new File([blob], file.name, { type: "image/webp" });
     } catch (e) {
       return file;
     }
@@ -673,7 +675,7 @@ const SB = (() => {
         title: (x && x.title) || "", task_id: String((x && x.task_id) || "").trim(),
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
         tags: (x && x.tags) || [], category: (x && x.category) || "",
-        url: (x && x.url) || null,
+        url: (x && x.url) || null, main_img_url: (x && x.main_img_url) || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("recruit_tasks").insert(rows);

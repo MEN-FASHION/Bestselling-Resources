@@ -419,6 +419,28 @@
             <button id="recruit-save" class="btn-primary" type="button">上传生成任务卡片</button>
             <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
           </div>
+          <div class="rg-row"><label class="field">URL匹配 · 批量导入招品（上传含「任务ID / 主图URL / 链接（可选）/ 类目（可选）」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
+            <div class="rg-row-inline">
+              <button id="recruit-urlimport-btn" class="btn-primary" type="button">选择表格（URL匹配）</button>
+              <input type="file" id="recruit-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="recruit-urlimport-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
+              <span id="recruit-urlimport-file" class="hint-inline"></span>
+              <span id="recruit-urlimport-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="recruit-urlimport-prog"><div class="upload-progress-bar" id="recruit-urlimport-progbar"></div><span class="upload-progress-txt" id="recruit-urlimport-progtxt"></span></div>
+            <div id="recruit-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+          <div class="rg-row"><label class="field">ID匹配 · 批量上传招品图片（上传一批图片文件 + 一个含「任务ID」的Excel，系统按图片文件名匹配任务ID，图片存R2展示）</label>
+            <div class="rg-row-inline">
+              <button id="recruit-imgimport-btn" class="btn-primary" type="button">① 选择图片（可多选）</button>
+              <input type="file" id="recruit-imgimport-input" accept="image/*" multiple hidden>
+              <button id="recruit-imgxlsx-btn" class="btn-primary" type="button">② 选择匹配表格（ID匹配）</button>
+              <input type="file" id="recruit-imgxlsx-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="recruit-imgimport-clear" class="btn-ghost small" type="button" title="清除已选图片与表格">清除</button>
+              <span id="recruit-imgimport-file" class="hint-inline"></span>
+              <span id="recruit-imgimport-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="recruit-imgimport-prog"><div class="upload-progress-bar" id="recruit-imgimport-progbar"></div><span class="upload-progress-txt" id="recruit-imgimport-progtxt"></span></div>
+            <div id="recruit-imgimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
         </div>
         <hr class="tag-sub-hr">
 
@@ -491,21 +513,27 @@
           <div class="zone-main">
         <!-- 批量上传区：上传 Excel（含主图URL + 信息）→ 每行生成一个独立任务卡片 -->
         <div class="bestseller-upload">
-          <div class="rg-row"><label class="field">批量上传 BESTSELLER（上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
+          <div class="rg-row"><label class="field">URL匹配 · 批量导入 BESTSELLER（上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
             <div class="rg-row-inline">
-              <button id="bestseller-urlimport-btn" class="btn-primary" type="button">上传Excel批量导入（主图URL）</button>
+              <button id="bestseller-urlimport-btn" class="btn-primary" type="button">选择表格（URL匹配）</button>
               <input type="file" id="bestseller-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="bestseller-urlimport-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
+              <span id="bestseller-urlimport-file" class="hint-inline"></span>
               <span id="bestseller-urlimport-result" class="url-match-result"></span>
             </div>
+            <div class="upload-progress hidden" id="bestseller-urlimport-prog"><div class="upload-progress-bar" id="bestseller-urlimport-progbar"></div><span class="upload-progress-txt" id="bestseller-urlimport-progtxt"></span></div>
             <div id="bestseller-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
-          <div class="rg-row"><label class="field">批量上传图片（上传一批图片文件 + 一个含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接」的Excel，系统按图片文件名匹配 SKUID，匹配不到再按 Goods ID 智能匹配，绑定信息与链接后图片存R2展示）</label>
+          <div class="rg-row"><label class="field">ID匹配 · 批量上传图片（上传一批图片文件 + 一个含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接」的Excel，系统按图片文件名匹配 SKUID，匹配不到再按 Goods ID 智能匹配，图片存R2展示）</label>
             <div class="rg-row-inline">
               <button id="bestseller-imgimport-btn" class="btn-primary" type="button">① 选择图片（可多选）</button>
               <input type="file" id="bestseller-imgimport-input" accept="image/*" multiple hidden>
-              <button id="bestseller-imgxlsx-btn" class="btn-primary" type="button">② 选择匹配表格</button>
+              <button id="bestseller-imgxlsx-btn" class="btn-primary" type="button">② 选择匹配表格（ID匹配）</button>
               <input type="file" id="bestseller-imgxlsx-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="bestseller-imgimport-clear" class="btn-ghost small" type="button" title="清除已选图片与表格">清除</button>
+              <span id="bestseller-imgimport-file" class="hint-inline"></span>
               <span id="bestseller-imgimport-result" class="url-match-result"></span>
             </div>
+            <div class="upload-progress hidden" id="bestseller-imgimport-prog"><div class="upload-progress-bar" id="bestseller-imgimport-progbar"></div><span class="upload-progress-txt" id="bestseller-imgimport-progtxt"></span></div>
             <div id="bestseller-imgimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
           <div class="rg-row"><label class="field">所属类目（必选，用于前台左栏筛选）</label>
             <div class="cat-pick-wrap">

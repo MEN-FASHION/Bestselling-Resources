@@ -732,7 +732,11 @@
       const im = card.querySelector(".recruit-thumb");
       const ph = card.querySelector(".recruit-ph");
       card.querySelector(".recruit-no").textContent = seq;
-      if (t.image_path) {
+      if (t.main_img_url) {
+        im.src = t.main_img_url;
+        im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
+        im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
+      } else if (t.image_path) {
         SB.recruitImageUrl(t.image_path).then(u => {
           im.onload = () => { im.style.opacity = "1"; ph.classList.add("hidden"); };
           im.onerror = () => { im.style.opacity = "0"; ph.textContent = "图片暂不可见"; };
