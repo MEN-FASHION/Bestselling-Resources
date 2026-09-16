@@ -95,6 +95,12 @@ const SB = (() => {
       });
       return { data, error };
     },
+    // 判断邮箱是否已注册（依赖 is_email_registered RPC，用于登录时区分账号/密码错误）
+    async isEmailRegistered(email) {
+      const { data, error } = await client.rpc("is_email_registered", { p_email: this.normalizeEmail(email) });
+      if (error) throw error;
+      return !!data;
+    },
     async signOut() {
       const { error } = await client.auth.signOut();
       return { error };

@@ -6,7 +6,7 @@
 
   let curTag = "全部";
   let curCat = "全部";
-  let authMode = "login"; // 登录页模式：login 登录 / register 注册
+  let authMode = "register"; // 登录页模式：默认注册页面 register 注册 / login 登录
   let trends = [];
   let shownCats = [];
   // PDF 自绘预览状态
@@ -64,14 +64,14 @@
     setTimeout(hideSplash, 3000);
 
     $("#login-form").addEventListener("submit", onLogin);
+    bindEmailSuggest();
     const authToggle = $("#auth-toggle-link");
     if (authToggle) authToggle.addEventListener("click", (e) => {
       e.preventDefault();
       authMode = authMode === "login" ? "register" : "login";
-      authToggle.textContent = authMode === "login" ? "没有账号？注册一个" : "已有账号？去登录";
-      const t = $("#auth-title"); if (t) t.textContent = authMode === "login" ? "趋势专区登录" : "注册账号";
-      const s = $("#auth-submit"); if (s) s.textContent = authMode === "login" ? "进入趋势专区" : "注册并进入";
+      applyAuthMode();
     });
+    applyAuthMode(); // 初始渲染：默认注册界面
     $("#logout-btn").onclick = onLogout;
     // 登入横幅"立即登录"→ 进入登录页
     const lbGoto = document.getElementById("lb-goto");
@@ -385,7 +385,63 @@
     } else { showLogin(); }
     hideSplash();
   }
+  function applyAuthMode() {
+    const toggle = $("#auth-toggle-link");
+    if (toggle) toggle.textContent = authMode === "login" ? "没有账号？注册一个" : "已有账号？去登录";
+    const t = $("#auth-title"); if (t) t.textContent = authMode === "login" ? "趋势专区登录" : "注册账号";
+    const s = $("#auth-submit"); if (s) s.textContent = authMode === "login" ? "进入趋势专区" : "注册并进入";
+  }
+  function showAuthHint(msg) {
+    const h = $("#auth-hint");
+    if (h) { h.textContent = msg; h.classList.remove("hidden"); }
+  }
+  function hideAuthHint() {
+    const h = $("#auth-hint");
+    if (h) h.classList.add("hidden");
+  }
+  // 邮箱输入 @ 后弹出常用域名，帮助快速补全
+  function bindEmailSuggest() {
+    const EMAIL_DOMAINS = ["gmail.com", "outlook.com", "qq.com", "163.com", "126.com", "hotmail.com", "foxmail.com", "sina.com"];
+    const input = $("#auth-email");
+    const box = document.getElementById("email-suggest");
+    if (!input || !box) return;
+    const hide = () => { box.classList.add("hidden"); box.innerHTML = ""; };
+    const apply = (d) => {
+      const cur = input.value;
+      const at = cur.lastIndexOf("@");
+      if (at >= 0) {
+        input.value = cur.slice(0, at + 1) + d;
+        try { input.setSelectionRange(cur.length, cur.length); } catch (e) {}
+        input.focus();
+      }
+      hide();
+    };
+    input.addEventListener("input", () => {
+      const v = input.value;
+      const at = v.lastIndexOf("@");
+      if (at < 0) { hide(); return; }
+      const tail = v.slice(at + 1).toLowerCase();
+      if (tail.indexOf(".") >= 0 || tail.length > 0 && /[\s@]/.test(tail)) { hide(); return; }
+      const matched = EMAIL_DOMAINS.filter(d => d.indexOf(tail) === 0);
+      if (!matched.length) { hide(); return; }
+      box.innerHTML = "";
+      matched.forEach(d => {
+        const el = document.createElement("div");
+        el.textContent = d;
+        el.addEventListener("mousedown", (e) => { e.preventDefault(); apply(d); });
+        box.appendChild(el);
+      });
+      box.classList.remove("hidden");
+    });
+    input.addEventListener("blur", () => setTimeout(hide, 160));
+    document.addEventListener("click", (e) => { if (box.contains(e.target)) return; hide(); });
+    // 登录/注册成功后、以及进入登录页时清空联想
+    window.addEventListener("beforeunload", hide);
+  }
   function showLogin() {
+    authMode = "register";
+    applyAuthMode();
+    hideAuthHint();
     $("#login-view").classList.remove("hidden");
     $("#trend-view").classList.add("hidden");
     $("#recruit-view").classList.add("hidden");
@@ -463,15 +519,36 @@
     if (!email || !pass) return toast("请填写邮箱和密码", false);
     try {
       if (authMode === "register") {
-        const { error } = await SB.signUp(email, pass);
+        const { data, error } = await SB.signUp(email, pass);
         if (error) throw error;
-        window.__loggedIn = true;
-        toast("注册成功，已登录");
-        showTrend();
+        if (data && data.session) {
+          // 后台未开启邮箱确认 → 直接自动登录
+          window.__loggedIn = true;
+          toast("注册成功，已登录");
+          showTrend();
+        } else {
+          // 后台开启了邮箱确认（Confirm email）→ 需点邮件链接激活
+          toast("注册成功！请前往邮箱确认", true);
+          showAuthHint("确认邮件已发送至 " + email + "，请点击邮件中的链接激活账号后再登录。若未收到，请检查垃圾邮件。");
+          authMode = "login";
+          applyAuthMode();
+        }
         return;
       }
       const { data, error } = await SB.signIn(email, pass);
-      if (error) throw error;
+      if (error) {
+        // 区分"账号错误 / 密码错误"：先判断该邮箱是否已注册
+        let exists = null;
+        try { exists = await SB.isEmailRegistered(email); } catch (e2) { exists = null; }
+        if (exists === false) {
+          toast("账号错误：该邮箱未注册，请先注册", false);
+        } else if (exists === true) {
+          toast("密码错误：请检查密码后重试", false);
+        } else {
+          toast("登录失败：" + (error.message || "请检查邮箱密码"), false);
+        }
+        return;
+      }
       window.__loggedIn = true;
       toast("登录成功");
       showTrend();
