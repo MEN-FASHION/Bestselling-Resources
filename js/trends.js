@@ -29,9 +29,6 @@
   const hasShareTarget = () => !!shareCat && (shareZone === "recruit" || shareZone === "bestseller");
   // 未登录时的分享预览模式：仅显示缩略图 + 登录引导
   const isSharePreview = () => !window.__loggedIn && hasShareTarget();
-  // 分享目标仅在首次进入时定位一次；用户后续点击顶栏切换专区时不再被强制覆盖
-  let shareTargetApplied = false;
-  const shouldApplyShareTarget = () => hasShareTarget() && !shareTargetApplied;
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -399,14 +396,15 @@
     const hash = (location.hash || "").replace("#", "");
     let rec = hash === "recruit";
     let bs = hash === "bestseller";
-    // 分享目标：URL 带 ?zone= & cat= 时，仅首次进入定位到对应专区与类目；之后用户点顶栏切换不再强制覆盖
-    if (shouldApplyShareTarget() && shareZone === "recruit") { rec = true; bs = false; }
-    else if (shouldApplyShareTarget() && shareZone === "bestseller") { rec = false; bs = true; }
-    if (shouldApplyShareTarget() && shareCat) {
+    // 分享目标：URL 带 ?zone= & cat= 且当前未设置分区 hash（首次进入分享链接）时，
+    // 定位到对应专区与类目；用户点击顶栏切换置入 hash 后，优先按 hash 跳转，分享目标不再覆盖。
+    const isFreshShareEntry = hash === "" && hasShareTarget();
+    if (isFreshShareEntry && shareZone === "recruit") { rec = true; bs = false; }
+    else if (isFreshShareEntry && shareZone === "bestseller") { rec = false; bs = true; }
+    if (isFreshShareEntry && shareCat) {
       if (shareZone === "recruit") recruitCat = shareCat;
       else if (shareZone === "bestseller") bestsellerCat = shareCat;
     }
-    if (hasShareTarget()) shareTargetApplied = true;
     $("#trend-view").classList.toggle("hidden", rec || bs);
     $("#recruit-view").classList.toggle("hidden", !rec);
     $("#bestseller-view").classList.toggle("hidden", !bs);
