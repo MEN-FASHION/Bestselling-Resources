@@ -1562,7 +1562,8 @@
     undoneGrid.innerHTML = "";
     document.querySelector("#smart-cnt-done").textContent = "0";
     document.querySelector("#smart-cnt-undone").textContent = "0";
-    if (!smartAll.length) return;
+    // 允许图片列表为空时仍渲染"上传图片"入口卡，保证管理员可上传（尤其首次无图时）
+    if (!smartAll.length) { renderSmartUploadEntry(); return; }
     const field = smartFieldMap[smartDim];
 
     // 池标题：已选具体标签→按"是否含该标签"；未选标签→按"该维度是否已打标"
