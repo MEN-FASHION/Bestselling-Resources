@@ -3112,8 +3112,7 @@ let recruitTasks = [];
     pick(n => n.includes("开款类型") || n.includes("类型") || n.includes("type"), "type");
     pick(n => n.includes("招品原因") || n.includes("原因") || n.includes("reason"), "reason");
     pick(n => n.includes("提需时间") || n.includes("提需") || n.includes("时间") || n.includes("time"), "time");
-    pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");
-    pick(n => n.includes("叶子类目名称") || n.includes("叶子类目") || n.includes("类目") || n.includes("品类") || n.includes("category"), "cat");
+    pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");    pick(n => (n.includes("叶子类目名") || n.includes("类目名") || n.includes("类目") || n.includes("品类") || n.includes("category")) && !n.includes("行业") && !n.includes("英文") && !/english/i.test(n), "cat");
     return out;
   }
 
@@ -3150,7 +3149,7 @@ let recruitTasks = [];
             open_type: keys.type ? String(r[keys.type] || "").trim() : "",
             recruit_reason: keys.reason ? String(r[keys.reason] || "").trim() : "",
             required_at: keys.time ? String(r[keys.time] || "").trim() : "",
-            cat_raw, category: window.RECRUIT_CAT_MATCH ? window.RECRUIT_CAT_MATCH(cat_raw) : "",
+            cat_raw, category: (window.RECRUIT_CAT_MATCH && window.RECRUIT_CAT_CONFIRM) ? window.RECRUIT_CAT_CONFIRM(window.RECRUIT_CAT_MATCH(cat_raw)) : "",
             main_img_url, image_path: "", url: null,
           };
           (main_img_url ? has : noimg).push(row);
@@ -3179,6 +3178,35 @@ let recruitTasks = [];
     if (!pre) return;
     pre.classList.remove("hidden");
     pre.innerHTML = "";
+    // 批量类目工具条：一次把「全部行」统一设为某类目（单张仍可由卡片下拉单独调整）
+    const tb = document.createElement("div");
+    tb.className = "rg-batch-bar";
+    const tbLabel = document.createElement("span");
+    tbLabel.className = "rg-batch-label"; tbLabel.textContent = "批量类目：";
+    tb.appendChild(tbLabel);
+    const batchSel = document.createElement("select");
+    batchSel.className = "rg-batch-sel";
+    const bo0 = document.createElement("option"); bo0.value = ""; bo0.textContent = "（全部设为…）";
+    batchSel.appendChild(bo0);
+    (window.RECRUIT_CAT_POOL || []).forEach(c => {
+      const o = document.createElement("option"); o.value = c; o.textContent = c; batchSel.appendChild(o);
+    });
+    batchSel.addEventListener("change", () => {
+      const v = batchSel.value;
+      if (!v) return;
+      recruitRows.forEach(r => { r.category = v; });
+      // 同步更新所有行卡片上的标签与下拉，避免重建丢失手动状态
+      pre.querySelectorAll(".rg-row-cat").forEach(w => {
+        const tag = w.querySelector(".rg-row-cat-tag");
+        if (tag) { tag.className = "rg-row-cat-tag"; tag.textContent = "已设为：" + v; }
+        const sel = w.querySelector(".rg-row-cat-sel");
+        if (sel && v) sel.value = "";
+      });
+      sbToast("已将全部 " + recruitRows.length + " 行类目设为「" + v + "」，可在下方逐行微调", true);
+      batchSel.value = "";
+    });
+    tb.appendChild(batchSel);
+    pre.appendChild(tb);
     if (recruitHasImgRows.length) {
       const head1 = document.createElement("div");
       head1.className = "rg-sec-head"; head1.textContent = "可直接导入（有首图URL，共 " + recruitHasImgRows.length + " 行）";
@@ -4063,33 +4091,98 @@ let recruitTasks = [];
   }
 // ================= 专区类目：发布下拉填充 + 搜索过滤 =================
 // ================= 招品回品：表格类目自动匹配（识别"站内叶子类目名称"→自动归类） =================
-  window.RECRUIT_CAT_MATCH = (raw) => {
-    if (!raw) return "";
-    const pool = (window.RECRUIT_CAT_POOL && window.RECRUIT_CAT_POOL.length)
-      ? window.RECRUIT_CAT_POOL
-      : Array.from(document.querySelectorAll("#recruit-category option")).map(o => o.value).filter(v => v);
-    if (!pool.length) return "";
-    const r = String(raw);
-    const KW = {
-      "裤子":["裤"], "休闲裤":["裤"], "牛仔裤":["裤"], "西裤":["裤"],
-      "短裤":["短裤","裤"], "卫裤":["卫裤","裤"],
-      "棉服":["棉服","棉衣","棉袄"], "羽绒服":["羽绒"], "夹克":["夹克","外套"],
-      "外套":["外套","大衣","风衣"], "风衣":["风衣"], "大衣":["大衣"],
-      "卫衣":["卫衣","卫衣"], "毛衣":["毛衣","毛衫","针织"], "t恤":["t恤","tee","短袖"],
-      "衬衫":["衬衫","衬衣"], "polo":["polo"], "马甲":["马甲"], "背心":["背心"],
-      "西装":["西装"], "套装":["套装"], "皮衣":["皮衣"],
-    };
-    // 1）候选类目名整体出现在原始值中（如"休闲裤"→候选"休闲裤"）
-    for (const c of pool) if (r.indexOf(c) >= 0) return c;
-    // 2）原始值是候选名的子串（如"裤"→候选"休闲裤"，取最长词）
-    let best = "";
-    for (const c of pool) if (c.indexOf(r) >= 0 && c.length > best.length) best = c;
-    if (best) return best;
-    // 3）关键词别名匹配（如"棉服"字样→候选"棉服"）
-    for (const c of pool) {
-      for (const k of (KW[c] || [c])) if (k && r.indexOf(k) >= 0) return c;
+  // 招品回品：表格类目自动匹配（识别"站内叶子类目名称"→自动归类）
+  // 不依赖候选类目池：内置男装类目词库（含"类目原文→标准类目"映射），
+  // 即使 recruit_categories 为空也能正确归类；候选池仅在确认归属时优先采用池内已有类目名。
+    // 相似度打分：以类目管理池中的类目 c 与表格类目原文 r 比对，按「末尾字数 + 整体重叠 + 强语义词」给分
+    // 强语义词：原文与类目名都含则该词直接压过后缀，解决"羽绒衣夹克→羽绒服""牛仔短裤→牛仔裤"等
+    const CAT_STRONG = ["羽绒", "牛仔", "棉", "防风", "滑雪", "连裤", "针织", "皮衣", "西装", "卫衣", "毛衫", "礼服"];
+    function _catSim(r, c) {
+      if (!r || !c) return 0;
+      if (r === c) return 1000;
+      let score = 0;
+      // 原文以该类目结尾（最符合"末尾几个字"）
+      if (r.endsWith(c)) score += 500 + c.length * 8;
+      if (c.endsWith(r)) score += 400 + r.length * 8;
+      // 公共后缀长度（末尾连续相同字数）
+      let l = 0, i = r.length - 1, j = c.length - 1;
+      while (i >= 0 && j >= 0 && r[i] === c[j]) { l++; i--; j--; }
+      score += l * 30;
+      // 该类目名作为整体出现在原文任意位置
+      if (r.indexOf(c) >= 0) score += 80;
+      // 强语义词：原文与类目都含，直接大幅加权
+      for (const w of CAT_STRONG) {
+        if (r.indexOf(w) >= 0 && c.indexOf(w) >= 0) score += 1000;
+      }
+      return score;
     }
-    return "";
+    window.RECRUIT_CAT_MATCH = (raw) => {
+      if (!raw) return "";
+      const r = String(raw).trim();
+      if (!r) return "";
+      const rl = r.toLowerCase();
+      // 主力基准：以「类目管理」配置的类目池为准，末尾+相似度取最高
+      const pool = (window.RECRUIT_CAT_POOL || []).filter(Boolean);
+      if (pool.length) {
+        let best = { score: -1, cat: "" };
+        for (const c of pool) {
+          const s = _catSim(rl, String(c).toLowerCase());
+          if (s > best.score) { best = { score: s, cat: c }; }
+        }
+        // 阈值：得分太低视为未匹配（如袜子等池内无对应项）
+        if (best.score >= 40) return best.cat;
+      }
+      // 池为空时的兜底词库（保证上传仍能归类；命中后仍会经 CONFIRM 对齐池名）
+      const LIB = [
+        ["羽绒服", ["羽绒服", "羽绒衣", "羽绒"]],
+        ["棉服", ["棉服", "棉衣", "棉袄"]],
+        ["防风衣", ["防风衣", "防风外套"]],
+        ["夹克", ["夹克"]],
+        ["大衣", ["大衣", "呢大衣"]],
+        ["风衣", ["风衣"]],
+        ["外套", ["外套"]],
+        ["T恤", ["t恤", "T恤", "tee", "短袖t"]],
+        ["衬衫", ["衬衫", "衬衣"]],
+        ["Polo衫", ["polo衫", "polo", "polos"]],
+        ["卫衣", ["卫衣"]],
+        ["毛衣", ["毛衣", "毛衫", "针织衫"]],
+        ["马甲", ["马甲"]],
+        ["背心", ["背心"]],
+        ["西装", ["西装", "西服"]],
+        ["套装", ["套装"]],
+        ["皮衣", ["皮衣", "皮夹克"]],
+        ["连裤袜", ["连裤袜"]],
+        ["牛仔裤", ["牛仔裤", "牛仔短裤", "牛仔长裤"]],
+        ["短裤", ["短裤", "短衬裤"]],
+        ["滑雪裤", ["滑雪裤"]],
+        ["运动长裤", ["运动长裤", "宽松运动长裤", "运动裤"]],
+        ["休闲裤", ["休闲裤", "休闲长裤", "休闲运动裤"]],
+        ["运动服", ["运动服", "运动套装"]],
+      ];
+      let best = { len: -1, cat: "" };
+      for (const [cat, kws] of LIB) {
+        for (const k0 of kws) {
+          const k = k0.toLowerCase();
+          if (rl.endsWith(k) || (rl.indexOf(k) >= 0 && rl.length - rl.indexOf(k) - k.length <= 2)) {
+            if (k.length > best.len) { best = { len: k.length, cat }; }
+          }
+        }
+      }
+      if (best.cat) return best.cat;
+      const tail = r.slice(-3);
+      if (/裤/.test(tail) && !/袜|衬裤|内裤/.test(r)) return "裤子";
+      return "";
+    };
+  // 候选池对齐：词库/相似度命中后，若类目管理池里有同类别类目名，返回池内名称（保证前台用池内标准名）
+  window.RECRUIT_CAT_CONFIRM = (matched) => {
+    if (!matched) return "";
+    const pool = (window.RECRUIT_CAT_POOL || []).filter(Boolean);
+    if (!pool.length) return matched;
+    const LOW = String(matched).toLowerCase();
+    for (const c of pool) if (String(c).toLowerCase() === LOW) return c;
+    for (const c of pool) if (LOW.indexOf(String(c).toLowerCase()) >= 0) return c;
+    for (const c of pool) if (String(c).toLowerCase().indexOf(LOW) >= 0) return c;
+    return matched;
   };
   async function fillZoneCatSelect(zone) {
     const selId = zone === "bestseller" ? "#bestseller-category" : "#recruit-category";

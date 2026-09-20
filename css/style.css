@@ -1625,6 +1625,11 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .bestseller-pre-cell img { width:100%;height:100%;object-fit:cover;display:block }
 
 .bestseller-pre-cell .btn-danger.small { position:absolute;top:3px;right:3px;min-width:20px;height:20px;line-height:18px;padding:0 4px;font-size:12px;border-radius:6px }
+
+.rg-batch-bar { display:flex;align-items:center;gap:8px;padding:6px 2px;margin-bottom:6px;flex-wrap:wrap }
+.rg-batch-label { font-size:11px;color:#8b8f99 }
+.rg-batch-sel { min-width:150px;max-width:180px;font-size:12px;line-height:normal;padding:4px 6px;border-radius:5px;border:1px solid rgba(255,255,255,.18);background:#22252b;color:#e8e6df;outline:none }
+
 .rg-row-cat { position:relative;margin-top:3px;display:flex;flex-direction:column;gap:3px;width:100%;min-width:110px }
 .rg-row-cat-tag { font-size:10px;color:#7cd47c;background:rgba(124,212,124,.12);border-radius:4px;padding:1px 5px;display:inline-block;width:max-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
 .rg-row-cat-tag.miss { color:#e88;background:rgba(238,136,136,.12) }
