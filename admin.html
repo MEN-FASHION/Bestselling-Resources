@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260920A">
+<link rel="stylesheet" href="css/style.css?v=20260920C">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -396,6 +396,7 @@
             <span class="recruit-flag-total" id="recruit-flag-total">加载中…</span>
           </div>
           <div class="recruit-flag-charts" id="recruit-flag-charts"></div>
+          <div class="recruit-status-stats" id="recruit-status-stats"></div>
         </div>
         <hr class="tag-sub-hr">
         <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
@@ -406,7 +407,7 @@
           <div class="zone-main">
         <!-- 统一上传入口：先传表格（表格含首图URL直接成卡片；无首图URL则按任务ID补图） -->
         <div class="recruit-upload">
-          <div class="rg-row"><label class="field">① 上传招品表格（先传表格。表格含「首图URL」的行直接生成任务卡片，无需再传图；无「首图URL」的行需再上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图）</label>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">1</span><b class="rg-step-title">上传招品表格</b></span><span class="rg-step-desc">先传表格。含「首图URL」的行直接生成任务卡片，无需再传图；无「首图URL」的行需在下一步补图（文件名=任务ID匹配，一个任务一张图）</span></label>
             <div class="rg-row-inline">
               <button id="recruit-xlsx-btn" class="btn-primary" type="button">选择表格</button>
               <input type="file" id="recruit-xlsx-input" accept=".xlsx,.xls,.csv" hidden>
@@ -416,17 +417,16 @@
             </div>
             <div class="upload-progress hidden" id="recruit-xlsx-prog"><div class="upload-progress-bar" id="recruit-xlsx-progbar"></div><span class="upload-progress-txt" id="recruit-xlsx-progtxt"></span></div>
             <div id="recruit-xlsx-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
-          <div class="rg-row"><label class="field">② 所属类目（前台卡片展示「类目：XXXX」；整批导入共用同一个类目）</label>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">2</span><b class="rg-step-title">确认/调整类目</b></span><span class="rg-step-desc">系统已按表格「站内叶子类目名称」自动匹配类目（含"裤"→裤子、含"棉服"→棉服…）；可在上方预览区对每行单独调整，防止匹配错误</span></label>
             <div class="cat-pick-wrap">
-              <input id="recruit-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
-              <select id="recruit-category" class="input cat-pick-select"></select>
+              <span class="hint-inline">自动匹配结果见上方预览区，每行可手动修改类目</span>
               <button id="recruit-cat-mgr" class="btn-ghost small" type="button" data-super="1">类目设置</button>
             </div></div>
           <div class="rg-btnrow">
             <button id="recruit-save" class="btn-primary" type="button">导入并生成任务卡片</button>
             <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
           </div>
-          <div class="rg-row"><label class="field">③ 补充图片（仅当表格有行缺少「首图URL」时才需要；上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图）</label>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">3</span><b class="rg-step-title">补充图片 <em class="rg-step-opt">（可选）</em></b></span><span class="rg-step-desc">仅当表格有行缺少「首图URL」时才需要；上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图</span></label>
             <div class="rg-row-inline">
               <button id="recruit-imgxlsx-btn" class="btn-primary" type="button">选择图片（可多选）</button>
               <input type="file" id="recruit-imgxlsx-input" accept="image/*" multiple hidden>
@@ -444,8 +444,8 @@
           <div class="recruit-filters" id="recruit-filters">
             <button class="recruit-filter active" data-st="">全部</button>
             <button class="recruit-filter" data-st="published">已发布</button>
-            <button class="recruit-filter" data-st="submitted">已上传</button>
-            <button class="recruit-filter" data-st="bound">已绑定</button>
+            <button class="recruit-filter" data-st="submitted">商家已上传</button>
+            <button class="recruit-filter" data-st="bound">已回品</button>
             <button class="recruit-filter" data-st="no_refill">无需回品</button>
           </div>
           <button id="recruit-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
@@ -498,6 +498,7 @@
             <span class="recruit-flag-total" id="bestseller-flag-total">加载中…</span>
           </div>
           <div class="recruit-flag-charts" id="bestseller-flag-charts"></div>
+          <div class="recruit-status-stats" id="bestseller-status-stats"></div>
         </div>
         <hr class="tag-sub-hr">
         <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
@@ -508,7 +509,7 @@
           <div class="zone-main">
         <!-- 批量上传区：上传 Excel（含主图URL + 信息）→ 每行生成一个独立任务卡片 -->
         <div class="bestseller-upload">
-          <div class="rg-row"><label class="field">URL匹配 · 批量导入 BESTSELLER（上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">方式一</span><b class="rg-step-title">URL匹配 · 批量导入</b></span><span class="rg-step-desc">上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示</span></label>
             <div class="rg-row-inline">
               <button id="bestseller-urlimport-btn" class="btn-primary" type="button">选择表格（URL匹配）</button>
               <input type="file" id="bestseller-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
@@ -518,7 +519,7 @@
             </div>
             <div class="upload-progress hidden" id="bestseller-urlimport-prog"><div class="upload-progress-bar" id="bestseller-urlimport-progbar"></div><span class="upload-progress-txt" id="bestseller-urlimport-progtxt"></span></div>
             <div id="bestseller-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
-          <div class="rg-row"><label class="field">ID匹配 · 批量上传图片（上传一批图片文件 + 一个含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接」的Excel，系统按图片文件名匹配 SKUID，匹配不到再按 Goods ID 智能匹配，图片存R2展示）</label>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">方式二</span><b class="rg-step-title">ID匹配 · 批量上传图片</b></span><span class="rg-step-desc">上传一批图片文件 + 一个含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接」的Excel，系统按图片文件名匹配 SKUID，匹配不到再按 Goods ID 智能匹配，图片存R2展示</span></label>
             <div class="rg-row-inline">
               <button id="bestseller-imgimport-btn" class="btn-primary" type="button">① 选择图片（可多选）</button>
               <input type="file" id="bestseller-imgimport-input" accept="image/*" multiple hidden>
@@ -546,8 +547,8 @@
           <div class="bestseller-filters" id="bestseller-filters">
             <button class="bestseller-filter active" data-st="">全部</button>
             <button class="bestseller-filter" data-st="published">已发布</button>
-            <button class="bestseller-filter" data-st="submitted">已上传</button>
-            <button class="bestseller-filter" data-st="bound">已绑定</button>
+            <button class="bestseller-filter" data-st="submitted">商家已上传</button>
+            <button class="bestseller-filter" data-st="bound">已回品</button>
             <button class="bestseller-filter" data-st="no_refill">无需回品</button>
           </div>
           <button id="bestseller-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
@@ -754,8 +755,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260920A"></script>
-  <script src="js/supabase.js?v=20260920A"></script>
-  <script src="js/admin.js?v=20260920A"></script>
+  <script src="js/config.js?v=20260920C"></script>
+  <script src="js/supabase.js?v=20260920C"></script>
+  <script src="js/admin.js?v=20260920C"></script>
 </body>
 </html>

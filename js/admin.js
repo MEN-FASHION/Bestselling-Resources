@@ -3103,8 +3103,8 @@ let recruitTasks = [];
   function recruitPickKeys(firstRow) {
     const keys = Object.keys(firstRow || {});
     const norm = (s) => String(s).toLowerCase().replace(/[\s_\-．.（()）（）]/g, "");
-    const out = { task: "", site: "", link: "", priority: "", type: "", reason: "", time: "", img: "" };
-    const pick = (cond, assign) => { if (assign) return; for (const k of keys) { if (cond(norm(k))) { out[assign] = k; return; } } };
+    const out = { task: "", site: "", link: "", priority: "", type: "", reason: "", time: "", img: "", cat: "" };
+    const pick = (cond, assign) => { if (out[assign]) return; for (const k of keys) { if (cond(norm(k))) { out[assign] = k; return; } } };
     pick(n => n.includes("任务id") || n.includes("taskid") || n.includes("任务") || n.includes("序号"), "task");
     pick(n => n.includes("站点"), "site");
     pick(n => n.includes("行业链接") || (n.includes("链接") && !out.link), "link");
@@ -3113,6 +3113,7 @@ let recruitTasks = [];
     pick(n => n.includes("招品原因") || n.includes("原因") || n.includes("reason"), "reason");
     pick(n => n.includes("提需时间") || n.includes("提需") || n.includes("时间") || n.includes("time"), "time");
     pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");
+    pick(n => n.includes("叶子类目名称") || n.includes("叶子类目") || n.includes("类目") || n.includes("品类") || n.includes("category"), "cat");
     return out;
   }
 
@@ -3140,6 +3141,7 @@ let recruitTasks = [];
           const task_id = String(r[keys.task] || "").trim();
           if (!task_id) return;
           const main_img_url = String((keys.img ? r[keys.img] : "") || "").trim();
+          const cat_raw = keys.cat ? String(r[keys.cat] || "").trim() : "";
           const row = {
             task_id,
             site_id: keys.site ? String(r[keys.site] || "").trim() : "",
@@ -3148,6 +3150,7 @@ let recruitTasks = [];
             open_type: keys.type ? String(r[keys.type] || "").trim() : "",
             recruit_reason: keys.reason ? String(r[keys.reason] || "").trim() : "",
             required_at: keys.time ? String(r[keys.time] || "").trim() : "",
+            cat_raw, category: window.RECRUIT_CAT_MATCH ? window.RECRUIT_CAT_MATCH(cat_raw) : "",
             main_img_url, image_path: "", url: null,
           };
           (main_img_url ? has : noimg).push(row);
@@ -3181,7 +3184,7 @@ let recruitTasks = [];
       head1.className = "rg-sec-head"; head1.textContent = "可直接导入（有首图URL，共 " + recruitHasImgRows.length + " 行）";
       pre.appendChild(head1);
       const wrap1 = document.createElement("div"); wrap1.className = "bestseller-pre-grid";
-      recruitHasImgRows.forEach(x => { wrap1.appendChild(recruitPreCell(x.task_id + " · " + (window.CONFIG.siteName(x.site_id) || x.site_id || ""), x.main_img_url, true)); });
+      recruitHasImgRows.forEach(x => { wrap1.appendChild(recruitPreCell(x.task_id + " · " + (window.CONFIG.siteName(x.site_id) || x.site_id || ""), x.main_img_url, true, x)); });
       pre.appendChild(wrap1);
     }
     if (recruitNoImgRows.length) {
@@ -3189,7 +3192,7 @@ let recruitTasks = [];
       head2.className = "rg-sec-head warn"; head2.textContent = "需补充图片（无首图URL，共 " + recruitNoImgRows.length + " 行，请用③按任务ID上传图片）";
       pre.appendChild(head2);
       const wrap2 = document.createElement("div"); wrap2.className = "bestseller-pre-grid";
-      recruitNoImgRows.forEach(x => { wrap2.appendChild(recruitPreCell("任务ID：" + x.task_id, "", false)); });
+      recruitNoImgRows.forEach(x => { wrap2.appendChild(recruitPreCell("任务ID：" + x.task_id, "", false, x)); });
       pre.appendChild(wrap2);
     }
     if (recruitNoImgFiles.length) {
@@ -3210,7 +3213,7 @@ let recruitTasks = [];
     const bt = tail.querySelector("#recruit-xlsx-commit");
     if (bt) bt.onclick = () => commitRecruitImport();
   }
-  function recruitPreCell(label, url, hasUrl) {
+  function recruitPreCell(label, url, hasUrl, row) {
     const cell = document.createElement("div");
     cell.className = "bestseller-pre-cell" + (hasUrl && url ? "" : " noimg");
     const im = document.createElement("img");
@@ -3218,8 +3221,32 @@ let recruitTasks = [];
     const lbl = document.createElement("div");
     lbl.className = "bestseller-pre-url";
     lbl.innerHTML = "<span>" + String(label || "") + "</span>" + (hasUrl ? '<span class="purl">🔗 首图URL</span>' : '<span class="purl" style="color:#ebb040">待补图</span>');
-    cell.appendChild(im); cell.appendChild(lbl);
+    cell.appendChild(im);
+    // 每行类目：显示自动匹配结果 + 可手动调整下拉
+    if (row) cell.appendChild(recruitRowCatWrap(row));
+    cell.appendChild(lbl);
     return cell;
+  }
+  // 每行类目自动匹配结果展示 + 手动调整下拉（第③点：支持自主调整）
+  function recruitRowCatWrap(row) {
+    const wrap = document.createElement("div");
+    wrap.className = "rg-row-cat";
+    let matched = String(row.category || "").trim();
+    if (matched) {
+      wrap.innerHTML = '<span class="rg-row-cat-tag">自动匹配：' + escHtml(matched) + '</span>';
+    } else {
+      wrap.innerHTML = '<span class="rg-row-cat-tag miss">未匹配到类目，请手动选择</span>';
+    }
+    const sel = document.createElement("select");
+    sel.className = "rg-row-cat-sel";
+    const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "手动调整…";
+    sel.appendChild(o0);
+    (window.RECRUIT_CAT_POOL || []).forEach(c => {
+      const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => { row.category = sel.value; matched = row.category; });
+    wrap.appendChild(sel);
+    return wrap;
   }
 
   // ③ 无URL行补充图片：按文件名=任务ID匹配
@@ -3245,8 +3272,11 @@ let recruitTasks = [];
 
   // 导入：有URL行直接成卡片；无URL行把已匹配图片上传R2后成卡片
   async function commitRecruitImport() {
-    const cat = document.querySelector("#recruit-category")?.value || "";
-    if (!cat) { sbToast("请先选择所属类目（②）再导入", false); return; }
+    // 每行类目：优先取行内自动匹配/手动调整的 category；否则回退到下拉（兼容旧流程）
+    const globalCat = document.querySelector("#recruit-category")?.value || "";
+    const rowCat = r => String(r.category || "").trim() || globalCat;
+    const noCat = recruitRows.filter(r => !rowCat(r));
+    if (noCat.length && !globalCat) { sbToast("还有 " + noCat.length + " 行未自动匹配到类目，请在预览区为这些行手动选择类目", false); return; }
     const missing = recruitNoImgRows.length - recruitNoImgFiles.length;
     if (missing > 0) { sbToast("还有 " + missing + " 行缺少对应的任务ID图片，请先用③上传后再导入", false); return; }
     const bt = document.querySelector("#recruit-xlsx-commit");
@@ -3259,7 +3289,7 @@ let recruitTasks = [];
       try {
         const path = await SB.uploadRecruitImage(m.file);
         const src = recruitNoImgRows.find(r => String(r.task_id).replace(/\s+/g, "") === String(m.task_id).replace(/\s+/g, ""));
-        rows.push(Object.assign({}, src, { image_path: path, category: cat, status: "published", tags: [] }));
+        rows.push(Object.assign({}, src, { image_path: path, category: rowCat(src), status: "published", tags: [] }));
         upShow("#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar", "#recruit-imgxlsx-progtxt", Math.round((i + 1) / total * 100), "上传图片 " + (i + 1) + "/" + total);
       } catch (e) {
         sbToast("图片上传失败：" + (e.message || m.file.name), false);
@@ -3269,7 +3299,7 @@ let recruitTasks = [];
       }
     }
     // 有URL行直接成卡片
-    recruitHasImgRows.forEach(x => rows.push(Object.assign({}, x, { category: cat, status: "published", tags: [] })));
+    recruitHasImgRows.forEach(x => rows.push(Object.assign({}, x, { category: rowCat(x), status: "published", tags: [] })));
     try {
       await SB.addRecruitTasks(rows);
       resetRecruitImport();
@@ -3432,7 +3462,7 @@ let recruitTasks = [];
       const st = recruitStatusLabel(t, subs.length > 0);
       const card = document.createElement("div");
       card.className = "recruit-acard" + (recruitSelected.has(t.id) ? " sel" : "");
-      const chip = st === "bound" ? recruitStatusChip("chip-bound", "已绑定")
+      const chip = st === "bound" ? recruitStatusChip("chip-bound", "已回品")
         : st === "submitted" ? recruitStatusChip("chip-sub", "商家已上传")
         : st === "published" ? recruitStatusChip("chip-pub", "已发布")
         : recruitStatusChip("chip-draft", "未发布");
@@ -3773,8 +3803,47 @@ let recruitTasks = [];
       box.appendChild(row);
     });
   }
-  function renderRecruitFlagStats() { renderTaskFlagStats(recruitTasks, recruitFlagCat, "#recruit-flag-charts", "#recruit-flag-total"); }
-  function renderBestsellerFlagStats() { renderTaskFlagStats(bestsellerTasks, bestsellerFlagCat, "#bestseller-flag-charts", "#bestseller-flag-total"); }
+  // 状态统计：按类目统计各状态数量（招品 / BESTSELLER 共用，口径与状态筛选一致）
+  function computeTaskStatusStats(tasks, cat, zone) {
+    const src = cat ? tasks.filter(t => (t.category || "") === cat) : tasks;
+    const subsFor = zone === "bestseller" ? bestsellerSubsFor : recruitSubsFor;
+    const st = { total: src.length, published: 0, submitted: 0, bound: 0, no_refill: 0 };
+    src.forEach(t => {
+      if (t.bound) st.bound++;
+      else if (t.status === "published" && subsFor(t.id).length > 0) st.submitted++;
+      else if (t.status === "published") st.published++;
+      if (t.flag_no_refill) st.no_refill++;
+    });
+    return st;
+  }
+  // 渲染状态统计条（横向），显示 全部/已发布/商家已上传/已回品/无需回品 数量
+  function renderTaskStatusStats(tasks, cat, boxId, zone) {
+    const box = document.querySelector(boxId);
+    if (!box) return;
+    const s = computeTaskStatusStats(tasks, cat, zone);
+    const items = [
+      { label: "全部", n: s.total, cls: "st-all" },
+      { label: "已发布", n: s.published, cls: "st-pub" },
+      { label: "商家已上传", n: s.submitted, cls: "st-sub" },
+      { label: "已回品", n: s.bound, cls: "st-bound" },
+      { label: "无需回品", n: s.no_refill, cls: "st-norefill" },
+    ];
+    box.innerHTML = "";
+    items.forEach(it => {
+      const row = document.createElement("div");
+      row.className = "st-item " + it.cls;
+      row.innerHTML = '<span class="st-item-label">' + it.label + '</span><span class="st-item-num">' + it.n + '</span>';
+      box.appendChild(row);
+    });
+  }
+  function renderRecruitFlagStats() {
+    renderTaskFlagStats(recruitTasks, recruitFlagCat, "#recruit-flag-charts", "#recruit-flag-total");
+    renderTaskStatusStats(recruitTasks, recruitFlagCat, "#recruit-status-stats", "recruit");
+  }
+  function renderBestsellerFlagStats() {
+    renderTaskFlagStats(bestsellerTasks, bestsellerFlagCat, "#bestseller-flag-charts", "#bestseller-flag-total");
+    renderTaskStatusStats(bestsellerTasks, bestsellerFlagCat, "#bestseller-status-stats", "bestseller");
+  }
 
   // 填充招品/BESTSELLER 标记统计的类目下拉（取当前任务去重类目）
   function renderZoneCatSide(zone) {
@@ -3834,11 +3903,11 @@ let recruitTasks = [];
       const subs = recruitSubsFor(t.id);
       const flagStr = TASK_FLAG_DEFS.filter(d => taskHasFlag(t, d.val)).map(d => d.label).join("、") || "无";
       if (!subs.length) {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已回品" : (t.status === "published" ? "已发布" : "未发布") });
         return;
       }
       subs.forEach(s => {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已回品" : (t.status === "published" ? "已发布" : "未发布") });
       });
     });
     if (!rows.length) return sbToast("暂无数据可导出", false);
@@ -3993,6 +4062,35 @@ let recruitTasks = [];
     if (dimsWrap) dimsWrap.addEventListener("change", (e) => { if (e.target.classList.contains("export-dim-sel")) renderExportGrid(); });
   }
 // ================= 专区类目：发布下拉填充 + 搜索过滤 =================
+// ================= 招品回品：表格类目自动匹配（识别"站内叶子类目名称"→自动归类） =================
+  window.RECRUIT_CAT_MATCH = (raw) => {
+    if (!raw) return "";
+    const pool = (window.RECRUIT_CAT_POOL && window.RECRUIT_CAT_POOL.length)
+      ? window.RECRUIT_CAT_POOL
+      : Array.from(document.querySelectorAll("#recruit-category option")).map(o => o.value).filter(v => v);
+    if (!pool.length) return "";
+    const r = String(raw);
+    const KW = {
+      "裤子":["裤"], "休闲裤":["裤"], "牛仔裤":["裤"], "西裤":["裤"],
+      "短裤":["短裤","裤"], "卫裤":["卫裤","裤"],
+      "棉服":["棉服","棉衣","棉袄"], "羽绒服":["羽绒"], "夹克":["夹克","外套"],
+      "外套":["外套","大衣","风衣"], "风衣":["风衣"], "大衣":["大衣"],
+      "卫衣":["卫衣","卫衣"], "毛衣":["毛衣","毛衫","针织"], "t恤":["t恤","tee","短袖"],
+      "衬衫":["衬衫","衬衣"], "polo":["polo"], "马甲":["马甲"], "背心":["背心"],
+      "西装":["西装"], "套装":["套装"], "皮衣":["皮衣"],
+    };
+    // 1）候选类目名整体出现在原始值中（如"休闲裤"→候选"休闲裤"）
+    for (const c of pool) if (r.indexOf(c) >= 0) return c;
+    // 2）原始值是候选名的子串（如"裤"→候选"休闲裤"，取最长词）
+    let best = "";
+    for (const c of pool) if (c.indexOf(r) >= 0 && c.length > best.length) best = c;
+    if (best) return best;
+    // 3）关键词别名匹配（如"棉服"字样→候选"棉服"）
+    for (const c of pool) {
+      for (const k of (KW[c] || [c])) if (k && r.indexOf(k) >= 0) return c;
+    }
+    return "";
+  };
   async function fillZoneCatSelect(zone) {
     const selId = zone === "bestseller" ? "#bestseller-category" : "#recruit-category";
     const sel = document.querySelector(selId);
@@ -4019,29 +4117,17 @@ let recruitTasks = [];
       sel.appendChild(o);
     });
     sel._allCats = cats;
+    if (zone === "recruit") window.RECRUIT_CAT_POOL = cats.map(c => c.name).filter(Boolean);
   }
-  function bindZoneCatSearch(zone) {
-    const selId = zone === "bestseller" ? "#bestseller-category" : "#recruit-category";
-    const searchId = zone === "bestseller" ? "#bestseller-cat-search" : "#recruit-cat-search";
-    const searchEl = document.querySelector(searchId);
-    const sel = document.querySelector(selId);
-    if (!searchEl || !sel) return;
-    searchEl.addEventListener("input", () => {
-      const kw = (searchEl.value || "").trim().toLowerCase();
-      const cur = sel.value;
-      sel.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = ""; opt0.textContent = "（不限类目）";
-      sel.appendChild(opt0);
-      (sel._allCats || []).filter(c => !kw || c.name.toLowerCase().includes(kw)).forEach(c => {
-        const o = document.createElement("option");
-        o.value = c.name; o.textContent = c.name;
-        sel.appendChild(o);
-      });
-      if (cur && Array.from(sel.options).some(o => o.value === cur)) sel.value = cur;
-    });
+  function loadRecruitCatPicker() {
+    // 招品回品上传区为「自动匹配+每行手动调整」，无全局下拉，但需预载类目候选池供自动匹配/行内下拉使用
+    if (window.SB) {
+      window.SB.listZoneCats("recruit").then(cats => {
+        window.RECRUIT_CAT_POOL = (cats || []).map(c => c.name).filter(Boolean);
+      }).catch(() => {});
+    }
+    fillZoneCatSelect("recruit"); // 兼容旧调用（若DOM存在则填充下拉）
   }
-  function loadRecruitCatPicker() { fillZoneCatSelect("recruit"); bindZoneCatSearch("recruit"); }
   function loadBestsellerCatPicker() { fillZoneCatSelect("bestseller"); }  // BESTSELLER 只保留下拉选择，不提供类目搜索框
 
   // ================= 专区类目：类目设置弹窗（新增/改名/删除/搜索） =================
@@ -4567,7 +4653,7 @@ let bestsellerTasks = [];
       const st = bestsellerStatusLabel(t, subs.length > 0);
       const card = document.createElement("div");
       card.className = "bestseller-acard" + (bestsellerSelected.has(t.id) ? " sel" : "");
-      const chip = st === "bound" ? bestsellerStatusChip("chip-bound", "已绑定")
+      const chip = st === "bound" ? bestsellerStatusChip("chip-bound", "已回品")
         : st === "submitted" ? bestsellerStatusChip("chip-sub", "商家已上传")
         : st === "published" ? bestsellerStatusChip("chip-pub", "已发布")
         : bestsellerStatusChip("chip-draft", "未发布");
@@ -4824,11 +4910,11 @@ let bestsellerTasks = [];
       const subs = bestsellerSubsFor(t.id);
       const flagStr = TASK_FLAG_DEFS.filter(d => taskHasFlag(t, d.val)).map(d => d.label).join("、") || "无";
       if (!subs.length) {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: "", 货品SPU: "", 状态: t.bound ? "已回品" : (t.status === "published" ? "已发布" : "未发布") });
         return;
       }
       subs.forEach(s => {
-        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已绑定" : (t.status === "published" ? "已发布" : "未发布") });
+        rows.push({ 任务ID: t.task_id, 前台序号: seq, 类目: t.category || "", 标记: flagStr, IP: flagText(t, "ip"), 品牌: flagText(t, "brand"), 类目错放: flagText(t, "cat_mismatch"), 无需回品: flagText(t, "no_refill"), 商家前台用户ID: s.user_id, 货品SPU: (s.spus || []).join(","), 状态: t.bound ? "已回品" : (t.status === "published" ? "已发布" : "未发布") });
       });
     });
     if (!rows.length) return sbToast("暂无数据可导出", false);
