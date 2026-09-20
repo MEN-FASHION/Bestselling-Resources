@@ -4386,11 +4386,34 @@ let recruitTasks = [];
     sel._allCats = cats;
     if (zone === "recruit") window.RECRUIT_CAT_POOL = cats.map(c => c.name).filter(Boolean);
   }
+  function refreshRecruitCatSelects() {
+    // 类目池加载完成后，把已渲染的所有类目下拉（批量/行内）的选项重建，解决「预览先渲染、池后到」导致下拉为空的问题
+    const pool = (window.RECRUIT_CAT_POOL || []).filter(Boolean);
+    document.querySelectorAll(".rg-batch-sel").forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "（设为…）";
+      sel.appendChild(o0);
+      pool.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+      sel.value = (cur && pool.indexOf(cur) >= 0) ? cur : "";
+    });
+    document.querySelectorAll(".rg-row-cat-sel").forEach(sel => {
+      const cur = sel.value;
+      const opts = pool.slice();
+      if (cur && pool.indexOf(cur) < 0) opts.unshift(cur);
+      sel.innerHTML = "";
+      const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "手动调整…";
+      sel.appendChild(o0);
+      opts.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+      sel.value = cur || "";
+    });
+  }
   function loadRecruitCatPicker() {
     // 招品回品上传区为「自动匹配+每行手动调整」，无全局下拉，但需预载类目候选池供自动匹配/行内下拉使用
     if (window.SB) {
       window.SB.listZoneCats("recruit").then(cats => {
         window.RECRUIT_CAT_POOL = (cats || []).map(c => c.name).filter(Boolean);
+        refreshRecruitCatSelects(); // 池就绪后刷新已渲染的下拉，避免下拉为空
       }).catch(() => {});
     }
     fillZoneCatSelect("recruit"); // 兼容旧调用（若DOM存在则填充下拉）
