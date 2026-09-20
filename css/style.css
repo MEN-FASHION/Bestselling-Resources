@@ -1794,7 +1794,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 
 /* ============ 超管权限管理面板 ============ */
 .perm-zone { margin: 18px 0; }
-.perm-zone-title { font-size: 14px; color: var(--txt); margin-bottom: 10px; letter-spacing: .5px; }
+.perm-zone-title { font-size: 14px; color: var(--txt); margin-bottom: 10px; letter-spacing: .5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.perm-cats-toolbar { display: inline-flex; align-items: center; gap: 8px; font-weight: normal; }
+.perm-cats-count { font-size: 13px; color: var(--muted, #888); white-space: nowrap; }
 .perm-cats { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; min-height: 48px; }
 .perm-cat-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--txt); padding: 6px 12px; border: 1px solid rgba(0,0,0,.12); border-radius: 999px; cursor: pointer; transition: all .15s; }
 .perm-cat-item:hover { border-color: var(--gold); }

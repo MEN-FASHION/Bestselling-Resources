@@ -3748,6 +3748,8 @@ let recruitTasks = [];
       bindTaskFlagBoxes(card, t, "recruit", renderRecruitList, renderRecruitFlagStats);
       box.appendChild(card);
     });
+    // 渲染完成后同步一次类目下拉：确保池就绪/重建后正式卡片下拉选项完整
+    refreshRecruitCatSelects();
   }
 
   // 已传SPU 状态标记：商家中已有提交 → 显示「已传SPU · 已上传」
@@ -4388,7 +4390,7 @@ let recruitTasks = [];
     if (zone === "recruit") window.RECRUIT_CAT_POOL = cats.map(c => c.name).filter(Boolean);
   }
   function refreshRecruitCatSelects() {
-    // 类目池加载完成后，把已渲染的所有类目下拉（批量/行内）的选项重建，解决「预览先渲染、池后到」导致下拉为空的问题
+    // 类目池加载完成后，把已渲染的所有类目下拉（批量/行内/正式卡片）的选项重建，解决「预览先渲染、池后到」导致下拉为空的问题
     const pool = (window.RECRUIT_CAT_POOL || []).filter(Boolean);
     document.querySelectorAll(".rg-batch-sel").forEach(sel => {
       const cur = sel.value;
@@ -4408,14 +4410,33 @@ let recruitTasks = [];
       opts.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
       sel.value = cur || "";
     });
+    // 正式卡片的类目下拉：池就绪后再补选项，避免正式列表先渲染导致下拉为空
+    document.querySelectorAll(".rcac-cat-sel").forEach(sel => {
+      const cur = sel.value;
+      const opts = pool.slice();
+      if (cur && pool.indexOf(cur) < 0) opts.unshift(cur);
+      sel.innerHTML = "";
+      const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "（选一类目…）";
+      sel.appendChild(o0);
+      opts.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+      sel.value = cur || "";
+    });
   }
   function loadRecruitCatPicker() {
     // 招品回品上传区为「自动匹配+每行手动调整」，无全局下拉，但需预载类目候选池供自动匹配/行内下拉使用
+    const applyPool = (cats) => {
+      let names = (cats || []).map(c => c.name).filter(Boolean);
+      // 兜底：若获取类目为空，用 config.js 内置类目补足，确保下拉/自动匹配永远有候选
+      if (!names.length && window.CONFIG && Array.isArray(window.CONFIG.CATEGORY_OPTIONS)) {
+        names = window.CONFIG.CATEGORY_OPTIONS.filter(Boolean);
+      }
+      window.RECRUIT_CAT_POOL = names;
+      refreshRecruitCatSelects(); // 池就绪后刷新已渲染的下拉，避免下拉为空
+    };
     if (window.SB) {
-      window.SB.listZoneCats("recruit").then(cats => {
-        window.RECRUIT_CAT_POOL = (cats || []).map(c => c.name).filter(Boolean);
-        refreshRecruitCatSelects(); // 池就绪后刷新已渲染的下拉，避免下拉为空
-      }).catch(() => {});
+      window.SB.listZoneCats("recruit").then(cats => { applyPool(cats); }).catch(() => { applyPool([]); });
+    } else {
+      applyPool([]);
     }
     fillZoneCatSelect("recruit"); // 兼容旧调用（若DOM存在则填充下拉）
   }
@@ -4526,9 +4547,18 @@ let recruitTasks = [];
       lab.className = "perm-cat-item";
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.value = c.name; cb.checked = chk.has(norm(c.name));
+      cb.onchange = updatePermCatCount;
       lab.appendChild(cb); lab.appendChild(document.createTextNode(c.name));
       box.appendChild(lab);
     });
+    updatePermCatCount();
+  }
+  function updatePermCatCount() {
+    const cnt = document.querySelector("#perm-cats-count");
+    if (!cnt) return;
+    const total = document.querySelectorAll("#perm-cats input[type=checkbox]").length;
+    const picked = document.querySelectorAll("#perm-cats input[type=checkbox]:checked").length;
+    cnt.textContent = "已选 " + picked + " / " + total;
   }
   function bindPermission() {
     const sel = $("#perm-user");
@@ -4538,6 +4568,16 @@ let recruitTasks = [];
     };
     const ref = $("#perm-refresh");
     if (ref) ref.onclick = loadPermPanel;
+    const allBtn = $("#perm-cats-all");
+    if (allBtn) allBtn.onclick = () => {
+      document.querySelectorAll("#perm-cats input[type=checkbox]").forEach(cb => cb.checked = true);
+      updatePermCatCount();
+    };
+    const noneBtn = $("#perm-cats-none");
+    if (noneBtn) noneBtn.onclick = () => {
+      document.querySelectorAll("#perm-cats input[type=checkbox]").forEach(cb => cb.checked = false);
+      updatePermCatCount();
+    };
     const save = $("#perm-save");
     if (save) save.onclick = async () => {
       const uid = $("#perm-user")?.value;

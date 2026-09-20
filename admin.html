@@ -334,7 +334,13 @@
             <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
           </div>
           <div class="perm-zone">
-            <h4 class="perm-zone-title">可管理类目（跨专区统一生效）</h4>
+            <h4 class="perm-zone-title">可管理类目（跨专区统一生效）
+              <span class="perm-cats-toolbar">
+                <span id="perm-cats-count" class="perm-cats-count">0</span>
+                <button id="perm-cats-all" class="btn-ghost small" type="button" title="勾选全部类目">全选</button>
+                <button id="perm-cats-none" class="btn-ghost small" type="button" title="取消全部类目">全不选</button>
+              </span>
+            </h4>
             <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
           </div>
           <div class="rg-btnrow">
