@@ -184,6 +184,14 @@ alter table public.site_settings
 -- 缺省未配置 = 该类目前台可见；false = 前台隐藏该类目下内容
 alter table public.site_settings
   add column if not exists frontend_cat_visibility jsonb not null default '{}'::jsonb;
+alter table public.site_settings
+  add column if not exists frontend_cat_visibility jsonb not null default '{}'::jsonb;
+
+-- 各专区 本身 是否在前台可见（frontend_zone_visibility）
+-- 结构示例：{"visual":true,"trend":true,"recruit":true,"bestseller":true}
+-- 缺省未配置 = 该专区前台可见；false = 前台隐藏整个专区入口
+alter table public.site_settings
+  add column if not exists frontend_zone_visibility jsonb not null default '{"visual":true,"trend":true,"recruit":true,"bestseller":true}'::jsonb;
 
 alter table public.site_settings enable row level security;
 
@@ -504,6 +512,13 @@ alter table public.recruit_tasks add column if not exists bound boolean not null
 alter table public.recruit_tasks add column if not exists bound_at timestamptz;
 alter table public.recruit_tasks add column if not exists tags jsonb not null default '[]';
 alter table public.recruit_tasks add column if not exists deleted_at timestamptz;  -- 软删除：删除进回收站
+-- 招品回品改版：新增差异化字段（表格直接导入）
+alter table public.recruit_tasks add column if not exists site_id text default '';        -- 站点id（展示映射为站点名）
+alter table public.recruit_tasks add column if not exists industry_link text default '';  -- 行业链接
+alter table public.recruit_tasks add column if not exists open_priority text default '';  -- 开款优先级
+alter table public.recruit_tasks add column if not exists open_type text default '';      -- 开款类型
+alter table public.recruit_tasks add column if not exists recruit_reason text default ''; -- 招品原因
+alter table public.recruit_tasks add column if not exists required_at text default '';    -- 提需时间（前台只展示到日）
 
 -- 登录用户可读招品任务清单（前台商家浏览；后台管理员也经此读取）
 drop policy if exists "authenticated read recruit_tasks" on public.recruit_tasks;

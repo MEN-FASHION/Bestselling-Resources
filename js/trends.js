@@ -22,6 +22,8 @@
   let bestsellerCats = [];    // BESTSELLER 专区类目
   let bestsellerCat = "全部"; // BESTSELLER 当前选中类目
   let catVisibility = {};    // 各专区各类目是否前台可见
+  let zoneVis = {};          // 各专区本身是否前台可见
+  let zoneVisLoaded = false; // 专区可见性是否已加载
   // —— 分享预览（方案A）：管理员分享类目链接，未登录可浏览该类目缩略图 ——
   const shareQ = new URLSearchParams(location.search);
   const shareZone = shareQ.get("zone");
@@ -30,6 +32,19 @@
   const hasShareTarget = () => !!shareCat && (shareZone === "recruit" || shareZone === "bestseller");
   // 未登录时的分享预览模式：仅显示缩略图 + 登录引导
   const isSharePreview = () => !window.__loggedIn && hasShareTarget();
+
+  // HTML转义（前台卡片信息区防注入）
+  function escHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  // 提需时间只展示到日（截取 YYYY-MM-DD）
+  function frontDay(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    const m = s.match(/\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}/);
+    if (m) return m[0].replace(/[年\/.]/g, "-").replace(/月/g, "-").replace(/-$/, "");
+    return s;
+  }
 
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
@@ -379,6 +394,7 @@
   }
 
   async function refreshUI() {
+    await ensureZoneVis();
     if (window.__loggedIn) { showTrend(); } else if (isSharePreview()) {
       // 分享预览（方案A）：未登录但带 ?zone= & cat= ，直接进入分享专区显示缩略图
       showMain();
@@ -461,6 +477,14 @@
     const hash = (location.hash || "").replace("#", "");
     let rec = hash === "recruit";
     let bs = hash === "bestseller";
+    // —— 专区守卫：目标专区在前台被隐藏时，即使直接输入地址/哈希也拦截进入 ——
+    const targetZone = bs ? "bestseller" : (rec ? "recruit" : "trend");
+    if (!zoneVisible(targetZone)) {
+      location.hash = "";           // 清掉被隐藏专区哈希
+      toast("该专区暂未开放", false);
+      showLogin();                   // 未开放一律回登录页
+      return;
+    }
     // 分享目标：URL 带 ?zone= & cat= 且当前未设置分区 hash（首次进入分享链接）时，
     // 定位到对应专区与类目；用户点击顶栏切换置入 hash 后，优先按 hash 跳转，分享目标不再覆盖。
     const isFreshShareEntry = hash === "" && hasShareTarget();
@@ -486,6 +510,12 @@
   function showTrend() { showMain(); }
   // 未登录：仅当跳转目标是"分享目标专区"时才放行，否则回登录页
   function guardZone(zone) {
+    // 专区守卫：该专区在前台被隐藏时，无论是否登录一律拦截，不放行进入
+    if (!zoneVisible(zone)) {
+      toast("该专区暂未开放", false);
+      showLogin();
+      return false;
+    }
     if (window.__loggedIn) return true;
     // 分享预览仅在分享目标专区放行；趋势专区/其它专区一律回登录
     if (zone === "trend") { showLogin(); return false; }
@@ -568,9 +598,18 @@
     }
   }
 
+  // 确保专区可见性已加载（仅加载一次），供守卫与导航复用
+  async function ensureZoneVis() {
+    if (zoneVisLoaded) return;
+    try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
+    zoneVisLoaded = true;
+    applyZoneNav();
+  }
+
   async function loadTrends() {
     try {
       try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
+      await ensureZoneVis();
       trends = await SB.listTrends();
       const active = await SB.listActiveCats().catch(() => []);
       const activeArr = (active || []).map(c => (typeof c === "string" ? c : (c && c.name) || ""));
@@ -587,6 +626,28 @@
   function catCatVisible(zone, cat) {
     const m = catVisibility && catVisibility[zone];
     return !m || m[cat] !== false;
+  }
+
+  // 某专区本身是否前台可见（未配置默认可见）
+  function zoneVisible(zone) {
+    return !zoneVis || zoneVis[zone] !== false;
+  }
+
+  // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏；
+  // 被隐藏的菜单项导航不显示，直接访问/点击仍由 guardZone/showMain 守卫拦截。
+  function applyZoneNav() {
+    const t = zoneVis || {};
+    document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
+      const href = a.getAttribute("href") || "";
+      const vt = a.getAttribute("data-viewtab") || "";
+      let z = null;
+      if (href === "index.html") z = "visual";
+      else if (vt === "trend" || href === "trends.html") z = "trend";
+      else if (vt === "recruit" || href === "trends.html#recruit") z = "recruit";
+      else if (vt === "bestseller" || href === "trends.html#bestseller") z = "bestseller";
+      else if (a.id === "notice-tab") z = "notice";
+      a.style.display = (z && t[z] === false) ? "none" : "";
+    });
   }
 
   function renderCatMenu() {
@@ -709,6 +770,15 @@
       const card = document.createElement("div");
       card.className = "recruit-card";
       const previewMode = isSharePreview();
+      // 招品信息区（前台展示：站点/提需到日/优先级/原因/类目）
+      const siteName = window.CONFIG.siteName(t.site_id) || "";
+      const infoParts = [];
+      if (t.category) infoParts.push('<span class="ri-cat">类目：' + escHtml(t.category) + '</span>');
+      if (siteName) infoParts.push('<span class="ri-site">站点：' + escHtml(siteName) + '</span>');
+      if (t.required_at) infoParts.push('<span class="ri-time">提需：' + escHtml(frontDay(t.required_at)) + '</span>');
+      if (t.open_priority) infoParts.push('<span class="ri-pri">优先级：' + escHtml(t.open_priority) + '</span>');
+      if (t.recruit_reason) infoParts.push('<span class="ri-reason">原因：' + escHtml(t.recruit_reason) + '</span>');
+      const infoHtml = infoParts.length ? '<div class="recruit-info">' + infoParts.join('') + '</div>' : '';
       card.innerHTML =
         '<div class="recruit-img">' +
           '<img class="recruit-thumb" alt="">' +
@@ -716,6 +786,7 @@
           '<span class="recruit-no"></span>' + (mySpus.length && !previewMode ? '<span class="recruit-done">已上传</span>' : '') +
         '</div>' +
         '<div class="recruit-body">' +
+          infoHtml +
           (!previewMode
             ? '<div class="recruit-spu-sub"></div>' +
               '<div class="recruit-form hidden">' +
@@ -745,11 +816,14 @@
       } else {
         ph.textContent = "暂无图片";
       }
+      const jumpLink = (t.industry_link || "").trim();
+      if (jumpLink) { im.style.cursor = "pointer"; }
+      const onImgClick = (e) => {
+        if (jumpLink) { e.stopPropagation(); window.open(jumpLink, "_blank", "noopener"); return; }
+        if (previewMode) { location.hash = "recruit"; toast("请登录后查看高清原图与提交SPU"); }
+      };
+      im.addEventListener("click", onImgClick);
       if (previewMode) {
-        im.addEventListener("click", () => {
-          location.hash = "recruit";
-          toast("请登录后查看高清原图与提交SPU");
-        });
         box.appendChild(card);
         return;
       }

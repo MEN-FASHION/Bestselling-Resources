@@ -23,6 +23,7 @@
   let skinDefs = [];     // 肤色标签定义
   let dimSwitches = {};  // 各维度是否在前台展示
   let catVisibility = {}; // 各专区各类目是否前台可见
+  let zoneVis = {};       // 各专区本身是否前台可见
 
   let activeCats = [];
   let usedCats = [];
@@ -125,6 +126,14 @@
       window.__pubReady = true;
       maybeBoot();
     }).catch(() => { window.__publicAccess = false; window.__pubReady = true; maybeBoot(); });
+
+    // 提前读取各专区前台可见性配置，用于视觉专区"被隐藏即拦截"守卫
+    SB.getFrontendZoneVisibility().then((z) => {
+      zoneVis = z || {};
+      // 视觉专区被隐藏时，即使已登录也重刷一次守卫拦截
+      refreshAuthUI();
+      applyZoneNav();
+    }).catch(() => { zoneVis = {}; });
 
     SB.onAuth((session) => {
       window.__loggedIn = !!session;
@@ -254,6 +263,16 @@
   }
 
   function refreshAuthUI() {
+    // 视觉专区被隐藏守卫：即使直接访问首页也拦截，提示暂未开放
+    if (zoneVis && zoneVis.visual === false) {
+      $("#login-btn").classList.add("hidden");
+      $("#logout-btn").classList.add("hidden");
+      $("#gallery-view").classList.add("hidden");
+      $("#login-view").classList.remove("hidden");
+      if (window.__loggedIn) $("#logout-btn").classList.remove("hidden");
+      Auth.toast("该专区暂未开放", false);
+      return;
+    }
     if (window.__loggedIn) { showGallery(); return; }
     if (window.__publicAccess) {
       $("#login-btn").classList.remove("hidden");
@@ -464,6 +483,8 @@
       try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
       // 各专区各类目前台可见性（视觉专区 = visual；未配置默认可见）
       try { catVisibility = await SB.getFrontendCatVisibility(); } catch (e) { catVisibility = {}; }
+      try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
+      applyZoneNav();
       shownCats = activeCats.filter(c => usedCats.includes(c) && catCatVisible("visual", c));
       renderCatMenu(shownCats);
       await renderGrid(currentCat);
@@ -476,6 +497,26 @@
   function catCatVisible(zone, cat) {
     const m = catVisibility && catVisibility[zone];
     return !m || m[cat] !== false;
+  }
+
+  // 某专区本身是否前台可见（未配置默认可见）
+  function zoneVisible(zone) {
+    return !zoneVis || zoneVis[zone] !== false;
+  }
+
+  // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏
+  function applyZoneNav() {
+    const t = zoneVis || {};
+    document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
+      const href = a.getAttribute("href") || "";
+      let z = null;
+      if (href === "index.html") z = "visual";
+      else if (href === "trends.html") z = "trend";
+      else if (href === "trends.html#recruit") z = "recruit";
+      else if (href === "trends.html#bestseller") z = "bestseller";
+      else if (a.id === "notice-tab") z = "notice";
+      a.style.display = (z && t[z] === false) ? "none" : "";
+    });
   }
 
   function renderCatMenu(cats) {

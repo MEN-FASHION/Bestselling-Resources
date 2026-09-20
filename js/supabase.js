@@ -508,6 +508,24 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存失败");
     },
 
+    // 各专区 本身 是否在前台可见（frontend_zone_visibility）
+    // 返回形如 { visual: true/false, trend: ..., recruit: ..., bestseller: ... }
+    // 未配置或缺失的专区默认为可见（true）
+    async getFrontendZoneVisibility() {
+      const { data, error } = await client
+        .from("site_settings").select("frontend_zone_visibility").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_zone_visibility) return {};
+      return data.frontend_zone_visibility;
+    },
+    // zone: visual / trend / recruit / bestseller；visible=false 表示前台隐藏整个专区入口
+    async setFrontendZoneVisibility(zone, visible) {
+      const cur = await this.getFrontendZoneVisibility();
+      cur[zone] = !!visible;
+      const { error } = await client
+        .from("site_settings").update({ frontend_zone_visibility: cur, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+
     // ============ 公告 ============
     // 后台：读取全部公告（含草稿/下架）
     async listAnnouncements() {
@@ -676,6 +694,9 @@ const SB = (() => {
         image_path: (x && x.image_path) || "", status: (x && x.status) || "draft",
         tags: (x && x.tags) || [], category: (x && x.category) || "",
         url: (x && x.url) || null, main_img_url: (x && x.main_img_url) || null,
+        site_id: (x && x.site_id) || "", industry_link: (x && x.industry_link) || "",
+        open_priority: (x && x.open_priority) || "", open_type: (x && x.open_type) || "",
+        recruit_reason: (x && x.recruit_reason) || "", required_at: (x && x.required_at) || "",
         uploaded_by: s?.data?.session?.user?.id || null,
       }));
       const { error } = await client.from("recruit_tasks").insert(rows);

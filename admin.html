@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260915AJ">
+<link rel="stylesheet" href="css/style.css?v=20260920A">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -353,6 +353,12 @@
           <button id="access-save" class="btn-primary" disabled>保存设置</button>
           <hr class="tag-sub-hr">
           <div class="access-zone-block">
+            <h4 class="perm-zone-title">顶部菜单项 · 前台可见 <span class="hint-inline">（可单独关闭任一菜单项：视觉专区/趋势专区/招品回品/BESTSELLER/公告；关闭后前台该项入口即隐藏；仅影响前台展示，不影响后台数据）</span></h4>
+            <p class="hint">开启「展示」= 前台该菜单项入口可见；关闭「隐藏」= 前台该菜单项入口不展示（用户看不见），可随时再开启。未配置的菜单项默认前台可见。</p>
+            <div id="zone-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
+          </div>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
             <h4 class="perm-zone-title">各专区 · 各类目 · 前台可见 <span class="hint-inline">（可随时关闭某专区某类目，前台该类目下内容立即隐藏；关闭仅影响前台展示，不影响后台数据）</span></h4>
             <p class="hint">开启「展示」= 前台该类目可见；关闭「隐藏」= 前台该类目下内容不展示（用户看不见），可随时再开启。未配置的类目默认前台可见。</p>
             <div id="cat-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
@@ -398,49 +404,38 @@
         <div class="zone-flex">
           <aside class="zone-side" id="recruit-zone-side" aria-label="类目菜单"></aside>
           <div class="zone-main">
-        <!-- 批量上传区：上传多张图片 → 每张生成一个独立任务卡片 -->
+        <!-- 统一上传入口：先传表格（表格含首图URL直接成卡片；无首图URL则按任务ID补图） -->
         <div class="recruit-upload">
-          <div class="rg-row"><label class="field">批量上传招品图片（可多选，每张图片生成一个独立任务卡片）</label>
-            <div id="recruit-img-dropzone" class="dropzone">
-              <div class="dz-inner"><span class="dz-icon">＋</span><p>拖拽多张招品图片到这里，或 <em>点击选择文件</em></p><p class="dz-sub">支持 JPG / PNG，可多选批量上传</p></div>
-              <input type="file" id="recruit-img-input" accept="image/*" multiple hidden>
+          <div class="rg-row"><label class="field">① 上传招品表格（先传表格。表格含「首图URL」的行直接生成任务卡片，无需再传图；无「首图URL」的行需再上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图）</label>
+            <div class="rg-row-inline">
+              <button id="recruit-xlsx-btn" class="btn-primary" type="button">选择表格</button>
+              <input type="file" id="recruit-xlsx-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="recruit-xlsx-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
+              <span id="recruit-xlsx-file" class="hint-inline"></span>
+              <span id="recruit-xlsx-result" class="url-match-result"></span>
             </div>
-            <div id="recruit-upload-preview" class="recruit-upload-pre recruit-pre hidden"></div>
-          </div>
-          <div class="rg-row"><label class="field">任务ID（选填；留空则每张图创建「未发布」草稿卡片，之后再单独/批量填写）</label>
-            <input id="recruit-taskid" class="input" placeholder="例如：RC2026001，多个可用英文逗号分隔，按顺序对应图片"></div>
-          <div class="rg-row"><label class="field">所属类目（可选，用于前台左栏筛选）</label>
+            <div class="upload-progress hidden" id="recruit-xlsx-prog"><div class="upload-progress-bar" id="recruit-xlsx-progbar"></div><span class="upload-progress-txt" id="recruit-xlsx-progtxt"></span></div>
+            <div id="recruit-xlsx-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+          <div class="rg-row"><label class="field">② 所属类目（前台卡片展示「类目：XXXX」；整批导入共用同一个类目）</label>
             <div class="cat-pick-wrap">
               <input id="recruit-cat-search" class="input cat-pick-search" placeholder="搜索类目…">
               <select id="recruit-category" class="input cat-pick-select"></select>
               <button id="recruit-cat-mgr" class="btn-ghost small" type="button" data-super="1">类目设置</button>
             </div></div>
           <div class="rg-btnrow">
-            <button id="recruit-save" class="btn-primary" type="button">上传生成任务卡片</button>
+            <button id="recruit-save" class="btn-primary" type="button">导入并生成任务卡片</button>
             <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
           </div>
-          <div class="rg-row"><label class="field">URL匹配 · 批量导入招品（上传含「任务ID / 主图URL / 链接（可选）/ 类目（可选）」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示）</label>
+          <div class="rg-row"><label class="field">③ 补充图片（仅当表格有行缺少「首图URL」时才需要；上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图）</label>
             <div class="rg-row-inline">
-              <button id="recruit-urlimport-btn" class="btn-primary" type="button">选择表格（URL匹配）</button>
-              <input type="file" id="recruit-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
-              <button id="recruit-urlimport-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
-              <span id="recruit-urlimport-file" class="hint-inline"></span>
-              <span id="recruit-urlimport-result" class="url-match-result"></span>
+              <button id="recruit-imgxlsx-btn" class="btn-primary" type="button">选择图片（可多选）</button>
+              <input type="file" id="recruit-imgxlsx-input" accept="image/*" multiple hidden>
+              <button id="recruit-imgxlsx-clear" class="btn-ghost small" type="button" title="清除已选图片">清除</button>
+              <span id="recruit-imgxlsx-file" class="hint-inline"></span>
+              <span id="recruit-imgxlsx-result" class="url-match-result"></span>
             </div>
-            <div class="upload-progress hidden" id="recruit-urlimport-prog"><div class="upload-progress-bar" id="recruit-urlimport-progbar"></div><span class="upload-progress-txt" id="recruit-urlimport-progtxt"></span></div>
-            <div id="recruit-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
-          <div class="rg-row"><label class="field">ID匹配 · 批量上传招品图片（上传一批图片文件 + 一个含「任务ID」的Excel，系统按图片文件名匹配任务ID，图片存R2展示）</label>
-            <div class="rg-row-inline">
-              <button id="recruit-imgimport-btn" class="btn-primary" type="button">① 选择图片（可多选）</button>
-              <input type="file" id="recruit-imgimport-input" accept="image/*" multiple hidden>
-              <button id="recruit-imgxlsx-btn" class="btn-primary" type="button">② 选择匹配表格（ID匹配）</button>
-              <input type="file" id="recruit-imgxlsx-input" accept=".xlsx,.xls,.csv" hidden>
-              <button id="recruit-imgimport-clear" class="btn-ghost small" type="button" title="清除已选图片与表格">清除</button>
-              <span id="recruit-imgimport-file" class="hint-inline"></span>
-              <span id="recruit-imgimport-result" class="url-match-result"></span>
-            </div>
-            <div class="upload-progress hidden" id="recruit-imgimport-prog"><div class="upload-progress-bar" id="recruit-imgimport-progbar"></div><span class="upload-progress-txt" id="recruit-imgimport-progtxt"></span></div>
-            <div id="recruit-imgimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+            <div class="upload-progress hidden" id="recruit-imgxlsx-prog"><div class="upload-progress-bar" id="recruit-imgxlsx-progbar"></div><span class="upload-progress-txt" id="recruit-imgxlsx-progtxt"></span></div>
+            <div id="recruit-imgxlsx-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
         </div>
         <hr class="tag-sub-hr">
 
@@ -759,8 +754,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260915AJ"></script>
-  <script src="js/supabase.js?v=20260915AJ"></script>
-  <script src="js/admin.js?v=20260915AJ"></script>
+  <script src="js/config.js?v=20260920A"></script>
+  <script src="js/supabase.js?v=20260920A"></script>
+  <script src="js/admin.js?v=20260920A"></script>
 </body>
 </html>

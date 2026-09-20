@@ -2404,7 +2404,8 @@
     { key: "visual", label: "视觉专区" },
     { key: "trend", label: "趋势专区" },
     { key: "recruit", label: "招品回品" },
-    { key: "bestseller", label: "BESTSELLER" }
+    { key: "bestseller", label: "BESTSELLER" },
+    { key: "notice", label: "公告" }
   ];
   async function loadAccess() {
     const toggle = document.querySelector("#public-access-toggle");
@@ -2415,6 +2416,40 @@
       document.querySelector("#access-save").disabled = true;
     } catch (e) { /* 忽略读取失败 */ }
     await loadCatVisibility();
+    await loadZoneVisibility();
+  }
+  // 各专区 本身 前台可见开关
+  let zoneVisCfg = {}; // { zone: true/false }
+  async function loadZoneVisibility() {
+    const box = document.querySelector("#zone-visibility-box");
+    if (!box) return;
+    try { zoneVisCfg = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVisCfg = {}; }
+    box.innerHTML = "";
+    for (const z of CAT_VIS_ZONES) {
+      const item = document.createElement("div");
+      const on = zoneVisCfg[z.key] !== false; // 未配置默认可见
+      item.className = "cat-vis-item " + (on ? "on" : "off");
+      item.innerHTML = `<span class="cvi-name">${escHtml(z.label)}</span><span class="fds-switch${on ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${on ? "展示" : "隐藏"}</span>`;
+      item.onclick = async () => {
+        const next = !on;
+        // 乐观更新 UI
+        item.className = "cat-vis-item " + (next ? "on" : "off");
+        item.querySelector(".fds-switch").classList.toggle("on", next);
+        item.querySelector(".cvi-state").textContent = next ? "展示" : "隐藏";
+        zoneVisCfg[z.key] = next;
+        try {
+          await SB.setFrontendZoneVisibility(z.key, next);
+          sbToast(`${z.label}专区已${next ? "开启前台展示" : "隐藏前台入口"}`);
+        } catch (e) {
+          // 回退
+          item.className = "cat-vis-item " + (on ? "on" : "off");
+          item.querySelector(".fds-switch").classList.toggle("on", on);
+          item.querySelector(".cvi-state").textContent = on ? "展示" : "隐藏";
+          sbToast("保存失败：" + (e.message || ""), false);
+        }
+      };
+      box.appendChild(item);
+    }
   }
   // 读取可见性配置 + 各专区类目池，渲染可见开关列表
   async function loadCatVisibility() {
@@ -2993,7 +3028,6 @@
   // ================= 招品回品专区：后台管理 =================
 let recruitTasks = [];
   let recruitAllSubs = [];
-  let recruitImgFiles = [];   // 批量待上传图片
   let recruitFilter = "";     // "" | published | submitted | bound
   let recruitFlagFilter = ""; // 标记筛选 "" | ip | brand | cat_mismatch | no_refill
   let recruitFlagCat = "";    // 标记统计类目筛选（"" = 全部类目）
@@ -3004,24 +3038,6 @@ let recruitTasks = [];
   let recruitTrashSelected = new Set();  // 回收站勾选
   let recruitInTrash = false;         // 是否处于回收站视图
 
-  function renderRecruitPre() {
-    const pre = document.querySelector("#recruit-upload-preview");
-    if (!pre) return;
-    if (!recruitImgFiles.length) { pre.classList.add("hidden"); pre.innerHTML = ""; return; }
-    pre.classList.remove("hidden");
-    pre.innerHTML = "";
-    recruitImgFiles.forEach((f, i) => {
-      const cell = document.createElement("div");
-      cell.className = "recruit-pre-cell";
-      const im = document.createElement("img");
-      im.src = URL.createObjectURL(f);
-      const rm = document.createElement("button");
-      rm.className = "btn-danger small"; rm.textContent = "×"; rm.title = "移除";
-      rm.onclick = () => { recruitImgFiles.splice(i, 1); renderRecruitPre(); };
-      cell.appendChild(im); cell.appendChild(rm);
-      pre.appendChild(cell);
-    });
-  }
 
   // 复制专区类目分享链接（方案A）：trends.html?zone=recruit|bestseller&cat=类目名
   function copyZoneCatLink(zone, cat) {
@@ -3076,244 +3092,224 @@ let recruitTasks = [];
     if (typeof clearStateFn === "function") clearStateFn();
   }
 
-  // ===== 招品回品：URL匹配（表格 -> 主图URL外链卡片） =====
-  let recruitUrlPending = [];
-  async function handleRecruitUrlImport(files) {
+
+  // ===== 招品回品改版：先传表格 → 有「首图URL」直接成卡片 / 无URL按任务ID补图 =====
+  let recruitRows = [];          // 解析后的表格行（含全部字段）
+  let recruitHasImgRows = [];    // 有首图URL 的行（可直接导入）
+  let recruitNoImgRows = [];     // 无首图URL 的行（需按任务ID补图）
+  let recruitNoImgFiles = [];    // 为无URL行上传的图片（按文件名=任务ID匹配），元素 {file, task_id}
+
+  // 依据表头解析8个字段列名（任务ID/站点id/行业链接/开款优先级/开款类型/招品原因/提需时间/首图URL）
+  function recruitPickKeys(firstRow) {
+    const keys = Object.keys(firstRow || {});
+    const norm = (s) => String(s).toLowerCase().replace(/[\s_\-．.（()）（）]/g, "");
+    const out = { task: "", site: "", link: "", priority: "", type: "", reason: "", time: "", img: "" };
+    const pick = (cond, assign) => { if (assign) return; for (const k of keys) { if (cond(norm(k))) { out[assign] = k; return; } } };
+    pick(n => n.includes("任务id") || n.includes("taskid") || n.includes("任务") || n.includes("序号"), "task");
+    pick(n => n.includes("站点"), "site");
+    pick(n => n.includes("行业链接") || (n.includes("链接") && !out.link), "link");
+    pick(n => n.includes("开款优先级") || n.includes("优先级") || n.includes("priority"), "priority");
+    pick(n => n.includes("开款类型") || n.includes("类型") || n.includes("type"), "type");
+    pick(n => n.includes("招品原因") || n.includes("原因") || n.includes("reason"), "reason");
+    pick(n => n.includes("提需时间") || n.includes("提需") || n.includes("时间") || n.includes("time"), "time");
+    pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");
+    return out;
+  }
+
+  // 上传表格（唯一入口）
+  async function handleRecruitXlsx(files) {
     if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
     if (!files || !files.length) return;
     const file = files[0];
-    const mr = document.querySelector("#recruit-urlimport-result");
-    const fname = document.querySelector("#recruit-urlimport-file");
+    const mr = document.querySelector("#recruit-xlsx-result");
+    const fname = document.querySelector("#recruit-xlsx-file");
     if (fname) fname.textContent = file.name;
-    upShow("#recruit-urlimport-prog", "#recruit-urlimport-progbar", "#recruit-urlimport-progtxt", 30, "正在解析表格…");
+    upShow("#recruit-xlsx-prog", "#recruit-xlsx-progbar", "#recruit-xlsx-progtxt", 30, "正在解析表格…");
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        if (!rows.length) { upHide("#recruit-urlimport-prog", "#recruit-urlimport-progbar"); return sbToast("表格没有数据行", false); }
-        let taskKey = null, imgKey = null, linkKey = null, titleKey = null;
-        if (rows.length) {
-          const keys = Object.keys(rows[0]);
-          for (const k of keys) {
-            const lk = String(k).toLowerCase().replace(/\s+/g, "");
-            if (!taskKey && (lk.includes("task") || lk.includes("序号") || lk.includes("编号") || lk.includes("id") || lk.includes("任务"))) taskKey = k;
-            if (!imgKey && (lk.includes("主图") || lk.includes("图片") || lk.includes("img") || lk.includes("imageurl") || lk.includes("url"))) imgKey = k;
-            if (!linkKey && (lk.includes("链接") || lk.includes("link") || lk.includes("url"))) linkKey = k;
-            if (!titleKey && (lk.includes("标题") || lk.includes("title"))) titleKey = k;
-          }
-        }
-        if (!imgKey) { upHide("#recruit-urlimport-prog", "#recruit-urlimport-progbar"); return sbToast("未找到「主图URL/图片」列，请检查表头", false); }
-        const imgs = [];
+        if (!rows.length) { upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar"); return sbToast("表格没有数据行", false); }
+        const keys = recruitPickKeys(rows[0]);
+        if (!keys.task) { upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar"); return sbToast("未找到「任务ID」列，请检查表头", false); }
+        if (!keys.img) { upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar"); return sbToast("未找到「首图URL」列，请检查表头", false); }
+        const has = [], noimg = [];
         rows.forEach(r => {
-          const main_img_url = String(r[imgKey] || "").trim();
-          if (!main_img_url) return;
-          imgs.push({
-            main_img_url,
-            task_id: taskKey ? String(r[taskKey] || "").trim() : "",
-            url: linkKey ? String(r[linkKey] || "").trim() : "",
-            title: titleKey ? String(r[titleKey] || "").trim() : "",
-            image_path: "",
-          });
+          const task_id = String(r[keys.task] || "").trim();
+          if (!task_id) return;
+          const main_img_url = String((keys.img ? r[keys.img] : "") || "").trim();
+          const row = {
+            task_id,
+            site_id: keys.site ? String(r[keys.site] || "").trim() : "",
+            industry_link: keys.link ? String(r[keys.link] || "").trim() : "",
+            open_priority: keys.priority ? String(r[keys.priority] || "").trim() : "",
+            open_type: keys.type ? String(r[keys.type] || "").trim() : "",
+            recruit_reason: keys.reason ? String(r[keys.reason] || "").trim() : "",
+            required_at: keys.time ? String(r[keys.time] || "").trim() : "",
+            main_img_url, image_path: "", url: null,
+          };
+          (main_img_url ? has : noimg).push(row);
         });
-        if (!imgs.length) { upHide("#recruit-urlimport-prog", "#recruit-urlimport-progbar"); return sbToast("表格中没有有效的「主图URL」数据行", false); }
-        upShow("#recruit-urlimport-prog", "#recruit-urlimport-progbar", "#recruit-urlimport-progtxt", 100, "解析完成 " + imgs.length + " 条");
-        let pending = setTimeout(() => upHide("#recruit-urlimport-prog", "#recruit-urlimport-progbar"), 800);
-        recruitUrlPending = imgs;
-        buildRecruitUrlImport(imgs, mr);
+        if (!has.length && !noimg.length) { upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar"); return sbToast("表格中没有有效的「任务ID」数据行", false); }
+        recruitRows = has.concat(noimg);
+        recruitHasImgRows = has; recruitNoImgRows = noimg;
+        recruitNoImgFiles = [];
+        const needImg = noimg.length ? `；其中 ${noimg.length} 行缺少「首图URL」，需按任务ID补充图片` : "";
+        upShow("#recruit-xlsx-prog", "#recruit-xlsx-progbar", "#recruit-xlsx-progtxt", 100, "解析完成 " + recruitRows.length + " 条" + needImg);
+        setTimeout(() => upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar"), 800);
+        if (mr) { mr.textContent = "共解析 " + recruitRows.length + " 行：可直接导入 " + has.length + " 行" + (noimg.length ? "，需补图 " + noimg.length + " 行" : ""); mr.className = "url-match-result ok"; }
+        sbToast("解析完成 " + recruitRows.length + " 条", true);
+        buildRecruitXlsxPreview();
       } catch (e) {
-        upHide("#recruit-urlimport-prog", "#recruit-urlimport-progbar");
+        upHide("#recruit-xlsx-prog", "#recruit-xlsx-progbar");
         if (mr) { mr.textContent = "表格解析失败，请检查文件格式"; mr.className = "url-match-result"; }
         sbToast("表格解析失败，请检查文件格式", false);
       }
     };
     reader.readAsArrayBuffer(file);
   }
-  function buildRecruitUrlImport(imgs, mr) {
-    const pre = document.querySelector("#recruit-urlimport-preview");
-    if (pre) {
-      pre.classList.remove("hidden");
-      pre.innerHTML = "";
-      imgs.forEach((x) => {
-        const cell = document.createElement("div");
-        cell.className = "bestseller-pre-cell";
-        const im = document.createElement("img");
-        im.src = x.main_img_url;
-        const lbl = document.createElement("div");
-        lbl.className = "bestseller-pre-url";
-        lbl.innerHTML = `<span>${x.task_id || ""}</span>${x.url ? '<span class="purl">🔗 已绑定链接</span>' : ""}`;
-        cell.appendChild(im); cell.appendChild(lbl);
-        pre.appendChild(cell);
-      });
-      const row = document.createElement("div");
-      row.className = "bestseller-pre-commit";
-      row.innerHTML = '<button id="recruit-urlimport-commit" class="btn-primary" type="button">导入这 ' + imgs.length + ' 条卡片</button>';
-      pre.appendChild(row);
-      row.querySelector("#recruit-urlimport-commit").onclick = () => commitRecruitUrlImport();
+
+  function buildRecruitXlsxPreview() {
+    const pre = document.querySelector("#recruit-xlsx-preview");
+    if (!pre) return;
+    pre.classList.remove("hidden");
+    pre.innerHTML = "";
+    if (recruitHasImgRows.length) {
+      const head1 = document.createElement("div");
+      head1.className = "rg-sec-head"; head1.textContent = "可直接导入（有首图URL，共 " + recruitHasImgRows.length + " 行）";
+      pre.appendChild(head1);
+      const wrap1 = document.createElement("div"); wrap1.className = "bestseller-pre-grid";
+      recruitHasImgRows.forEach(x => { wrap1.appendChild(recruitPreCell(x.task_id + " · " + (window.CONFIG.siteName(x.site_id) || x.site_id || ""), x.main_img_url, true)); });
+      pre.appendChild(wrap1);
     }
-    if (mr) mr.textContent = "下方为预览（共 " + imgs.length + " 行），点「导入」写入任务卡片";
+    if (recruitNoImgRows.length) {
+      const head2 = document.createElement("div");
+      head2.className = "rg-sec-head warn"; head2.textContent = "需补充图片（无首图URL，共 " + recruitNoImgRows.length + " 行，请用③按任务ID上传图片）";
+      pre.appendChild(head2);
+      const wrap2 = document.createElement("div"); wrap2.className = "bestseller-pre-grid";
+      recruitNoImgRows.forEach(x => { wrap2.appendChild(recruitPreCell("任务ID：" + x.task_id, "", false)); });
+      pre.appendChild(wrap2);
+    }
+    if (recruitNoImgFiles.length) {
+      const head3 = document.createElement("div");
+      head3.className = "rg-sec-head warn"; head3.textContent = "已匹配补充图片（" + recruitNoImgFiles.length + " 张）";
+      pre.appendChild(head3);
+      const wrap3 = document.createElement("div"); wrap3.className = "bestseller-pre-grid";
+      recruitNoImgFiles.forEach(m => { wrap3.appendChild(recruitPreCell("任务ID：" + m.task_id, URL.createObjectURL(m.file), false)); });
+      pre.appendChild(wrap3);
+    }
+    const tail = document.createElement("div");
+    tail.className = "bestseller-pre-commit";
+    const needImg = recruitNoImgRows.length - recruitNoImgFiles.length;
+    tail.innerHTML = (recruitHasImgRows.length || recruitNoImgRows.length)
+      ? '<button id="recruit-xlsx-commit" class="btn-primary" type="button">导入并生成任务卡片</button><span class="hint-inline">' + (needImg > 0 ? "（还有 " + needImg + " 行缺少图片，请先在③补图再导入）" : "（可直接导入全部 " + recruitRows.length + " 行）") + '</span>'
+      : "";
+    pre.appendChild(tail);
+    const bt = tail.querySelector("#recruit-xlsx-commit");
+    if (bt) bt.onclick = () => commitRecruitImport();
   }
-  async function commitRecruitUrlImport() {
-    if (!recruitUrlPending.length) return sbToast("没有待导入数据", false);
-    const cat = document.querySelector("#recruit-category")?.value || "";
-    if (!cat) { sbToast("请先选择上传类目再导入", false); return; }
-    const rows = recruitUrlPending.map(x => ({ ...x, category: cat, status: "published", tags: [] }));
-    try {
-      await SB.addRecruitTasks(rows);
-      recruitUrlPending = [];
-      const pre = document.querySelector("#recruit-urlimport-preview");
-      if (pre) { pre.classList.add("hidden"); pre.innerHTML = ""; }
-      const f = document.querySelector("#recruit-urlimport-file"); if (f) f.textContent = "";
-      const mr = document.querySelector("#recruit-urlimport-result"); if (mr) { mr.textContent = ""; mr.className = "url-match-result"; }
-      sbToast("已导入 " + rows.length + " 条任务卡片", true);
-      loadRecruitList();
-    } catch (e) { sbToast("导入失败：" + (e.message || ""), false); }
+  function recruitPreCell(label, url, hasUrl) {
+    const cell = document.createElement("div");
+    cell.className = "bestseller-pre-cell" + (hasUrl && url ? "" : " noimg");
+    const im = document.createElement("img");
+    if (hasUrl && url) im.src = url; else { im.style.display = "none"; }
+    const lbl = document.createElement("div");
+    lbl.className = "bestseller-pre-url";
+    lbl.innerHTML = "<span>" + String(label || "") + "</span>" + (hasUrl ? '<span class="purl">🔗 首图URL</span>' : '<span class="purl" style="color:#ebb040">待补图</span>');
+    cell.appendChild(im); cell.appendChild(lbl);
+    return cell;
   }
 
-  // ===== 招品回品：ID匹配（图片文件名 <-> 表格 Task ID） =====
-  let recruitImgPending = []; let recruitImgMatchRows = [];
-  async function handleRecruitImgImport(images, xlsxFile) {
-    if (typeof XLSX === "undefined") return sbToast("Excel解析组件未加载，请联网后重试", false);
-    if (!images || !images.length) return sbToast("请先选择要上传的图片", false);
-    if (!xlsxFile) return sbToast("请选择匹配表格", false);
-    const mr = document.querySelector("#recruit-imgimport-result");
-    const fname = document.querySelector("#recruit-imgimport-file");
-    if (fname) fname.textContent = images.length + " 张图片 + " + xlsxFile.name;
-    upShow("#recruit-imgimport-prog", "#recruit-imgimport-progbar", "#recruit-imgimport-progtxt", 30, "正在解析表格…");
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-        if (!rows.length) { upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar"); return sbToast("表格没有数据行", false); }
-        let taskKey = null;
-        if (rows.length) {
-          const keys = Object.keys(rows[0]);
-          for (const k of keys) {
-            const lk = String(k).toLowerCase().replace(/\s+/g, "");
-            if (!taskKey && (lk.includes("task") || lk.includes("序号") || lk.includes("编号") || lk.includes("id") || lk.includes("任务"))) taskKey = k;
-          }
-        }
-        if (!taskKey) { upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar"); return sbToast("未找到「Task ID/编号」列，请检查表头", false); }
-        const taskMap = {};
-        rows.forEach(r => { const tid = String(r[taskKey] || "").trim().replace(/\s+/g, ""); if (tid && !taskMap[tid]) taskMap[tid] = { task_id: String(r[taskKey] || "").trim() }; });
-        const matched = []; let unmatched = 0;
-        images.forEach(imgFile => {
-          const key = (imgFile.name || "").replace(/\.[^.]+$/, "").trim().replace(/\s+/g, "");
-          if (taskMap[key]) matched.push({ file: imgFile, info: taskMap[key] });
-          else unmatched++;
-        });
-        if (!matched.length) { upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar"); if (mr) { mr.textContent = "没有图片能匹配到表格里的Task ID"; mr.className = "url-match-result"; } return sbToast("没有图片能匹配到Task ID，请核对文件名", false); }
-        recruitImgPending = matched; recruitImgMatchRows = matched;
-        upShow("#recruit-imgimport-prog", "#recruit-imgimport-progbar", "#recruit-imgimport-progtxt", 100, "匹配成功 " + matched.length + " 张");
-        let pending = setTimeout(() => upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar"), 800);
-        const cat = document.querySelector("#recruit-category")?.value || "";
-        if (mr) { mr.textContent = "匹配成功 " + matched.length + " 张图片" + (unmatched ? "，" + unmatched + " 张未匹配被跳过" : "") + (cat ? "" : "（请先选择上传类目）"); mr.className = "url-match-result ok"; }
-        sbToast("匹配成功 " + matched.length + " 张图片" + (unmatched ? "，" + unmatched + " 张未匹配" : ""), true);
-        buildRecruitImgImport(matched, mr);
-      } catch (e) {
-        upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar");
-        if (mr) { mr.textContent = "表格解析失败，请检查文件格式"; mr.className = "url-match-result"; }
-        sbToast("表格解析失败，请检查文件格式", false);
-      }
-    };
-    reader.readAsArrayBuffer(xlsxFile);
+  // ③ 无URL行补充图片：按文件名=任务ID匹配
+  function handleRecruitNoImgFiles(files) {
+    if (!files || !files.length) return;
+    if (!recruitNoImgRows.length) return sbToast("当前表格没有缺少首图URL的任务，无需补图", false);
+    const byTask = {};
+    recruitNoImgRows.forEach(r => { byTask[String(r.task_id).replace(/\s+/g, "")] = r.task_id; });
+    let matched = 0, unmatched = 0;
+    files.forEach(f => {
+      const key = (f.name || "").replace(/\.[^.]+$/, "").trim().replace(/\s+/g, "");
+      if (byTask[key]) {
+        const exists = recruitNoImgFiles.some(x => x.task_id === byTask[key]);
+        if (!exists) { recruitNoImgFiles.push({ file: f, task_id: byTask[key] }); matched++; }
+      } else unmatched++;
+    });
+    const fname = document.querySelector("#recruit-imgxlsx-file");
+    if (fname) fname.textContent = recruitNoImgFiles.length + " 张待补图（匹配 " + matched + " 张" + (unmatched ? "，" + unmatched + " 张未匹配" : "") + "）";
+    if (matched) sbToast("已匹配 " + matched + " 张待补图图片" + (unmatched ? "，" + unmatched + " 张未匹配到任务ID" : ""), true);
+    else sbToast("没有图片能匹配到缺少首图URL的任务ID，请核对文件名（文件名=任务ID）", false);
+    buildRecruitXlsxPreview();
   }
-  function buildRecruitImgImport(matched, mr) {
-    const pre = document.querySelector("#recruit-imgimport-preview");
-    if (pre) {
-      pre.classList.remove("hidden");
-      pre.innerHTML = "";
-      matched.forEach((m) => {
-        const cell = document.createElement("div");
-        cell.className = "bestseller-pre-cell";
-        const im = document.createElement("img");
-        im.src = URL.createObjectURL(m.file);
-        const lbl = document.createElement("div");
-        lbl.className = "bestseller-pre-url";
-        lbl.innerHTML = "<span>" + (m.info.task_id || "") + "（Task ID匹配）</span>";
-        cell.appendChild(im); cell.appendChild(lbl);
-        pre.appendChild(cell);
-      });
-      const row = document.createElement("div");
-      row.className = "bestseller-pre-commit";
-      row.innerHTML = '<button id="recruit-imgimport-commit" class="btn-primary" type="button">上传并导入这 ' + matched.length + ' 张图片</button>';
-      pre.appendChild(row);
-      row.querySelector("#recruit-imgimport-commit").onclick = () => commitRecruitImgImport();
-    }
-    if (mr) mr.textContent = "下方为预览（共 " + matched.length + " 行），点「上传并导入」图片存R2并写入任务卡片";
-  }
-  async function commitRecruitImgImport() {
-    if (!recruitImgPending.length) return sbToast("没有待导入图片", false);
+
+  // 导入：有URL行直接成卡片；无URL行把已匹配图片上传R2后成卡片
+  async function commitRecruitImport() {
     const cat = document.querySelector("#recruit-category")?.value || "";
-    if (!cat) { sbToast("请先选择上传类目再导入", false); return; }
-    const commitBtn = document.querySelector("#recruit-imgimport-commit");
-    if (commitBtn) { commitBtn.disabled = true; commitBtn.textContent = "正在上传…"; }
-    const total = recruitImgPending.length;
+    if (!cat) { sbToast("请先选择所属类目（②）再导入", false); return; }
+    const missing = recruitNoImgRows.length - recruitNoImgFiles.length;
+    if (missing > 0) { sbToast("还有 " + missing + " 行缺少对应的任务ID图片，请先用③上传后再导入", false); return; }
+    const bt = document.querySelector("#recruit-xlsx-commit");
+    if (bt) { bt.disabled = true; bt.textContent = "正在导入…"; }
+    const total = recruitNoImgFiles.length;
     const rows = [];
+    // 无URL行：上传图片
     for (let i = 0; i < total; i++) {
-      const m = recruitImgPending[i];
+      const m = recruitNoImgFiles[i];
       try {
         const path = await SB.uploadRecruitImage(m.file);
-        rows.push({ image_path: path, task_id: m.info.task_id, category: cat, status: "published", tags: [], url: null, main_img_url: "" });
-        upShow("#recruit-imgimport-prog", "#recruit-imgimport-progbar", "#recruit-imgimport-progtxt", Math.round((i + 1) / total * 100), "上传中 " + (i + 1) + "/" + total);
+        const src = recruitNoImgRows.find(r => String(r.task_id).replace(/\s+/g, "") === String(m.task_id).replace(/\s+/g, ""));
+        rows.push(Object.assign({}, src, { image_path: path, category: cat, status: "published", tags: [] }));
+        upShow("#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar", "#recruit-imgxlsx-progtxt", Math.round((i + 1) / total * 100), "上传图片 " + (i + 1) + "/" + total);
       } catch (e) {
         sbToast("图片上传失败：" + (e.message || m.file.name), false);
-        upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar");
-        if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "上传并导入这 " + total + " 张图片"; }
+        if (bt) { bt.disabled = false; bt.textContent = "导入并生成任务卡片"; }
+        upHide("#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar");
         return;
       }
     }
+    // 有URL行直接成卡片
+    recruitHasImgRows.forEach(x => rows.push(Object.assign({}, x, { category: cat, status: "published", tags: [] })));
     try {
       await SB.addRecruitTasks(rows);
-      recruitImgPending = []; recruitImgMatchRows = [];
-      const pre = document.querySelector("#recruit-imgimport-preview");
-      if (pre) { pre.classList.add("hidden"); pre.innerHTML = ""; }
-      const f = document.querySelector("#recruit-imgimport-file"); if (f) f.textContent = "";
-      const mr = document.querySelector("#recruit-imgimport-result"); if (mr) { mr.textContent = ""; mr.className = "url-match-result"; }
-      upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar");
+      resetRecruitImport();
       sbToast("已导入 " + rows.length + " 条任务卡片", true);
       loadRecruitList();
     } catch (e) {
-      upHide("#recruit-imgimport-prog", "#recruit-imgimport-progbar");
+      upHide("#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar");
       sbToast("导入失败：" + (e.message || ""), false);
     }
-    if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "上传并导入这 " + total + " 张图片"; }
+    if (bt) { bt.disabled = false; bt.textContent = "导入并生成任务卡片"; }
+    upHide("#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar");
+  }
+  function resetRecruitImport() {
+    recruitRows = []; recruitHasImgRows = []; recruitNoImgRows = []; recruitNoImgFiles = [];
+    ["#recruit-xlsx-preview", "#recruit-imgxlsx-preview"].forEach(id => { const p = document.querySelector(id); if (p) { p.classList.add("hidden"); p.innerHTML = ""; } });
+    ["#recruit-xlsx-file", "#recruit-imgxlsx-file"].forEach(id => { const f = document.querySelector(id); if (f) f.textContent = ""; });
+    ["#recruit-xlsx-result", "#recruit-imgxlsx-result"].forEach(id => { const r = document.querySelector(id); if (r) { r.textContent = ""; r.className = "url-match-result"; } });
+    const i = document.querySelector("#recruit-imgxlsx-input"); if (i) i.value = "";
   }
 
   function bindRecruitMatch() {
-    // URL匹配：选表格 -> 解析
-    const uBtn = document.querySelector("#recruit-urlimport-btn");
-    const uInput = document.querySelector("#recruit-urlimport-input");
-    if (uBtn && uInput) {
-      uBtn.addEventListener("click", () => uInput.click());
-      uInput.addEventListener("change", () => {
-        if (uInput.files && uInput.files.length) { handleRecruitUrlImport([...uInput.files]); uInput.value = ""; }
-      });
+    // ① 上传表格
+    const xBtn = document.querySelector("#recruit-xlsx-btn");
+    const xInput = document.querySelector("#recruit-xlsx-input");
+    if (xBtn && xInput) {
+      xBtn.addEventListener("click", () => xInput.click());
+      xInput.addEventListener("change", () => { if (xInput.files && xInput.files.length) { handleRecruitXlsx([...xInput.files]); xInput.value = ""; } });
     }
-    const uClear = document.querySelector("#recruit-urlimport-clear");
-    if (uClear) uClear.addEventListener("click", () => clearPane("#recruit-urlimport-input", "#recruit-urlimport-preview", "#recruit-urlimport-file", "#recruit-urlimport-result", "#recruit-urlimport-prog", "#recruit-urlimport-progbar", () => { recruitUrlPending = []; }));
-    // ID匹配：先选图片，再选表格
-    const iBtn = document.querySelector("#recruit-imgimport-btn");
-    const iInput = document.querySelector("#recruit-imgimport-input");
-    const xBtn = document.querySelector("#recruit-imgxlsx-btn");
-    const xInput = document.querySelector("#recruit-imgxlsx-input");
-    if (iBtn && iInput) iBtn.addEventListener("click", () => iInput.click());
-    if (xBtn && xInput) xBtn.addEventListener("click", () => xInput.click());
-    if (iInput) iInput.addEventListener("change", () => {
-      if (iInput.files && iInput.files.length) sbToast("已选 " + iInput.files.length + " 张图片，请再选择匹配表格", true);
-    });
-    if (xInput) xInput.addEventListener("change", () => {
-      const imgs = iInput && iInput.files ? [...iInput.files] : [];
-      if (imgs.length && xInput.files && xInput.files.length) { handleRecruitImgImport(imgs, xInput.files[0]); xInput.value = ""; }
-      else if (!imgs.length) sbToast("请先选择要上传的图片", false);
-    });
-    const iClear = document.querySelector("#recruit-imgimport-clear");
-    if (iClear) iClear.addEventListener("click", () => { iInput.value = ""; xInput.value = ""; clearPane("#recruit-imgimport-input", "#recruit-imgimport-preview", "#recruit-imgimport-file", "#recruit-imgimport-result", "#recruit-imgimport-prog", "#recruit-imgimport-progbar", () => { recruitImgPending = []; recruitImgMatchRows = []; }); });
+    const xClear = document.querySelector("#recruit-xlsx-clear");
+    if (xClear) xClear.addEventListener("click", () => { resetRecruitImport(); clearPane("#recruit-xlsx-input", "#recruit-xlsx-preview", "#recruit-xlsx-file", "#recruit-xlsx-result", "#recruit-xlsx-prog", "#recruit-xlsx-progbar", () => { recruitRows = []; recruitHasImgRows = []; recruitNoImgRows = []; recruitNoImgFiles = []; }); });
+    // ③ 补充图片
+    const iBtn = document.querySelector("#recruit-imgxlsx-btn");
+    const iInput = document.querySelector("#recruit-imgxlsx-input");
+    if (iBtn && iInput) {
+      iBtn.addEventListener("click", () => iInput.click());
+      iInput.addEventListener("change", () => { if (iInput.files && iInput.files.length) { handleRecruitNoImgFiles([...iInput.files]); iInput.value = ""; } });
+    }
+    const iClear = document.querySelector("#recruit-imgxlsx-clear");
+    if (iClear) iClear.addEventListener("click", () => { if (iInput) iInput.value = ""; clearPane("#recruit-imgxlsx-input", "#recruit-imgxlsx-preview", "#recruit-imgxlsx-file", "#recruit-imgxlsx-result", "#recruit-imgxlsx-prog", "#recruit-imgxlsx-progbar", () => { recruitNoImgFiles = []; }); });
   }
-
   function bindBestsellerMatchClear() {
     const uClear = document.querySelector("#bestseller-urlimport-clear");
     if (uClear) uClear.addEventListener("click", () => clearPane("#bestseller-urlimport-input", "#bestseller-urlimport-preview", "#bestseller-urlimport-file", "#bestseller-urlimport-result", "#bestseller-urlimport-prog", "#bestseller-urlimport-progbar", () => { bsUrlImportPending = []; }));
@@ -3327,31 +3323,7 @@ let recruitTasks = [];
     bindRecruitMatch();
     const upBtn = document.querySelector("#recruit-save");
     const refresh = document.querySelector("#recruit-refresh");
-    const imgDz = document.querySelector("#recruit-img-dropzone");
-    const imgInput = document.querySelector("#recruit-img-input");
-    const pre = document.querySelector("#recruit-upload-preview");
-    if (imgDz && imgInput) {
-      imgDz.addEventListener("click", () => imgInput.click());
-      imgDz.addEventListener("dragover", (e) => e.preventDefault());
-      imgDz.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const fs = e.dataTransfer.files ? [...e.dataTransfer.files] : [];
-        if (fs.length) addRecruitImgs(fs);
-      });
-      imgInput.addEventListener("change", () => {
-        if (imgInput.files && imgInput.files.length) addRecruitImgs([...imgInput.files]);
-        imgInput.value = "";
-      });
-    }
-    function addRecruitImgs(fs) {
-      const ok = fs.filter(f => /^image\//i.test(f.type || "") && /\.(jpe?g|png|webp)$/i.test(f.name || ""));
-      if (!ok.length) { sbToast("仅支持 JPG/PNG 图片", false); return; }
-      // 去重（按文件名）
-      const names = new Set(recruitImgFiles.map(x => x.name));
-      ok.forEach(f => { if (!names.has(f.name)) { recruitImgFiles.push(f); names.add(f.name); } });
-      renderRecruitPre();
-    }
-    if (upBtn) upBtn.addEventListener("click", saveRecruitTasks);
+    if (upBtn) upBtn.addEventListener("click", commitRecruitImport);
     if (refresh) refresh.addEventListener("click", loadRecruitList);
     // 筛选
     document.querySelectorAll("#recruit-filters .recruit-filter").forEach(b => {
@@ -3393,37 +3365,8 @@ let recruitTasks = [];
     if (trRestore) trRestore.onclick = () => bulkRestoreRecruit();
     const trPurge = document.querySelector("#recruit-trash-purge");
     if (trPurge) trPurge.onclick = () => bulkPurgeRecruit();
-    renderRecruitPre();
   }
 
-  // 批量上传：多张图 → 生成多张「未发布」卡片，多任务ID按顺序填入
-  async function saveRecruitTasks() {
-    if (!recruitImgFiles.length) return sbToast("请先选择招品图片", false);
-    const ids = (document.querySelector("#recruit-taskid")?.value || "").replace(/[,，\s]+/g, " ").trim().split(/\s+/).filter(Boolean);
-    const cat = document.querySelector("#recruit-category")?.value || "";
-    const files = recruitImgFiles.slice();
-    // 校验：任务ID数量不能多于图片数量（允许少于：多余的图留空草稿）
-    const rows = [];
-    let uploadErr = false;
-    sbToast("正在上传 " + files.length + " 张图片…");
-    for (let i = 0; i < files.length; i++) {
-      try {
-        const imagePath = await SB.uploadRecruitImage(files[i]);
-        rows.push({ task_id: ids[i] || "", image_path: imagePath, status: ids[i] ? "published" : "draft", category: cat });
-      } catch (e) { uploadErr = true; }
-    }
-    if (!rows.length) { sbToast("图片上传失败，请重试", false); return; }
-    try {
-      await SB.addRecruitTasks(rows);
-      recruitImgFiles = [];
-      renderRecruitPre();
-      if (document.querySelector("#recruit-taskid")) document.querySelector("#recruit-taskid").value = "";
-      if (document.querySelector("#recruit-category")) document.querySelector("#recruit-category").value = "";
-      if (document.querySelector("#recruit-cat-search")) document.querySelector("#recruit-cat-search").value = "";
-      sbToast("已创建 " + rows.length + " 张招品任务卡片");
-      loadRecruitList();
-    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
-  }
 
   async function loadRecruitList() {
     if (!document.querySelector("#recruit-list")) return;
@@ -3438,6 +3381,14 @@ let recruitTasks = [];
   }
   function recruitSubsFor(taskId) {
     return recruitAllSubs.filter(s => s.recruit_task_id === taskId);
+  }
+  // 提需时间只展示到日：截取 YYYY-MM-DD 或 YYYY-MM-DD 之前部分
+  function recruitDay(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    const m = s.match(/\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}/);
+    if (m) return m[0].replace(/[年\/.]/g, "-").replace(/月/g, "-").replace(/-$/, "");
+    return s;
   }
   function recruitStatusLabel(t, hasSubs) {
     if (t.bound) return "bound";
@@ -3489,12 +3440,21 @@ let recruitTasks = [];
         '<div class="recruit-acard-imghold">' +
           '<img class="recruit-acard-img" alt="">' +
           '<span class="recruit-acard-no">' + seq + '</span>' +
+          '<span class="recruit-acard-copyid" title="点击复制任务ID" data-id="' + escAttr(t.task_id || "") + '">任务ID：' + escHtml(t.task_id || "（未填写）") + '</span>' +
           '<span class="recruit-acard-del" title="删除">×</span>' +
           '<span class="recruit-acard-check"><input type="checkbox" class="recruit-check"' + (recruitSelected.has(t.id) ? ' checked' : '') + '></span>' +
           '<div class="recruit-acard-flags">' + taskFlagBoxHTML(t, "recruit") + '</div>' +
         '</div>' +
         '<div class="recruit-acard-body">' +
           '<div class="recruit-acard-tid" title="任务ID：' + escAttr(t.task_id || "") + '">任务ID：' + escHtml(t.task_id || "（未填写）") + '</div>' +
+          '<div class="recruit-acard-site">站点：' + escHtml(window.CONFIG.siteName(t.site_id) || "—") + '</div>' +
+          '<div class="recruit-acard-info">' +
+            (t.required_at ? '<span>提需：' + escHtml(recruitDay(t.required_at)) + '</span>' : '') +
+            (t.open_priority ? '<span>优先级：' + escHtml(t.open_priority) + '</span>' : '') +
+            (t.recruit_reason ? '<span>原因：' + escHtml(t.recruit_reason) + '</span>' : '') +
+            (t.industry_link ? '<a class="rcac-link" href="' + escAttr(t.industry_link) + '" target="_blank" rel="noopener">行业链接 ↗</a>' : '') +
+          '</div>' +
+          '<div class="recruit-acard-cat">类目：' + escHtml(t.category || "—") + '</div>' +
           '<div class="recruit-acard-strow">' + chip + '<span class="recruit-acard-meta">' + subs.length + ' 人 / ' + spuList.length + ' 个SPU</span></div>' +
           '<div class="recruit-acard-tags" data-tags></div>' +
           '<div class="recruit-acard-actions">' +
@@ -3522,6 +3482,16 @@ let recruitTasks = [];
       const tip = spuList.length ? ("该任务已提交货品SPU：\n" + spuList.join("\n")) : "该任务暂无商家提交SPU";
       card.querySelector(".recruit-acard-imghold").title = tip;
       card.querySelector(".recruit-acard-tid").title = tip;
+      // 图片上「可复制任务ID」：点击复制
+      const cid = card.querySelector(".recruit-acard-copyid");
+      if (cid) {
+        cid.addEventListener("click", () => {
+          const v = (cid.dataset.id || "").trim();
+          if (!v) return sbToast("该任务暂未填写任务ID", false);
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(() => sbToast("已复制任务ID：" + v)).catch(() => sbToast("复制失败", false));
+          else sbToast("当前环境不支持复制", false);
+        });
+      }
       // 复选框
       const cb = card.querySelector(".recruit-check");
       cb.onchange = () => { if (cb.checked) recruitSelected.add(t.id); else recruitSelected.delete(t.id); card.classList.toggle("sel", cb.checked); };
