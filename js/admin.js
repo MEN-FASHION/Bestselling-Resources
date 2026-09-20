@@ -3243,6 +3243,21 @@ let recruitTasks = [];
       clr.type = "button"; clr.className = "rg-mini-btn2"; clr.textContent = "取消勾选";
       clr.addEventListener("click", () => { recruitSelRows.clear(); buildRecruitXlsxPreview(); });
       tb.appendChild(clr);
+      const delSel = document.createElement("button");
+      delSel.type = "button"; delSel.className = "rg-mini-btn2 rg-mini-del"; delSel.textContent = "删除选中 " + recruitSelRows.size + " 张（不导入）";
+      delSel.addEventListener("click", () => {
+        if (!confirm("确认将勾选的 " + recruitSelRows.size + " 行移除（不导入）？")) return;
+        const arr = [...recruitSelRows];
+        arr.forEach(r => {
+          const dump = a => { const i = a.indexOf(r); if (i >= 0) a.splice(i, 1); };
+          dump(recruitRows); dump(recruitHasImgRows); dump(recruitNoImgRows);
+          const key = String(r.task_id || "").replace(/\s+/g, "");
+          if (key) recruitNoImgFiles = recruitNoImgFiles.filter(f => String(f.task_id || "").replace(/\s+/g, "") !== key);
+        });
+        recruitSelRows.clear();
+        buildRecruitXlsxPreview();
+      });
+      tb.appendChild(delSel);
     }
     pre.appendChild(tb);
     if (recruitHasImgRows.length) {
@@ -3279,6 +3294,29 @@ let recruitTasks = [];
     const bt = tail.querySelector("#recruit-xlsx-commit");
     if (bt) bt.onclick = () => commitRecruitImport();
   }
+  // 通用图片放大层：预览/列表中点击图片放大查看
+  function openImgZoom(url, label) {
+    if (!url) return;
+    let ov = document.getElementById("rg-zoom-layer");
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = "rg-zoom-layer";
+      ov.className = "lightbox";
+      ov.innerHTML = '<img alt=""><div class="rg-zoom-cap"></div>';
+      document.body.appendChild(ov);
+      ov.addEventListener("click", (e) => { if (e.target === ov) closeImgZoom(); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ov.classList.contains("hidden")) closeImgZoom(); });
+    }
+    const img = ov.querySelector("img");
+    const cap = ov.querySelector(".rg-zoom-cap");
+    if (img) { img.src = url; img.style.cursor = "zoom-out"; }
+    if (cap) cap.textContent = label || "";
+    ov.classList.remove("hidden");
+  }
+  function closeImgZoom() {
+    const ov = document.getElementById("rg-zoom-layer");
+    if (ov) ov.classList.add("hidden");
+  }
   function recruitPreCell(label, url, hasUrl, row) {
     const cell = document.createElement("div");
     const noimgClass = (hasUrl && url) ? "" : " noimg";
@@ -3293,6 +3331,8 @@ let recruitTasks = [];
       const syncPick = () => {
         const on = recruitSelRows.has(row);
         pick.classList.toggle("on", on);
+        pick.textContent = on ? "☑" : "☐";
+        pick.title = on ? "已选中，再点取消" : "点选此卡片（可与其它卡片一起批量改类目）";
         cell.classList.toggle("rg-card-selected", on);
       };
       pick.addEventListener("click", (e) => {
@@ -3305,6 +3345,35 @@ let recruitTasks = [];
     }
     const im = document.createElement("img");
     if (hasUrl && url) im.src = url; else { im.style.display = "none"; }
+    if (hasUrl && url) {
+      im.title = "点击放大查看";
+      im.style.cursor = "zoom-in";
+      im.addEventListener("click", (e) => { e.stopPropagation(); openImgZoom(url, label); });
+    }
+    // 放大查看按钮（对无首图URL但已补图的 div 覆盖不了，这里对有URL/已补图均可显示）
+    if (url) {
+      const zoomBtn = document.createElement("button");
+      zoomBtn.type = "button";
+      zoomBtn.className = "rg-card-zoom";
+      zoomBtn.textContent = "🔍";
+      zoomBtn.title = "点击放大";
+      zoomBtn.addEventListener("click", (e) => { e.stopPropagation(); openImgZoom(url, label); });
+      cell.appendChild(zoomBtn);
+    }
+    // 删除该行（不导入）：仅对可调整类目的 row 卡
+    if (row) {
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "rg-card-del";
+      delBtn.textContent = "✕";
+      delBtn.title = "不导入此行（从匹配中移除）";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!confirm("确认不导入该「" + label + "」？")) return;
+        removeRecruitRow(row);
+      });
+      cell.appendChild(delBtn);
+    }
     const lbl = document.createElement("div");
     lbl.className = "bestseller-pre-url";
     lbl.innerHTML = "<span>" + String(label || "") + "</span>" + (hasUrl ? '<span class="purl">🔗 首图URL</span>' : '<span class="purl" style="color:#ebb040">待补图</span>');
@@ -3315,6 +3384,16 @@ let recruitTasks = [];
     return cell;
   }
   // 每行类目自动匹配结果展示 + 手动调整下拉（第③点：支持自主调整）
+  // 删除某行（不导入）：从预览数据集中移除，并清理勾选集/未匹配标记
+  function removeRecruitRow(row) {
+    const dump = a => { const i = a.indexOf(row); if (i >= 0) a.splice(i, 1); };
+    dump(recruitRows); dump(recruitHasImgRows); dump(recruitNoImgRows);
+    // 同步相关图片文件（无URL行按 task_id 匹配）
+    const key = String(row.task_id || "").replace(/\s+/g, "");
+    if (key) recruitNoImgFiles = recruitNoImgFiles.filter(f => String(f.task_id || "").replace(/\s+/g, "") !== key);
+    recruitSelRows.delete(row);
+    buildRecruitXlsxPreview();
+  }
   function recruitRowCatWrap(row) {
     const wrap = document.createElement("div");
     wrap.className = "rg-row-cat";
@@ -3577,7 +3656,7 @@ let recruitTasks = [];
             (t.recruit_reason ? '<span>原因：' + escHtml(t.recruit_reason) + '</span>' : '') +
             (t.industry_link ? '<a class="rcac-link" href="' + escAttr(t.industry_link) + '" target="_blank" rel="noopener">行业链接 ↗</a>' : '') +
           '</div>' +
-          '<div class="recruit-acard-cat">类目：' + escHtml(t.category || "—") + '</div>' +
+          '<div class="recruit-acard-cat" data-catwrap>类目：<span class="rcac-cat-show">' + escHtml(t.category || "—") + '</span><select class="rcac-cat-sel" title="点击调整类目"><option value="">（选一类目…）</option></select></div>' +
           '<div class="recruit-acard-strow">' + chip + '<span class="recruit-acard-meta">' + subs.length + ' 人 / ' + spuList.length + ' 个SPU</span></div>' +
           '<div class="recruit-acard-tags" data-tags></div>' +
           '<div class="recruit-acard-actions">' +
@@ -3599,6 +3678,18 @@ let recruitTasks = [];
           img.src = u;
         }).catch(() => {});
       } else {
+// 点击图片放大查看
+      img.title = "点击放大查看";
+      img.style.cursor = "zoom-in";
+      img.addEventListener("click", () => openImgZoom(img.src || t.main_img_url || "", "任务ID：" + (t.task_id || "")));
+      // 放大角标
+      const zhold = card.querySelector(".recruit-acard-imghold");
+      if (zhold && (t.main_img_url || t.image_path)) {
+        const zb = document.createElement("button");
+        zb.type = "button"; zb.className = "rg-card-zoom"; zb.textContent = "🔍"; zb.title = "点击放大";
+        zb.addEventListener("click", (e) => { e.stopPropagation(); openImgZoom((t.main_img_url || ""), "任务ID：" + (t.task_id || "")); });
+        zhold.appendChild(zb);
+      }
         card.querySelector(".recruit-acard-imghold").style.background = "rgba(255,255,255,.03)";
       }
       // 悬浮提示 SPU
@@ -3633,6 +3724,24 @@ let recruitTasks = [];
         const v = tidInput.value.trim();
         SB.updateRecruitTask(t.id, { task_id: v }).then(() => sbToast("任务ID已更新")).catch(e => sbToast("更新失败", false));
       });
+      // 类目下拉：填充类目池并支持调整写库
+      const catWrap = card.querySelector("[data-catwrap]");
+      if (catWrap) {
+        const catSel = catWrap.querySelector(".rcac-cat-sel");
+        const catShow = catWrap.querySelector(".rcac-cat-show");
+        (window.RECRUIT_CAT_POOL || []).forEach(c => {
+          const o = document.createElement("option"); o.value = c; o.textContent = c; catSel.appendChild(o);
+        });
+        catSel.addEventListener("change", () => {
+          const v = catSel.value;
+          if (!v) return;
+          SB.updateRecruitTask(t.id, { category: v }).then(() => {
+            t.category = v;
+            if (catShow) catShow.textContent = v;
+            sbToast("类目已更新为「" + v + "」", true);
+          }).catch(() => sbToast("类目更新失败", false));
+        });
+      }
       // 已传SPU 状态区
       renderRecruitSpsStatus(card, spuList.length);
       bindTaskFlagBoxes(card, t, "recruit", renderRecruitList, renderRecruitFlagStats);

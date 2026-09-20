@@ -120,7 +120,7 @@ async function isPublicAccess(env) {
   if (method === "GET" && path.startsWith("images/")) {
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
     const now = Date.now();
-    const WLIM = 120;      // 每分钟上限（可自行调整）
+    const WLIM = 2000;     // 每分钟上限（每 IP，便于正常列表批量看图；可自行调整）
     const WWIN = 60000;    // 窗口：1 分钟
     let h = _imgHits.get(ip);
     if (!h || now > h.resetAt) { h = { count: 0, resetAt: now + WWIN }; _imgHits.set(ip, h); }
