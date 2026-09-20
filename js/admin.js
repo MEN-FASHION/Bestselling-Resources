@@ -3104,7 +3104,7 @@ let recruitTasks = [];
     const keys = Object.keys(firstRow || {});
     const norm = (s) => String(s).toLowerCase().replace(/[\s_\-．.（()）（）]/g, "");
     const out = { task: "", site: "", link: "", priority: "", type: "", reason: "", time: "", img: "" };
-    const pick = (cond, assign) => { if (assign) return; for (const k of keys) { if (cond(norm(k))) { out[assign] = k; return; } } };
+    const pick = (cond, assign) => { if (out[assign]) return; for (const k of keys) { if (cond(norm(k))) { out[assign] = k; return; } } };
     pick(n => n.includes("任务id") || n.includes("taskid") || n.includes("任务") || n.includes("序号"), "task");
     pick(n => n.includes("站点"), "site");
     pick(n => n.includes("行业链接") || (n.includes("链接") && !out.link), "link");
