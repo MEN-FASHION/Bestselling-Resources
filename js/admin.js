@@ -3094,6 +3094,7 @@ let recruitTasks = [];
 
 
   // ===== 招品回品改版：先传表格 → 有「首图URL」直接成卡片 / 无URL按任务ID补图 =====
+  const recruitSelRows = new Set(); // 预览区被勾选的卡片（用于批量调整类目）
   let recruitRows = [];          // 解析后的表格行（含全部字段）
   let recruitHasImgRows = [];    // 有首图URL 的行（可直接导入）
   let recruitNoImgRows = [];     // 无首图URL 的行（需按任务ID补图）
@@ -3184,9 +3185,13 @@ let recruitTasks = [];
     const tbLabel = document.createElement("span");
     tbLabel.className = "rg-batch-label"; tbLabel.textContent = "批量类目：";
     tb.appendChild(tbLabel);
+    // 勾选说明 + 未匹配统计
+    const selInfo = document.createElement("span");
+    selInfo.className = "rg-batch-label"; selInfo.textContent = "(默认作用于全部，可先勾选卡片只改选中项)";
+    tb.appendChild(selInfo);
     const batchSel = document.createElement("select");
     batchSel.className = "rg-batch-sel";
-    const bo0 = document.createElement("option"); bo0.value = ""; bo0.textContent = "（全部设为…）";
+    const bo0 = document.createElement("option"); bo0.value = ""; bo0.textContent = "（设为…）";
     batchSel.appendChild(bo0);
     (window.RECRUIT_CAT_POOL || []).forEach(c => {
       const o = document.createElement("option"); o.value = c; o.textContent = c; batchSel.appendChild(o);
@@ -3194,18 +3199,51 @@ let recruitTasks = [];
     batchSel.addEventListener("change", () => {
       const v = batchSel.value;
       if (!v) return;
-      recruitRows.forEach(r => { r.category = v; });
-      // 同步更新所有行卡片上的标签与下拉，避免重建丢失手动状态
+      // 若勾选了卡片则只改选中项，否则作用于全部
+      const targets = recruitSelRows.size ? recruitRows.filter(r => recruitSelRows.has(r)) : recruitRows.slice();
+      if (!targets.length) { sbToast("未找到可设置的目标行", false); batchSel.value = ""; return; }
+      targets.forEach(r => { r.category = v; });
+      // 同步更新目标行卡片上的标签与下拉状态（匹配目标行对象，不回退其它行）
       pre.querySelectorAll(".rg-row-cat").forEach(w => {
-        const tag = w.querySelector(".rg-row-cat-tag");
-        if (tag) { tag.className = "rg-row-cat-tag"; tag.textContent = "已设为：" + v; }
         const sel = w.querySelector(".rg-row-cat-sel");
-        if (sel && v) sel.value = "";
+        const tag = w.querySelector(".rg-row-cat-tag");
+        const rowRef = w.__row;
+        let hit = false;
+        if (rowRef && recruitSelRows.size) hit = recruitSelRows.has(rowRef);
+        else if (rowRef) hit = targets.indexOf(rowRef) >= 0;
+        if (!hit) return;
+        if (tag) { tag.className = "rg-row-cat-tag"; tag.textContent = "已设为：" + v; }
+        if (sel && sel.value === "") sel.value = "";
+        // 清除该卡片未匹配高亮
+        const cell = w.closest(".bestseller-pre-cell");
+        if (cell) cell.classList.remove("rg-cat-miss");
       });
-      sbToast("已将全部 " + recruitRows.length + " 行类目设为「" + v + "」，可在下方逐行微调", true);
+      sbToast("已将" + (recruitSelRows.size ? "选中 " + targets.length : "全部 " + targets.length) + " 行类目设为「" + v + "」", true);
+      if (recruitSelRows.size) { recruitSelRows.clear(); pre.querySelectorAll(".bestseller-pre-cell").forEach(c => c.classList.remove("rg-card-selected")); }
       batchSel.value = "";
     });
     tb.appendChild(batchSel);
+    // 未匹配统计 + 定位、清空勾选
+    const missCount = recruitRows.filter(r => !String(r.category || "").trim()).length;
+    const missSpan = document.createElement("span");
+    missSpan.className = "rg-batch-label" + (missCount ? " miss-badge" : "");
+    missSpan.textContent = missCount ? ("未匹配 " + missCount + " 张") : "全部已匹配";
+    tb.appendChild(missSpan);
+    if (missCount) {
+      const loc = document.createElement("button");
+      loc.type = "button"; loc.className = "rg-mini-btn2"; loc.textContent = "定位未匹配";
+      loc.addEventListener("click", () => {
+        const c = pre.querySelector(".rg-cat-miss");
+        if (c) { c.scrollIntoView({ behavior: "smooth", block: "center" }); c.classList.add("rg-flash"); setTimeout(() => c.classList.remove("rg-flash"), 1600); }
+      });
+      tb.appendChild(loc);
+    }
+    if (recruitSelRows.size) {
+      const clr = document.createElement("button");
+      clr.type = "button"; clr.className = "rg-mini-btn2"; clr.textContent = "取消勾选";
+      clr.addEventListener("click", () => { recruitSelRows.clear(); buildRecruitXlsxPreview(); });
+      tb.appendChild(clr);
+    }
     pre.appendChild(tb);
     if (recruitHasImgRows.length) {
       const head1 = document.createElement("div");
@@ -3243,7 +3281,28 @@ let recruitTasks = [];
   }
   function recruitPreCell(label, url, hasUrl, row) {
     const cell = document.createElement("div");
-    cell.className = "bestseller-pre-cell" + (hasUrl && url ? "" : " noimg");
+    const noimgClass = (hasUrl && url) ? "" : " noimg";
+    cell.className = "bestseller-pre-cell" + noimgClass;
+    // 勾选按钮：可点选卡片，配合批量类目调整（row 存在才会有类目调整）
+    if (row) {
+      const miss = !String(row.category || "").trim();
+      if (miss) cell.classList.add("rg-cat-miss");
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "rg-card-pick";
+      const syncPick = () => {
+        const on = recruitSelRows.has(row);
+        pick.classList.toggle("on", on);
+        cell.classList.toggle("rg-card-selected", on);
+      };
+      pick.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (recruitSelRows.has(row)) recruitSelRows.delete(row); else recruitSelRows.add(row);
+        syncPick();
+      });
+      syncPick();
+      cell.appendChild(pick);
+    }
     const im = document.createElement("img");
     if (hasUrl && url) im.src = url; else { im.style.display = "none"; }
     const lbl = document.createElement("div");
@@ -3259,6 +3318,7 @@ let recruitTasks = [];
   function recruitRowCatWrap(row) {
     const wrap = document.createElement("div");
     wrap.className = "rg-row-cat";
+    wrap.__row = row;
     let matched = String(row.category || "").trim();
     if (matched) {
       wrap.innerHTML = '<span class="rg-row-cat-tag">自动匹配：' + escHtml(matched) + '</span>';
@@ -3272,7 +3332,12 @@ let recruitTasks = [];
     (window.RECRUIT_CAT_POOL || []).forEach(c => {
       const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
     });
-    sel.addEventListener("change", () => { row.category = sel.value; matched = row.category; });
+    sel.addEventListener("change", () => { row.category = sel.value; matched = row.category;
+      const tag = wrap.querySelector(".rg-row-cat-tag");
+      if (tag) { tag.className = "rg-row-cat-tag"; tag.textContent = "已设为：" + (sel.value || matched); }
+      const cell = wrap.closest(".bestseller-pre-cell");
+      if (cell && row.category) cell.classList.remove("rg-cat-miss");
+    });
     wrap.appendChild(sel);
     return wrap;
   }
