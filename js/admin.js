@@ -4686,6 +4686,12 @@ let recruitTasks = [];
     $("#imgpool-compress").disabled = imgPoolBusy || imgPoolSelected.size === 0;
     $("#imgpool-compress-all").disabled = imgPoolBusy || todo === 0;
   }
+  function poolFormatOf(key) {
+    // 从扩展名判断格式，默认按 key 后缀
+    const m = String(key).match(/\.([a-zA-Z0-9]+)$/);
+    const ext = m ? m[1].toUpperCase() : "IMG";
+    return ext === "WEBP" ? "WEBP" : ext;
+  }
   async function imgPoolRender() {
     const tok = await SB.currentToken().catch(() => "");
     const doneGrid = $("#imgpool-grid-done");
@@ -4694,47 +4700,57 @@ let recruitTasks = [];
     imgPoolItems.forEach((it) => {
       const curTarget = poolTargetOf(it);
       const isDone = it.size <= KB(curTarget) || it.size <= KB(200);
-      const cell = document.createElement("div");
-      cell.className = "imgpool-cell" + (isDone ? "" : " todo");
-      if (!isDone && imgPoolSelected.has(it.key)) cell.classList.add("sel");
       const url = urlOfPath(it.key, tok);
-      const tgtSel = '<select class="imgpool-target" data-key="' + escAttr(it.key) + '" title="压缩目标">' +
+      const fmt = poolFormatOf(it.key);
+      // 复用智能打标的 smart-card 结构与拖拽（右池拖到左池=压缩）
+      const card = document.createElement("div");
+      card.className = "smart-card";
+      card.draggable = true;
+      card.dataset.key = it.key;
+      const wrap = document.createElement("div");
+      wrap.className = "holder";
+      const im = document.createElement("img");
+      im.src = url;
+      im.alt = it.key || "";
+      im.loading = "eager";
+      im.draggable = false;
+      im.addEventListener("contextmenu", (e) => e.preventDefault());
+      im.classList.add("loaded");
+      im.onerror = () => { im.classList.remove("loaded"); };
+      wrap.appendChild(im);
+      card.appendChild(wrap);
+      // 左上角：大小 + 格式 标签
+      const tags = document.createElement("div");
+      tags.className = "smart-card-tags";
+      tags.innerHTML =
+        '<div class="smart-tag-row size"><b>大小</b><span>' + fmtSize(it.size) + '</span></div>' +
+        '<div class="smart-tag-row fmt"><b>格式</b><span>' + escHtml(fmt) + '</span></div>' +
+        (isDone ? '<div class="smart-tag-row none"><b>态</b><span>已压缩</span></div>' : '<div class="smart-tag-row ch"><b>态</b><span>待压缩</span></div>');
+      card.appendChild(tags);
+      // 未压缩卡片：右下角档位下拉（200K/100K/40K）+ 预览按钮
+      const acts = document.createElement("div");
+      acts.className = "smart-card-actions";
+      acts.innerHTML =
+        '<select class="imgpool-target" data-key="' + escAttr(it.key) + '" title="压缩目标">' +
         IMG_POOL_TARGETS.map(o => '<option value="' + o.v + '"' + (curTarget === o.v ? " selected" : "") + '>' + o.label + '</option>').join("") +
-        "</select>";
-      cell.innerHTML =
-        '<img class="imgpool-thumb" src="' + escAttr(url) + '" loading="lazy" alt=""><span class="imgpool-size">' + fmtSize(it.size) + '</span>' +
-        (isDone ? "" : '<span class="imgpool-selwrap"><label class="imgpool-chk"><input type="checkbox" data-key="' + escAttr(it.key) + '"' + (imgPoolSelected.has(it.key) ? " checked" : "") + '></label>' + tgtSel + '</span>') +
-        '<span class="imgpool-actions"><button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>' +
-        (isDone ? '<button class="imgpool-reconv" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button" title="强制转WebP">转WEB</button>' : '') +
-        "</span>";
-      const img = cell.querySelector(".imgpool-thumb");
-      if (img) img.onerror = () => { img.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="100%" height="100%" fill="#f0f0f0"/><text x="50%" y="50%" font-size="10" fill="#999" text-anchor="middle" dominant-baseline="middle">?IMG</text></svg>'); };
-      // 单击缩略图预览清晰度
-      cell.addEventListener("click", (e) => {
-        if (e.target.closest(".imgpool-chk") || e.target.closest(".imgpool-actions")) return;
+        "</select>" +
+        '<button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>';
+      card.appendChild(acts);
+      // click 预览
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".imgpool-target") || e.target.closest(".imgpool-prev")) return;
         openImgZoom(url, it.key + " · " + fmtSize(it.size));
       });
-      (isDone ? doneGrid : todoGrid).appendChild(cell);
+      (isDone ? doneGrid : todoGrid).appendChild(card);
     });
-    // 双击勾选：等待下次渲染保持选中态
+    // 拖拽：右池卡片拖到左池 = 压缩该张；左池卡片拖回右池 = 转WebP
+    bindImgPoolDrag();
     imgPoolRenderCheck();
     imgPoolStat();
   }
   function imgPoolRenderCheck() {
-    document.querySelectorAll("#imgpool-grid-todo .imgpool-chk input").forEach(chk => {
-      chk.onchange = (e) => {
-        const key = e.target.getAttribute("data-key");
-        if (e.target.checked) imgPoolSelected.add(key); else imgPoolSelected.delete(key);
-        const cell = e.target.closest(".imgpool-cell");
-        if (cell) cell.classList.toggle("sel", e.target.checked);
-        imgPoolStat();
-      };
-    });
     document.querySelectorAll(".imgpool-prev").forEach(btn => {
       btn.onclick = (e) => { e.stopPropagation(); openImgZoom(btn.getAttribute("data-url"), btn.getAttribute("data-key") + " · 预览"); };
-    });
-    document.querySelectorAll(".imgpool-reconv").forEach(btn => {
-      btn.onclick = (e) => { e.stopPropagation(); imgPoolConvertOne(btn.getAttribute("data-key")); };
     });
     document.querySelectorAll("#imgpool-grid-todo .imgpool-target").forEach(sel => {
       sel.onchange = (e) => {
@@ -4742,6 +4758,31 @@ let recruitTasks = [];
         const it = imgPoolItems.find(x => x.key === e.target.getAttribute("data-key"));
         if (it) it.targetKB = parseInt(e.target.value, 10) || 200;
       };
+    });
+  }
+  // 拖拽：右池待压缩卡片 → 左池（drop）＝压缩该张
+  function bindImgPoolDrag() {
+    const doneGrid = $("#imgpool-grid-done");
+    document.querySelectorAll("#imgpool-grid-todo .smart-card").forEach(card => {
+      card.draggable = true;
+      card.addEventListener("dragstart", (e) => {
+        card.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", card.dataset.key || ""); } catch (err) {}
+      });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
+    });
+    // 左池（已压缩）作为拖拽目标：把未压缩卡拖进来＝压缩该张
+    doneGrid.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; doneGrid.classList.add("drop-over"); });
+    doneGrid.addEventListener("dragleave", () => doneGrid.classList.remove("drop-over"));
+    doneGrid.addEventListener("drop", (e) => {
+      e.preventDefault();
+      doneGrid.classList.remove("drop-over");
+      const key = (e.dataTransfer.getData("text/plain") || (e.dataTransfer.files && e.dataTransfer.files.length ? "" : ""));
+      if (!key) return;
+      const it = imgPoolItems.find(x => x.key === key);
+      if (!it) return;
+      imgPoolCompressOne(it);
     });
   }
   async function imgPoolLoad() {
@@ -4847,13 +4888,13 @@ let recruitTasks = [];
     const compress = $("#imgpool-compress");
     const compressAll = $("#imgpool-compress-all");
     if (selall) selall.addEventListener("click", () => {
-      imgPoolItems.forEach(i => { if (i.size > IMG_POOL_TARGET) imgPoolSelected.add(i.key); });
-      imgPoolRenderCheck(); imgPoolStat();
-      document.querySelectorAll("#imgpool-grid-todo .imgpool-chk input").forEach(c => { if (imgPoolSelected.has(c.getAttribute("data-key"))) c.checked = true; });
+      imgPoolItems.forEach(i => { if (i.size > KB(200)) imgPoolSelected.add(i.key); });
+      imgPoolStat();
+      sbToast("已选中 " + imgPoolSelected.size + " 张待压缩图", true);
     });
     if (selnone) selnone.addEventListener("click", () => {
       imgPoolSelected.clear();
-      imgPoolRender(); imgPoolStat();
+      imgPoolStat();
     });
     if (compress) compress.addEventListener("click", () => imgPoolCompressBatch([...imgPoolSelected]));
     const gtar = $("#imgpool-global-target");

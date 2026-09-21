@@ -431,14 +431,16 @@
             <span id="imgpool-stat" class="imgpool-stat">-</span>
           </div>
           <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
-          <div class="imgpool-pools">
-            <div class="imgpool-pool">
-              <div class="imgpool-pool-head">左池 · 已压缩（≤200KB）<span class="sp-count" id="imgpool-cnt-done">0</span></div>
-              <div class="imgpool-grid" id="imgpool-grid-done"></div>
+          <div class="smart-pools">
+            <div class="smart-pool" id="imgpool-pool-done">
+              <div class="smart-pool-head">已压缩（≤200KB）<span class="sp-count" id="imgpool-cnt-done">0</span></div>
+              <div class="smart-pool-grid" id="imgpool-grid-done"></div>
             </div>
-            <div class="imgpool-pool">
-              <div class="imgpool-pool-head">右池 · 待压缩（&gt;200KB）<span class="sp-count" id="imgpool-cnt-todo">0</span></div>
-              <div class="imgpool-grid" id="imgpool-grid-todo"></div>
+            <div class="smart-pool" id="imgpool-pool-todo">
+              <div class="smart-pool-head">待压缩（&gt;200KB）<span class="sp-count" id="imgpool-cnt-todo">0</span>
+                <span class="su-spacer"></span>
+              </div>
+              <div class="smart-pool-grid" id="imgpool-grid-todo"></div>
             </div>
           </div>
         </div>
