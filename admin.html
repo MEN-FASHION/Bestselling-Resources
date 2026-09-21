@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260920G">
+<link rel="stylesheet" href="css/style.css?v=20260920H">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -431,16 +431,16 @@
             <span id="imgpool-stat" class="imgpool-stat">-</span>
           </div>
           <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
-          <div class="imgpool-pools">
-            <div class="smart-pool" id="imgpool-pool-done">
+          <div class="imgpool-pools" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="smart-pool" id="imgpool-pool-done" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
               <div class="smart-pool-head">已压缩（≤200KB）<span class="sp-count" id="imgpool-cnt-done">0</span></div>
-              <div class="smart-pool-grid" id="imgpool-grid-done"></div>
+              <div class="smart-pool-grid" id="imgpool-grid-done" style="padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:560px;overflow-y:auto;align-content:start;grid-auto-rows:max-content;"></div>
             </div>
-            <div class="smart-pool" id="imgpool-pool-todo">
+            <div class="smart-pool" id="imgpool-pool-todo" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
               <div class="smart-pool-head">待压缩（&gt;200KB）<span class="sp-count" id="imgpool-cnt-todo">0</span>
                 <span class="su-spacer"></span>
               </div>
-              <div class="smart-pool-grid" id="imgpool-grid-todo"></div>
+              <div class="smart-pool-grid" id="imgpool-grid-todo" style="padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:560px;overflow-y:auto;align-content:start;grid-auto-rows:max-content;"></div>
             </div>
           </div>
         </div>
@@ -817,8 +817,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260920G"></script>
-  <script src="js/supabase.js?v=20260920G"></script>
-  <script src="js/admin.js?v=20260920G"></script>
+  <script src="js/config.js?v=20260920H"></script>
+  <script src="js/supabase.js?v=20260920H"></script>
+  <script src="js/admin.js?v=20260920H"></script>
 </body>
 </html>
