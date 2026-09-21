@@ -432,7 +432,10 @@ async function isPublicAccess(env) {
     let cursor;
     do {
       const page = await env.IMAGES.list({ cursor, limit: 1000 });
-      for (const o of (page.objects || [])) items.push({ key: o.key, size: o.size });
+      for (const o of (page.objects || [])) {
+        // 只保留视觉专区图片（key 以 images/ 开头），排除趋势/招品/回品等其它专区
+        if (o.key && o.key.startsWith("images/")) items.push({ key: o.key, size: o.size });
+      }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
     return json({ ok: true, items }, 200, CORS);
