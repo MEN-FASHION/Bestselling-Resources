@@ -4663,9 +4663,12 @@ let recruitTasks = [];
 
   // ================= 存量图片压缩池（超管 · 左=已压缩 ≤200KB，右=待压缩 >200KB） =================
   const IMG_POOL_TARGET = 200 * 1024; // 阈值：200KB
-  let imgPoolItems = [];       // [{key,size}]
+  let imgPoolItems = [];       // [{key,size,targetKB}]
   let imgPoolSelected = new Set();
   let imgPoolBusy = false;
+  const IMG_POOL_TARGETS = [{v:200,label:"200K"},{v:100,label:"100K"},{v:40,label:"40K"}];
+  const KB = n => n * 1024;
+  const poolTargetOf = it => (it && it.targetKB > 0) ? it.targetKB : 200;
   const urlOfPath = (p, tok) => (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + p + (tok ? "?token=" + encodeURIComponent(tok) : "");
   async function imgPoolImgUrl(p) {
     let tok = "";
@@ -4689,16 +4692,20 @@ let recruitTasks = [];
     const todoGrid = $("#imgpool-grid-todo");
     doneGrid.innerHTML = ""; todoGrid.innerHTML = "";
     imgPoolItems.forEach((it) => {
-      const isDone = it.size <= IMG_POOL_TARGET;
+      const curTarget = poolTargetOf(it);
+      const isDone = it.size <= KB(curTarget) || it.size <= KB(200);
       const cell = document.createElement("div");
       cell.className = "imgpool-cell" + (isDone ? "" : " todo");
       if (!isDone && imgPoolSelected.has(it.key)) cell.classList.add("sel");
       const url = urlOfPath(it.key, tok);
+      const tgtSel = '<select class="imgpool-target" data-key="' + escAttr(it.key) + '" title="压缩目标">' +
+        IMG_POOL_TARGETS.map(o => '<option value="' + o.v + '"' + (curTarget === o.v ? " selected" : "") + '>' + o.label + '</option>').join("") +
+        "</select>";
       cell.innerHTML =
         '<img class="imgpool-thumb" src="' + escAttr(url) + '" loading="lazy" alt=""><span class="imgpool-size">' + fmtSize(it.size) + '</span>' +
-        (isDone ? "" : '<label class="imgpool-chk"><input type="checkbox" data-key="' + escAttr(it.key) + '"' + (imgPoolSelected.has(it.key) ? " checked" : "") + '></label>') +
+        (isDone ? "" : '<span class="imgpool-selwrap"><label class="imgpool-chk"><input type="checkbox" data-key="' + escAttr(it.key) + '"' + (imgPoolSelected.has(it.key) ? " checked" : "") + '></label>' + tgtSel + '</span>') +
         '<span class="imgpool-actions"><button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>' +
-        (isDone ? '<button class="imgpool-reconv" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button" title="即使≤200KB也可强制转WebP">转WEB</button>' : '') +
+        (isDone ? '<button class="imgpool-reconv" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button" title="强制转WebP">转WEB</button>' : '') +
         "</span>";
       const img = cell.querySelector(".imgpool-thumb");
       if (img) img.onerror = () => { img.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="100%" height="100%" fill="#f0f0f0"/><text x="50%" y="50%" font-size="10" fill="#999" text-anchor="middle" dominant-baseline="middle">?IMG</text></svg>'); };
@@ -4728,6 +4735,13 @@ let recruitTasks = [];
     });
     document.querySelectorAll(".imgpool-reconv").forEach(btn => {
       btn.onclick = (e) => { e.stopPropagation(); imgPoolConvertOne(btn.getAttribute("data-key")); };
+    });
+    document.querySelectorAll("#imgpool-grid-todo .imgpool-target").forEach(sel => {
+      sel.onchange = (e) => {
+        e.stopPropagation();
+        const it = imgPoolItems.find(x => x.key === e.target.getAttribute("data-key"));
+        if (it) it.targetKB = parseInt(e.target.value, 10) || 200;
+      };
     });
   }
   async function imgPoolLoad() {
@@ -4763,15 +4777,18 @@ let recruitTasks = [];
     // 从网络 blob 转 File 以便压缩引擎校验 type
     const ext = (it.key.match(/\.([a-z0-9]+)$/i) || [])[1] || "jpg";
     const file = new File([blob], "img." + ext, { type: (blob.type && /^image\//i.test(blob.type)) ? blob.type : "image/jpeg" });
-    let compressed = await SB.compress(file);
-    // 压缩引擎兜底会保留原图；若未能压小（罕见），强制以较低质量 WebP 重编码一遍，确保落到 200KB 以下
-    if (!compressed || compressed.size >= it.size || compressed.size > IMG_POOL_TARGET) {
-      const force = await SB.compress(new File([blob], "img.webp", { type: "image/webp" }));
+    const targetKB = poolTargetOf(it);
+    const targetBytes = KB(targetKB);
+    let compressed = await SB.compress(file, targetKB);
+    // 压缩引擎兜底会保留原图；若未能达标，强制以较低质量重编码一遍
+    if (!compressed || compressed.size >= it.size || compressed.size > targetBytes) {
+      const force = await SB.compress(new File([blob], "img.webp", { type: "image/webp" }), targetKB);
       if (force && force.size < it.size) compressed = force;
     }
-    if (!compressed || (compressed.size >= it.size && it.size <= IMG_POOL_TARGET)) return; // 已达标或确实无法缩小，不覆盖
+    if (!compressed || (compressed.size >= it.size && it.size <= targetBytes)) return; // 已达标或确实无法缩小，不覆盖
     await SB.overwriteStoredImg(it.key, compressed);
     it.size = compressed.size;
+    it.targetKB = targetKB;
   }
   async function imgPoolConvertOne(key) {
     const it = imgPoolItems.find(x => x.key === key);
@@ -4839,6 +4856,13 @@ let recruitTasks = [];
       imgPoolRender(); imgPoolStat();
     });
     if (compress) compress.addEventListener("click", () => imgPoolCompressBatch([...imgPoolSelected]));
+    const gtar = $("#imgpool-global-target");
+    if (gtar) gtar.addEventListener("change", () => {
+      const v = parseInt(gtar.value, 10) || 200;
+      imgPoolItems.forEach(i => { if (i.size > KB(200)) i.targetKB = v; });
+      imgPoolRender();
+      sbToast("已将所有待压缩图目标设为 " + v + "K", true);
+    });
     if (compressAll) compressAll.addEventListener("click", () => {
       const todo = imgPoolItems.filter(i => i.size > IMG_POOL_TARGET).map(i => i.key);
       if (!todo.length) { sbToast("当前没有待压缩的图片", false); return; }

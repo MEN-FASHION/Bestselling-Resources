@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260920E">
+<link rel="stylesheet" href="css/style.css?v=20260920F">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -417,10 +417,16 @@
           <div class="imgpool-toolbar">
             <button id="imgpool-refresh" class="btn-ghost" type="button">刷新清单</button>
             <span class="imgpool-batch">
+              <span class="imgpool-tglabel">目标</span>
+              <select id="imgpool-global-target" class="imgpool-target" title="批量压缩统一目标档位">
+                <option value="200">200K</option>
+                <option value="100">100K</option>
+                <option value="40">40K</option>
+              </select>
               <button id="imgpool-selall" class="btn-ghost" type="button">全选待压</button>
               <button id="imgpool-selnone" class="btn-ghost" type="button">取消全选</button>
               <button id="imgpool-compress" class="btn-primary" type="button" disabled>压缩选中(0)</button>
-              <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压缩全部</button>
+              <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压全部</button>
             </span>
             <span id="imgpool-stat" class="imgpool-stat">-</span>
           </div>
@@ -809,8 +815,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260920E"></script>
-  <script src="js/supabase.js?v=20260920E"></script>
-  <script src="js/admin.js?v=20260920E"></script>
+  <script src="js/config.js?v=20260920F"></script>
+  <script src="js/supabase.js?v=20260920F"></script>
+  <script src="js/admin.js?v=20260920F"></script>
 </body>
 </html>

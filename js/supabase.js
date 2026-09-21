@@ -33,9 +33,9 @@ const SB = (() => {
   // 无论原图尺寸与格式如何，只要文件超过目标体积就压缩成 WebP；
   // 用「逐步降质量 + 必要时缩小尺寸」双梯度逼近目标体积，确保不影响观感；
   // 一律不再以尺寸作判断，只以文件大小校验；失败时回退原文件，绝不丢图。
-  async function compressImage(file) {
+  async function compressImage(file, maxKB = 200) {
     if (!file || !/^image\//i.test(file.type || "")) return file;
-    const TARGET = 200 * 1024;        // 目标体积：200KB 以下
+    const TARGET = (maxKB > 0 ? maxKB : 200) * 1024;   // 目标体积：可指定（200/100/40 KB），默认200KB
     const HEADROOM = 0.92;            // 留出余量，避免刚好边缘
     if (file.size <= TARGET) return file;   // 已达标，不处理
     try {
@@ -216,8 +216,8 @@ const SB = (() => {
 
     // ============ 存量图片压缩池 ============
     // 对外暴露压缩引擎（供压缩池把任意图转成 ≤200KB WebP）
-    async compress(file) {
-      return compressImage(file);
+    async compress(file, maxKB = 200) {
+      return compressImage(file, maxKB);
     },
     // 列出存储里全部图片（key + 字节数），供左右池子区分「已压缩 / 待压缩」
     async listStorageImgs() {
