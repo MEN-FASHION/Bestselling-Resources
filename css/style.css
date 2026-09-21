@@ -1901,3 +1901,13 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .imgpool-pick:hover { background: rgba(0,0,0,.8); }
 .imgpool-pick input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--gold); }
 .smart-card.sel { outline: 2px solid var(--gold); outline-offset: -2px; box-shadow: 0 0 0 3px rgba(220,174,87,.25); }
+
+/* 超管权限面板：二级页签 */
+.super-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 16px;padding-top:10px;border-top:1px solid #eee;}
+.super-tab{padding:6px 16px;border:1px solid #ddd;border-radius:999px;background:#f7f7f9;cursor:pointer;font-size:13px;color:#555;transition:all .15s;}
+.super-tab:hover{border-color:#c9a24b;color:#b8860b;}
+.super-tab.active{background:linear-gradient(135deg,#e9c46a,#d4a017);border-color:#d4a017;color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(212,160,23,.25);}
+
+/* 数据导出预览：图片加载失败占位 */
+.export-item-broken img{opacity:.28;}
+.export-item-broken .export-item-n::after{content:"（图未加载）";color:#c0392b;font-weight:600;}

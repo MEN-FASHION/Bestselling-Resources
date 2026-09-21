@@ -40,7 +40,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindSuperTabs]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -4127,6 +4127,7 @@ let recruitTasks = [];
    * 数据导出（仅管理员）：筛选栏与前台一致（类目 + 六维度），导出 Excel 含图片与分类标签
    * ============================================================ */
   let exportImgs = [];
+  let exportTok = "";                 // 数据导出图片预览所需的登录令牌
   let exportDefs = [];
   let exportCat = "";               // 当前导出类目筛选值
   let exportState = { channel: "", style: "", element: "", scene: "", shoot: "", skin: "" };
@@ -4149,6 +4150,7 @@ let recruitTasks = [];
     } catch (e) { meta.textContent = "加载失败，请重试"; return; }
     exportImgs = imgs;
     exportDefs = defs;
+    exportTok = await SB.currentToken().catch(() => "");
     buildExportCatFilter();
     buildExportDims();
     renderExportGrid();
@@ -4203,13 +4205,14 @@ let recruitTasks = [];
     const grid = document.getElementById("export-grid");
     if (!grid) return;
     const base = (window.CONFIG.WORKER_URL || "").replace(/\/+$/, "");
-    const preview = matches.slice(0, 120);
+    const preview = matches.slice(0, 48);
     grid.innerHTML = preview.map(i => {
-      const url = base + "/" + (i.path || "");
+      const url = base + "/" + (i.path || "") + (exportTok ? "?token=" + encodeURIComponent(exportTok) : "");
       const labels = ["tags", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"]
         .map(f => Array.isArray(i[f]) ? i[f].join(" / ") : "").filter(Boolean).join("　");
-      return `<div class="export-item"><img loading="lazy" src="${escAttr(url)}" alt=""><div class="export-item-t"><span class="export-item-n">${escHtml(i.name || "")}</span><span class="export-item-cat">${escHtml(i.category || "未分类")}</span></div><div class="export-item-l">${escHtml(labels || "未打标")}</div></div>`;
+      return `<div class="export-item"><img loading="lazy" src="${escAttr(url)}" alt="" onerror="this.closest('.export-item').classList.add('export-item-broken')"><div class="export-item-t"><span class="export-item-n">${escHtml(i.name || "")}</span><span class="export-item-cat">${escHtml(i.category || "未分类")}</span></div><div class="export-item-l">${escHtml(labels || "未打标")}</div></div>`;
     }).join("");
+    if (matches.length > 48) grid.insertAdjacentHTML("beforeend", '<p class="hint">预览仅展示前 48 张，导出 Excel 含全部 ' + matches.length + ' 张（图片链接、分类、六维度标签、外链）。</p>');
     if (!preview.length) grid.innerHTML = '<p class="hint">没有符合筛选条件的图片。</p>';
   }
 
@@ -5592,6 +5595,22 @@ let bestsellerTasks = [];
     XLSX.utils.book_append_sheet(wb, ws, "BESTSELLER汇总");
     XLSX.writeFile(wb, "BESTSELLER汇总.xlsx");
     sbToast("已导出 " + rows.length + " 行");
+  }
+
+  // 超管权限面板：二级页签切换（公告/权限/前台设置/数据导出/压缩池）
+  function bindSuperTabs() {
+    const bar = document.getElementById("super-tabs");
+    if (!bar) return;
+    bar.addEventListener("click", (e) => {
+      const btn = e.target.closest(".super-tab");
+      if (!btn) return;
+      const sv = btn.getAttribute("data-sv");
+      if (!sv) return;
+      bar.querySelectorAll(".super-tab").forEach(b => b.classList.toggle("active", b === btn));
+      document.querySelectorAll("#super-card .super-sub").forEach(sub => {
+        sub.style.display = (sub.getAttribute("data-sv") === sv) ? "" : "none";
+      });
+    });
   }
 
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260920H">
+<link rel="stylesheet" href="css/style.css?v=20260920I">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -270,7 +270,15 @@
       <div class="panel-card hidden" id="super-card">
         <h2>⑪ 超管权限 <span class="hint-inline">（超级管理员 · 公告管理 + 权限管理 + 前台访问设置 + 数据导出 + 存量图片压缩池）</span></h2>
         <hr class="tag-sub-hr">
-        <div class="super-sub">
+        <div class="super-tabs" id="super-tabs">
+          <button class="super-tab active" data-sv="sv-1" type="button">公告管理</button>
+          <button class="super-tab" data-sv="sv-2" type="button">权限管理</button>
+          <button class="super-tab" data-sv="sv-3" type="button">前台访问设置</button>
+          <button class="super-tab" data-sv="sv-4" type="button">数据导出</button>
+          <button class="super-tab" data-sv="sv-5" type="button">存量图片压缩池</button>
+        </div>
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-1">
           <h3 class="tbs-title">公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h3>
         <div class="notice-form-box">
           <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
@@ -320,7 +328,7 @@
         </div>
 
         <hr class="tag-sub-hr">
-        <div class="super-sub">
+        <div class="super-sub" data-sv="sv-2" style="display:none;">
           <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
           <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【角色】【可管理类目】【可见专区】。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
 
@@ -371,7 +379,7 @@
         </div>
 
         <hr class="tag-sub-hr">
-        <div class="super-sub">
+        <div class="super-sub" data-sv="sv-3" style="display:none;">
           <h3 class="tbs-title">前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h3>
           <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
           <label class="switch-row">
@@ -394,7 +402,7 @@
         </div>
 
         <hr class="tag-sub-hr">
-        <div class="super-sub">
+        <div class="super-sub" data-sv="sv-4" style="display:none;">
           <h3 class="tbs-title">数据导出 <span class="hint-inline">（仅管理员）按前台筛选条件导出 Excel，含图片与分类标签</span></h3>
           <div class="export-toolbar">
             <button id="export-excel" class="btn-ghost export-excel-btn" title="按当前筛选条件导出 Excel">导出 Excel</button>
@@ -412,7 +420,7 @@
         </div>
 
         <hr class="tag-sub-hr">
-        <div class="super-sub">
+        <div class="super-sub" data-sv="sv-5" style="display:none;">
           <h3 class="tbs-title">存量图片压缩池 <span class="hint-inline">（超级管理员 · 查看/压缩存储内已有图片，左＝已压缩(≤200KB)，右＝待压缩(&gt;200KB)）</span></h3>
           <div class="imgpool-toolbar">
             <button id="imgpool-refresh" class="btn-ghost" type="button">刷新清单</button>
@@ -817,8 +825,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260920H"></script>
-  <script src="js/supabase.js?v=20260920H"></script>
-  <script src="js/admin.js?v=20260920H"></script>
+  <script src="js/config.js?v=20260920I"></script>
+  <script src="js/supabase.js?v=20260920I"></script>
+  <script src="js/admin.js?v=20260920I"></script>
 </body>
 </html>
