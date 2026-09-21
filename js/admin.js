@@ -4736,6 +4736,23 @@ let recruitTasks = [];
         "</select>" +
         '<button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>';
       card.appendChild(acts);
+      // 勾选：未压缩卡片复选框，用于"压缩选中"批量压缩
+      const pick = document.createElement("div");
+      pick.className = "imgpool-pick";
+      const ck = document.createElement("input");
+      ck.type = "checkbox";
+      ck.className = "imgpool-chk";
+      ck.checked = imgPoolSelected.has(it.key);
+      ck.addEventListener("click", (e) => e.stopPropagation());
+      ck.addEventListener("change", (e) => {
+        e.stopPropagation();
+        if (ck.checked) imgPoolSelected.add(it.key);
+        else imgPoolSelected.delete(it.key);
+        card.classList.toggle("sel", ck.checked);
+        imgPoolStat();
+      });
+      pick.appendChild(ck);
+      card.appendChild(pick);
       // click 预览
       card.addEventListener("click", (e) => {
         if (e.target.closest(".imgpool-target") || e.target.closest(".imgpool-prev")) return;

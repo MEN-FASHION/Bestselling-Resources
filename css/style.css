@@ -1892,3 +1892,12 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .imgpool-actions button { font-size: 11px; padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
 .imgpool-actions button:hover { background: rgba(0,0,0,.75); }
 @media (max-width: 720px) { .imgpool-pools { grid-template-columns: 1fr; } }
+/* 压缩池双池布局：每池内部网格排满，池子各自可滚动 */
+.imgpool-pools .smart-pool { min-height: 0; }
+.imgpool-pools .smart-pool-grid { height: auto; max-height: 560px; overflow-y: auto; }
+.imgpool-pools #imgpool-pool-todo .smart-pool-grid { grid-auto-rows: max-content; }
+/* 卡片勾选框（右上角） */
+.imgpool-pick { position: absolute; top: 6px; right: 6px; z-index: 4; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: rgba(0,0,0,.55); }
+.imgpool-pick:hover { background: rgba(0,0,0,.8); }
+.imgpool-pick input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--gold); }
+.smart-card.sel { outline: 2px solid var(--gold); outline-offset: -2px; box-shadow: 0 0 0 3px rgba(220,174,87,.25); }
