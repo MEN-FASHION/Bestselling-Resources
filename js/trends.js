@@ -24,6 +24,7 @@
   let catVisibility = {};    // 各专区各类目是否前台可见
   let zoneVis = {};          // 各专区本身是否前台可见
   let zoneVisLoaded = false; // 专区可见性是否已加载
+  let myZones = null;        // 当前登录用户级可见专区白名单（null/空 = 未配置，回退全局）
   // —— 分享预览（方案A）：管理员分享类目链接，未登录可浏览该类目缩略图 ——
   const shareQ = new URLSearchParams(location.search);
   const shareZone = shareQ.get("zone");
@@ -602,6 +603,8 @@
   async function ensureZoneVis() {
     if (zoneVisLoaded) return;
     try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
+    // 当前登录用户的用户级可见专区白名单（未登录/未配置 = null，回退全局）
+    try { myZones = await SB.myManageZones(); } catch (e) { myZones = null; }
     zoneVisLoaded = true;
     applyZoneNav();
   }
@@ -629,14 +632,19 @@
   }
 
   // 某专区本身是否前台可见（未配置默认可见）
+  // 优先按当前登录用户级白名单（myZones 非空数组）判断；未配置/未登录回退到全局 frontend_zone_visibility。
   function zoneVisible(zone) {
+    if (Array.isArray(myZones) && myZones.length) {
+      // 用户级白名单：仅白名单内专区可见；若全局也显式隐藏该专区则仍隐藏
+      if (zoneVis && zoneVis[zone] === false) return false;
+      return myZones.indexOf(zone) !== -1;
+    }
     return !zoneVis || zoneVis[zone] !== false;
   }
 
   // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏；
   // 被隐藏的菜单项导航不显示，直接访问/点击仍由 guardZone/showMain 守卫拦截。
   function applyZoneNav() {
-    const t = zoneVis || {};
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
       const vt = a.getAttribute("data-viewtab") || "";
@@ -646,7 +654,7 @@
       else if (vt === "recruit" || href === "trends.html#recruit") z = "recruit";
       else if (vt === "bestseller" || href === "trends.html#bestseller") z = "bestseller";
       else if (a.id === "notice-tab") z = "notice";
-      a.style.display = (z && t[z] === false) ? "none" : "";
+      a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
   }
 

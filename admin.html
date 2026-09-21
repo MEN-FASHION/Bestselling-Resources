@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260920C">
+<link rel="stylesheet" href="css/style.css?v=20260920E">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -268,7 +268,7 @@
 
       <!-- 超管权限（公告管理 + 权限管理 + 前台访问设置 + 数据导出，仅超级管理员可见） -->
       <div class="panel-card hidden" id="super-card">
-        <h2>⑪ 超管权限 <span class="hint-inline">（超级管理员 · 公告管理 + 权限管理 + 前台访问设置 + 数据导出）</span></h2>
+        <h2>⑪ 超管权限 <span class="hint-inline">（超级管理员 · 公告管理 + 权限管理 + 前台访问设置 + 数据导出 + 存量图片压缩池）</span></h2>
         <hr class="tag-sub-hr">
         <div class="super-sub">
           <h3 class="tbs-title">公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h3>
@@ -321,9 +321,27 @@
 
         <hr class="tag-sub-hr">
         <div class="super-sub">
-          <h3 class="tbs-title">权限管理（用户角色 / 类目分配） <span class="hint-inline">（超级管理员 · 设置用户角色，并为其分配可管理的类目权限）</span></h3>
-          <p class="hint">选择下方用户，指定其【角色】，并勾选其可管理的【类目】后保存。授权类目对「视觉专区 / 趋势专区 / 招品回品 / BESTSELLER」四个专区统一生效（只需设置一次）。普通管理员只能发布/管理自己获授权的类目；未授权类目对ta在后台不可见、无法发布。权限仅约束后台发布，不影响前台浏览。</p>
-          <div class="rg-row"><label class="field">选择用户</label>
+          <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
+          <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【角色】【可管理类目】【可见专区】。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
+
+          <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
+          <div class="perm-table-wrap">
+            <table class="perm-table" id="perm-table">
+              <thead>
+                <tr>
+                  <th>用户</th>
+                  <th>角色</th>
+                  <th>可管理类目</th>
+                  <th>已授权专区</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="5" class="hint">加载中…</td></tr></tbody>
+            </table>
+          </div>
+
+          <hr class="tag-sub-hr">
+          <div class="rg-row" style="margin-top:6px"><label class="field">编辑用户</label>
             <select id="perm-user" class="input"></select>
             <label class="field" style="margin-left:8px">角色</label>
             <select id="perm-role" class="input">
@@ -342,6 +360,10 @@
               </span>
             </h4>
             <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+          </div>
+          <div class="perm-zone" style="margin-top:10px">
+            <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示；默认视觉/趋势/公告对所有人可见）</span></h4>
+            <div id="perm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
           </div>
           <div class="rg-btnrow">
             <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
@@ -387,6 +409,32 @@
           </div>
           <p class="hint">筛选栏与前台一致：每个维度单选，选中后按「类目 + 六维度」组合过滤。点击【导出 Excel】将按当前筛选条件导出全部匹配图片（含图片链接、文件名、分类、渠道/风格/元素/场景/拍摄方式/肤色标签、外链）。</p>
           <div id="export-grid" class="export-grid"></div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub">
+          <h3 class="tbs-title">存量图片压缩池 <span class="hint-inline">（超级管理员 · 查看/压缩存储内已有图片，左＝已压缩(≤200KB)，右＝待压缩(&gt;200KB)）</span></h3>
+          <div class="imgpool-toolbar">
+            <button id="imgpool-refresh" class="btn-ghost" type="button">刷新清单</button>
+            <span class="imgpool-batch">
+              <button id="imgpool-selall" class="btn-ghost" type="button">全选待压</button>
+              <button id="imgpool-selnone" class="btn-ghost" type="button">取消全选</button>
+              <button id="imgpool-compress" class="btn-primary" type="button" disabled>压缩选中(0)</button>
+              <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压缩全部</button>
+            </span>
+            <span id="imgpool-stat" class="imgpool-stat">-</span>
+          </div>
+          <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
+          <div class="imgpool-pools">
+            <div class="imgpool-pool">
+              <div class="imgpool-pool-head">左池 · 已压缩（≤200KB）<span class="sp-count" id="imgpool-cnt-done">0</span></div>
+              <div class="imgpool-grid" id="imgpool-grid-done"></div>
+            </div>
+            <div class="imgpool-pool">
+              <div class="imgpool-pool-head">右池 · 待压缩（&gt;200KB）<span class="sp-count" id="imgpool-cnt-todo">0</span></div>
+              <div class="imgpool-grid" id="imgpool-grid-todo"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -761,8 +809,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260920C"></script>
-  <script src="js/supabase.js?v=20260920C"></script>
-  <script src="js/admin.js?v=20260920C"></script>
+  <script src="js/config.js?v=20260920E"></script>
+  <script src="js/supabase.js?v=20260920E"></script>
+  <script src="js/admin.js?v=20260920E"></script>
 </body>
 </html>

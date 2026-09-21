@@ -40,7 +40,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindToken, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -4511,17 +4511,65 @@ let recruitTasks = [];
 
   // ================= 权限管理（超管）面板 =================
   let permUsers = [];
+  // 用户级可见专区的可选项（与全局「前台访问设置」的专区集合一致）
+  const PERM_ZONES = [
+    { key: "visual", label: "视觉专区" },
+    { key: "trend", label: "趋势专区" },
+    { key: "recruit", label: "招品回品" },
+    { key: "bestseller", label: "BESTSELLER" },
+    { key: "notice", label: "公告" },
+  ];
+  function permRoleLabel(r) {
+    return r === "super_admin" ? "超级管理员" : r === "admin" ? "管理员" : "访客";
+  }
   async function loadPermPanel() {
     try { permUsers = await SB.listAdminUsers(); } catch (e) { permUsers = []; }
+    renderPermTable(permUsers);
     const sel = $("#perm-user");
     if (!sel) return;
     sel.innerHTML = "";
     permUsers.forEach(u => {
       const o = document.createElement("option");
-      o.value = u.user_id; o.textContent = u.email + "（" + (u.role === "super_admin" ? "超管" : u.role === "admin" ? "管理员" : "访客") + "）";
+      o.value = u.user_id; o.textContent = u.email + "（" + permRoleLabel(u.role) + "）";
       sel.appendChild(o);
     });
     if (permUsers.length) { await loadPermForUser(permUsers[0]); }
+  }
+  // 用户权限分配表：总览所有用户角色与权限内容
+  async function renderPermTable(users) {
+    const body = $("#perm-table-body");
+    if (!body) return;
+    if (!users.length) { body.innerHTML = '<tr><td colspan="5" class="hint">暂无用户</td></tr>'; return; }
+    body.innerHTML = "";
+    // 预取每个用户的类目授权，用于总览摘要
+    const catCounts = {};
+    await Promise.all(users.map(async (u) => {
+      try {
+        const perms = await SB.listUserPermissions(u.user_id).catch(() => []);
+        catCounts[u.user_id] = perms.length;
+      } catch (e) { catCounts[u.user_id] = 0; }
+    }));
+    users.forEach(u => {
+      const tr = document.createElement("tr");
+      const zones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
+      const zoneTxt = zones.length ? zones.map(z => {
+        const zz = PERM_ZONES.find(x => x.key === z);
+        return zz ? zz.label : z;
+      }).join("、") : "（按全局）";
+      tr.innerHTML =
+        '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
+        '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
+        '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
+        '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
+        '<td class="perm-td-ops"><button class="btn-ghost small" type="button" data-uid="' + u.user_id + '">编辑</button></td>';
+      const editBtn = tr.querySelector("button");
+      editBtn.onclick = () => {
+        const sel = $("#perm-user");
+        if (sel) { sel.value = u.user_id; }
+        loadPermForUser(u);
+      };
+      body.appendChild(tr);
+    });
   }
   async function loadPermForUser(user) {
     if (!user) return;
@@ -4529,11 +4577,27 @@ let recruitTasks = [];
     if (roleSel) roleSel.value = user.role || "visitor";
     const uid = user.user_id;
     // 类目池子 = 标签管理的全量类目（跨专区同一套），授权只勾一次、四专区共用
-    const [allCats, perm] = await Promise.all([
+    const [allCats, perm, myZones] = await Promise.all([
       SB.listZoneCats("recruit").catch(() => []),
       SB.listUserPermissions(uid).catch(() => []),
+      SB.getUserManageZones(uid).catch(() => []),
     ]);
     renderPermCats(allCats, perm);
+    renderPermZones(myZones);
+  }
+  function renderPermZones(checked) {
+    const box = $("#perm-zones");
+    if (!box) return;
+    box.innerHTML = "";
+    const set = new Set((checked || []));
+    PERM_ZONES.forEach(z => {
+      const lab = document.createElement("label");
+      lab.className = "perm-zone-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = z.key; cb.checked = set.has(z.key);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
+      box.appendChild(lab);
+    });
   }
   function renderPermCats(cats, checked) {
     const box = $("#perm-cats");
@@ -4584,15 +4648,207 @@ let recruitTasks = [];
       if (!uid) return sbToast("请先选择用户", false);
       const role = $("#perm-role")?.value || "visitor";
       const cats = [...document.querySelectorAll("#perm-cats input:checked")].map(i => i.value);
+      const zones = [...document.querySelectorAll("#perm-zones input:checked")].map(i => i.value);
       try {
         await SB.setUserRole(uid, role);
         // 一套共享类目授权，四专区共用
         await SB.setUserPermissions(uid, "", cats);
+        // 用户级可见专区白名单（空数组＝按全局）
+        await SB.setUserManageZones(uid, zones);
         sbToast("角色与权限已保存");
         await loadPermPanel();
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
   }
+
+  // ================= 存量图片压缩池（超管 · 左=已压缩 ≤200KB，右=待压缩 >200KB） =================
+  const IMG_POOL_TARGET = 200 * 1024; // 阈值：200KB
+  let imgPoolItems = [];       // [{key,size}]
+  let imgPoolSelected = new Set();
+  let imgPoolBusy = false;
+  const urlOfPath = (p, tok) => (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + p + (tok ? "?token=" + encodeURIComponent(tok) : "");
+  async function imgPoolImgUrl(p) {
+    let tok = "";
+    try { tok = await SB.currentToken(); } catch (e) { tok = ""; }
+    return urlOfPath(p, tok);
+  }
+  function imgPoolStat() {
+    const done = imgPoolItems.filter(i => i.size <= IMG_POOL_TARGET).length;
+    const todo = imgPoolItems.length - done;
+    const totalBytes = imgPoolItems.reduce((s, i) => s + (i.size || 0), 0);
+    $("#imgpool-stat").textContent = "共 " + imgPoolItems.length + " 张 · 已压缩 " + done + " · 待压缩 " + todo + " · 合计 " + fmtSize(totalBytes);
+    $("#imgpool-cnt-done").textContent = done;
+    $("#imgpool-cnt-todo").textContent = todo;
+    $("#imgpool-compress").textContent = "压缩选中(" + imgPoolSelected.size + ")";
+    $("#imgpool-compress").disabled = imgPoolBusy || imgPoolSelected.size === 0;
+    $("#imgpool-compress-all").disabled = imgPoolBusy || todo === 0;
+  }
+  async function imgPoolRender() {
+    const tok = await SB.currentToken().catch(() => "");
+    const doneGrid = $("#imgpool-grid-done");
+    const todoGrid = $("#imgpool-grid-todo");
+    doneGrid.innerHTML = ""; todoGrid.innerHTML = "";
+    imgPoolItems.forEach((it) => {
+      const isDone = it.size <= IMG_POOL_TARGET;
+      const cell = document.createElement("div");
+      cell.className = "imgpool-cell" + (isDone ? "" : " todo");
+      if (!isDone && imgPoolSelected.has(it.key)) cell.classList.add("sel");
+      const url = urlOfPath(it.key, tok);
+      cell.innerHTML =
+        '<img class="imgpool-thumb" src="' + escAttr(url) + '" loading="lazy" alt=""><span class="imgpool-size">' + fmtSize(it.size) + '</span>' +
+        (isDone ? "" : '<label class="imgpool-chk"><input type="checkbox" data-key="' + escAttr(it.key) + '"' + (imgPoolSelected.has(it.key) ? " checked" : "") + '></label>') +
+        '<span class="imgpool-actions"><button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>' +
+        (isDone ? '<button class="imgpool-reconv" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button" title="即使≤200KB也可强制转WebP">转WEB</button>' : '') +
+        "</span>";
+      const img = cell.querySelector(".imgpool-thumb");
+      if (img) img.onerror = () => { img.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="100%" height="100%" fill="#f0f0f0"/><text x="50%" y="50%" font-size="10" fill="#999" text-anchor="middle" dominant-baseline="middle">?IMG</text></svg>'); };
+      // 单击缩略图预览清晰度
+      cell.addEventListener("click", (e) => {
+        if (e.target.closest(".imgpool-chk") || e.target.closest(".imgpool-actions")) return;
+        openImgZoom(url, it.key + " · " + fmtSize(it.size));
+      });
+      (isDone ? doneGrid : todoGrid).appendChild(cell);
+    });
+    // 双击勾选：等待下次渲染保持选中态
+    imgPoolRenderCheck();
+    imgPoolStat();
+  }
+  function imgPoolRenderCheck() {
+    document.querySelectorAll("#imgpool-grid-todo .imgpool-chk input").forEach(chk => {
+      chk.onchange = (e) => {
+        const key = e.target.getAttribute("data-key");
+        if (e.target.checked) imgPoolSelected.add(key); else imgPoolSelected.delete(key);
+        const cell = e.target.closest(".imgpool-cell");
+        if (cell) cell.classList.toggle("sel", e.target.checked);
+        imgPoolStat();
+      };
+    });
+    document.querySelectorAll(".imgpool-prev").forEach(btn => {
+      btn.onclick = (e) => { e.stopPropagation(); openImgZoom(btn.getAttribute("data-url"), btn.getAttribute("data-key") + " · 预览"); };
+    });
+    document.querySelectorAll(".imgpool-reconv").forEach(btn => {
+      btn.onclick = (e) => { e.stopPropagation(); imgPoolConvertOne(btn.getAttribute("data-key")); };
+    });
+  }
+  async function imgPoolLoad() {
+    if (imgPoolBusy) return;
+    imgPoolBusy = true;
+    $("#imgpool-refresh").disabled = true;
+    $("#imgpool-progress").classList.remove("hidden");
+    const bar = $("#imgpool-progress-bar"), txt = $("#imgpool-progress-text");
+    bar.style.width = "0%";
+    txt.textContent = "正在读取存储清单…";
+    try {
+      imgPoolItems = await SB.listStorageImgs();
+      imgPoolSelected.clear();
+      await imgPoolRender();
+      txt.textContent = "清单已加载：共 " + imgPoolItems.length + " 张";
+      sbToast("清单已加载：" + imgPoolItems.length + " 张图片", true);
+    } catch (e) {
+      txt.textContent = "读取失败：" + (e.message || "");
+      sbToast("读取失败：" + (e.message || ""), false);
+    } finally {
+      imgPoolBusy = false;
+      $("#imgpool-refresh").disabled = false;
+    }
+  }
+  // 压缩一张：拉原图 → 压成 ≤200KB WebP → 覆盖写回 → 刷新该卡大小
+  async function imgPoolCompressOne(it) {
+    let tok = "";
+    try { tok = await SB.currentToken(); } catch (e) { tok = ""; }
+    const url = urlOfPath(it.key, tok);
+    const r = await fetch(url, { headers: { Authorization: "Bearer " + tok } });
+    if (!r.ok) throw new Error("拉图失败 " + r.status);
+    const blob = await r.blob();
+    // 从网络 blob 转 File 以便压缩引擎校验 type
+    const ext = (it.key.match(/\.([a-z0-9]+)$/i) || [])[1] || "jpg";
+    const file = new File([blob], "img." + ext, { type: (blob.type && /^image\//i.test(blob.type)) ? blob.type : "image/jpeg" });
+    let compressed = await SB.compress(file);
+    // 压缩引擎兜底会保留原图；若未能压小（罕见），强制以较低质量 WebP 重编码一遍，确保落到 200KB 以下
+    if (!compressed || compressed.size >= it.size || compressed.size > IMG_POOL_TARGET) {
+      const force = await SB.compress(new File([blob], "img.webp", { type: "image/webp" }));
+      if (force && force.size < it.size) compressed = force;
+    }
+    if (!compressed || (compressed.size >= it.size && it.size <= IMG_POOL_TARGET)) return; // 已达标或确实无法缩小，不覆盖
+    await SB.overwriteStoredImg(it.key, compressed);
+    it.size = compressed.size;
+  }
+  async function imgPoolConvertOne(key) {
+    const it = imgPoolItems.find(x => x.key === key);
+    if (!it || imgPoolBusy) return;
+    imgPoolBusy = true;
+    $("#imgpool-progress").classList.remove("hidden");
+    const txt = $("#imgpool-progress-text");
+    txt.textContent = "正在转换：" + key;
+    try {
+      await imgPoolCompressOne(it);
+      imgPoolSelected.delete(key);
+      await imgPoolRender();
+      txt.textContent = "已转换：" + key + " → " + fmtSize(it.size);
+      sbToast("已转换：" + key, true);
+    } catch (e) {
+      txt.textContent = "转换失败：" + key + "（" + (e.message || "") + "）";
+      sbToast("转换失败：" + key, false);
+    } finally {
+      imgPoolBusy = false;
+    }
+  }
+  async function imgPoolCompressBatch(keys) {
+    if (imgPoolBusy) return;
+    if (!keys.length) { sbToast("请先勾选要压缩的图片", false); return; }
+    imgPoolBusy = true;
+    $("#imgpool-progress").classList.remove("hidden");
+    const bar = $("#imgpool-progress-bar"), txt = $("#imgpool-progress-text");
+    let ok = 0, fail = 0;
+    bar.style.width = "0%";
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const it = imgPoolItems.find(x => x.key === key);
+      if (!it) continue;
+      txt.textContent = "压缩中…（" + (i + 1) + "/" + keys.length + "）" + key;
+      bar.style.width = Math.round(((i) / keys.length) * 100) + "%";
+      try {
+        await imgPoolCompressOne(it);
+        imgPoolSelected.delete(key);
+        ok++;
+        await imgPoolRender();           // 每次成功后重绘（自动跳左池）
+      } catch (e) { fail++; }
+    }
+    bar.style.width = "100%";
+    txt.textContent = "完成：成功 " + ok + " 张，失败 " + fail + " 张";
+    await imgPoolStat();
+    imgPoolBusy = false;
+    imgPoolRenderCheck();
+    sbToast("批量压缩完成：成功 " + ok + "，失败 " + fail, fail === 0);
+  }
+  function bindImagePool() {
+    const refresh = $("#imgpool-refresh");
+    if (!refresh) return;
+    refresh.addEventListener("click", imgPoolLoad);
+    const selall = $("#imgpool-selall");
+    const selnone = $("#imgpool-selnone");
+    const compress = $("#imgpool-compress");
+    const compressAll = $("#imgpool-compress-all");
+    if (selall) selall.addEventListener("click", () => {
+      imgPoolItems.forEach(i => { if (i.size > IMG_POOL_TARGET) imgPoolSelected.add(i.key); });
+      imgPoolRenderCheck(); imgPoolStat();
+      document.querySelectorAll("#imgpool-grid-todo .imgpool-chk input").forEach(c => { if (imgPoolSelected.has(c.getAttribute("data-key"))) c.checked = true; });
+    });
+    if (selnone) selnone.addEventListener("click", () => {
+      imgPoolSelected.clear();
+      imgPoolRender(); imgPoolStat();
+    });
+    if (compress) compress.addEventListener("click", () => imgPoolCompressBatch([...imgPoolSelected]));
+    if (compressAll) compressAll.addEventListener("click", () => {
+      const todo = imgPoolItems.filter(i => i.size > IMG_POOL_TARGET).map(i => i.key);
+      if (!todo.length) { sbToast("当前没有待压缩的图片", false); return; }
+      if (!confirm("确认压缩全部 " + todo.length + " 张待压缩图片？此操作会覆盖原图（URL不变），请确保已备份。")) return;
+      imgPoolCompressBatch(todo);
+    });
+    // 首次进入面板时自动加载清单
+    imgPoolLoad();
+  }
+
   // ================= BESTSELLER 专区：后台管理 =================
 let bestsellerTasks = [];
   let bestsellerAllSubs = [];

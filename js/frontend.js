@@ -24,6 +24,7 @@
   let dimSwitches = {};  // 各维度是否在前台展示
   let catVisibility = {}; // 各专区各类目是否前台可见
   let zoneVis = {};       // 各专区本身是否前台可见
+  let myZones = null;      // 当前登录用户级可见专区白名单（null/空 = 未配置，回退全局）
 
   let activeCats = [];
   let usedCats = [];
@@ -138,6 +139,12 @@
     SB.onAuth((session) => {
       window.__loggedIn = !!session;
       window.__authReady = true;
+      // 登录态变化后刷新用户级可见专区白名单，重跑守卫
+      SB.myManageZones().then((z) => {
+        myZones = z;
+        refreshAuthUI();
+        applyZoneNav();
+      }).catch(() => { myZones = null; });
       maybeBoot();
     });
 
@@ -264,7 +271,7 @@
 
   function refreshAuthUI() {
     // 视觉专区被隐藏守卫：即使直接访问首页也拦截，提示暂未开放
-    if (zoneVis && zoneVis.visual === false) {
+    if (!zoneVisible("visual")) {
       $("#login-btn").classList.add("hidden");
       $("#logout-btn").classList.add("hidden");
       $("#gallery-view").classList.add("hidden");
@@ -500,13 +507,17 @@
   }
 
   // 某专区本身是否前台可见（未配置默认可见）
+  // 优先按当前登录用户级白名单（myZones 非空数组）判断；未配置/未登录回退到全局 frontend_zone_visibility。
   function zoneVisible(zone) {
+    if (Array.isArray(myZones) && myZones.length) {
+      if (zoneVis && zoneVis[zone] === false) return false;
+      return myZones.indexOf(zone) !== -1;
+    }
     return !zoneVis || zoneVis[zone] !== false;
   }
 
   // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏
   function applyZoneNav() {
-    const t = zoneVis || {};
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
       let z = null;
@@ -515,7 +526,7 @@
       else if (href === "trends.html#recruit") z = "recruit";
       else if (href === "trends.html#bestseller") z = "bestseller";
       else if (a.id === "notice-tab") z = "notice";
-      a.style.display = (z && t[z] === false) ? "none" : "";
+      a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
   }
 

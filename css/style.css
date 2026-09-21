@@ -1034,7 +1034,7 @@ select.input {
 .recruit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .recruit-card { position: relative; background: transparent; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; transition: transform .2s, box-shadow .2s, border-color .2s; display: flex; flex-direction: column; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
 .recruit-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 8px 22px rgba(0,0,0,.3); }
-.recruit-img { position: relative; width: 100%; aspect-ratio: 1 / 1; overflow: hidden; background: rgba(255,255,255,.03); }
+.recruit-img { position: relative; width: 100%; aspect-ratio: 3 / 4; overflow: hidden; background: rgba(255,255,255,.03); }
 .recruit-thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; z-index: 1; }
 .recruit-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 13px; z-index: 0; }
 .recruit-no { position: absolute; top: 7px; left: 7px; width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #ffe27a 0%, #f4b400 70%); color: #3a241e; font-weight: 800; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.5); z-index: 2; }
@@ -1099,7 +1099,7 @@ select.input {
 .recruit-acard{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.09);border-radius:14px;overflow:hidden;transition:.25s}
 .recruit-acard:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.35)}
 .recruit-acard.sel{border-color:var(--gold);box-shadow:0 0 0 2px rgba(217,168,73,.35)}
-.recruit-acard-imghold{position:relative;aspect-ratio:1/1;background:rgba(255,255,255,.03)}
+.recruit-acard-imghold{position:relative;aspect-ratio:3/4;background:rgba(255,255,255,.03)}
 .recruit-acard-img{width:100%;height:100%;object-fit:cover;display:block}
 .recruit-acard-no{position:absolute;top:8px;left:8px;min-width:24px;height:24px;line-height:24px;padding:0 6px;text-align:center;background:#f4c95d;color:#241c10;font-size:13px;font-weight:700;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.4)}
 .recruit-acard-del{position:absolute;top:6px;right:6px;width:22px;height:22px;line-height:20px;text-align:center;background:rgba(120,40,38,.85);color:#fff;border-radius:6px;cursor:pointer;font-size:15px}
@@ -1801,6 +1801,20 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .perm-cat-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--txt); padding: 6px 12px; border: 1px solid rgba(0,0,0,.12); border-radius: 999px; cursor: pointer; transition: all .15s; }
 .perm-cat-item:hover { border-color: var(--gold); }
 .perm-cat-item input { accent-color: var(--gold); width: 14px; height: 14px; cursor: pointer; }
+/* 用户权限分配表 */
+.perm-table-wrap { overflow-x: auto; margin: 12px 0; }
+.perm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.perm-table th { text-align: left; padding: 10px 12px; background: rgba(0,0,0,.03); color: var(--sub, #666); font-weight: 600; border-bottom: 1px solid rgba(0,0,0,.1); white-space: nowrap; }
+.perm-table td { padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,.06); vertical-align: top; }
+.perm-table tbody tr:hover { background: rgba(0,0,0,.02); }
+.perm-td-role { white-space: nowrap; font-weight: 600; }
+.perm-td-zones { max-width: 260px; }
+.perm-table-body .hint { padding: 10px; display: block; }
+/* 用户级可见专区勾选 */
+.perm-zones { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; min-height: 48px; }
+.perm-zone-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--txt); padding: 6px 12px; border: 1px solid rgba(0,0,0,.12); border-radius: 999px; cursor: pointer; transition: all .15s; }
+.perm-zone-item:hover { border-color: var(--gold); }
+.perm-zone-item input { accent-color: var(--gold); width: 14px; height: 14px; cursor: pointer; }
 .rg-btnrow { margin-top: 16px; display: flex; justify-content: flex-end; }
 
 /* 招品 / BESTSELLER 左侧类目菜单栏 */
@@ -1846,3 +1860,27 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .upload-progress.hidden { display: none; }
 .upload-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width .25s; border-radius: 999px; }
 .upload-progress-txt { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* ================= 存量图片压缩池（超管） ================= */
+.imgpool-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.imgpool-toolbar .imgpool-batch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.imgpool-stat { font-size: 12px; color: var(--muted); margin-left: auto; }
+.imgpool-progress { height: 16px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; position: relative; margin-bottom: 12px; }
+.imgpool-progress .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width .2s; }
+.imgpool-progress-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--gold2); text-shadow: 0 0 4px rgba(0,0,0,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imgpool-pools { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.imgpool-pool { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+.imgpool-pool-head { padding: 9px 14px; font-size: 13px; font-weight: 700; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--line); letter-spacing: .5px; }
+.imgpool-pool-head .sp-count { margin-left: 6px; font-weight: 400; color: var(--sub); }
+.imgpool-grid { padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: 520px; overflow-y: auto; align-content: start; grid-auto-rows: max-content; }
+.imgpool-cell { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: rgba(0,0,0,.2); cursor: zoom-in; }
+.imgpool-cell.todo { border:none; outline: 1px solid rgba(139,115,85,.4); }
+.imgpool-cell.sel { outline: 2px solid var(--gold); outline-offset: -2px; }
+.imgpool-thumb { display: block; width: 100%; aspect-ratio: 3/4; object-fit: cover; background: #000; }
+.imgpool-size { position: absolute; left: 0; bottom: 0; right: 0; padding: 2px 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); text-align: center; }
+.imgpool-chk { position: absolute; top: 4px; left: 4px; z-index: 3; }
+.imgpool-chk input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--gold); }
+.imgpool-actions { position: absolute; top: 4px; right: 4px; z-index: 3; display: flex; gap: 4px; }
+.imgpool-actions button { font-size: 11px; padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
+.imgpool-actions button:hover { background: rgba(0,0,0,.75); }
+@media (max-width: 720px) { .imgpool-pools { grid-template-columns: 1fr; } }

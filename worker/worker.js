@@ -423,6 +423,37 @@ async function isPublicAccess(env) {
     return json({ ok: true }, 200, CORS);
   }
 
+  // 7. 存量图片压缩池：列出存储全部图片（key + size），仅管理员
+  if (method === "GET" && path === "admin/list-imgs") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    const items = [];
+    let cursor;
+    do {
+      const page = await env.IMAGES.list({ cursor, limit: 1000 });
+      for (const o of (page.objects || [])) items.push({ key: o.key, size: o.size });
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    return json({ ok: true, items }, 200, CORS);
+  }
+
+  // 8. 存量图片压缩池：按原路径覆盖写回压缩后的图（转 WebP），仅管理员
+  if (method === "POST" && path === "admin/overwrite") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p) return json({ error: "参数错误" }, 400, CORS);
+    const form = await request.formData().catch(() => null);
+    const file = form ? form.get("file") : null;
+    if (!file) return json({ error: "缺少文件" }, 400, CORS);
+    await env.IMAGES.put(p, file.stream(), {
+      httpMetadata: { contentType: file.type || "image/webp" },
+    });
+    return json({ ok: true }, 200, CORS);
+  }
+
   return json({ error: "未知请求" }, 404, CORS);
 }
 

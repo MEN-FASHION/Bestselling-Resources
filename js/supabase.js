@@ -29,15 +29,15 @@ const SB = (() => {
     }
   }
 
-  // ---------- 上传前自动转 WebP：大图转成 WebP 节省空间，小图不转 ----------
-  // 仅对图片生效；默认转 WebP（同观感但体积更小）；已是小图或压缩不划算时保留原图；
-  // 失败时回退原文件，绝不丢图。
+  // ---------- 上传前自动压缩：按体积强制压到 200KB 以下 WebP ----------
+  // 无论原图尺寸与格式如何，只要文件超过目标体积就压缩成 WebP；
+  // 用「逐步降质量 + 必要时缩小尺寸」双梯度逼近目标体积，确保不影响观感；
+  // 一律不再以尺寸作判断，只以文件大小校验；失败时回退原文件，绝不丢图。
   async function compressImage(file) {
     if (!file || !/^image\//i.test(file.type || "")) return file;
-    const MAX_EDGE = 1600;            // 最长边上限
-    const SMALL_BYTES = 300 * 1024;   // 小于 300KB 视为已足够小，直接返回原图（不转）
-    const CANVAS_MAX = 1920;          // 超过此尺寸才考虑转码（避免无谓变换）
-    if (file.size <= SMALL_BYTES) return file;
+    const TARGET = 200 * 1024;        // 目标体积：200KB 以下
+    const HEADROOM = 0.92;            // 留出余量，避免刚好边缘
+    if (file.size <= TARGET) return file;   // 已达标，不处理
     try {
       const dataUrl = await new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -51,24 +51,49 @@ const SB = (() => {
         im.onerror = reject;
         im.src = dataUrl;
       });
-      const w = img.naturalWidth || 0;
-      const h = img.naturalHeight || 0;
-      if (!w || !h || (w <= CANVAS_MAX && h <= CANVAS_MAX && file.size <= 900 * 1024)) return file;
-      const scale = Math.min(1, MAX_EDGE / Math.max(w, h));
-      const cw = Math.max(1, Math.round(w * scale));
-      const ch = Math.max(1, Math.round(h * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = cw;
-      canvas.height = ch;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";           // 白底，避免透明 PNG 转 JPEG 变黑底
-      ctx.fillRect(0, 0, cw, ch);
-      ctx.drawImage(img, 0, 0, cw, ch);
-      // 默认转 WebP：同观感、体积更小，现代浏览器与移动端全支持，观看无差异
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
-      if (!blob || blob.size >= file.size) return file;   // 转码不划算则保留原图
+      const w0 = img.naturalWidth || 0;
+      const h0 = img.naturalHeight || 0;
+      if (!w0 || !h0) return file;
+      const limit = Math.floor(TARGET * HEADROOM);
+
+      // 在指定尺寸/质量下编码一次，返回 blob（失败返回 null）
+      const encode = (cw, ch, q) => new Promise((resolve) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";        // 白底，避免透明图转 WebP 变黑底
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(img, 0, 0, cw, ch);
+        canvas.toBlob(resolve, "image/webp", q);
+      });
+
+      // 梯度1：保持原尺寸，逐步降质量
+      let best = null;
+      const qualities = [0.82, 0.7, 0.6, 0.5, 0.4, 0.3];
+      for (const q of qualities) {
+        const blob = await encode(w0, h0, q);
+        if (blob && blob.size <= limit && (!best || blob.size < best.size)) best = blob;
+        if (blob && blob.size <= limit) break;
+      }
+      // 梯度2：若降质量仍超限，按比例缩小尺寸再压
+      if (!best) {
+        const ratios = [0.7, 0.5, 0.38, 0.28];
+        for (const r of ratios) {
+          const cw = Math.max(1, Math.round(w0 * r));
+          const ch = Math.max(1, Math.round(h0 * r));
+          const blob = await encode(cw, ch, 0.75);
+          if (blob && blob.size <= limit) { best = blob; break; }
+        }
+      }
+      // 兜底：若仍然超限，取当前最小可用的一个，且确保小于原图
+      if (!best) {
+        const blob = await encode(Math.max(1, Math.round(w0 * 0.22)), Math.max(1, Math.round(h0 * 0.22)), 0.6);
+        if (blob) best = blob;
+      }
+      if (!best || best.size >= file.size) return file;   // 转码不划算则保留原图（极端情况，不丢图）
       // 保留原文件名，仅替换内容与 MIME，避免影响去重/命名逻辑
-      return new File([blob], file.name, { type: "image/webp" });
+      return new File([best], file.name, { type: "image/webp" });
     } catch (e) {
       return file;
     }
@@ -187,6 +212,36 @@ const SB = (() => {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "删除失败");
+    },
+
+    // ============ 存量图片压缩池 ============
+    // 对外暴露压缩引擎（供压缩池把任意图转成 ≤200KB WebP）
+    async compress(file) {
+      return compressImage(file);
+    },
+    // 列出存储里全部图片（key + 字节数），供左右池子区分「已压缩 / 待压缩」
+    async listStorageImgs() {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/admin/list-imgs", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "读取清单失败");
+      return (j.items || []);
+    },
+    // 用压缩后的 WebP 覆盖写回原路径（URL 不变）
+    async overwriteStoredImg(path, file) {
+      const token = await currentToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/admin/overwrite?path=" + encodeURIComponent(path), {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "覆盖失败");
+      return true;
     },
 
     // ============ DB（图片清单） ============
@@ -389,9 +444,11 @@ const SB = (() => {
     // 带进度上传（XHR 支持 progress；onProgress 回调 0-100 百分比）
     async uploadTrendFileXHR(file, cover, onProgress) {
       const token = await currentToken();
+      // 主文件与封面都强制压缩到 200KB 以下（按文件大小驱动，不按尺寸）
+      const f = await compressImage(file);
       const c = cover ? await compressImage(cover) : null;
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", f);
       if (c) fd.append("cover", c);
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -1005,7 +1062,7 @@ const SB = (() => {
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role").order("created_at", { ascending: true });
+      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
       return data || [];
     },
@@ -1013,6 +1070,27 @@ const SB = (() => {
     async setUserRole(userId, role) {
       const { error } = await client.from("profiles").update({ role }).eq("user_id", userId);
       if (error) throw new Error(error.message || "更新角色失败");
+    },
+    // 超管：读取某用户级可见专区白名单（manage_zones 数组；空/缺省 = 未配置，回退全局）
+    async getUserManageZones(userId) {
+      const { data, error } = await client.from("profiles").select("manage_zones").eq("user_id", userId).maybeSingle();
+      if (error) throw new Error(error.message || "读取专区白名单失败");
+      return (data && Array.isArray(data.manage_zones)) ? data.manage_zones : [];
+    },
+    // 超管：写入某用户级可见专区白名单（manage_zones 数组；传空数组 = 回退全局）
+    async setUserManageZones(userId, zones) {
+      const clean = [...new Set((zones || []).filter(Boolean))];
+      const { error } = await client.from("profiles").update({ manage_zones: clean }).eq("user_id", userId);
+      if (error) throw new Error(error.message || "更新专区白名单失败");
+    },
+    // 前台：读取当前登录用户的可见专区白名单（供专区守卫；null = 未配置，回退全局）
+    async myManageZones() {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return null;
+      const { data, error } = await client.from("profiles").select("manage_zones").eq("user_id", uid).maybeSingle();
+      if (error) return null;
+      return (data && Array.isArray(data.manage_zones)) ? data.manage_zones : null;
     },
     // 超管：写入某管理员的类目授权（一套共享，跨专区共用）。zone 参数仅为兼容保留，
     // 实际把类目同时写入 recruit/bestseller 两个 zone，保证四个专区读取都能命中同一套。

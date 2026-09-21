@@ -9,6 +9,8 @@ create table if not exists public.profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
   email text,
   role text not null default 'visitor' check (role in ('visitor', 'admin', 'super_admin')),
+  -- 用户级前台可见专区白名单（manage_zones 数组；空/缺省 = 未配置，前台回退到全局 frontend_zone_visibility）
+  manage_zones jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -19,6 +21,19 @@ drop policy if exists "select own profile" on public.profiles;
 create policy "select own profile"
   on public.profiles for select
   using (auth.uid() = user_id);
+
+-- 超管：可读全部用户清单（权限管理页用）
+drop policy if exists "super select all profiles" on public.profiles;
+create policy "super select all profiles"
+  on public.profiles for select
+  using (public.is_super_admin());
+
+-- 超管：可更新任意用户的角色 / 用户级可见专区白名单（manage_zones）
+drop policy if exists "super update all profiles" on public.profiles;
+create policy "super update all profiles"
+  on public.profiles for update
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
 
 -- 允许用户首次登录时自动插入自己的 profile
 create or replace function public.handle_new_user()
