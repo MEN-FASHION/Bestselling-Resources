@@ -41,7 +41,7 @@ GitHub Pages（静态页面）
 ### 第 2 步：执行数据库初始化
 1. 项目 → **SQL Editor** → New query。
 2. 打开 `tools/setup.sql`，全选复制运行。
-3. 自动创建：`profiles` 表（角色）、`images` 表（清单）、安全策略、注册自动建档。
+3. 自动创建：`profiles` 表（角色）、`images` 表（清单）、`categories`/`tag_defs`/`site_settings`/`announcements`/`trends`/`recruit_tasks` 等表、安全策略、注册自动建档，以及两个前台专用函数 `frontend_list_images`（前台读全部图片）和 `frontend_list_used_cats`（前台类目菜单读全部图片类目）。
 
 ### 第 3 步：开启邮箱登录
 - 项目 → **Authentication → Providers → Email** 开启，建议关闭 Confirm email。
@@ -131,6 +131,7 @@ GitHub Pages（静态页面）
 - **看图 401**：登录态过期，重新登录即可（Worker 会校验令牌）。
 - **上传提示无管理员权限**：确认当前账号已在 SQL 里升级为 admin。
 - **上传/看图报 404**：Worker 的 R2 Binding 变量名必须叫 `IMAGES`，且绑定到 `images` 桶。
+- **前台能看图但类目菜单为空/不全**：前台图片清单与类目菜单都必须走免权限函数（`frontend_list_images` 看全部图、`frontend_list_used_cats` 看全部图片类目）。若菜单只剩「全部」，说明 `frontend_list_used_cats` 函数未创建，或线上 `js/supabase.js` 仍是旧版（直接查 `images` 表、受后台 RLS 限制，普通管理员/访客只看到自己上传图的类目）。在 SQL Editor 执行 `tools/setup.sql`（或单独建该函数）并覆盖最新 `js/supabase.js` 即可。
 - **为什么要 Worker 而不是直接放桶**：R2 桶保持私有，任何请求都要 Worker 校验令牌，未登录无法拿到图片，实现”真私密”。
 
 ---

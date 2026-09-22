@@ -290,10 +290,13 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存顺序失败");
     },
     // 实际上有图片的类目（从 images 表）
+    // 前台类目菜单专用：所有登录用户读取图片里实际用到的全部类目
+    // （与 frontend_list_images 同理，用 security definer 函数绕开后台 RLS，
+    //   避免普通管理员/访客在前台只看到自己上传图的类目）
     async listUsedCats() {
-      const { data, error } = await client.from("images").select("category").order("category");
+      const { data, error } = await client.rpc("frontend_list_used_cats");
       if (error) throw new Error(error.message || "读取失败");
-      return [...new Set((data || []).map(d => d.category))];
+      return (data || []).filter(v => v && String(v).trim());
     },
     // 管理员新增类目
     async addCategory(name) {

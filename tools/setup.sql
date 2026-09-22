@@ -895,3 +895,16 @@ as $$
   order by created_at desc;
 $$;
 grant execute on function public.frontend_list_images() to authenticated;
+
+-- ---------- 前台类目菜单专用：所有登录用户可读取图片实际用到的全部类目 ----------
+-- 说明：前台类目菜单的 listUsedCats 若直接查 images 表会受 RLS 限制（普通管理员/访客
+--       只看到自己上传图的类目），故同样用 security definer 函数绕过，返回全量图片类目。
+--       仅前台（js/supabase.js 的 listUsedCats）调用。
+drop function if exists public.frontend_list_used_cats();
+create function public.frontend_list_used_cats()
+returns text[]
+language sql security definer stable
+as $$
+  select array_agg(distinct category) from public.images where category is not null;
+$$;
+grant execute on function public.frontend_list_used_cats() to authenticated;
