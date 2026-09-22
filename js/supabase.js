@@ -252,6 +252,13 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
     },
+    // 前台浏览专用：所有登录用户读取全部已发布图片（走 security definer 函数，
+    // 绕过后台"智能打标"里"管理员只看自己上传的"这条 RLS 限制，仅前台前端调用）
+    async listFrontendImages() {
+      const { data, error } = await client.rpc("frontend_list_images");
+      if (error) throw new Error(error.message || "读取失败");
+      return data || [];
+    },
     // 返回所有已上传图片名（用于上传时去重校验，避免重复传图）
     async listImageNames() {
       const { data, error } = await client.from("images").select("name");

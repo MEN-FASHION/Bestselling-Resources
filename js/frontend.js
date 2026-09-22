@@ -695,7 +695,7 @@
     grid.innerHTML = "";
     let imgs = [];
     try {
-      imgs = await SB.listImages("全部");
+      imgs = await SB.listFrontendImages();
     } catch (e) { Auth.toast("读取图片失败", false); }
     const catImgs = imgs.filter(i => catCatVisible("visual", i.category));
     catCounts = {};

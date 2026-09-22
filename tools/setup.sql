@@ -881,3 +881,17 @@ insert into public.bestseller_categories (name, sort_order)
 select c.name, c.sort_order
 from public.categories c
 on conflict (name) do nothing;
+
+-- ---------- 前台浏览专用：所有登录用户可读取全部已发布图片 ----------
+-- 说明：images 表默认只让 super_admin 读全部、其它人只看自己上传的（后台智能打标专用 RLS）。
+--       前台浏览（视觉专区）需要让所有登录用户看到全部图，故用 security definer 函数绕过该 RLS。
+--       仅前台（frontend.js）调用，后台智能打标仍走受 RLS 限制的 listImages（管理员只看自己上传的）。
+drop function if exists public.frontend_list_images();
+create function public.frontend_list_images()
+returns setof public.images
+language sql security definer stable
+as $$
+  select * from public.images
+  order by created_at desc;
+$$;
+grant execute on function public.frontend_list_images() to authenticated;
