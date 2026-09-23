@@ -1855,7 +1855,10 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .perm-table th { text-align: left; padding: 10px 12px; background: rgba(0,0,0,.03); color: var(--sub, #666); font-weight: 600; border-bottom: 1px solid rgba(0,0,0,.1); white-space: nowrap; }
 .perm-table td { padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,.06); vertical-align: top; }
 .perm-table tbody tr:hover { background: rgba(0,0,0,.02); }
+/* 权限表「用户标签」列：不用色块区分（标签自由填写），仅稳妥展示 + 未标注占位 */
 .perm-td-role { white-space: nowrap; font-weight: 600; }
+.perm-td-tag { white-space: nowrap; font-size: 13px; color: var(--txt, #222); }
+.perm-td-tag .hint { color: var(--sub, #999); font-size: 12px; }
 .perm-td-zones { max-width: 260px; }
 .perm-td-device { max-width: 220px; word-break: break-all; white-space: normal; font-size: 12px; }
 .perm-td-ip { white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; color: var(--sub, #666); }

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923D">
+<link rel="stylesheet" href="css/style.css?v=20260923H">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -332,7 +332,7 @@
         <hr class="tag-sub-hr">
         <div class="super-sub" data-sv="sv-2" style="display:none;">
           <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
-          <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【角色】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
+          <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【用户】【角色】【标签】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
 
           <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
           <div class="perm-table-wrap">
@@ -341,6 +341,7 @@
                 <tr>
                   <th>用户</th>
                   <th>角色</th>
+                  <th>标签</th>
                   <th>可管理类目</th>
                   <th>已授权专区</th>
                   <th>登录设备</th>
@@ -348,7 +349,7 @@
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="7" class="hint">加载中…</td></tr></tbody>
+              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="8" class="hint">加载中…</td></tr></tbody>
             </table>
           </div>
 
@@ -361,6 +362,8 @@
               <option value="admin">管理员</option>
               <option value="super_admin">超级管理员</option>
             </select>
+            <label class="field" style="margin-left:8px">标签</label>
+            <input id="perm-tag" class="input" type="text" placeholder="如：招商/测试/内部/商家（可留空）" style="max-width:180px" />
             <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
           </div>
           <div class="perm-zone">
@@ -379,6 +382,25 @@
           </div>
           <div class="rg-btnrow">
             <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
+          </div>
+
+          <hr class="tag-sub-hr">
+          <div class="perm-zone" style="margin-top:12px">
+            <h4 class="perm-zone-title">新用户默认权限设置 <span class="hint-inline">（对之后新注册的用户生效，不修改已有用户）</span></h4>
+            <div class="rg-row" style="margin-bottom:8px">
+              <label class="field">默认角色</label>
+              <select id="dperm-role" class="input">
+                <option value="visitor">访客</option>
+                <option value="admin">管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+              <span class="hint" style="margin-left:10px">新用户注册后自动获得该角色（建议仅「访客」，管理员/超管用下方逐用户授权）</span>
+            </div>
+            <h4 class="perm-zone-title">默认可见专区（前台）<span class="hint-inline">（勾选新用户注册后默认可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示）</span></h4>
+            <div id="dperm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            <div class="rg-btnrow">
+              <button id="dperm-save" class="btn-primary" type="button">保存默认权限</button>
+            </div>
           </div>
         </div>
 
@@ -890,9 +912,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923D"></script>
-  <script src="js/supabase.js?v=20260923D"></script>
-  <script src="js/admin.js?v=20260923D"></script>
+  <script src="js/config.js?v=20260923H"></script>
+  <script src="js/supabase.js?v=20260923H"></script>
+  <script src="js/admin.js?v=20260923H"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

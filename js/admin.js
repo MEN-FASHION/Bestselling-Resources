@@ -4560,11 +4560,21 @@ let recruitTasks = [];
     { key: "bestseller", label: "BESTSELLER" },
     { key: "notice", label: "公告" },
   ];
+  // 全局可见专区的 key 列表（用于「未单独配置用户级专区」的用户展开显示其实际可见的专区）
+  // 跟随全局 = 显示全局 frontend_zone_visibility 中可见的专区；供权限表「已授权专区」列直接列出
+  let permGlobalZones = [];
   function permRoleLabel(r) {
     return r === "super_admin" ? "超级管理员" : r === "admin" ? "管理员" : "访客";
   }
   async function loadPermPanel() {
     try { permUsers = await SB.listAdminUsers(); } catch (e) { permUsers = []; }
+    // 读取全局可见专区，未单独配置（manage_zones 为空）的用户则按全局展开列出可见专区
+    try {
+      const gz = await SB.getFrontendZoneVisibility().catch(() => ({}));
+      permGlobalZones = PERM_ZONES.filter(z => gz[z.key] !== false).map(z => z.key);
+    } catch (e) {
+      permGlobalZones = PERM_ZONES.map(z => z.key);
+    }
     // 合并每个用户最近一次登录的设备与 IP（安全设置）
     if (permUsers.length) {
       try {
@@ -4589,12 +4599,49 @@ let recruitTasks = [];
       sel.appendChild(o);
     });
     if (permUsers.length) { await loadPermForUser(permUsers[0]); }
+    await loadDefaultPerms();
+  }
+  // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
+  async function loadDefaultPerms() {
+    const roleSel = $("#dperm-role");
+    if (!roleSel) return;
+    let def = { role: "visitor", zones: [] };
+    try { def = await SB.getDefaultPerms().catch(() => ({ role: "visitor", zones: [] })); } catch (e) {}
+    roleSel.value = def.role || "visitor";
+    renderDefaultZones(def.zones || []);
+  }
+  function renderDefaultZones(checked) {
+    const box = $("#dperm-zones");
+    if (!box) return;
+    box.innerHTML = "";
+    const set = new Set((checked || []));
+    PERM_ZONES.forEach(z => {
+      const lab = document.createElement("label");
+      lab.className = "perm-zone-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = z.key; cb.checked = set.has(z.key);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
+      box.appendChild(lab);
+    });
+  }
+  function bindDefaultPerms() {
+    const save = $("#dperm-save");
+    if (!save) return;
+    save.onclick = async () => {
+      const role = $("#dperm-role")?.value || "visitor";
+      const zones = [...document.querySelectorAll("#dperm-zones input:checked")].map(i => i.value);
+      try {
+        await SB.setDefaultPerms(role, zones);
+        sbToast("新用户默认权限已保存，之后新注册用户生效");
+        await loadDefaultPerms();
+      } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+    };
   }
   // 用户权限分配表：总览所有用户角色与权限内容
   async function renderPermTable(users) {
     const body = $("#perm-table-body");
     if (!body) return;
-    if (!users.length) { body.innerHTML = '<tr><td colspan="7" class="hint">暂无用户</td></tr>'; return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="8" class="hint">暂无用户</td></tr>'; return; }
     body.innerHTML = "";
     // 预取每个用户的类目授权，用于总览摘要
     const catCounts = {};
@@ -4607,15 +4654,19 @@ let recruitTasks = [];
     users.forEach(u => {
       const tr = document.createElement("tr");
       const zones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
-      const zoneTxt = zones.length ? zones.map(z => {
+      // 「已授权专区」= 用户单独配置的专区；未配置则跟随全局，直接展开列出全局可见专区（不再显示"按全局"）
+      const zoneKeys = zones.length ? zones : permGlobalZones;
+      const zoneTxt = zoneKeys.length ? zoneKeys.map(z => {
         const zz = PERM_ZONES.find(x => x.key === z);
         return zz ? zz.label : z;
-      }).join("、") : "（按全局）";
+      }).join("、") : "无";
       const devTxt = u.device ? escHtml(u.device) : '<span class="hint">未记录</span>';
       const ipTxt = u.ip ? escHtml(u.ip) : '<span class="hint">未记录</span>';
+      const tagTxt = u.user_tag ? escHtml(u.user_tag) : '<span class="hint">未标注</span>';
       tr.innerHTML =
         '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
         '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
+        '<td class="perm-td-tag">' + tagTxt + '</td>' +
         '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
         '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
         '<td class="perm-td-device">' + devTxt + '</td>' +
@@ -4634,6 +4685,8 @@ let recruitTasks = [];
     if (!user) return;
     const roleSel = $("#perm-role");
     if (roleSel) roleSel.value = user.role || "visitor";
+    const tagInp = $("#perm-tag");
+    if (tagInp) tagInp.value = (user.user_tag || "").trim();
     const uid = user.user_id;
     // 类目池子 = 标签管理的全量类目（跨专区同一套），授权只勾一次、四专区共用
     const [allCats, perm, myZones] = await Promise.all([
@@ -4708,7 +4761,10 @@ let recruitTasks = [];
       const role = $("#perm-role")?.value || "visitor";
       const cats = [...document.querySelectorAll("#perm-cats input:checked")].map(i => i.value);
       const zones = [...document.querySelectorAll("#perm-zones input:checked")].map(i => i.value);
+      const tag = ($("#perm-tag")?.value || "").trim();
       try {
+        // 用户标签（备注，便于区分用户类别）
+        await SB.setUserTag(uid, tag);
         await SB.setUserRole(uid, role);
         // 一套共享类目授权，四专区共用
         await SB.setUserPermissions(uid, "", cats);
@@ -4718,6 +4774,7 @@ let recruitTasks = [];
         await loadPermPanel();
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
+    bindDefaultPerms();
   }
 
   // ================= 存量图片压缩池（超管 · 左=已压缩 ≤200KB，右=待压缩 >200KB） =================
@@ -5656,6 +5713,7 @@ let bestsellerTasks = [];
   // 超管权限面板：二级页签切换（公告/权限/前台设置/数据导出/压缩池）
   // ================= 营销日历（超级管理员）=================
   async function loadMarketingNodes() {
+    if (currentRole !== "super_admin") return;
     const box = document.querySelector("#mk-node-list");
     if (!box) return;
     try { mkNodes = await SB.listMarketingNodes(); } catch (e) { mkNodes = []; }
@@ -5704,6 +5762,7 @@ let bestsellerTasks = [];
   }
 
   async function addOrUpdateMarketingNode() {
+    if (currentRole !== "super_admin") return;
     const titleEl = document.querySelector("#mk-node-title");
     const dateEl = document.querySelector("#mk-node-date");
     const title = (titleEl && titleEl.value || "").trim();
@@ -5741,6 +5800,7 @@ let bestsellerTasks = [];
   }
 
   async function loadMarketingArticles() {
+    if (currentRole !== "super_admin") return;
     const box = document.querySelector("#mk-art-list");
     if (!box) return;
     box.innerHTML = "";
@@ -5828,6 +5888,7 @@ let bestsellerTasks = [];
   }
 
   async function saveMarketingArticle() {
+    if (currentRole !== "super_admin") return;
     const nodeId = document.querySelector("#mk-art-node") ? document.querySelector("#mk-art-node").value : "";
     const title = document.querySelector("#mk-art-title") ? document.querySelector("#mk-art-title").value.trim() : "";
     const url = document.querySelector("#mk-art-url") ? document.querySelector("#mk-art-url").value.trim() : "";

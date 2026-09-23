@@ -55,6 +55,12 @@ function isAdminRole(role) {
   return r === "admin" || r === "super_admin";
 }
 
+// 超管判定：仅超级管理员（营销日历等超管专属能力）
+function isSuperRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  return r === "super_admin";
+}
+
 // CORS 头
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -159,7 +165,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -182,7 +188,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path.startsWith("images/")) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const rawPath = url.pathname.replace(/^\//, "");
     // 先删解码后路径，若不存在再删原始编码路径，兼容新旧存储
     await env.IMAGES.delete(path).catch(() => {});
@@ -196,7 +202,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "trend/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -270,7 +276,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "trend/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -284,7 +290,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "notice/uploadimg") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -323,7 +329,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "marketing/uploadimg") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -363,7 +369,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "recruit/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -403,7 +409,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "recruit/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -415,7 +421,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "bestseller/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -455,7 +461,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "bestseller/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("bestsellers/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -466,7 +472,7 @@ async function isPublicAccess(env) {
   if (method === "GET" && path === "admin/list-imgs") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const items = [];
     let cursor;
     do {
@@ -484,7 +490,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "admin/overwrite") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p) return json({ error: "参数错误" }, 400, CORS);
     const form = await request.formData().catch(() => null);

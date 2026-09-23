@@ -657,6 +657,25 @@ const SB = (() => {
       if (error) throw new Error(error.message || "保存失败");
     },
 
+    // ============ 新用户默认权限设置（超管） ============
+    // 读取新用户默认权限：{ role, zones }
+    // zones 为数组；空数组 = 新用户未配置用户级专区，前台按全局 frontend_zone_visibility 显示
+    async getDefaultPerms() {
+      const { data, error } = await client
+        .from("site_settings").select("default_role, default_manage_zones").eq("id", 1).maybeSingle();
+      if (error || !data) return { role: "visitor", zones: [] };
+      const zones = Array.isArray(data.default_manage_zones) ? data.default_manage_zones : [];
+      return { role: data.default_role || "visitor", zones };
+    },
+    // 写入新用户默认权限（role: visitor/admin/super_admin；zones 数组，空数组 = 按全局显示）
+    async setDefaultPerms(role, zones) {
+      const cleanRole = ["visitor", "admin", "super_admin"].includes(role) ? role : "visitor";
+      const cleanZones = [...new Set((zones || []).filter(Boolean))];
+      const { error } = await client
+        .from("site_settings").update({ default_role: cleanRole, default_manage_zones: cleanZones, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+
     // ============ 公告 ============
     // 后台：读取全部公告（含草稿/下架）
     async listAnnouncements() {
@@ -1202,7 +1221,7 @@ const SB = (() => {
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones").order("created_at", { ascending: true });
+      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, user_tag").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
       return data || [];
     },
@@ -1211,6 +1230,11 @@ const SB = (() => {
       const { data, error } = await client.rpc("get_last_login_logs");
       if (error) throw new Error(error.message || "读取登录记录失败");
       return data || [];
+    },
+    // 超管：设置某用户标签（备注，便于区分用户类别；空串=清除）
+    async setUserTag(userId, tag) {
+      const { error } = await client.from("profiles").update({ user_tag: (tag || "").trim() }).eq("user_id", userId);
+      if (error) throw new Error(error.message || "更新用户标签失败");
     },
     // 超管：设置某用户角色（visitor / admin / super_admin）
     async setUserRole(userId, role) {

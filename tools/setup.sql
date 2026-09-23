@@ -9,6 +9,8 @@ create table if not exists public.profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
   email text,
   role text not null default 'visitor' check (role in ('visitor', 'admin', 'super_admin')),
+  -- 用户标签：超管设置的备注标签，便于区分用户类别（如 招商/测试/内部/商家 等），无则留空
+  user_tag text not null default '',
   -- 用户级前台可见专区白名单（manage_zones 数组；空/缺省 = 未配置，前台回退到全局 frontend_zone_visibility）
   manage_zones jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
@@ -36,11 +38,24 @@ create policy "super update all profiles"
   with check (public.is_super_admin());
 
 -- 允许用户首次登录时自动插入自己的 profile
+-- 新用户默认角色 / 默认可见专区 取自站点级「新用户默认权限设置」site_settings.default_role / default_manage_zones
+-- （未配置则回退：角色=visitor、专区=按全局 frontend_zone_visibility 显示）
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  v_role text;
+  v_zones jsonb;
 begin
-  insert into public.profiles (user_id, email, role)
-  values (new.id, new.email, 'visitor')
+  select default_role, coalesce(default_manage_zones, '[]'::jsonb)
+    into v_role, v_zones
+    from public.site_settings
+    where id = 1;
+  v_role := coalesce(v_role, 'visitor');
+  if v_role not in ('visitor', 'admin', 'super_admin') then
+    v_role := 'visitor';
+  end if;
+  insert into public.profiles (user_id, email, role, manage_zones)
+  values (new.id, new.email, v_role, v_zones)
   on conflict (user_id) do nothing;
   return new;
 end;
@@ -207,6 +222,14 @@ alter table public.site_settings
 -- 缺省未配置 = 该专区前台可见；false = 前台隐藏整个专区入口
 alter table public.site_settings
   add column if not exists frontend_zone_visibility jsonb not null default '{"visual":true,"trend":true,"recruit":true,"bestseller":true}'::jsonb;
+
+-- 新用户默认权限设置（超管后台「权限管理」配置；注册触发器读取，决定新用户默认角色/默认可见专区）
+-- default_manage_zones=[]（空）= 新用户未配置用户级专区，前台按全局 frontend_zone_visibility 显示
+alter table public.site_settings
+  add column if not exists default_role text not null default 'visitor'
+    check (default_role in ('visitor', 'admin', 'super_admin'));
+alter table public.site_settings
+  add column if not exists default_manage_zones jsonb not null default '[]'::jsonb;
 
 alter table public.site_settings enable row level security;
 
@@ -856,6 +879,11 @@ as $$
 $$;
 
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
+-- 用户标签列（兼容旧库，幂等）：超管设置的备注标签，便于区分用户类别
+if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='user_tag') then
+  alter table public.profiles add column user_tag text not null default '';
+end if;
+
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));
 
@@ -1009,11 +1037,11 @@ create policy "admin all marketing_nodes"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   );
 
 create table if not exists public.marketing_articles (
@@ -1043,7 +1071,7 @@ create policy "admin read all marketing_articles"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   );
 
 drop policy if exists "admin insert marketing_articles" on public.marketing_articles;
@@ -1052,7 +1080,7 @@ create policy "admin insert marketing_articles"
   to authenticated
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   );
 
 drop policy if exists "admin update marketing_articles" on public.marketing_articles;
@@ -1061,11 +1089,11 @@ create policy "admin update marketing_articles"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   )
   with check (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   );
 
 drop policy if exists "admin delete marketing_articles" on public.marketing_articles;
@@ -1074,5 +1102,5 @@ create policy "admin delete marketing_articles"
   to authenticated
   using (
     exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+            where p.user_id = auth.uid() and p.role = 'super_admin')
   );
