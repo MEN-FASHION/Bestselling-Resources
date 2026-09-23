@@ -89,6 +89,35 @@
     });
     applyAuthMode(); // 初始渲染：默认注册界面
     $("#logout-btn").onclick = onLogout;
+    // ---------- 修改密码（安全设置） ----------
+    const pwdModal = document.getElementById("pwd-modal");
+    if (pwdModal) {
+      const openPwd = () => {
+        const o = document.getElementById("pwd-old"), n = document.getElementById("pwd-new"), n2 = document.getElementById("pwd-new2");
+        if (o) o.value = ""; if (n) n.value = ""; if (n2) n2.value = "";
+        pwdModal.classList.remove("hidden");
+        if (o) o.focus();
+      };
+      const closePwd = () => pwdModal.classList.add("hidden");
+      const bp = document.getElementById("changepwd-btn");
+      if (bp) bp.onclick = openPwd;
+      const c1 = document.getElementById("pwd-cancel"); if (c1) c1.onclick = closePwd;
+      const c2 = document.getElementById("pwd-close"); if (c2) c2.onclick = closePwd;
+      pwdModal.addEventListener("click", (e) => { if (e.target === pwdModal) closePwd(); });
+      const btn = document.getElementById("pwd-submit");
+      if (btn) btn.onclick = async () => {
+        const o = document.getElementById("pwd-old").value.trim();
+        const n = document.getElementById("pwd-new").value;
+        const n2 = document.getElementById("pwd-new2").value;
+        if (!o) return toast("请输入旧密码", false);
+        if (!n || n.length < 6) return toast("新密码至少6位", false);
+        if (n !== n2) return toast("两次输入的新密码不一致", false);
+        const r = await SB.changePassword(o, n);
+        if (r.error) return toast(r.error.message || "修改失败", false);
+        toast("密码修改成功", true);
+        closePwd();
+      };
+    }
     // 登入横幅"立即登录"→ 进入登录页
     const lbGoto = document.getElementById("lb-goto");
     if (lbGoto) lbGoto.addEventListener("click", (e) => { e.preventDefault(); showLogin(); });
@@ -463,6 +492,7 @@
     $("#trend-view").classList.add("hidden");
     $("#recruit-view").classList.add("hidden");
     $("#bestseller-view").classList.add("hidden");
+    $("#changepwd-btn").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
     // 登录页隐藏顶部导航栏，避免专区菜单残留
     const tb = document.getElementById("front-topbar");
@@ -471,6 +501,7 @@
   }
   function showMain() {
     $("#login-view").classList.add("hidden");
+    $("#changepwd-btn").classList.remove("hidden");
     $("#logout-btn").classList.remove("hidden");
     // 进入专区恢复顶部导航栏
     const tb = document.getElementById("front-topbar");

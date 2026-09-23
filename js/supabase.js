@@ -120,7 +120,51 @@ const SB = (() => {
         email: this.normalizeEmail(email),
         password
       });
+      // 登录成功后记录登录设备与 IP（安全设置：供超管后台「用户权限分配表」展示）
+      if (!error && data && data.session) {
+        this.recordLogin().catch(() => {});
+      }
       return { data, error };
+    },
+    // ---------- 登录设备 / IP 记录（安全设置） ----------
+    // 解析 userAgent 得到「浏览器 / 系统」，获取公网 IP，写 login_logs（失败静默忽略，不影响登录）。
+    async recordLogin() {
+      const device = this.parseDevice(navigator.userAgent || "");
+      let ip = "";
+      try {
+        const r = await fetch("https://api.ipify.org?format=json", { method: "GET" });
+        const j = await r.json();
+        ip = (j && j.ip) || "";
+      } catch (e) { /* 忽略 IP 获取失败，仍记录设备 */ }
+      // 已用 JS 原生 fetch 获取 IP；record_login 是接受 (device, ip) 的函数
+      const s = await this.getSession();
+      const uid = s?.user?.id;
+      if (!uid) return;
+      await client.rpc("record_login", { p_device: device, p_ip: ip });
+    },
+    // 从 userAgent 解析可读的设备描述（浏览器 + 操作系统）
+    parseDevice(ua) {
+      ua = String(ua || "");
+      let browser = "未知浏览器";
+      const bRules = [
+        [/Edg\/([\d.]+)/i, "Edge"],
+        [/OPR\/([\d.]+)/i, "Opera"],
+        [/Chrome\/([\d.]+)/i, "Chrome"],
+        [/Firefox\/([\d.]+)/i, "Firefox"],
+        [/Safari\/([\d.]+)/i, "Safari"],
+      ];
+      for (const [re, name] of bRules) { if (re.test(ua)) { browser = name; break; } }
+      let os = "未知系统";
+      const oRules = [
+        [/Windows NT 10/i, "Windows 10/11"], [/Windows NT 6\.3/i, "Windows 8.1"],
+        [/Windows NT 6\.1/i, "Windows 7"], [/Windows/i, "Windows"],
+        [/iPhone/i, "iOS"], [/iPad/i, "iPadOS"], [/Android/i, "Android"],
+        [/Mac OS X/i, "macOS"], [/Linux/i, "Linux"],
+      ];
+      for (const [re, name] of oRules) { if (re.test(ua)) { os = name; break; } }
+      // 移动端标注
+      const isMobile = /Android|iPhone|iPad/i.test(ua);
+      return (browser + " · " + os + (isMobile ? " · 移动端" : ""));
     },
     // 判断邮箱是否已注册（依赖 is_email_registered RPC，用于登录时区分账号/密码错误）
     async isEmailRegistered(email) {
@@ -131,6 +175,26 @@ const SB = (() => {
     async signOut() {
       const { error } = await client.auth.signOut();
       return { error };
+    },
+    // ---------- 修改密码（安全设置） ----------
+    // 先校验旧密码（服务端 signInWithPassword 校验），正确后再用 auth.updateUser 更新新密码。
+    // 旧密码错误时返回 error，前端 toast 提示；成功后 Supabase 自动保持当前会话（无需重新登录）。
+    async changePassword(oldPwd, newPwd) {
+      // 取当前登录邮箱
+      const s = await client.auth.getSession();
+      const email = s?.data?.session?.user?.email;
+      if (!email) return { error: { message: "请先登录" } };
+      // 校验旧密码
+      const chk = await client.auth.signInWithPassword({ email, password: oldPwd });
+      if (chk.error) {
+        return { error: { message: "旧密码不正确" } };
+      }
+      // 更新为新密码
+      const upd = await client.auth.updateUser({ password: newPwd });
+      if (upd.error) {
+        return { error: upd.error };
+      }
+      return { data: upd.data, error: null };
     },
     async getSession() {
       const { data } = await client.auth.getSession();
@@ -1074,6 +1138,12 @@ const SB = (() => {
     async listAdminUsers() {
       const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
+      return data || [];
+    },
+    // 超管：读取每个用户最近一次登录的设备与 IP（安全设置，后台权限分配表展示）
+    async lastLoginLogs() {
+      const { data, error } = await client.rpc("get_last_login_logs");
+      if (error) throw new Error(error.message || "读取登录记录失败");
       return data || [];
     },
     // 超管：设置某用户角色（visitor / admin / super_admin）

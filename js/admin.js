@@ -39,7 +39,7 @@
       if (sp) sp.classList.add("hidden");
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
-    [bindLogin, bindLogout, bindToken, bindManage, bindFavCats,
+    [bindLogin, bindLogout, bindChangepwd, bindToken, bindManage, bindFavCats,
      bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindSuperTabs]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
@@ -183,6 +183,36 @@
         sbToast("退出失败，请重试", false);
         location.reload();
       }
+    };
+  }
+  function bindChangepwd() {
+    const btn = $("#admin-changepwd");
+    const modal = $("#pwd-modal");
+    if (!btn || !modal) return;
+    const closeModal = () => modal.classList.add("hidden");
+    btn.onclick = () => {
+      const o = $("#pwd-old"), n = $("#pwd-new"), n2 = $("#pwd-new2");
+      if (o) o.value = ""; if (n) n.value = ""; if (n2) n2.value = "";
+      modal.classList.remove("hidden");
+      if (o) o.focus();
+    };
+    const c1 = $("#pwd-cancel"); if (c1) c1.onclick = closeModal;
+    const c2 = $("#pwd-close"); if (c2) c2.onclick = closeModal;
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+    const submit = $("#pwd-submit");
+    if (submit) submit.onclick = async () => {
+      const o = $("#pwd-old").value.trim();
+      const n = $("#pwd-new").value;
+      const n2 = $("#pwd-new2").value;
+      if (!o) return sbToast("请输入旧密码", false);
+      if (!n || n.length < 6) return sbToast("新密码至少6位", false);
+      if (n !== n2) return sbToast("两次输入的新密码不一致", false);
+      try {
+        const r = await SB.changePassword(o, n);
+        if (r.error) return sbToast(r.error.message || "修改失败", false);
+        sbToast("密码修改成功", true);
+        closeModal();
+      } catch (e) { sbToast("修改失败，请重试", false); }
     };
   }
   let panelReady = false; // 面板级防重入：已进入后台且用户未切换时，不再重复加载/拉回图片管理，避免反复重绘与菜单被覆盖
@@ -4527,6 +4557,20 @@ let recruitTasks = [];
   }
   async function loadPermPanel() {
     try { permUsers = await SB.listAdminUsers(); } catch (e) { permUsers = []; }
+    // 合并每个用户最近一次登录的设备与 IP（安全设置）
+    if (permUsers.length) {
+      try {
+        const logs = await SB.lastLoginLogs().catch(() => []);
+        const logMap = {};
+        (logs || []).forEach(l => { if (l && l.user_id) logMap[l.user_id] = l; });
+        permUsers.forEach(u => {
+          const log = logMap[u.user_id];
+          u.device = (log && log.device) || "";
+          u.ip = (log && log.ip) || "";
+          u.last_login_at = (log && log.login_at) || "";
+        });
+      } catch (e) { /* 忽略登录记录读取失败，仅展示不到 */ }
+    }
     renderPermTable(permUsers);
     const sel = $("#perm-user");
     if (!sel) return;
@@ -4542,7 +4586,7 @@ let recruitTasks = [];
   async function renderPermTable(users) {
     const body = $("#perm-table-body");
     if (!body) return;
-    if (!users.length) { body.innerHTML = '<tr><td colspan="5" class="hint">暂无用户</td></tr>'; return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="7" class="hint">暂无用户</td></tr>'; return; }
     body.innerHTML = "";
     // 预取每个用户的类目授权，用于总览摘要
     const catCounts = {};
@@ -4559,11 +4603,15 @@ let recruitTasks = [];
         const zz = PERM_ZONES.find(x => x.key === z);
         return zz ? zz.label : z;
       }).join("、") : "（按全局）";
+      const devTxt = u.device ? escHtml(u.device) : '<span class="hint">未记录</span>';
+      const ipTxt = u.ip ? escHtml(u.ip) : '<span class="hint">未记录</span>';
       tr.innerHTML =
         '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
         '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
         '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
         '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
+        '<td class="perm-td-device">' + devTxt + '</td>' +
+        '<td class="perm-td-ip">' + ipTxt + '</td>' +
         '<td class="perm-td-ops"><button class="btn-ghost small" type="button" data-uid="' + u.user_id + '">编辑</button></td>';
       const editBtn = tr.querySelector("button");
       editBtn.onclick = () => {

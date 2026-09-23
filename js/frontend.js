@@ -273,16 +273,18 @@
     // 视觉专区被隐藏守卫：即使直接访问首页也拦截，提示暂未开放
     if (!zoneVisible("visual")) {
       $("#login-btn").classList.add("hidden");
+      $("#changepwd-btn").classList.add("hidden");
       $("#logout-btn").classList.add("hidden");
       $("#gallery-view").classList.add("hidden");
       $("#login-view").classList.remove("hidden");
-      if (window.__loggedIn) $("#logout-btn").classList.remove("hidden");
+      if (window.__loggedIn) { $("#logout-btn").classList.remove("hidden"); $("#changepwd-btn").classList.remove("hidden"); }
       Auth.toast("该专区暂未开放", false);
       return;
     }
     if (window.__loggedIn) { showGallery(); return; }
     if (window.__publicAccess) {
       $("#login-btn").classList.remove("hidden");
+      $("#changepwd-btn").classList.add("hidden");
       $("#logout-btn").classList.add("hidden");
       $("#gallery-view").classList.remove("hidden");
       $("#login-view").classList.add("hidden");
@@ -293,12 +295,14 @@
   }
   function showLogin() {
     $("#login-btn").classList.add("hidden");
+    $("#changepwd-btn").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
     $("#gallery-view").classList.add("hidden");
     $("#login-view").classList.remove("hidden");
   }
   function showGallery() {
     $("#login-btn").classList.add("hidden");
+    $("#changepwd-btn").classList.remove("hidden");
     $("#logout-btn").classList.remove("hidden");
     $("#login-view").classList.add("hidden");
     $("#gallery-view").classList.remove("hidden");
@@ -1003,4 +1007,34 @@
     $("#auth-submit").textContent = authMode === "login" ? "进入网站" : "注册并进入";
   };
   $("#logout-btn").onclick = async () => { await SB.signOut(); refreshAuthUI(); };
+
+  // ---------- 修改密码（安全设置） ----------
+  const pwdModal = $("#pwd-modal");
+  if (pwdModal) {
+    const openPwd = () => {
+      const o = $("#pwd-old"), n = $("#pwd-new"), n2 = $("#pwd-new2");
+      if (o) o.value = ""; if (n) n.value = ""; if (n2) n2.value = "";
+      pwdModal.classList.remove("hidden");
+      if (o) o.focus();
+    };
+    const closePwd = () => pwdModal.classList.add("hidden");
+    const bp = $("#changepwd-btn");
+    if (bp) bp.onclick = openPwd;
+    const c1 = $("#pwd-cancel"); if (c1) c1.onclick = closePwd;
+    const c2 = $("#pwd-close"); if (c2) c2.onclick = closePwd;
+    if (pwdModal) pwdModal.addEventListener("click", (e) => { if (e.target === pwdModal) closePwd(); });
+    const doSubmit = async () => {
+      const o = $("#pwd-old").value.trim();
+      const n = $("#pwd-new").value;
+      const n2 = $("#pwd-new2").value;
+      if (!o) return Auth.toast("请输入旧密码", false);
+      if (!n || n.length < 6) return Auth.toast("新密码至少6位", false);
+      if (n !== n2) return Auth.toast("两次输入的新密码不一致", false);
+      const r = await SB.changePassword(o, n);
+      if (r.error) return Auth.toast(r.error.message || "修改失败", false);
+      Auth.toast("密码修改成功", true);
+      closePwd();
+    };
+    const btn = $("#pwd-submit"); if (btn) btn.onclick = doSubmit;
+  }
 })();

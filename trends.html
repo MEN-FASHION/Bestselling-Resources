@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 趋势专区</title>
-<link rel="stylesheet" href="css/style.css?v=20260923A">
+<link rel="stylesheet" href="css/style.css?v=20260923C">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -61,6 +61,7 @@
         <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
       </nav>
       <div class="topbar-actions">
+        <button id="changepwd-btn" class="btn-ghost hidden">修改密码</button>
         <button id="logout-btn" class="btn-ghost hidden">退出</button>
       </div>
     </div>
@@ -149,6 +150,27 @@
     </div>
   </div>
 
+  <div id="pwd-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="dialog-head">
+        <span class="dialog-title">修改密码</span>
+        <button type="button" class="modal-close" id="pwd-close">×</button>
+      </div>
+      <div class="dialog-body">
+        <label>旧密码</label>
+        <input type="password" id="pwd-old" placeholder="请输入当前密码" autocomplete="current-password" required>
+        <label>新密码</label>
+        <input type="password" id="pwd-new" placeholder="请输入新密码（至少6位）" autocomplete="new-password" required>
+        <label>确认新密码</label>
+        <input type="password" id="pwd-new2" placeholder="请再次输入新密码" autocomplete="new-password" required>
+        <div class="dialog-actions">
+          <button type="button" class="btn-ghost" id="pwd-cancel">取消</button>
+          <button type="button" class="btn-primary" id="pwd-submit">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="pdf-modal" class="modal-mask hidden">
     <div class="modal pdf-modal-box">
       <div class="pdf-modal-head">
@@ -174,8 +196,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=20260923A"></script>
-  <script src="js/supabase.js?v=20260923A"></script>
-  <script src="js/trends.js?v=20260923A"></script>
+  <script src="js/config.js?v=20260923C"></script>
+  <script src="js/supabase.js?v=20260923C"></script>
+  <script src="js/trends.js?v=20260923C"></script>
 </body>
 </html>
