@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TREND BANK · 营销日历</title>
+<link rel="stylesheet" href="css/style.css?v=20260923D">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body class="front">
+  <!-- 提示条 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- 加载遮罩：判定登录态期间盖住，避免闪现登录页 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="login-view" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="trademark-avatar" aria-label="TREND BANK 商标">
+          <svg viewBox="0 0 120 120" width="92" height="92" role="img" aria-label="TREND BANK">
+            <circle cx="60" cy="60" r="58" fill="#ffffff"/>
+            <circle cx="60" cy="60" r="57.5" fill="none" stroke="#e2ddd4" stroke-width="1"/>
+            <text x="60" y="62" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" letter-spacing="3" fill="#2c2c2c">TB</text>
+            <text x="60" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8" letter-spacing="4" fill="#9c8b74">TREND&nbsp;BANK</text>
+          </svg>
+        </div>
+        <div class="logo-mark" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
+        <h1 id="site-title"></h1>
+        <p class="subtitle">营销日历 · 登录后查看</p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <h2 class="form-title" id="auth-title">注册账号</h2>
+        <div id="auth-hint" class="auth-hint hidden"></div>
+        <label>邮箱</label>
+        <div class="email-wrap">
+          <input type="email" id="auth-email" placeholder="请输入邮箱" autocomplete="email" required>
+          <div id="email-suggest" class="email-suggest hidden"></div>
+        </div>
+        <label>密码</label>
+        <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="auth-submit">注册并进入</button>
+        <div class="auth-links">
+          <a href="#" id="auth-toggle-link">已有账号？去登录</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 营销日历主视图 ================= -->
+  <header class="topbar" id="front-topbar">
+    <div class="topbar-inner">
+      <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="front-brand">TREND BANK</span></div>
+      <nav class="top-tabs">
+        <a href="marketing.html" class="tab-link active" data-viewtab="marketing">营销日历</a>
+        <a href="index.html" class="tab-link">视觉专区</a>
+        <a href="trends.html" class="tab-link" data-viewtab="trend">趋势专区</a>
+        <a href="trends.html#recruit" class="tab-link" data-viewtab="recruit">招品回品</a>
+        <a href="trends.html#bestseller" class="tab-link" data-viewtab="bestseller">BESTSELLER</a>
+        <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
+      </nav>
+      <div class="topbar-actions">
+        <button id="changepwd-btn" class="btn-ghost hidden">修改密码</button>
+        <button id="logout-btn" class="btn-ghost hidden">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <section id="marketing-view" class="gallery-view hidden">
+    <div class="mk-wrap">
+      <!-- ===== 顶部时间线 ===== -->
+      <div class="mk-timeline-title">营销时间线</div>
+      <div id="mk-timeline" class="mk-timeline"><div class="mk-empty">加载中…</div></div>
+
+      <!-- ===== 营销日历卡片区（3:4 展示图） ===== -->
+      <div class="mk-grid-title">营销日历</div>
+      <div id="mk-grid" class="mk-grid"><div class="mk-empty">加载中…</div></div>
+    </div>
+  </section>
+
+  <!-- ================= 修改密码弹窗 ================= -->
+  <div id="pwd-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="dialog-head">
+        <span class="dialog-title">修改密码</span>
+        <button type="button" class="modal-close" id="pwd-close">×</button>
+      </div>
+      <div class="dialog-body">
+        <label>旧密码</label>
+        <input type="password" id="pwd-old" placeholder="请输入当前密码" autocomplete="current-password" required>
+        <label>新密码</label>
+        <input type="password" id="pwd-new" placeholder="请输入新密码（至少6位）" autocomplete="new-password" required>
+        <label>确认新密码</label>
+        <input type="password" id="pwd-new2" placeholder="请再次输入新密码" autocomplete="new-password" required>
+        <div class="dialog-actions">
+          <button type="button" class="btn-ghost" id="pwd-cancel">取消</button>
+          <button type="button" class="btn-primary" id="pwd-submit">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 微信分享弹窗（专属链接 + 二维码） ================= -->
+  <div id="mk-share-modal" class="modal-mask hidden">
+    <div class="modal mk-share-dialog">
+      <div class="dialog-head">
+        <span class="dialog-title">分享到微信</span>
+        <button type="button" class="modal-close" id="mk-share-close-x">×</button>
+      </div>
+      <div class="dialog-body">
+        <div class="mk-share-title" id="mk-share-title"></div>
+        <div class="mk-share-qr" id="mk-share-qr"></div>
+        <input type="text" id="mk-share-link" class="input" readonly>
+        <div class="dialog-actions">
+          <button type="button" class="btn-ghost" id="mk-share-close">关闭</button>
+          <button type="button" class="btn-primary" id="mk-share-copy">复制链接</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="js/config.js?v=20260923D"></script>
+  <script src="js/supabase.js?v=20260923D"></script>
+  <script src="js/marketing.js?v=20260923D"></script>
+</body>
+</html>

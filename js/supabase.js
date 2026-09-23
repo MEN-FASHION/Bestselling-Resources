@@ -740,6 +740,71 @@ const SB = (() => {
       if (!token) return base + "/notice/img?path=" + encodeURIComponent(path);
       return base + "/notice/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
     },
+// ============ 营销节日日历（时间节点 + 趋势文章） ============
+    // 前台/后台：时间节点清单（登录用户可读全部，管理员可管理）
+    async listMarketingNodes() {
+      const { data, error } = await client.from("marketing_nodes").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+      return { data: data || [], error };
+    },
+    async addMarketingNode({ title, date, sort_order, image, url, description }) {
+      const { error } = await client.from("marketing_nodes").insert({
+        title, date: date || "", sort_order: sort_order || 0,
+        image: image || "", url: url || "", description: description || "",
+      });
+      return { error };
+    },
+    async updateMarketingNode(id, patch) {
+      const { error } = await client.from("marketing_nodes").update(Object.assign({ updated_at: new Date().toISOString() }, patch)).eq("id", id);
+      return { error };
+    },
+    async removeMarketingNode(id) {
+      const { error } = await client.from("marketing_nodes").delete().eq("id", id);
+      return { error };
+    },
+    // 前台：已发布的文章清单；后台：全部文章清单（published 传 undefined/null 时读全部）
+    async listMarketingArticles(publishedOnly = true) {
+      let q = client.from("marketing_articles").select("*");
+      if (publishedOnly) q = q.eq("published", true);
+      const { data, error } = await q.order("sort_order", { ascending: true }).order("created_at", { ascending: false });
+      return { data: data || [], error };
+    },
+    async addMarketingArticle({ title, url, image, summary, node_id, published, sort_order }) {
+      const { error } = await client.from("marketing_articles").insert({
+        title, url: url || "", image: image || "", summary: summary || "",
+        node_id: node_id || null, published: published !== false, sort_order: sort_order || 0,
+      });
+      return { error };
+    },
+    async updateMarketingArticle(id, patch) {
+      const { error } = await client.from("marketing_articles").update(Object.assign({ updated_at: new Date().toISOString() }, patch)).eq("id", id);
+      return { error };
+    },
+    async removeMarketingArticle(id) {
+      const { error } = await client.from("marketing_articles").delete().eq("id", id);
+      return { error };
+    },
+    // 后台：上传营销日历图片（经 Worker 存 R2，返回 marketing/ 相对路径）
+    async uploadMarketingImage(file) {
+      const token = await currentToken();
+      const f = await compressImage(file);
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await fetch(window.CONFIG.WORKER_URL + "/marketing/uploadimg", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "图片上传失败");
+      return j.path;
+    },
+    // 前台/后台：营销日历图片受控 URL（需登录、经 Worker 鉴权、防下载）
+    async marketingImageUrl(path) {
+      const token = await this.currentToken();
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      if (!token) return base + "/marketing/img?path=" + encodeURIComponent(path);
+      return base + "/marketing/img?path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(token);
+    },
     // ============ 招品回品专区（招品图片存 R2 受控代理 + 任务表 + 提交表） ============
     // 后台：上传招品图片（经 Worker 存 R2，返回 recruits/ 相对路径）
     async uploadRecruitImage(file) {
@@ -1110,6 +1175,7 @@ const SB = (() => {
     // 读取某专区的类目名列表（前台访问设置可见性用）
     // visual/trend 用前台类目表；recruit/bestseller 用各自专区类目表
     async listZoneCatsForVis(zone) {
+      if (zone === "marketing" || zone === "notice") return [];
       if (zone === "recruit" || zone === "bestseller") {
         const list = await this.listZoneCats(zone);
         return (list || []).map(c => c.name);

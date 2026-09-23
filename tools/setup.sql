@@ -977,3 +977,102 @@ begin
 end;
 $$;
 grant execute on function public.get_last_login_logs() to authenticated;
+
+-- ---------- 营销节日日历（营销日历）：时间节点 + 趋势文章 ----------
+-- 前台「营销日历」（marketing.html）顶部时间线 + 3:4 卡片区；
+-- 每个时间节点对应一张展示图，图片点击跳转文章外链；文章可在后台发布，带微信分享二维码。
+-- 规则与公告保持一致：登录用户可读已发布内容；管理员（admin/super_admin）可管理全部。
+
+create table if not exists public.marketing_nodes (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,                 -- 时间节点名称（如"万圣节""双11"）
+  date text default '',                -- 节点日期（YYYY-MM-DD 或自由文本，用于时间线定位/排序）
+  sort_order int not null default 0,   -- 时间线显示顺序（升序）
+  image text default '',               -- 节点展示图路径（R2 marketing/ 相对路径），可为空（前台显示标题卡）
+  url text default '',                 -- 节点对应文章外链（点击跳转），可空
+  description text default '',         -- 节点简述（可选，卡片下方小字）
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.marketing_nodes enable row level security;
+
+drop policy if exists "authenticated read published marketing_nodes" on public.marketing_nodes;
+create policy "authenticated read published marketing_nodes"
+  on public.marketing_nodes for select
+  to authenticated
+  using (true);
+
+drop policy if exists "admin all marketing_nodes" on public.marketing_nodes;
+create policy "admin all marketing_nodes"
+  on public.marketing_nodes for all
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  )
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  );
+
+create table if not exists public.marketing_articles (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,                 -- 文章标题
+  url text default '',                 -- 文章外链（点击卡片跳转）
+  image text default '',               -- 文章封面/展示图路径（R2 marketing/ 相对路径）
+  summary text default '',             -- 文章摘要（可选）
+  node_id uuid references public.marketing_nodes (id) on delete set null, -- 关联时间节点（可空）
+  published boolean not null default true,   -- 是否发布到前台
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.marketing_articles enable row level security;
+
+drop policy if exists "authenticated read published marketing_articles" on public.marketing_articles;
+create policy "authenticated read published marketing_articles"
+  on public.marketing_articles for select
+  to authenticated
+  using (published = true);
+
+drop policy if exists "admin read all marketing_articles" on public.marketing_articles;
+create policy "admin read all marketing_articles"
+  on public.marketing_articles for select
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  );
+
+drop policy if exists "admin insert marketing_articles" on public.marketing_articles;
+create policy "admin insert marketing_articles"
+  on public.marketing_articles for insert
+  to authenticated
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  );
+
+drop policy if exists "admin update marketing_articles" on public.marketing_articles;
+create policy "admin update marketing_articles"
+  on public.marketing_articles for update
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  )
+  with check (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  );
+
+drop policy if exists "admin delete marketing_articles" on public.marketing_articles;
+create policy "admin delete marketing_articles"
+  on public.marketing_articles for delete
+  to authenticated
+  using (
+    exists (select 1 from public.profiles p
+            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+  );

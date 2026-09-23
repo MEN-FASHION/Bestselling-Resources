@@ -999,6 +999,38 @@ select.input {
 .notice-admin-ops { display: flex; gap: 6px; flex: none; }
 .notice-admin-ops .btn-ghost, .notice-admin-ops .btn-danger { padding: 6px 12px; font-size: 13px; }
 
+/* ============ 营销日历（超级管理员） ============ */
+.mk-node-row, .mk-art-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: var(--card);
+}
+.mk-node-info, .mk-art-info { flex: 1; min-width: 0; }
+.mk-node-info { font-size: 14px; font-weight: 600; color: var(--txt); }
+.mk-art-title { font-size: 14px; font-weight: 600; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-art-meta { font-size: 12px; color: var(--sub); margin-top: 3px; }
+.mk-node-ops, .mk-art-ops { display: flex; gap: 6px; flex: none; flex-wrap: wrap; }
+.mk-node-ops .btn-ghost, .mk-node-ops .btn-danger,
+.mk-art-ops .btn-ghost, .mk-art-ops .btn-danger { padding: 6px 12px; font-size: 13px; }
+.mk-art-cover { width: 60px; height: 80px; object-fit: cover; border-radius: 8px; flex: none; border: 1px solid var(--line); background: var(--bg); }
+.mk-art-cover-preview { margin-top: 8px; }
+.mk-art-cover-preview img { width: 120px; height: 160px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+.mk-art-list, .mk-node-list { margin-top: 10px; }
+.mk-share-mask {
+  position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.mk-share-mask.hidden { display: none; }
+.mk-share-card {
+  background: var(--card); border-radius: 14px; padding: 22px; max-width: 340px; width: 100%;
+  text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+.mk-share-card h4 { margin: 0 0 12px; font-size: 16px; color: var(--txt); }
+.mk-share-qr { display: flex; justify-content: center; margin: 8px 0 14px; }
+.mk-share-qr img, .mk-share-qr canvas { width: 200px; height: 200px; }
+.mk-share-link { font-size: 12px; color: var(--sub); word-break: break-all; margin-bottom: 14px; }
+.mk-share-tip { font-size: 13px; color: var(--sub); margin-bottom: 16px; }
+.mk-share-btn { padding: 10px 26px; }
+
 /* ============ 公告富文本编辑器（Word 式） ============ */
 .notice-editor-wrap { margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
 .notice-editor-wrap .notice-toolbar { border-bottom: 1px solid var(--line); }

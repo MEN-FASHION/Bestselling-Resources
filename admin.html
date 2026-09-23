@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923C">
+<link rel="stylesheet" href="css/style.css?v=20260923D">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -277,6 +277,7 @@
           <button class="super-tab" data-sv="sv-3" type="button">前台访问设置</button>
           <button class="super-tab" data-sv="sv-4" type="button">数据导出</button>
           <button class="super-tab" data-sv="sv-5" type="button">存量图片压缩池</button>
+          <button class="super-tab" data-sv="sv-6" type="button">营销日历</button>
         </div>
         <hr class="tag-sub-hr">
         <div class="super-sub" data-sv="sv-1">
@@ -453,6 +454,45 @@
               </div>
               <div class="smart-pool-grid" id="imgpool-grid-todo" style="padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:560px;overflow-y:auto;align-content:start;grid-auto-rows:max-content;"></div>
             </div>
+          </div>
+        </div>
+
+        <div class="super-sub" data-sv="sv-6" style="display:none;">
+          <h3 class="tbs-title">营销日历 <span class="hint-inline">（超级管理员 · 编辑时间线节点 + 发布趋势文章，前台营销日历卡片点击跳转文章，文章可生成二维码分享到微信）</span></h3>
+
+          <!-- 时间线节点管理 -->
+          <h4 class="perm-zone-title">时间线节点 <span class="hint-inline">（每个节点对应前台时间线上一个时间点及其下方的展示卡片）</span></h4>
+          <div class="rg-row" style="margin-top:6px">
+            <label class="field">节点标题</label><input id="mk-node-title" class="input" placeholder="如：双11大促" maxlength="60">
+            <label class="field" style="margin-left:8px">时间</label><input id="mk-node-date" class="input" type="datetime-local">
+            <button id="mk-node-add" class="btn-primary" type="button">添加节点</button>
+          </div>
+          <div id="mk-node-list" class="mk-node-list"><p class="hint">加载中…</p></div>
+
+          <hr class="tag-sub-hr">
+          <!-- 趋势文章发布管理 -->
+          <h4 class="perm-zone-title">趋势文章 <span class="hint-inline">（文章归属某个时间线节点；封面图 3:4；发布后前台卡片点击跳转文章链接；可生成二维码分享到微信）</span></h4>
+          <div class="rg-row" style="margin-top:6px">
+            <label class="field">所属节点</label><select id="mk-art-node" class="input"><option value="">（请先添加时间线节点）</option></select>
+            <label class="field" style="margin-left:8px">文章标题</label><input id="mk-art-title" class="input" placeholder="文章标题" maxlength="80">
+          </div>
+          <div class="rg-row" style="margin-top:6px">
+            <label class="field">文章链接</label><input id="mk-art-url" class="input" placeholder="https://... 点击卡片跳转的地址" maxlength="500">
+            <label class="field" style="margin-left:8px">摘要</label><input id="mk-art-summary" class="input" placeholder="一句话摘要（选填）" maxlength="200">
+          </div>
+          <div class="rg-row" style="margin-top:6px">
+            <button id="mk-art-cover-pick" class="btn-ghost" type="button">+ 选择封面图（3:4）</button>
+            <input id="mk-art-cover-input" type="file" accept="image/*" style="display:none;">
+            <span id="mk-art-cover-name" class="hint-inline"></span>
+            <div id="mk-art-cover-preview" class="mk-art-cover-preview"></div>
+          </div>
+          <div class="rg-btnrow" style="margin-top:8px">
+            <label class="chk"><input type="checkbox" id="mk-art-published" checked> 发布到前台</label>
+            <button id="mk-art-save" class="btn-primary" type="button">发布/保存文章</button>
+            <button id="mk-art-reset" class="btn-ghost" type="button">清空新建</button>
+          </div>
+          <div id="mk-art-list" class="mk-art-list">
+            <p class="hint">加载中…</p>
           </div>
         </div>
       </div>
@@ -849,8 +889,20 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="js/config.js?v=20260923C"></script>
-  <script src="js/supabase.js?v=20260923C"></script>
-  <script src="js/admin.js?v=20260923C"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="js/config.js?v=20260923D"></script>
+  <script src="js/supabase.js?v=20260923D"></script>
+  <script src="js/admin.js?v=20260923D"></script>
+
+  <!-- 营销日历 · 微信分享二维码弹窗 -->
+  <div class="mk-share-mask hidden" id="mk-share-mask">
+    <div class="mk-share-card">
+      <h4 id="mk-share-title">分享到微信</h4>
+      <p class="mk-share-tip">用微信「扫一扫」扫描二维码，即可打开并转发文章；也可复制下方链接分享。</p>
+      <div class="mk-share-qr" id="mk-share-qr"></div>
+      <div class="mk-share-link" id="mk-share-link"></div>
+      <button id="mk-share-close" class="btn-primary" type="button">关闭</button>
+    </div>
+  </div>
 </body>
 </html>

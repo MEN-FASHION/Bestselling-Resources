@@ -40,7 +40,7 @@
     });
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindChangepwd, bindToken, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindSuperTabs]
+     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindMarketing, bindSuperTabs]
       .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
@@ -65,7 +65,7 @@
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
-    if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
+    if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles(); }
   }
 
   // ================= 前台预览（后台内嵌，无需另开页面） =================
@@ -2432,6 +2432,7 @@
   let catVisCfg = {};  // 各专区各类目可见性 { zone: {category: true/false} }
   // 四个专区（key 与前端 readZone 一致）：视觉 / 趋势 / 招品 / BESTSELLER
   const CAT_VIS_ZONES = [
+    { key: "marketing", label: "营销日历" },
     { key: "visual", label: "视觉专区" },
     { key: "trend", label: "趋势专区" },
     { key: "recruit", label: "招品回品" },
@@ -2815,6 +2816,12 @@
   let noticeImages = [];      // 已上传图片路径数组（R2 notices/）
   let noticeEditingId = null;
   let noticeQuill = null;     // 富文本编辑器实例
+
+  // 营销日历（超级管理员）状态
+  let mkNodes = [];           // 时间线节点
+  let mkEditingNodeId = null; // 正在编辑的节点 id
+  let mkEditingArtId = null;  // 正在编辑的文章 id
+  let mkCoverPath = null;     // 文章封面临时路径（R2 marketing/）
 
   function bindNotice() {
     const titleEl = document.querySelector("#notice-title");
@@ -4546,6 +4553,7 @@ let recruitTasks = [];
   let permUsers = [];
   // 用户级可见专区的可选项（与全局「前台访问设置」的专区集合一致）
   const PERM_ZONES = [
+    { key: "marketing", label: "营销日历" },
     { key: "visual", label: "视觉专区" },
     { key: "trend", label: "趋势专区" },
     { key: "recruit", label: "招品回品" },
@@ -5646,6 +5654,266 @@ let bestsellerTasks = [];
   }
 
   // 超管权限面板：二级页签切换（公告/权限/前台设置/数据导出/压缩池）
+  // ================= 营销日历（超级管理员）=================
+  async function loadMarketingNodes() {
+    const box = document.querySelector("#mk-node-list");
+    if (!box) return;
+    try { mkNodes = await SB.listMarketingNodes(); } catch (e) { mkNodes = []; }
+    box.innerHTML = "";
+    if (!mkNodes.length) {
+      box.innerHTML = '<p class="hint">暂无时间线节点。填写上方表单并点击「添加节点」。</p>';
+    } else {
+      mkNodes.forEach(n => {
+        const row = document.createElement("div");
+        row.className = "mk-node-row";
+        const info = document.createElement("div");
+        info.className = "mk-node-info";
+        info.textContent = (n.title || "（无标题）") + " · " + (n.date || "");
+        const ops = document.createElement("div");
+        ops.className = "mk-node-ops";
+        const bEdit = document.createElement("button");
+        bEdit.type = "button"; bEdit.className = "btn-ghost"; bEdit.textContent = "编辑";
+        bEdit.addEventListener("click", () => {
+          mkEditingNodeId = n.id;
+          document.querySelector("#mk-node-title").value = n.title || "";
+          if (document.querySelector("#mk-node-date")) document.querySelector("#mk-node-date").value = fmtInputDate(n.date);
+          sbToast("正在编辑节点：" + (n.title || ""), true);
+        });
+        const bDel = document.createElement("button");
+        bDel.type = "button"; bDel.className = "btn-danger"; bDel.textContent = "删除";
+        bDel.addEventListener("click", async () => {
+          if (!confirm("确定删除时间线节点「" + (n.title || "") + "」？该节点下文章会一并移除。")) return;
+          try { await SB.removeMarketingNode(n.id); sbToast("节点已删除"); mkEditingNodeId = null; loadMarketingNodes(); loadMarketingArticlePick(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+        });
+        ops.appendChild(bEdit); ops.appendChild(bDel);
+        row.appendChild(info); row.appendChild(ops);
+        box.appendChild(row);
+      });
+    }
+  }
+
+  function fmtInputDate(dateStr) {
+    if (!dateStr) return "";
+    // 接受 YYYY-MM-DDTHH:mm 或 ISO
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d)) return dateStr;
+      const p = n => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+    } catch (e) { return dateStr; }
+  }
+
+  async function addOrUpdateMarketingNode() {
+    const titleEl = document.querySelector("#mk-node-title");
+    const dateEl = document.querySelector("#mk-node-date");
+    const title = (titleEl && titleEl.value || "").trim();
+    if (!title) return sbToast("请填写节点标题", false);
+    const date = dateEl && dateEl.value ? dateEl.value : new Date().toISOString();
+    try {
+      if (mkEditingNodeId) {
+        await SB.updateMarketingNode(mkEditingNodeId, { title, date });
+        sbToast("节点已更新");
+      } else {
+        await SB.addMarketingNode({ title, date });
+        sbToast("节点已添加");
+      }
+      if (titleEl) titleEl.value = "";
+      if (dateEl) dateEl.value = "";
+      mkEditingNodeId = null;
+      loadMarketingNodes();
+      loadMarketingArticlePick();
+    } catch (e) { sbToast("保存节点失败：" + (e.message || ""), false); }
+  }
+
+  function loadMarketingArticlePick() {
+    const sel = document.querySelector("#mk-art-node");
+    if (!sel) return;
+    sel.innerHTML = "";
+    if (!mkNodes.length) {
+      sel.innerHTML = '<option value="">（请先添加时间线节点）</option>';
+      return;
+    }
+    mkNodes.forEach(n => {
+      const o = document.createElement("option");
+      o.value = n.id; o.textContent = n.title || n.date || "节点";
+      sel.appendChild(o);
+    });
+  }
+
+  async function loadMarketingArticles() {
+    const box = document.querySelector("#mk-art-list");
+    if (!box) return;
+    box.innerHTML = "";
+    let list = [];
+    try { list = await SB.listMarketingArticles(false); } catch (e) { list = []; }
+    if (!list.length) {
+      box.innerHTML = '<p class="hint">暂无趋势文章。填写上方表单并点击「发布/保存文章」。</p>';
+      return;
+    }
+    list.forEach(a => {
+      const row = document.createElement("div");
+      row.className = "mk-art-row";
+      const cover = document.createElement("img");
+      cover.className = "mk-art-cover"; cover.alt = ""; cover.loading = "lazy";
+      if (a.image) { cover.src = SB.marketingImageUrl(a.image); cover.onerror = () => { cover.style.visibility = "hidden"; }; }
+      else { cover.style.visibility = "hidden"; }
+      const info = document.createElement("div");
+      info.className = "mk-art-info";
+      const t = document.createElement("div");
+      t.className = "mk-art-title"; t.textContent = a.title || "（无标题）";
+      const m = document.createElement("div");
+      m.className = "mk-art-meta";
+      const node = mkNodes.find(n => n.id === a.node_id);
+      m.textContent = (node ? node.title : "无节点") + " · " + fmtAdminDate(a.created_at) + " · " + (a.published ? "已发布" : "已下架");
+      info.appendChild(t); info.appendChild(m);
+      const ops = document.createElement("div");
+      ops.className = "mk-art-ops";
+      const bView = document.createElement("button");
+      bView.type = "button"; bView.className = "btn-ghost"; bView.textContent = "预览";
+      bView.addEventListener("click", () => { if (a.url) window.open(a.url, "_blank"); else sbToast("暂无文章链接", false); });
+      const bQr = document.createElement("button");
+      bQr.type = "button"; bQr.className = "btn-ghost"; bQr.textContent = "微信分享";
+      bQr.addEventListener("click", () => showMarketingShare(a));
+      const bEdit = document.createElement("button");
+      bEdit.type = "button"; bEdit.className = "btn-ghost"; bEdit.textContent = "编辑";
+      bEdit.addEventListener("click", () => editMarketingArticle(a));
+      const bPub = document.createElement("button");
+      bPub.type = "button"; bPub.className = "btn-ghost"; bPub.textContent = a.published ? "下架" : "发布";
+      bPub.addEventListener("click", async () => {
+        try { await SB.updateMarketingArticle(a.id, { published: !a.published }); sbToast(a.published ? "文章已下架" : "文章已发布"); loadMarketingArticles(); } catch (e) { sbToast("操作失败：" + (e.message || ""), false); }
+      });
+      const bDel = document.createElement("button");
+      bDel.type = "button"; bDel.className = "btn-danger"; bDel.textContent = "删除";
+      bDel.addEventListener("click", async () => {
+        if (!confirm("确定删除文章「" + (a.title || "") + "」？")) return;
+        try { await SB.removeMarketingArticle(a.id); sbToast("文章已删除"); if (mkEditingArtId === a.id) resetMarketingArticle(); loadMarketingArticles(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+      });
+      ops.appendChild(bView); ops.appendChild(bQr); ops.appendChild(bEdit); ops.appendChild(bPub); ops.appendChild(bDel);
+      row.appendChild(cover); row.appendChild(info); row.appendChild(ops);
+      box.appendChild(row);
+    });
+  }
+
+  function editMarketingArticle(a) {
+    mkEditingArtId = a.id;
+    mkCoverPath = a.image || null;
+    if (document.querySelector("#mk-art-node")) document.querySelector("#mk-art-node").value = a.node_id || "";
+    if (document.querySelector("#mk-art-title")) document.querySelector("#mk-art-title").value = a.title || "";
+    if (document.querySelector("#mk-art-url")) document.querySelector("#mk-art-url").value = a.url || "";
+    if (document.querySelector("#mk-art-summary")) document.querySelector("#mk-art-summary").value = a.summary || "";
+    if (document.querySelector("#mk-art-published")) document.querySelector("#mk-art-published").checked = !!a.published;
+    if (document.querySelector("#mk-art-cover-name")) document.querySelector("#mk-art-cover-name").textContent = mkCoverPath || "";
+    renderMarketingCoverPreview();
+    sbToast("正在编辑文章：" + (a.title || ""), true);
+  }
+
+  function resetMarketingArticle() {
+    mkEditingArtId = null;
+    mkCoverPath = null;
+    const ids = ["mk-art-node","mk-art-title","mk-art-url","mk-art-summary","mk-art-cover-name"];
+    ids.forEach(id => { const el = document.querySelector("#" + id); if (el) el.value = ""; });
+    if (document.querySelector("#mk-art-node")) document.querySelector("#mk-art-node").value = mkNodes.length ? "" : "";
+    if (document.querySelector("#mk-art-published")) document.querySelector("#mk-art-published").checked = true;
+    renderMarketingCoverPreview();
+  }
+
+  function renderMarketingCoverPreview() {
+    const pre = document.querySelector("#mk-art-cover-preview");
+    if (!pre) return;
+    pre.innerHTML = "";
+    if (!mkCoverPath) return;
+    const img = document.createElement("img");
+    img.alt = ""; img.src = SB.marketingImageUrl(mkCoverPath);
+    pre.appendChild(img);
+  }
+
+  async function saveMarketingArticle() {
+    const nodeId = document.querySelector("#mk-art-node") ? document.querySelector("#mk-art-node").value : "";
+    const title = document.querySelector("#mk-art-title") ? document.querySelector("#mk-art-title").value.trim() : "";
+    const url = document.querySelector("#mk-art-url") ? document.querySelector("#mk-art-url").value.trim() : "";
+    const summary = document.querySelector("#mk-art-summary") ? document.querySelector("#mk-art-summary").value.trim() : "";
+    const published = document.querySelector("#mk-art-published") ? document.querySelector("#mk-art-published").checked : true;
+    if (!nodeId) return sbToast("请选择所属时间线节点", false);
+    if (!title) return sbToast("请填写文章标题", false);
+    if (!url) return sbToast("请填写文章链接", false);
+    try {
+      if (mkEditingArtId) {
+        await SB.updateMarketingArticle(mkEditingArtId, { node_id: nodeId, title, url, summary, image: mkCoverPath, published });
+        sbToast("文章已更新");
+      } else {
+        await SB.addMarketingArticle({ node_id: nodeId, title, url, summary, image: mkCoverPath, published });
+        sbToast("文章已发布");
+      }
+      resetMarketingArticle();
+      loadMarketingArticles();
+    } catch (e) { sbToast("保存文章失败：" + (e.message || ""), false); }
+  }
+
+  function showMarketingShare(a) {
+    if (!a || !a.url) return sbToast("该文章暂无链接可分享", false);
+    const url = a.url || "";
+    const box = document.getElementById("mk-share-mask");
+    if (!box) return;
+    box.classList.remove("hidden");
+    const titleEl = document.getElementById("mk-share-title");
+    const qrEl = document.getElementById("mk-share-qr");
+    if (titleEl) titleEl.textContent = (a.title || "文章") + " · 分享到微信";
+    if (qrEl) {
+      qrEl.innerHTML = "";
+      if (typeof window.QRCode !== "undefined") {
+        try { new window.QRCode(qrEl, { text: url, width: 220, height: 220, correctLevel: window.QRCode.CorrectLevel.H }); }
+        catch (e) { qrEl.textContent = "二维码生成失败"; }
+      } else { qrEl.textContent = "二维码组件未加载"; }
+    }
+    const linkEl = document.getElementById("mk-share-link");
+    if (linkEl) linkEl.textContent = url;
+  }
+
+  function hideMarketingShare() {
+    const box = document.getElementById("mk-share-mask");
+    if (box) box.classList.add("hidden");
+  }
+
+  function bindMarketing() {
+    const addBtn = document.querySelector("#mk-node-add");
+    const artSave = document.querySelector("#mk-art-save");
+    const artReset = document.querySelector("#mk-art-reset");
+    const coverPick = document.querySelector("#mk-art-cover-pick");
+    const coverInput = document.querySelector("#mk-art-cover-input");
+    // 节点
+    if (addBtn) addBtn.addEventListener("click", addOrUpdateMarketingNode);
+    // 文章
+    if (artSave) artSave.addEventListener("click", saveMarketingArticle);
+    if (artReset) artReset.addEventListener("click", resetMarketingArticle);
+    // 封面选择/上传
+    if (coverPick && coverInput) {
+      coverPick.addEventListener("click", () => coverInput.click());
+      coverInput.addEventListener("change", async () => {
+        const f = coverInput.files && coverInput.files[0];
+        coverInput.value = "";
+        if (!f) return;
+        if (f.type && f.type.indexOf("image/") !== 0) return sbToast("仅支持图片文件", false);
+        try {
+          const path = await SB.uploadMarketingImage(f);
+          mkCoverPath = path;
+          if (document.querySelector("#mk-art-cover-name")) document.querySelector("#mk-art-cover-name").textContent = path;
+          renderMarketingCoverPreview();
+          sbToast("封面图已上传");
+        } catch (e) { sbToast("封面上传失败：" + (e.message || ""), false); }
+      });
+    }
+    // 分享弹窗关闭
+    const shareMask = document.getElementById("mk-share-mask");
+    if (shareMask) {
+      shareMask.addEventListener("click", e => { if (e.target === shareMask) hideMarketingShare(); });
+      const shareClose = document.getElementById("mk-share-close");
+      if (shareClose) shareClose.addEventListener("click", hideMarketingShare);
+    }
+    loadMarketingNodes();
+    loadMarketingArticlePick();
+    loadMarketingArticles();
+  }
+
   function bindSuperTabs() {
     const bar = document.getElementById("super-tabs");
     if (!bar) return;

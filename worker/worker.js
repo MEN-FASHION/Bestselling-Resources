@@ -319,6 +319,45 @@ async function isPublicAccess(env) {
     return new Response(object.body, { headers });
   }
 
+  // 5.3 POST /marketing/uploadimg 上传营销日历图片（管理员）→ 返回 marketing/ 路径
+  if (method === "POST" && path === "marketing/uploadimg") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!file) return json({ error: "缺少图片" }, 400, CORS);
+    if (!/^image\//i.test(file.type || "") && !/\.(jpe?g|png|webp)$/i.test(file.name || "")) {
+      return json({ error: "仅支持图片" }, 400, CORS);
+    }
+    const cleanName = (file.name || "img").replace(/[^\w.\-]/g, "_");
+    const stamp = Date.now() + "_" + Math.floor(Math.random() * 1e4);
+    const key = "marketing/" + stamp + "_" + cleanName;
+    await env.IMAGES.put(key, file.stream(), {
+      httpMetadata: { contentType: file.type || "image/jpeg" },
+    });
+    return json({ ok: true, path: key }, 200, CORS);
+  }
+
+  // 5.4 GET /marketing/img?path=marketing/xxx  受控营销日历图片：必须登录，内联展示，防下载
+  if (method === "GET" && path === "marketing/img") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const p = url.searchParams.get("path") || "";
+    if (!p.startsWith("marketing/")) return json({ error: "参数错误" }, 400, CORS);
+    const object = await env.IMAGES.get(p);
+    if (!object) return json({ error: "文件不存在" }, 404, CORS);
+    const headers = new Headers(CORS);
+    headers.set("Content-Type", object.httpMetadata?.contentType || "image/jpeg");
+    headers.set("Content-Disposition", "inline");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+    return new Response(object.body, { headers });
+  }
+
   // ---------- 6. 招品回品专区（招品图片存 R2，受控代理，不暴露直链） ----------
   // 6.1 POST /recruit/upload 上传招品图片（管理员）→ 返回 recruits/ 路径
   if (method === "POST" && path === "recruit/upload") {

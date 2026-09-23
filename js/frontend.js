@@ -524,8 +524,10 @@
   function applyZoneNav() {
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
+      const vt = a.getAttribute("data-viewtab") || "";
       let z = null;
-      if (href === "index.html") z = "visual";
+      if (vt === "marketing" || href === "marketing.html") z = "marketing";
+      else if (href === "index.html") z = "visual";
       else if (href === "trends.html") z = "trend";
       else if (href === "trends.html#recruit") z = "recruit";
       else if (href === "trends.html#bestseller") z = "bestseller";
