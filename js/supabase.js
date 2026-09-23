@@ -787,9 +787,9 @@ const SB = (() => {
       const { data, error } = await q.order("sort_order", { ascending: true }).order("created_at", { ascending: false });
       return { data: data || [], error };
     },
-    async addMarketingArticle({ title, url, image, summary, node_id, published, sort_order }) {
+    async addMarketingArticle({ title, url, image, summary, content, node_id, published, sort_order }) {
       const { error } = await client.from("marketing_articles").insert({
-        title, url: url || "", image: image || "", summary: summary || "",
+        title, url: url || "", image: image || "", summary: summary || "", content: content || "",
         node_id: node_id || null, published: published !== false, sort_order: sort_order || 0,
       });
       return { error };

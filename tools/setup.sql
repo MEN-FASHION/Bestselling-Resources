@@ -880,9 +880,7 @@ $$;
 
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
 -- 用户标签列（兼容旧库，幂等）：超管设置的备注标签，便于区分用户类别
-if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='user_tag') then
-  alter table public.profiles add column user_tag text not null default '';
-end if;
+alter table public.profiles add column if not exists user_tag text not null default '';
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));
@@ -1047,7 +1045,8 @@ create policy "admin all marketing_nodes"
 create table if not exists public.marketing_articles (
   id uuid primary key default gen_random_uuid(),
   title text not null,                 -- 文章标题
-  url text default '',                 -- 文章外链（点击卡片跳转）
+  content text default '',             -- 文章正文（后台富文本/纯文本编辑，站内详情展示）
+  url text default '',                 -- 预留外链（如填写则卡片点击仍跳外链，否则打开站内详情）
   image text default '',               -- 文章封面/展示图路径（R2 marketing/ 相对路径）
   summary text default '',             -- 文章摘要（可选）
   node_id uuid references public.marketing_nodes (id) on delete set null, -- 关联时间节点（可空）
@@ -1056,6 +1055,10 @@ create table if not exists public.marketing_articles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- 兼容旧库：为已建表的文章补充正文列（幂等）
+alter table public.marketing_articles
+  add column if not exists content text default '';
 
 alter table public.marketing_articles enable row level security;
 

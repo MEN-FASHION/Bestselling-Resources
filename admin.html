@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923H">
+<link rel="stylesheet" href="css/style.css?v=20260923K">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -334,6 +334,15 @@
           <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
           <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【用户】【角色】【标签】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
 
+          <!-- 按标签筛选：权限表顶部直接按用户标签筛选 -->
+          <div class="rg-row" style="margin-top:6px;margin-bottom:6px">
+            <label class="field">按标签筛选</label>
+            <select id="perm-tag-filter" class="input" style="max-width:200px">
+              <option value="">全部标签</option>
+              <option value="__none__">无标签</option>
+            </select>
+          </div>
+
           <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
           <div class="perm-table-wrap">
             <table class="perm-table" id="perm-table">
@@ -363,7 +372,7 @@
               <option value="super_admin">超级管理员</option>
             </select>
             <label class="field" style="margin-left:8px">标签</label>
-            <input id="perm-tag" class="input" type="text" placeholder="如：招商/测试/内部/商家（可留空）" style="max-width:180px" />
+            <select id="perm-tag" class="input" style="max-width:140px"><option value="">无标签</option></select>
             <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
           </div>
           <div class="perm-zone">
@@ -480,41 +489,90 @@
         </div>
 
         <div class="super-sub" data-sv="sv-6" style="display:none;">
-          <h3 class="tbs-title">营销日历 <span class="hint-inline">（超级管理员 · 编辑时间线节点 + 发布趋势文章，前台营销日历卡片点击跳转文章，文章可生成二维码分享到微信）</span></h3>
+          <h3 class="tbs-title">营销日历 <span class="hint-inline">（可视化编辑 · 仅超级管理员 · 所见即所得：下方显示效果与前台营销日历一致）</span></h3>
 
-          <!-- 时间线节点管理 -->
-          <h4 class="perm-zone-title">时间线节点 <span class="hint-inline">（每个节点对应前台时间线上一个时间点及其下方的展示卡片）</span></h4>
-          <div class="rg-row" style="margin-top:6px">
-            <label class="field">节点标题</label><input id="mk-node-title" class="input" placeholder="如：双11大促" maxlength="60">
-            <label class="field" style="margin-left:8px">时间</label><input id="mk-node-date" class="input" type="datetime-local">
-            <button id="mk-node-add" class="btn-primary" type="button">添加节点</button>
+          <!-- 可视化编辑工具条 -->
+          <div class="mk-admin-toolbar">
+            <button id="mk-add-node" class="btn-primary" type="button">＋ 新增时间节点</button>
+            <button id="mk-add-art" class="btn-primary" type="button">＋ 发布趋势文章</button>
+            <span class="hint-inline">时间线为横向，可左右拖动滑动查看不同时间节点；每个节点的主题文字在轴上方、主图在轴下方，点击主图跳转趋势链接；文章以 3:4 展示图卡片呈现，可生成二维码分享到微信。</span>
           </div>
-          <div id="mk-node-list" class="mk-node-list"><p class="hint">加载中…</p></div>
+          <div class="mk-viz-tip">操作提示：悬停时间节点或卡片，可直接「编辑 / 删除」；文章卡片还可「发布 / 下架 / 微信分享」。新增节点与文章使用上方按钮。</div>
 
-          <hr class="tag-sub-hr">
-          <!-- 趋势文章发布管理 -->
-          <h4 class="perm-zone-title">趋势文章 <span class="hint-inline">（文章归属某个时间线节点；封面图 3:4；发布后前台卡片点击跳转文章链接；可生成二维码分享到微信）</span></h4>
-          <div class="rg-row" style="margin-top:6px">
-            <label class="field">所属节点</label><select id="mk-art-node" class="input"><option value="">（请先添加时间线节点）</option></select>
-            <label class="field" style="margin-left:8px">文章标题</label><input id="mk-art-title" class="input" placeholder="文章标题" maxlength="80">
+          <!-- 可视化时间线（与前台同款渲染） -->
+          <div class="mk-viz">
+            <div class="mk-timeline-title">营销时间线</div>
+            <div id="mk-viz-timeline" class="mk-timeline"><div class="mk-empty">加载中…</div></div>
           </div>
-          <div class="rg-row" style="margin-top:6px">
-            <label class="field">文章链接</label><input id="mk-art-url" class="input" placeholder="https://... 点击卡片跳转的地址" maxlength="500">
-            <label class="field" style="margin-left:8px">摘要</label><input id="mk-art-summary" class="input" placeholder="一句话摘要（选填）" maxlength="200">
+
+          <!-- 可视化 3:4 卡片区（与前台同款渲染） -->
+          <div class="mk-viz">
+            <div class="mk-grid-title">营销日历</div>
+            <div id="mk-viz-grid" class="mk-grid"><div class="mk-empty">加载中…</div></div>
           </div>
-          <div class="rg-row" style="margin-top:6px">
-            <button id="mk-art-cover-pick" class="btn-ghost" type="button">+ 选择封面图（3:4）</button>
-            <input id="mk-art-cover-input" type="file" accept="image/*" style="display:none;">
-            <span id="mk-art-cover-name" class="hint-inline"></span>
-            <div id="mk-art-cover-preview" class="mk-art-cover-preview"></div>
+        </div>
+
+        <!-- 营销·时间节点编辑弹窗 -->
+        <div id="mk-node-modal" class="modal-mask hidden">
+          <div class="modal">
+            <div class="dialog-head">
+              <span class="dialog-title" id="mk-node-modal-title">新增时间节点</span>
+              <button type="button" class="modal-close" id="mk-node-close-x">×</button>
+            </div>
+            <div class="dialog-body">
+              <label>节点标题（主题）</label>
+              <input id="mk-node-title" class="input" placeholder="如：双11大促" maxlength="60">
+              <label>时间</label>
+              <input id="mk-node-date" class="input" type="datetime-local">
+              <label>主图（下方展示，点击查看趋势）</label>
+              <div class="field-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button id="mk-node-cover-pick" class="btn-ghost" type="button">＋ 选择主图</button>
+                <input id="mk-node-cover-input" type="file" accept="image/*" style="display:none;">
+                <span id="mk-node-cover-name" class="hint-inline"></span>
+              </div>
+              <div id="mk-node-cover-preview" class="mk-art-cover-preview"></div>
+              <label>趋势链接（点击主图跳转）</label>
+              <input id="mk-node-url" class="input" placeholder="https://… 趋势文件/文章链接" maxlength="500">
+              <div class="dialog-actions">
+                <button type="button" class="btn-ghost" id="mk-node-cancel">取消</button>
+                <button type="button" class="btn-primary" id="mk-node-save">保存节点</button>
+              </div>
+            </div>
           </div>
-          <div class="rg-btnrow" style="margin-top:8px">
-            <label class="chk"><input type="checkbox" id="mk-art-published" checked> 发布到前台</label>
-            <button id="mk-art-save" class="btn-primary" type="button">发布/保存文章</button>
-            <button id="mk-art-reset" class="btn-ghost" type="button">清空新建</button>
-          </div>
-          <div id="mk-art-list" class="mk-art-list">
-            <p class="hint">加载中…</p>
+        </div>
+
+        <!-- 营销·文章编辑弹窗 -->
+        <div id="mk-art-modal" class="modal-mask hidden">
+          <div class="modal">
+            <div class="dialog-head">
+              <span class="dialog-title" id="mk-art-modal-title">发布趋势文章</span>
+              <button type="button" class="modal-close" id="mk-art-close-x">×</button>
+            </div>
+            <div class="dialog-body">
+              <label>所属节点</label>
+              <select id="mk-art-node" class="input"><option value="">（请先添加时间线节点）</option></select>
+              <label>文章标题</label>
+              <input id="mk-art-title" class="input" placeholder="文章标题" maxlength="80">
+              <label>文章正文（站内详情）</label>
+              <textarea id="mk-art-content" class="input mk-editor" placeholder="输入文章正文，多个段落用换行分隔。点击前台卡片即可打开站内文章详情查看。" rows="8"></textarea>
+              <label>文章链接（选填）</label>
+              <input id="mk-art-url" class="input" placeholder="留空=使用站内详情；填写 https:// 则点击卡片直接跳转该地址" maxlength="500">
+              <div class="hint-inline">提示：正文填写后在站内展示；如两者都填，优先跳转链接。正文支持多段落。</div>
+              <label>摘要</label>
+              <input id="mk-art-summary" class="input" placeholder="一句话摘要（选填）" maxlength="200">
+              <label>封面图（3:4 展示图）</label>
+              <div class="rg-row">
+                <button id="mk-art-cover-pick" class="btn-ghost" type="button">＋ 选择封面图</button>
+                <input id="mk-art-cover-input" type="file" accept="image/*" style="display:none;">
+                <span id="mk-art-cover-name" class="hint-inline"></span>
+                <div id="mk-art-cover-preview" class="mk-art-cover-preview"></div>
+              </div>
+              <label class="chk"><input type="checkbox" id="mk-art-published" checked> 发布到前台</label>
+              <div class="dialog-actions">
+                <button type="button" class="btn-ghost" id="mk-art-cancel">取消</button>
+                <button type="button" class="btn-primary" id="mk-art-save">保存文章</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -912,9 +970,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923H"></script>
-  <script src="js/supabase.js?v=20260923H"></script>
-  <script src="js/admin.js?v=20260923H"></script>
+  <script src="js/config.js?v=20260923K"></script>
+  <script src="js/supabase.js?v=20260923K"></script>
+  <script src="js/admin.js?v=20260923K"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

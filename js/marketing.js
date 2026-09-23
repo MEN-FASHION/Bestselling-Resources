@@ -225,7 +225,7 @@
     }
   }
 
-  // 顶部时间线：按 sort_order 排列的时间节点
+  // 顶部横向时间轴：一条横线，节点为亮点，节点上方为主题文字，下方为主图（点击查看趋势）
   function renderNodes() {
     const tl = document.getElementById("mk-timeline");
     if (!tl) return;
@@ -233,17 +233,65 @@
       tl.innerHTML = '<div class="mk-empty">暂无时间节点，请等待管理员发布。</div>';
       return;
     }
+    // 每个节点取一张主图与跳转链接：优先节点自带，否则取该节点下第一篇已发布文章
+    const coverOf = (n) => {
+      const rel = articles.filter(a => String(a.node_id) === String(n.id));
+      const a = rel[0] || null;
+      return {
+        img: (n.image || (a && a.image)) || "",
+        url: (n.url || (a && a.url)) || "",
+        text: (a && a.title) || ""
+      };
+    };
     tl.innerHTML = nodes.map((n, i) => {
-      const label = escHtml(n.desc == null ? "" : n.date || n.title);
       const date = escHtml(n.date || "");
+      const title = escHtml(n.title || "");
+      const c = coverOf(n);
+      const href = c.url || "javascript:void(0);";
+      const target = c.url ? "_blank" : "";
+      const rel = c.url ? "noopener noreferrer" : "";
       return `<div class="mk-node ${i + 1 === nodes.length ? "last" : ""}">
-        <div class="mk-node-dot"><span class="mk-node-inner"></span></div>
-        <div class="mk-node-card">
+        <div class="mk-node-head">
           <div class="mk-node-date">${date}</div>
-          <div class="mk-node-title">${escHtml(n.title)}</div>
+          <div class="mk-node-title">${title}</div>
         </div>
+        <div class="mk-node-dot"><span class="mk-node-inner"></span></div>
+        <a class="mk-node-cover" href="${href}" target="${target}" rel="${rel}" title="${title}">
+          ${c.img ? `<img src="${SB.marketingImageUrl(c.img)}" alt="${title}" loading="lazy">` : `<div class="mk-node-cover-ph">${title}</div>`}
+          <div class="mk-node-cover-tip">查看趋势</div>
+        </a>
       </div>`;
     }).join("");
+    // 图片加载失败回退占位
+    tl.querySelectorAll(".mk-node-cover img").forEach(img => {
+      img.onerror = () => { const w = img.parentNode; w.classList.add("noimg"); img.style.display = "none"; };
+    });
+    // 支持鼠标按住横向拖动滑动
+    enableDragScroll(tl);
+  }
+
+  // 鼠标/触摸按住横向拖动时间线
+  function enableDragScroll(el) {
+    if (!el || el._dragBound) return;
+    el._dragBound = true;
+    let isDown = false, startX = 0, scrollLeft = 0, moved = false;
+    el.addEventListener("mousedown", (e) => {
+      // 不拦截主图/按钮点击
+      if (e.target.closest("a,button,input,select")) return;
+      isDown = true; moved = false;
+      startX = e.pageX; scrollLeft = el.scrollLeft;
+      el.style.cursor = "grabbing"; el.style.userSelect = "none";
+    });
+    el.addEventListener("mousemove", (e) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      el.scrollLeft = scrollLeft - dx;
+    });
+    const up = () => { if (!isDown) return; isDown = false; el.style.cursor = ""; el.style.userSelect = ""; };
+    el.addEventListener("mouseup", up);
+    el.addEventListener("mouseleave", up);
+    el.addEventListener("click", (e) => { if (moved) { e.preventDefault(); e.stopPropagation(); } }, true);
   }
 
   // 已发布文章 → 3:4 卡片区（每个时间节点对应一张展示图）
@@ -258,11 +306,18 @@
     for (const a of articles) {
       const card = document.createElement("a");
       card.className = "mk-card";
-      if (a.url) card.href = a.url; else card.href = "javascript:void(0);";
-      card.target = a.url ? "_blank" : "";
-      card.rel = a.url ? "noopener noreferrer" : "";
+      if (a.url) { card.href = a.url; card.target = "_blank"; card.rel = "noopener noreferrer"; }
+      else { card.href = "javascript:void(0);"; }
       card.dataset.id = a.id;
       if (a.id === activeArticleId) card.classList.add("active");
+      // 无外链 → 点击打开站内文章详情
+      if (!a.url) {
+        card.addEventListener("click", (e) => {
+          if (e.target.closest(".share-btn")) return;
+          e.preventDefault();
+          openArticleDetail(a);
+        });
+      }
 
       const imgWrap = document.createElement("div");
       imgWrap.className = "mk-card-img";
@@ -305,6 +360,41 @@
       card.appendChild(imgWrap); card.appendChild(body);
       grid.appendChild(card);
     }
+  }
+
+  // 打开站内文章详情弹窗（无外链时使用；正文从 posts 加载）
+  async function openArticleDetail(a) {
+    if (!a || !a.id) return;
+    const modal = document.getElementById("mk-article-modal");
+    if (!modal) return;
+    let t = a.title || "";
+    let c = a.content || "";
+    let img = a.image || "";
+    if (!c) {
+      // 尝试从已加载文章列表中带出正文
+      const full = articles.find(x => x.id === a.id);
+      if (full && full.content) c = full.content;
+      else if (full && full.image) img = full.image;
+    }
+    if (document.getElementById("mk-article-title")) document.getElementById("mk-article-title").textContent = t;
+    const body = document.getElementById("mk-article-body");
+    if (body) {
+      body.innerHTML = "";
+      if (img) {
+        const im = document.createElement("img");
+        im.className = "mk-article-cover";
+        im.alt = t; im.src = SB.marketingImageUrl(img);
+        im.onerror = () => { im.remove(); };
+        body.appendChild(im);
+      }
+      const para = document.createElement("div");
+      para.className = "mk-article-text";
+      para.textContent = c || "（暂无正文）";
+      // 支持分段显示
+      para.innerHTML = (c || "").split(/\n{2,}/).map(p => "<p>" + (p || "").replace(/\n/g, "<br>") + "</p>").join("");
+      body.appendChild(para);
+    }
+    modal.classList.remove("hidden");
   }
 
   // 二维码分享弹窗：专属链接 + 二维码，可保存分享到微信
@@ -387,6 +477,14 @@
     const c2 = document.getElementById("mk-share-close-x"); if (c2) c2.onclick = close;
     modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
   }
+function bindArticleModalClose() {
+    const modal = document.getElementById("mk-article-modal");
+    if (!modal) return;
+    const close = () => modal.classList.add("hidden");
+    const c1 = document.getElementById("mk-article-close"); if (c1) c1.onclick = close;
+    const c2 = document.getElementById("mk-article-close-x"); if (c2) c2.onclick = close;
+    modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+  }
 
   document.addEventListener("DOMContentLoaded", () => {
     const st = $("#site-title");
@@ -414,6 +512,7 @@
     const lo = $("#logout-btn"); if (lo) lo.onclick = onLogout;
     bindChangepwd();
     bindShareModalClose();
+    bindArticleModalClose();
 
     // 兜底：异常情况下最多等 3s 后揭开遮罩
     setTimeout(hideSplash, 3000);

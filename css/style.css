@@ -1859,6 +1859,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .perm-td-role { white-space: nowrap; font-weight: 600; }
 .perm-td-tag { white-space: nowrap; font-size: 13px; color: var(--txt, #222); }
 .perm-td-tag .hint { color: var(--sub, #999); font-size: 12px; }
+.perm-tag-select { max-width: 100px; padding: 3px 6px; border: 1px solid rgba(0,0,0,.12); border-radius: 4px; background: var(--card, #fff); color: var(--txt, #222); font-size: 12px; cursor: pointer; }
+.perm-tag-select:focus { outline: none; border-color: var(--accent, #c8a24a); }
 .perm-td-zones { max-width: 260px; }
 .perm-td-device { max-width: 220px; word-break: break-all; white-space: normal; font-size: 12px; }
 .perm-td-ip { white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; color: var(--sub, #666); }
@@ -1964,3 +1966,75 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* 数据导出预览：图片加载失败占位 */
 .export-item-broken img{opacity:.28;}
 .export-item-broken .export-item-n::after{content:"（图未加载）";color:#c0392b;font-weight:600;}
+/* ============================================================
+ * 营销日历（营销节日日历）：前台时间线 + 3:4 卡片 · 后台可视化编辑共用
+ * ============================================================ */
+.mk-wrap{max-width:1180px;margin:0 auto;padding:26px 18px 60px;}
+.mk-timeline-title,.mk-grid-title{font-size:20px;font-weight:700;letter-spacing:1px;color:var(--txt);margin:0 0 26px;position:relative;padding-left:16px;}
+.mk-timeline-title::before,.mk-grid-title::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:5px;border-radius:3px;background:linear-gradient(180deg,#d4a017,#8b7355);}
+.mk-grid-title{margin-top:54px;}
+
+/* ---- 横向时间轴（可拖动） ---- */
+.mk-timeline{position:relative;display:flex;gap:34px;overflow-x:auto;overflow-y:visible;padding:24px 6px 20px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
+.mk-timeline::-webkit-scrollbar{height:8px;}
+.mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
+.mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
+/* 横轴主线：贯穿所有节点亮点中心 */
+.mk-timeline::before{content:"";position:absolute;left:6px;right:6px;top:91px;height:3px;background:linear-gradient(90deg,#d9cfc0,#d4a017,#d9cfc0);border-radius:3px;}
+.mk-node{position:relative;flex:0 0 200px;width:200px;display:flex;flex-direction:column;align-items:center;scroll-snap-align:start;}
+.mk-node-head{height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;text-align:center;padding-bottom:14px;}
+.mk-node-date{font-size:12px;color:#b3862f;font-weight:700;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
+.mk-node-title{font-size:17px;font-weight:800;color:var(--txt);line-height:1.35;letter-spacing:.5px;}
+/* 节点亮点（发光圆点，落在主轴线上） */
+.mk-node-dot{position:relative;z-index:2;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid #d4a017;box-shadow:0 0 0 5px rgba(212,160,23,.14),0 0 14px rgba(212,160,23,.55);margin-bottom:22px;}
+.mk-node.last .mk-node-dot{background:#d4a017;box-shadow:0 0 0 6px rgba(212,160,23,.22),0 0 20px rgba(212,160,23,.75);}
+.mk-node-inner{display:block;width:6px;height:6px;margin:2px auto 0;border-radius:50%;background:#d4a017;}
+.mk-node.last .mk-node-inner{background:#fff;}
+/* 节点主图：点击查看趋势 */
+.mk-node-cover{position:relative;width:100%;aspect-ratio:3/4;background:#f0eee6;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:block;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.07);transition:transform .22s,box-shadow .22s,border-color .22s;}
+.mk-node-cover:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(60,52,42,.16);border-color:#d4a017;}
+.mk-node-cover img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block;}
+.mk-node-cover.noimg{display:flex;align-items:center;justify-content:center;}
+.mk-node-cover-ph{padding:18px;font-size:15px;font-weight:700;color:#b3ac9e;text-align:center;line-height:1.6;}
+.mk-node-cover-tip{position:absolute;left:0;right:0;bottom:0;padding:22px 10px 10px;background:linear-gradient(transparent,rgba(50,42,28,.72));color:#fff;text-align:center;font-size:13px;font-weight:600;opacity:0;transform:translateY(6px);transition:.22s;}
+.mk-node-cover:hover .mk-node-cover-tip{opacity:1;transform:none;}
+
+/* ---- 3:4 营销卡片区 ---- */
+.mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
+.mk-card{position:relative;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--line);border-radius:14px;overflow:hidden;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.06);transition:transform .22s,box-shadow .22s,border-color .22s;}
+.mk-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(60,52,42,.14);border-color:#d4a017;}
+.mk-card.active{border-color:#d4a017;box-shadow:0 0 0 3px rgba(212,160,23,.22);}
+.mk-card-img{position:relative;aspect-ratio:3/4;background:#f0eee6;overflow:hidden;}
+.mk-card-img img{width:100%;height:100%;object-fit:cover;object-position:center top;}
+.mk-card-img.noimg{display:flex;align-items:center;justify-content:center;}
+.mk-card-ph{padding:18px;font-size:15px;font-weight:600;color:#b3ac9e;text-align:center;line-height:1.6;}
+.mk-wx{position:absolute;top:10px;right:10px;z-index:2;padding:6px 10px;border:none;border-radius:999px;background:rgba(44,44,44,.72);color:#fff;font-size:12px;cursor:pointer;backdrop-filter:blur(4px);transition:background .2s;}
+.mk-wx:hover{background:#1aad19;}
+.mk-card-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:5px;}
+.mk-card-title{font-size:14px;font-weight:600;color:var(--txt);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.mk-card-sub{font-size:12px;color:var(--sub);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.mk-empty{padding:42px 20px;text-align:center;color:var(--sub);font-size:14px;background:var(--bg2);border:1px dashed var(--line);border-radius:12px;}
+
+/* ---- 后台可视化编辑叠加 ---- */
+.mk-admin-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 18px;}
+.mk-admin-toolbar .hint-inline{flex:1;min-width:200px;}
+.mk-viz{position:relative;}
+.mk-viz .mk-timeline-title,.mk-viz .mk-grid-title{margin-bottom:18px;}
+.mk-viz .mk-node,.mk-viz .mk-card{position:relative;}
+.mk-viz .mk-node::after,.mk-viz .mk-card::after{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;transition:box-shadow .2s;}
+.mk-viz .mk-node:hover::after,.mk-viz .mk-card:hover::after{box-shadow:inset 0 0 0 2px rgba(212,160,23,.65);}
+.mk-viz .mk-card{cursor:pointer;}
+.mk-viz-ops{position:absolute;top:8px;left:8px;z-index:3;display:flex;gap:6px;opacity:0;transform:translateY(-4px);transition:.2s;}
+.mk-viz .mk-card:hover .mk-viz-ops,.mk-viz .mk-node:hover .mk-viz-ops{opacity:1;transform:none;}
+.mk-viz-ops button{padding:5px 10px;border:none;border-radius:999px;font-size:12px;cursor:pointer;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+.mk-viz-ops .op-edit{background:#d4a017;color:#fff;}
+.mk-viz-ops .op-del{background:#c25e5a;color:#fff;}
+.mk-viz-ops .op-toggle{background:#2c2c2c;color:#fff;}
+.mk-viz .mk-node-ops{position:absolute;top:6px;right:8px;z-index:3;display:flex;gap:6px;opacity:0;transform:translateY(-4px);transition:.2s;}
+.mk-viz .mk-node:hover .mk-node-ops{opacity:1;transform:none;}
+.mk-viz .mk-node-ops button{padding:5px 10px;border:none;border-radius:999px;font-size:12px;cursor:pointer;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+.mk-node-ops .op-edit{background:#d4a017;color:#fff;}
+.mk-node-ops .op-del{background:#c25e5a;color:#fff;}
+.mk-viz-tip{font-size:12px;color:var(--sub);margin:6px 0 14px;}
+.mk-viz .mk-empty{min-height:90px;display:flex;align-items:center;justify-content:center;}
+.mk-viz-btn{position:relative;z-index:2;}

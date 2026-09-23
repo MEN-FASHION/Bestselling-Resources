@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20260923H">
+<link rel="stylesheet" href="css/style.css?v=20260923K">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -72,7 +72,7 @@
   <section id="marketing-view" class="gallery-view hidden">
     <div class="mk-wrap">
       <!-- ===== 顶部时间线 ===== -->
-      <div class="mk-timeline-title">营销时间线</div>
+      <div class="mk-timeline-title">营销时间线 <span class="hint-inline">← 可左右拖动滑动查看 →</span></div>
       <div id="mk-timeline" class="mk-timeline"><div class="mk-empty">加载中…</div></div>
 
       <!-- ===== 营销日历卡片区（3:4 展示图） ===== -->
@@ -122,10 +122,24 @@
     </div>
   </div>
 
+  <!-- 站内文章详情弹窗（无外链卡片点击打开展示正文） -->
+  <div id="mk-article-modal" class="modal-mask hidden">
+    <div class="modal mk-article-dialog">
+      <div class="dialog-head">
+        <span class="dialog-title" id="mk-article-title">趋势文章</span>
+        <button type="button" class="modal-close" id="mk-article-close-x">×</button>
+      </div>
+      <div class="dialog-body mk-article-body" id="mk-article-body"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="mk-article-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923H"></script>
-  <script src="js/supabase.js?v=20260923H"></script>
-  <script src="js/marketing.js?v=20260923H"></script>
+  <script src="js/config.js?v=20260923K"></script>
+  <script src="js/supabase.js?v=20260923K"></script>
+  <script src="js/marketing.js?v=20260923K"></script>
 </body>
 </html>
