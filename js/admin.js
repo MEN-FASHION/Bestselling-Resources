@@ -6389,7 +6389,7 @@ let bestsellerTasks = [];
 
   async function loadMarketingNodes() {
     if (currentRole !== "super_admin") return;
-    try { mkNodes = await SB.listMarketingNodes(); } catch (e) { mkNodes = []; }
+    try { const r = await SB.listMarketingNodes(); mkNodes = (r && r.data) || []; } catch (e) { mkNodes = []; }
     refreshMarketingViz();
     loadMarketingArticlePick();
   }
@@ -6397,7 +6397,7 @@ let bestsellerTasks = [];
   async function loadMarketingArticles() {
     if (currentRole !== "super_admin") return;
     let list = [];
-    try { list = await SB.listMarketingArticles(false); } catch (e) { list = []; }
+    try { const r = await SB.listMarketingArticles(false); list = (r && r.data) || []; } catch (e) { list = []; }
     mkArticles = list;
     refreshMarketingViz();
   }
