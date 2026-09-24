@@ -4,8 +4,62 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20260923Z">
+<link rel="stylesheet" href="css/style.css?v=20260923AA">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+    /* ==== 营销日历时间轴 自包含兜底样式 ==== */
+    .mk-wrap{max-width:1180px;margin:0 auto;padding:26px 18px 60px;}
+    .mk-timeline-title{font-size:20px;font-weight:700;letter-spacing:1px;color:#3a3226;margin:0 0 26px;position:relative;padding-left:16px;}
+    .mk-timeline-title::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:5px;border-radius:3px;background:linear-gradient(180deg,#d4a017,#8b7355);}
+    .mk-timeline-head{display:flex;align-items:baseline;gap:12px;}
+    .mk-timeline-head .mk-timeline-title{margin-bottom:0;}
+    .mk-timeline-head .mk-hint{color:#a89e8c;font-size:13px;}
+    .mk-timeline{position:relative;display:flex;gap:18px;overflow-x:auto;overflow-y:visible;padding:150px 26px 150px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
+    .mk-timeline::-webkit-scrollbar{height:8px;}
+    .mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
+    .mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
+    .mk-timeline::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#d9cfc0,#e0b84a,#d9cfc0);border-radius:3px;transform:translateY(-50%);}
+    .mk-axis-arrow{position:sticky;right:0;align-self:center;flex:0 0 auto;font-size:22px;color:#c9a13c;padding-left:10px;text-shadow:0 0 8px rgba(201,161,60,.4);}
+    .mk-node{position:relative;flex:0 0 218px;width:218px;height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;scroll-snap-align:start;}
+    .mk-dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:16px;height:16px;border-radius:50%;background:#d8382e;border:2px solid #fff;box-shadow:0 0 0 4px rgba(216,56,46,.18),0 0 12px rgba(216,56,46,.5);}
+    .mk-dot-inner{display:block;width:4px;height:4px;margin:3px auto 0;border-radius:50%;background:#fff;}
+    .mk-dot-date{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:700;color:#b3862f;letter-spacing:1px;}
+    .mk-node.up .mk-dot-date{bottom:calc(100% + 8px);}
+    .mk-node.down .mk-dot-date{top:calc(100% + 8px);}
+    .mk-conn{position:absolute;left:50%;width:2px;height:86px;background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;transform:translateX(-50%);z-index:1;}
+    .mk-node.up .mk-conn{top:calc(50% + 14px);}
+    .mk-node.down .mk-conn{bottom:calc(50% + 14px);}
+    .mk-tag{position:absolute;left:50%;transform:translateX(-50%);width:204px;border-radius:14px;padding:12px 13px;color:#fff;text-align:center;box-shadow:0 8px 20px rgba(60,52,42,.14);transition:transform .22s,box-shadow .22s;}
+    .mk-tag:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 14px 28px rgba(60,52,42,.22);}
+    .mk-node.up .mk-tag{bottom:calc(50% + 104px);}
+    .mk-node.down .mk-tag{top:calc(50% + 104px);}
+    .mk-tag-link{display:block;text-decoration:none;color:inherit;}
+    .mk-tag-date{font-size:12px;font-weight:800;letter-spacing:1.2px;opacity:.92;margin-bottom:5px;text-transform:uppercase;}
+    .mk-tag-title{font-size:17px;font-weight:800;line-height:1.3;letter-spacing:.5px;}
+    .mk-tag-desc{margin-top:7px;font-size:12px;line-height:1.55;opacity:.9;}
+    .mk-node.cat-festival .mk-tag{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
+    .mk-node.cat-event .mk-tag{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
+    .mk-node.cat-promo .mk-tag{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
+    .mk-empty{padding:40px;text-align:center;color:#b3ac9e;font-size:15px;background:#faf8f2;border-radius:14px;border:1px dashed #dcd4c4;}
+    .mk-hero{background:linear-gradient(150deg,#f8d46a,#eebf52 45%,#e58f3c);border-radius:18px;padding:28px 30px;margin-bottom:30px;box-shadow:0 12px 30px rgba(201,158,54,.28);position:relative;overflow:hidden;text-align:center;}
+    .mk-hero::after{content:"";position:absolute;right:-40px;bottom:-60px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.16);}
+    .mk-hero-title{font-size:30px;font-weight:900;color:#4a2f14;letter-spacing:1px;margin:0;line-height:1.3;}
+    .mk-hero-sep{font-weight:400;color:#7a5a2e;margin:0 4px;}
+    .mk-hero-year{color:#7a2f10;display:inline-block;background:#fff;border-radius:8px;padding:0 10px;}
+    .mk-hero-sub{margin:12px 0 0;font-size:14px;color:#6b4a24;letter-spacing:.5px;}
+    .mk-legend{display:flex;justify-content:center;gap:16px;margin-top:26px;flex-wrap:wrap;}
+    .mk-legend-item{border-radius:12px;padding:8px 18px;font-size:14px;font-weight:700;color:#fff;box-shadow:0 4px 12px rgba(60,52,42,.12);}
+    .mk-leg-festival{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
+    .mk-leg-event{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
+    .mk-leg-promo{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
+    .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
+    .mk-card{position:relative;display:flex;flex-direction:column;background:#fbfaf6;border:1px solid #e4dcca;border-radius:14px;overflow:hidden;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.06);transition:transform .22s,box-shadow .22s,border-color .22s;}
+    .mk-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(60,52,42,.14);border-color:#d4a017;}
+    .mk-card-img{position:relative;aspect-ratio:3/4;background:#f0eee6;overflow:hidden;}
+    .mk-card-img img{width:100%;height:100%;object-fit:cover;object-position:center top;}
+    </style>
+
+
 </head>
 <body class="front">
   <!-- 提示条 -->
@@ -162,8 +216,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923Z"></script>
-  <script src="js/supabase.js?v=20260923Z"></script>
-  <script src="js/marketing.js?v=20260923Z"></script>
+  <script src="js/config.js?v=20260923AA"></script>
+  <script src="js/supabase.js?v=20260923AA"></script>
+  <script src="js/marketing.js?v=20260923AA"></script>
 </body>
 </html>
