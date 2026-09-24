@@ -263,6 +263,24 @@ async function isPublicAccess(env) {
     return json({ ok: true, path: key, cover: coverPath }, 200, CORS);
   }
 
+  // 4.1b POST /trend/uploadCover 单独上传/替换趋势封面（管理员）→ 返回新 R2 cover 路径
+  if (method === "POST" && path === "trend/uploadCover") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    const form = await request.formData();
+    const coverFile = form.get("cover");
+    if (!coverFile || coverFile.size <= 0) return json({ error: "缺少封面" }, 400, CORS);
+    if (!/^image\//i.test(coverFile.type || "")) return json({ error: "封面仅支持图片" }, 400, CORS);
+    const cName = (coverFile.name || "cover.jpg").replace(/[^\w.\-]/g, "_");
+    const stamp = Date.now() + "_" + Math.floor(Math.random() * 1e4);
+    const coverPath = "trends_covers/" + stamp + "_" + cName;
+    await env.IMAGES.put(coverPath, coverFile.stream(), {
+      httpMetadata: { contentType: coverFile.type || "image/jpeg" },
+    });
+    return json({ ok: true, cover: coverPath }, 200, CORS);
+  }
+
   // 4.2 GET /trend/preview?path=trends/xxx   受控预览：必须登录，返回 PDF 内联，防下载/防另存
   if (method === "GET" && path === "trend/preview") {
     // 趋势专区始终需登录可见（不受公开浏览开关影响）

@@ -2565,6 +2565,12 @@
   let trendList = [];
   let trendCategory = "";        // 已选类目（引用视觉专区类目）
   let trendCatOptions = [];      // 可选类目候选
+  // —— 趋势文件二次编辑（独立状态，避免与上传表单冲突）——
+  let trendEditCatOptions = [];  // 编辑弹窗可选类目候选
+  let trendEditCategory = "";    // 编辑弹窗当前类目
+  let trendEditCover = null;     // 编辑弹窗新选封面（null=不替换）
+  let trendEditData = null;      // 正在编辑的趋势记录
+
 
   function bindTrend() {
     const dropzone = document.querySelector("#trend-dropzone");
@@ -2624,6 +2630,7 @@
     if (upBtn) upBtn.addEventListener("click", () => doUploadTrend(title.value.trim()));
     if (refresh) refresh.addEventListener("click", loadTrendList);
     if (title) title.addEventListener("input", () => { if (upBtn) upBtn.disabled = !(title.value.trim() && trendPickedFile); });
+    bindTrendEditModal();
   }
   async function loadTrendCatOptions() {
     try {
@@ -2782,6 +2789,7 @@
           '<div class="trend-admin-desc hidden2"></div>' +
         '</div>' +
         '<div class="trend-admin-ops">' +
+          '<button class="btn-ghost trend-edit">编辑</button>' +
           '<button class="btn-ghost trend-del">删除</button>' +
         '</div>';
       const cov = row.querySelector(".trend-cov");
@@ -2798,6 +2806,7 @@
       const d = row.querySelector(".trend-admin-desc");
       if (t.description) { d.textContent = t.description; d.classList.remove("hidden2"); }
       row.querySelector(".trend-del").addEventListener("click", () => confirmDeleteTrend(t));
+      row.querySelector(".trend-edit").addEventListener("click", () => openTrendEditModal(t));
       box.appendChild(row);
     });
   }
@@ -2814,6 +2823,203 @@
     } catch (e) {
       sbToast("删除失败：" + (e.message || ""), false);
     }
+  }
+
+  // ================= 趋势文件二次编辑 =================
+  function renderTrendEditCatResults() {
+    const catSearch = document.querySelector("#trend-edit-cat-search");
+    const catResults = document.querySelector("#trend-edit-cat-results");
+    if (!catSearch || !catResults) return;
+    const kw = (catSearch.value || "").trim().toLowerCase();
+    let list = trendEditCatOptions.filter(c => c && c !== trendEditCategory);
+    if (kw) list = list.filter(c => c.toLowerCase().indexOf(kw) >= 0);
+    list = list.slice(0, 12);
+    if (!list.length) { catResults.classList.add("hidden"); catResults.innerHTML = ""; return; }
+    catResults.innerHTML = "";
+    list.forEach(c => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cat-option";
+      b.dataset.cat = c;
+      b.textContent = c;
+      catResults.appendChild(b);
+    });
+    catResults.classList.remove("hidden");
+  }
+  function chooseTrendEditCategory(c) {
+    trendEditCategory = c;
+    renderTrendEditCatChosen();
+    const catSearch = document.querySelector("#trend-edit-cat-search");
+    const catResults = document.querySelector("#trend-edit-cat-results");
+    if (catSearch) catSearch.value = "";
+    if (catResults) { catResults.innerHTML = ""; catResults.classList.add("hidden"); }
+  }
+  function renderTrendEditCatChosen() {
+    const box = document.querySelector("#trend-edit-cat-chosen");
+    const tip = document.querySelector("#trend-edit-cat-tip");
+    if (!box) return;
+    box.innerHTML = "";
+    if (trendEditCategory) {
+      const chip = document.createElement("span");
+      chip.className = "cat-chip";
+      chip.innerHTML = '<span class="cc-name"></span><button type="button" class="cc-x" title="移除">×</button>';
+      chip.querySelector(".cc-name").textContent = trendEditCategory;
+      chip.querySelector(".cc-x").onclick = () => { trendEditCategory = ""; renderTrendEditCatChosen(); };
+      box.appendChild(chip);
+    }
+    if (tip) tip.textContent = trendEditCategory
+      ? "已选择：视觉专区类目「" + trendEditCategory + "」"
+      : "搜索已有类目点选，或点下方按钮自定义添加新类目。";
+  }
+  async function customAddTrendEditCategory() {
+    const catSearch = document.querySelector("#trend-edit-cat-search");
+    const name = (catSearch ? catSearch.value : "").trim();
+    if (!name) { sbToast("请先在搜索框输入新类目名", false); return; }
+    try {
+      await SB.addCategory(name);
+      if (!trendEditCatOptions.includes(name)) trendEditCatOptions = trendEditCatOptions.concat([name]);
+      chooseTrendEditCategory(name);
+      sbToast("已添加类目「" + name + "」");
+    } catch (e) {
+      sbToast("添加类目失败（可能已存在）：" + (e.message || ""), false);
+    }
+  }
+
+  function openTrendEditModal(t) {
+    trendEditData = t;
+    trendEditCover = null;
+    const modal = document.querySelector("#trend-edit-modal");
+    if (!modal) return;
+    // 回填标题
+    document.querySelector("#trend-edit-title-inp").value = t.title || "";
+    // 回填标签
+    const radios = document.querySelectorAll('input[name="trend-edit-tag"]');
+    radios.forEach(r => { r.checked = (r.value === (t.tag || "类目")); });
+    // 回填类目
+    trendEditCategory = t.category || "";
+    renderTrendEditCatChosen();
+    // 回填简介
+    document.querySelector("#trend-edit-desc").value = t.description || "";
+    // 清空封面选择提示
+    const covPick = document.querySelector("#trend-edit-cover-pick");
+    if (covPick) { covPick.classList.add("hidden"); covPick.textContent = ""; }
+    // 加载类目候选
+    loadTrendEditCatOptions();
+    // 显示弹窗
+    modal.classList.remove("hidden");
+  }
+  async function loadTrendEditCatOptions() {
+    try {
+      let cats = await SB.listActiveCats().catch(() => []);
+      cats = (cats || []).map(c => (typeof c === "string" ? c : (c && c.name) || "")).filter(Boolean);
+      if (currentRole === "admin") {
+        try {
+          const mine = await SB.myZonePermissions();
+          const set = new Set((mine || []).map(s => (s || "").trim()));
+          cats = cats.filter(c => set.has((c || "").trim()));
+        } catch (e) {}
+      }
+      trendEditCatOptions = cats;
+      renderTrendEditCatResults();
+    } catch (e) {}
+  }
+  function closeTrendEditModal() {
+    const modal = document.querySelector("#trend-edit-modal");
+    if (modal) modal.classList.add("hidden");
+    const pw = document.querySelector("#trend-edit-progress-wrap");
+    if (pw) pw.classList.add("hidden");
+  }
+  async function saveTrendEdit() {
+    const title = (document.querySelector("#trend-edit-title-inp").value || "").trim();
+    const desc = (document.querySelector("#trend-edit-desc").value || "").trim();
+    const radios = document.querySelectorAll('input[name="trend-edit-tag"]');
+    const tag = Array.prototype.find.call(radios, r => r.checked)?.value || "类目";
+    if (!title) return sbToast("未填写项：「文件标题」", false);
+    if (!trendEditCategory) return sbToast("未填写项：「选择类目」", false);
+    if (!desc) return sbToast("未填写项：「简介/介绍」", false);
+    if (!trendEditData) return;
+    const save = document.querySelector("#trend-edit-save");
+    if (save) save.disabled = true;
+    try {
+      let cover = trendEditData.cover || "";
+      if (trendEditCover) {
+        const pw = document.querySelector("#trend-edit-progress-wrap");
+        const pb = document.querySelector("#trend-edit-progress-bar");
+        const pt = document.querySelector("#trend-edit-progress-text");
+        if (pw) pw.classList.remove("hidden");
+        const up = await SB.uploadTrendCover(trendEditCover, (p) => {
+          if (pb) pb.style.width = p + "%";
+          if (pt) pt.textContent = p + "%";
+        });
+        if (pw) pw.classList.add("hidden");
+        cover = up.cover || cover;
+        // 若替换成功，删除旧封面文件
+        if (trendEditData.cover && up.cover) {
+          try { await SB.deleteTrendFile("", trendEditData.cover); } catch (e) {}
+        }
+      }
+      await SB.updateTrendRecord(trendEditData.id,
+        { title, tag, category: trendEditCategory, description: desc, cover });
+      sbToast("趋势文件已更新");
+      closeTrendEditModal();
+      loadTrendList();
+    } catch (e) {
+      sbToast("保存失败：" + (e.message || ""), false);
+    } finally {
+      if (save) save.disabled = false;
+    }
+  }
+  function bindTrendEditModal() {
+    const modal = document.querySelector("#trend-edit-modal");
+    if (!modal) return;
+    const close = document.querySelector("#trend-edit-close");
+    const cancel = document.querySelector("#trend-edit-cancel");
+    if (close) close.addEventListener("click", closeTrendEditModal);
+    if (cancel) cancel.addEventListener("click", closeTrendEditModal);
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeTrendEditModal(); });
+    document.querySelector("#trend-edit-save").addEventListener("click", saveTrendEdit);
+    // 封面选择
+    const covDz = document.querySelector("#trend-edit-cover-dropzone");
+    const covInput = document.querySelector("#trend-edit-cover-input");
+    const covPick = document.querySelector("#trend-edit-cover-pick");
+    function setTrendEditCover(f) {
+      trendEditCover = f;
+      if (covPick) {
+        covPick.classList.remove("hidden");
+        covPick.textContent = "已选择新封面：" + f.name + "（保存后替换）";
+      }
+    }
+    if (covDz) {
+      covDz.addEventListener("click", () => { if (covInput) covInput.click(); });
+      covDz.addEventListener("dragover", ev => { ev.preventDefault(); covDz.classList.add("hover"); });
+      covDz.addEventListener("dragleave", () => covDz.classList.remove("hover"));
+      covDz.addEventListener("drop", ev => {
+        ev.preventDefault(); covDz.classList.remove("hover");
+        const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+        if (f) setTrendEditCover(f);
+      });
+    }
+    if (covInput) covInput.addEventListener("change", () => {
+      const f = covInput.files && covInput.files[0];
+      if (f) setTrendEditCover(f);
+    });
+    // 类目搜索与候选
+    const catSearch = document.querySelector("#trend-edit-cat-search");
+    const catResults = document.querySelector("#trend-edit-cat-results");
+    if (catSearch) catSearch.addEventListener("input", renderTrendEditCatResults);
+    if (catResults) {
+      catResults.addEventListener("click", (e) => {
+        const b = e.target.closest(".cat-option");
+        if (b) chooseTrendEditCategory(b.dataset.cat);
+      });
+    }
+    const addBtn = document.querySelector("#trend-edit-cat-add-btn");
+    if (addBtn) addBtn.addEventListener("click", customAddTrendEditCategory);
+    document.addEventListener("click", (e) => {
+      if (catResults && !catResults.contains(e.target) && e.target !== catSearch) {
+        catResults.classList.add("hidden");
+      }
+    });
   }
 
   // ================= 公告管理：编辑/发布/下架/删除 + 图文 =================

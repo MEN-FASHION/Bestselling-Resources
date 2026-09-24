@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923Q">
+<link rel="stylesheet" href="css/style.css?v=20260923R">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -1032,9 +1032,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923Q"></script>
-  <script src="js/supabase.js?v=20260923Q"></script>
-  <script src="js/admin.js?v=20260923Q"></script>
+  <script src="js/config.js?v=20260923R"></script>
+  <script src="js/supabase.js?v=20260923R"></script>
+  <script src="js/admin.js?v=20260923R"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1046,5 +1046,65 @@
       <button id="mk-share-close" class="btn-primary" type="button">关闭</button>
     </div>
   </div>
+<div class="mk-share-mask hidden" id="mk-share-mask">
+    <div class="mk-share-card">
+      <h4 id="mk-share-title">分享到微信</h4>
+      <p class="mk-share-tip">用微信「扫一扫」扫描二维码，即可打开并转发文章；也可复制下方链接分享。</p>
+      <div class="mk-share-qr" id="mk-share-qr"></div>
+      <div class="mk-share-link" id="mk-share-link"></div>
+      <button id="mk-share-close" class="btn-primary" type="button">关闭</button>
+    </div>
+  </div>
+
+  <!-- 趋势文件二次编辑弹窗 -->
+  <div id="trend-edit-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="trend-edit-title">编辑趋势文件</span>
+        <button type="button" id="trend-edit-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span class="req">*</span> 文件标题</label>
+        <input id="trend-edit-title-inp" class="input" placeholder="例如：2026年9月男装趋势报告">
+        <label class="field"><span class="req">*</span> 标签分类（单选）</label>
+        <div class="trend-tag-select" id="trend-edit-tag-select">
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="类目" checked> 类目</label>
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="月度"> 月度</label>
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="周度"> 周度</label>
+        </div>
+        <label class="field"><span class="req">*</span> 选择类目（复用视觉专区类目）</label>
+        <div class="cat-picker">
+          <input id="trend-edit-cat-search" class="input" placeholder="输入关键词搜索已有类目…" autocomplete="off">
+          <div id="trend-edit-cat-results" class="cat-results hidden"></div>
+          <div id="trend-edit-cat-chosen" class="cat-chosen"></div>
+          <div class="cat-picker-actions">
+            <button id="trend-edit-cat-add-btn" class="btn-ghost" type="button">＋ 自定义添加类目</button>
+          </div>
+          <div id="trend-edit-cat-tip" class="hint"></div>
+        </div>
+        <label class="field"><span class="req">*</span> 简介/介绍</label>
+        <textarea id="trend-edit-desc" class="input" rows="2" placeholder="一句话介绍该趋势文件的内容，前台卡片会展示"></textarea>
+        <label class="field">封面图（可重新上传替换，前台 4:3 展示）</label>
+        <div id="trend-edit-cover-dropzone" class="dropzone">
+          <div class="dz-inner">
+            <span class="dz-icon">＋</span>
+            <p>拖拽新封面图到这里，或 <em>点击选择文件</em>（不选则保留原封面）</p>
+            <p class="dz-sub">支持 JPG / PNG</p>
+          </div>
+          <input type="file" id="trend-edit-cover-input" accept="image/*" hidden>
+        </div>
+        <div id="trend-edit-cover-pick" class="hint hidden" style="margin-top:8px;"></div>
+        <div id="trend-edit-progress-wrap" class="progress-wrap hidden">
+          <div class="progress-bar"><div id="trend-edit-progress-bar" class="progress-fill" style="width:0%"></div></div>
+          <span id="trend-edit-progress-text">0%</span>
+        </div>
+        <div class="modal-foot">
+          <button id="trend-edit-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="trend-edit-save" class="btn-primary" type="button">保存修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
 </body>
 </html>

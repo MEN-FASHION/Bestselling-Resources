@@ -588,6 +588,46 @@ const SB = (() => {
       const { error } = await client.from("trends").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除趋势失败");
     },
+async removeTrendRecord(id) {
+      const { error } = await client.from("trends").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除趋势失败");
+    },
+    // 更新趋势记录（二次编辑：标题/标签/类目/简介/封面）
+    async updateTrendRecord(id, fields) {
+      const patch = {};
+      if (fields.title !== undefined) patch.title = fields.title;
+      if (fields.tag !== undefined) patch.tag = fields.tag;
+      if (fields.category !== undefined) patch.category = fields.category || "";
+      if (fields.description !== undefined) patch.description = fields.description || "";
+      if (fields.cover !== undefined) patch.cover = fields.cover || "";
+      const { error } = await client.from("trends").update(patch).eq("id", id);
+      if (error) throw new Error(error.message || "更新趋势失败");
+    },
+    // 单独上传/替换趋势封面（Worker 端点 /trend/uploadCover）→ 返回新 cover 路径
+    async uploadTrendCover(coverFile, onProgress) {
+      const token = await currentToken();
+      const c = await compressImage(coverFile);
+      const fd = new FormData();
+      fd.append("cover", c);
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", window.CONFIG.WORKER_URL + "/trend/uploadCover");
+        xhr.setRequestHeader("Authorization", "Bearer " + token);
+        xhr.upload.onprogress = (e) => {
+          if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          let j = {};
+          try { j = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+          if (xhr.status >= 200 && xhr.status < 300 && j.ok) resolve({ cover: j.cover || "" });
+          else reject(new Error(j.error || "封面上传失败"));
+        };
+        xhr.onerror = () => reject(new Error("网络异常，封面上传失败"));
+        xhr.send(fd);
+      });
+    },
+
+    // ============ 前台访问模式开关 ============
 
     // ============ 前台访问模式开关 ============
     // public_access=true：前台免登录公开浏览（Worker 图片也放行）；false：必须登录可见
