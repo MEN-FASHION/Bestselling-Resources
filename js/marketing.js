@@ -379,7 +379,7 @@
         const img = document.createElement("img");
         img.alt = a.title || "";
         img.loading = "lazy";
-        img.src = SB.marketingImageUrl(a.image);
+        SB.marketingImageUrl(a.image).then(u => { img.src = u; }).catch(() => {});
         img.onerror = () => { imgWrap.classList.add("noimg"); img.style.display = "none"; };
         imgWrap.appendChild(img);
       } else {
@@ -437,7 +437,7 @@
       if (img) {
         const im = document.createElement("img");
         im.className = "mk-article-cover";
-        im.alt = t; im.src = SB.marketingImageUrl(img);
+        im.alt = t; SB.marketingImageUrl(img).then(u => { im.src = u; }).catch(() => {});
         im.onerror = () => { im.remove(); };
         body.appendChild(im);
       }

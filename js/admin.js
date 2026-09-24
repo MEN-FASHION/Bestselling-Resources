@@ -6306,7 +6306,7 @@ let bestsellerTasks = [];
         const img = document.createElement("img");
         img.alt = a.title || "";
         img.loading = "lazy";
-        img.src = SB.marketingImageUrl(a.image);
+        SB.marketingImageUrl(a.image).then(u => { img.src = u; }).catch(() => {});
         img.onerror = () => { imgWrap.classList.add("noimg"); img.style.display = "none"; };
         imgWrap.appendChild(img);
       } else {
@@ -6454,13 +6454,12 @@ let bestsellerTasks = [];
     const catEl = document.getElementById("mk-node-category");
     const category = catEl ? catEl.value : "festival";
     try {
-      if (mkEditingNodeId) {
-        await SB.updateMarketingNode(mkEditingNodeId, { title, date, category, image: mkNodeCoverPath || "", url });
-        sbToast("节点已更新");
-      } else {
-        await SB.addMarketingNode({ title, date, category, image: mkNodeCoverPath || "", url });
-        sbToast("节点已添加");
-      }
+      const payload = { title, date, category, image: mkNodeCoverPath || "", url };
+      const r = mkEditingNodeId
+        ? await SB.updateMarketingNode(mkEditingNodeId, payload)
+        : await SB.addMarketingNode(payload);
+      if (r.error) return sbToast("保存节点失败：" + (r.error.message || r.error), false);
+      sbToast(mkEditingNodeId ? "节点已更新" : "节点已添加");
       mkEditingNodeId = null;
       closeNodeModal();
       loadMarketingNodes();
@@ -6470,7 +6469,7 @@ let bestsellerTasks = [];
 
   async function delMarketingNode(n) {
     if (!confirm("确定删除时间线节点「" + (n.title || "") + "」？该节点下文章会一并移除。")) return;
-    try { await SB.removeMarketingNode(n.id); sbToast("节点已删除"); mkEditingNodeId = null; loadMarketingNodes(); loadMarketingArticlePick(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+    try { const r = await SB.removeMarketingNode(n.id); if (r.error) return sbToast("删除失败：" + (r.error.message || r.error), false); sbToast("节点已删除"); mkEditingNodeId = null; loadMarketingNodes(); loadMarketingArticlePick(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
   }
 
   // ---------- 文章：弹窗管理 ----------
@@ -6511,7 +6510,7 @@ let bestsellerTasks = [];
     pre.innerHTML = "";
     if (!mkCoverPath) return;
     const img = document.createElement("img");
-    img.alt = ""; img.src = SB.marketingImageUrl(mkCoverPath);
+    img.alt = ""; SB.marketingImageUrl(mkCoverPath).then(u => { img.src = u; }).catch(() => {});
     pre.appendChild(img);
   }
 
@@ -6522,7 +6521,7 @@ let bestsellerTasks = [];
     pre.innerHTML = "";
     if (!mkNodeCoverPath) return;
     const img = document.createElement("img");
-    img.alt = ""; img.src = SB.marketingImageUrl(mkNodeCoverPath);
+    img.alt = ""; SB.marketingImageUrl(mkNodeCoverPath).then(u => { img.src = u; }).catch(() => {});
     pre.appendChild(img);
   }
 
@@ -6538,13 +6537,12 @@ let bestsellerTasks = [];
     if (!title) return sbToast("请填写文章标题", false);
     if (!url && !content.trim()) return sbToast("请填写文章正文（或提供文章链接）", false);
     try {
-      if (mkEditingArtId) {
-        await SB.updateMarketingArticle(mkEditingArtId, { node_id: nodeId, title, url, summary, content, image: mkCoverPath, published });
-        sbToast("文章已更新");
-      } else {
-        await SB.addMarketingArticle({ node_id: nodeId, title, url, summary, content, image: mkCoverPath, published });
-        sbToast("文章已发布");
-      }
+      const payload = { node_id: nodeId, title, url, summary, content, image: mkCoverPath, published };
+      const r = mkEditingArtId
+        ? await SB.updateMarketingArticle(mkEditingArtId, payload)
+        : await SB.addMarketingArticle(payload);
+      if (r.error) return sbToast("保存文章失败：" + (r.error.message || r.error), false);
+      sbToast(mkEditingArtId ? "文章已更新" : "文章已发布");
       mkEditingArtId = null;
       closeArtModal();
       loadMarketingArticles();
@@ -6552,12 +6550,12 @@ let bestsellerTasks = [];
   }
 
   async function toggleMarketingArticle(a) {
-    try { await SB.updateMarketingArticle(a.id, { published: !a.published }); sbToast(a.published ? "文章已下架" : "文章已发布"); loadMarketingArticles(); } catch (e) { sbToast("操作失败：" + (e.message || ""), false); }
+    try { const r = await SB.updateMarketingArticle(a.id, { published: !a.published }); if (r.error) return sbToast("操作失败：" + (r.error.message || r.error), false); sbToast(a.published ? "文章已下架" : "文章已发布"); loadMarketingArticles(); } catch (e) { sbToast("操作失败：" + (e.message || ""), false); }
   }
 
   async function delMarketingArticle(a) {
     if (!confirm("确定删除文章「" + (a.title || "") + "」？")) return;
-    try { await SB.removeMarketingArticle(a.id); sbToast("文章已删除"); if (mkEditingArtId === a.id) { mkEditingArtId = null; closeArtModal(); } loadMarketingArticles(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+    try { const r = await SB.removeMarketingArticle(a.id); if (r.error) return sbToast("删除失败：" + (r.error.message || r.error), false); sbToast("文章已删除"); if (mkEditingArtId === a.id) { mkEditingArtId = null; closeArtModal(); } loadMarketingArticles(); } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
   }
 
   function showMarketingShare(a) {
