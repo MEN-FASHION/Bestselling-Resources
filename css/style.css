@@ -2060,3 +2060,19 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .mk-viz-btn{position:relative;z-index:2;}
 /* 分页无限滚动哨兵：加载下一页的触发占位 */
 .page-sentinel{width:100%;height:1px;visibility:hidden;pointer-events:none;}
+
+/* ===== 注册·邮箱确认引导面板 ===== */
+.auth-confirm{
+  margin: 4px 0 14px; padding: 16px 16px 14px; text-align: center;
+  background: linear-gradient(180deg,#fffdf6,#faf3e0);
+  border: 1px solid #eadfc4; border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(212,160,23,.10);
+}
+.auth-confirm svg{ display:block; margin:0 auto 4px; }
+.auth-confirm-title{ font-size:15px; font-weight:800; color:#8a6d1e; margin-bottom:10px; letter-spacing:.3px; }
+.auth-confirm-step{ font-size:12.5px; line-height:1.7; color:#6f665a; text-align:left; }
+.auth-confirm-step b{ color:#a8823a; }
+.auth-confirm-tip{ margin-top:9px; font-size:12px; line-height:1.6; color:#a8823a; background:#faf5ea; border-radius:8px; padding:8px 10px; text-align:left; }
+.auth-confirm-tip b{ color:#8a6d1e; }
+.auth-confirm-actions{ margin-top:12px; text-align:center; }
+.auth-confirm-actions .btn-ghost{ width:100%; }

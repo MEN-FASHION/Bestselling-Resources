@@ -441,6 +441,28 @@
     const h = $("#auth-hint");
     if (h) { h.textContent = msg; h.classList.remove("hidden"); }
   }
+  // 注册后若开启邮箱确认：展示醒目的确认引导面板，隐藏登录表单，支持重新发送确认邮件
+  function showAuthConfirm(email) {
+    const form = $("#login-form");
+    const panel = $("#auth-confirm");
+    if (!panel) return;
+    if (form) form.style.display = "none";
+    const em = document.getElementById("auth-confirm-email"); if (em) em.textContent = email;
+    panel.classList.remove("hidden");
+    const resend = document.getElementById("auth-resend");
+    if (resend) {
+      resend.onclick = async () => {
+        resend.disabled = true;
+        const oldText = resend.textContent;
+        resend.textContent = "发送中…";
+        const { error } = await SB.resendConfirm(email);
+        if (error) toast("发送失败：" + error.message, false);
+        else toast("确认邮件已重新发送，请查收", true);
+        resend.disabled = false;
+        resend.textContent = oldText;
+      };
+    }
+  }
   function hideAuthHint() {
     const h = $("#auth-hint");
     if (h) h.classList.add("hidden");
@@ -590,8 +612,8 @@
           showTrend();
         } else {
           // 后台开启了邮箱确认（Confirm email）→ 需点邮件链接激活
-          toast("注册成功！请前往邮箱确认", true);
-          showAuthHint("确认邮件已发送至 " + email + "，请点击邮件中的链接激活账号后再登录。若未收到，请检查垃圾邮件。");
+          toast("注册成功！请到邮箱完成确认", true);
+          showAuthConfirm(email);
           authMode = "login";
           applyAuthMode();
         }

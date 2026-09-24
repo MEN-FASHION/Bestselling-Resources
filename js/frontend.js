@@ -1105,16 +1105,45 @@
 
   // ---------- 登录 / 注册 ----------
   let authMode = "login";
+  // 注册后若开启邮箱确认：展示醒目的确认引导面板，隐藏登录表单，支持重新发送确认邮件
+  function showAuthConfirm(email) {
+    const form = $("#login-form");
+    const panel = $("#auth-confirm");
+    if (!panel) return;
+    if (form) form.style.display = "none";
+    const em = $("#auth-confirm-email"); if (em) em.textContent = email;
+    panel.classList.remove("hidden");
+    const resend = $("#auth-resend");
+    if (resend) {
+      resend.onclick = async () => {
+        resend.disabled = true;
+        const oldText = resend.textContent;
+        resend.textContent = "发送中…";
+        const { error } = await SB.resendConfirm(email);
+        if (error) Auth.toast("发送失败：" + error.message, false);
+        else Auth.toast("确认邮件已重新发送，请查收", true);
+        resend.disabled = false;
+        resend.textContent = oldText;
+      };
+    }
+  }
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = $("#auth-email").value.trim();
     const pass = $("#auth-pass").value;
     if (!email || !pass) { Auth.toast("请输入邮箱和密码", false); return; }
     if (authMode === "register") {
-      const { error } = await SB.signUp(email, pass);
+      const { data, error } = await SB.signUp(email, pass);
       if (error) { Auth.toast("注册失败：" + error.message, false); return; }
-      Auth.toast("注册成功，已登录");
-      setTimeout(() => location.reload(), 800); // 用新令牌重载，重建带令牌图片URL
+      if (data && data.session) {
+        // 后台未开启邮箱确认 → 直接自动登录
+        Auth.toast("注册成功，已登录");
+        setTimeout(() => location.reload(), 800);
+      } else {
+        // 后台开启了邮箱确认 → 展示醒目的邮件确认引导
+        Auth.toast("注册成功！请到邮箱完成确认", true);
+        showAuthConfirm(email);
+      }
       return;
     }
     const { error } = await SB.signIn(email, pass);

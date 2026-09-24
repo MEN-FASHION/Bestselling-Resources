@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20260923T">
+<link rel="stylesheet" href="css/style.css?v=20260923U">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -43,6 +43,17 @@
         <label>密码</label>
         <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
         <button type="submit" class="btn-primary" id="auth-submit">注册并进入</button>
+        <div id="auth-confirm" class="auth-confirm hidden">
+          <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path fill="#d4a017" d="M24 4a20 20 0 1 0 0 40 20 20 0 0 0 0-40zm9 15-10 8-10-8 0-2 10 8 10-8 0 2zm-19 13-6 2 2-6zm20 0 4-4-2 6z" opacity=".9"/></svg>
+          <div class="auth-confirm-title">注册成功，请到邮箱完成确认</div>
+          <div class="auth-confirm-step">1. 打开你注册时填写的邮箱（<b id="auth-confirm-email">--</b>）</div>
+          <div class="auth-confirm-step">2. 找到我们发送的「确认邮件」，点击邮件中的<b>确认链接</b></div>
+          <div class="auth-confirm-step">3. 确认成功后返回本站登录即可进入</div>
+          <div class="auth-confirm-tip">没收到邮件？请检查<b>垃圾邮件 / 其他</b>分栏，或点击下方重新发送。</div>
+          <div class="auth-confirm-actions">
+            <button type="button" class="btn-ghost" id="auth-resend">重新发送确认邮件</button>
+          </div>
+        </div>
         <div class="auth-links">
           <a href="#" id="auth-toggle-link">已有账号？去登录</a>
         </div>
@@ -138,8 +149,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923T"></script>
-  <script src="js/supabase.js?v=20260923T"></script>
-  <script src="js/marketing.js?v=20260923T"></script>
+  <script src="js/config.js?v=20260923U"></script>
+  <script src="js/supabase.js?v=20260923U"></script>
+  <script src="js/marketing.js?v=20260923U"></script>
 </body>
 </html>

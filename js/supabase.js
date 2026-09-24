@@ -115,6 +115,14 @@ const SB = (() => {
       });
       return { data, error };
     },
+    // 重新发送注册确认邮件（注册后未收到确认邮件时调用）
+    async resendConfirm(email) {
+      const { data, error } = await client.auth.resend({
+        type: 'signup',
+        email: this.normalizeEmail(email)
+      });
+      return { data, error };
+    },
     async signIn(email, password) {
       const { data, error } = await client.auth.signInWithPassword({
         email: this.normalizeEmail(email),
