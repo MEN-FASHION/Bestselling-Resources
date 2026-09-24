@@ -6259,29 +6259,32 @@ let bestsellerTasks = [];
     tl.innerHTML = mkNodes.map((n, i) => {
       const date = escHtml(n.date || "");
       const title = escHtml(n.title || "");
+      const desc = escHtml(n.description || "");
       const img = n.image || "";
       const href = n.url || "javascript:void(0);";
       const target = n.url ? "_blank" : "";
       const rel = n.url ? "noopener noreferrer" : "";
-      return `<div class="mk-node ${i + 1 === mkNodes.length ? "last" : ""}">
-        <div class="mk-node-head">
-          <div class="mk-node-date">${date}</div>
-          <div class="mk-node-title">${title}</div>
+      const side = i % 2 === 0 ? "up" : "down";
+      return `<div class="mk-node ${side}">
+        <div class="mk-card">
+          <a class="mk-card-link" href="${href}" target="${target}" rel="${rel}">
+            ${img ? `<img class="mk-card-img" src="${SB.marketingImageUrl(img)}" alt="${title}" loading="lazy">` : ""}
+            <div class="mk-card-date">${date}</div>
+            <div class="mk-card-title">${title}</div>
+            ${desc ? `<div class="mk-card-desc">${desc}</div>` : ""}
+          </a>
+          <div class="mk-node-ops">
+            <button type="button" class="op-edit" data-act="edit" data-id="${n.id}">编辑</button>
+            <button type="button" class="op-del" data-act="del" data-id="${n.id}">删除</button>
+          </div>
         </div>
-        <div class="mk-node-ops">
-          <button type="button" class="op-edit" data-act="edit" data-id="${n.id}">编辑</button>
-          <button type="button" class="op-del" data-act="del" data-id="${n.id}">删除</button>
-        </div>
-        <div class="mk-node-dot"><span class="mk-node-inner"></span></div>
-        <a class="mk-node-cover" href="${href}" target="${target}" rel="${rel}" title="${title}">
-          ${img ? `<img src="${SB.marketingImageUrl(img)}" alt="${title}" loading="lazy">` : `<div class="mk-node-cover-ph">${title}</div>`}
-          <div class="mk-node-cover-tip">查看趋势</div>
-        </a>
+        <span class="mk-conn"></span>
+        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
     // 图片加载失败回退占位
-    tl.querySelectorAll(".mk-node-cover img").forEach(img => {
-      img.onerror = () => { const w = img.parentNode; w.classList.add("noimg"); img.style.display = "none"; };
+    tl.querySelectorAll(".mk-card-img").forEach(img => {
+      img.onerror = () => { img.style.display = "none"; };
     });
     // 支持鼠标按住横向拖动滑动
     enableAdminDragScroll(tl);

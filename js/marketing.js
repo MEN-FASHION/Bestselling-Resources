@@ -243,28 +243,32 @@
         text: (a && a.title) || ""
       };
     };
+    // 交错时间线：相邻节点一上一下交替排布，节点圆点落在主轴上，竖虚线悬挂说明卡
     tl.innerHTML = nodes.map((n, i) => {
       const date = escHtml(n.date || "");
       const title = escHtml(n.title || "");
+      const desc = escHtml(n.description || "");
       const c = coverOf(n);
       const href = c.url || "javascript:void(0);";
       const target = c.url ? "_blank" : "";
       const rel = c.url ? "noopener noreferrer" : "";
-      return `<div class="mk-node ${i + 1 === nodes.length ? "last" : ""}">
-        <div class="mk-node-head">
-          <div class="mk-node-date">${date}</div>
-          <div class="mk-node-title">${title}</div>
+      const side = i % 2 === 0 ? "up" : "down";
+      return `<div class="mk-node ${side}">
+        <div class="mk-card">
+          <a class="mk-card-link" href="${href}" target="${target}" rel="${rel}">
+            ${c.img ? `<img class="mk-card-img" src="${SB.marketingImageUrl(c.img)}" alt="${title}" loading="lazy">` : ""}
+            <div class="mk-card-date">${date}</div>
+            <div class="mk-card-title">${title}</div>
+            ${desc ? `<div class="mk-card-desc">${desc}</div>` : ""}
+          </a>
         </div>
-        <div class="mk-node-dot"><span class="mk-node-inner"></span></div>
-        <a class="mk-node-cover" href="${href}" target="${target}" rel="${rel}" title="${title}">
-          ${c.img ? `<img src="${SB.marketingImageUrl(c.img)}" alt="${title}" loading="lazy">` : `<div class="mk-node-cover-ph">${title}</div>`}
-          <div class="mk-node-cover-tip">查看趋势</div>
-        </a>
+        <span class="mk-conn"></span>
+        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
     // 图片加载失败回退占位
-    tl.querySelectorAll(".mk-node-cover img").forEach(img => {
-      img.onerror = () => { const w = img.parentNode; w.classList.add("noimg"); img.style.display = "none"; };
+    tl.querySelectorAll(".mk-card-img").forEach(img => {
+      img.onerror = () => { img.style.display = "none"; };
     });
     // 支持鼠标按住横向拖动滑动
     enableDragScroll(tl);

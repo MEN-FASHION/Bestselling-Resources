@@ -1985,29 +1985,36 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .mk-grid-title{margin-top:54px;}
 
 /* ---- 横向时间轴（可拖动） ---- */
-.mk-timeline{position:relative;display:flex;gap:34px;overflow-x:auto;overflow-y:visible;padding:24px 6px 20px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
+/* 营销日历 · 交错式时间线（横向主轴 + 上下交替节点圆点 + 虚线悬挂说明卡） */
+.mk-timeline{position:relative;display:flex;gap:28px;overflow-x:auto;overflow-y:visible;padding:130px 12px 130px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
 .mk-timeline::-webkit-scrollbar{height:8px;}
 .mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
 .mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
-/* 横轴主线：贯穿所有节点亮点中心 */
-.mk-timeline::before{content:"";position:absolute;left:6px;right:6px;top:91px;height:3px;background:linear-gradient(90deg,#d9cfc0,#d4a017,#d9cfc0);border-radius:3px;}
-.mk-node{position:relative;flex:0 0 200px;width:200px;display:flex;flex-direction:column;align-items:center;scroll-snap-align:start;}
-.mk-node-head{height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;text-align:center;padding-bottom:14px;}
-.mk-node-date{font-size:12px;color:#b3862f;font-weight:700;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
-.mk-node-title{font-size:17px;font-weight:800;color:var(--txt);line-height:1.35;letter-spacing:.5px;}
-/* 节点亮点（发光圆点，落在主轴线上） */
-.mk-node-dot{position:relative;z-index:2;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid #d4a017;box-shadow:0 0 0 5px rgba(212,160,23,.14),0 0 14px rgba(212,160,23,.55);margin-bottom:22px;}
-.mk-node.last .mk-node-dot{background:#d4a017;box-shadow:0 0 0 6px rgba(212,160,23,.22),0 0 20px rgba(212,160,23,.75);}
-.mk-node-inner{display:block;width:6px;height:6px;margin:2px auto 0;border-radius:50%;background:#d4a017;}
-.mk-node.last .mk-node-inner{background:#fff;}
-/* 节点主图：点击查看趋势 */
-.mk-node-cover{position:relative;width:100%;aspect-ratio:3/4;background:#f0eee6;border:1px solid var(--line);border-radius:14px;overflow:hidden;display:block;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.07);transition:transform .22s,box-shadow .22s,border-color .22s;}
-.mk-node-cover:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(60,52,42,.16);border-color:#d4a017;}
-.mk-node-cover img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block;}
-.mk-node-cover.noimg{display:flex;align-items:center;justify-content:center;}
-.mk-node-cover-ph{padding:18px;font-size:15px;font-weight:700;color:#b3ac9e;text-align:center;line-height:1.6;}
-.mk-node-cover-tip{position:absolute;left:0;right:0;bottom:0;padding:22px 10px 10px;background:linear-gradient(transparent,rgba(50,42,28,.72));color:#fff;text-align:center;font-size:13px;font-weight:600;opacity:0;transform:translateY(6px);transition:.22s;}
-.mk-node-cover:hover .mk-node-cover-tip{opacity:1;transform:none;}
+/* 横向主轴线：贯穿全部节点圆点中心 */
+.mk-timeline::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#d9cfc0,#d4a017,#d9cfc0);border-radius:3px;transform:translateY(-50%);}
+/* 单条时刻：说明卡 + 虚线 + 节点圆点，圆点落在主轴中心 */
+.mk-node{position:relative;flex:0 0 210px;width:210px;height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;scroll-snap-align:start;}
+/* 节点圆点（发光，落在主轴线上） */
+.mk-dot{position:relative;z-index:2;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid #d4a017;box-shadow:0 0 0 5px rgba(212,160,23,.14),0 0 14px rgba(212,160,23,.55);}
+.mk-node:last-child .mk-dot{background:#d4a017;box-shadow:0 0 0 6px rgba(212,160,23,.22),0 0 20px rgba(212,160,23,.75);}
+.mk-dot-inner{display:block;width:6px;height:6px;margin:2px auto 0;border-radius:50%;background:#d4a017;}
+.mk-node:last-child .mk-dot-inner{background:#fff;}
+/* 竖虚线：连接圆点与说明卡 */
+.mk-conn{position:absolute;left:50%;width:2px;height:88px;background-image:linear-gradient(180deg,#d4a017 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;transform:translateX(-50%);}
+.mk-node.up .mk-conn{top:calc(50% + 16px);}
+.mk-node.down .mk-conn{bottom:calc(50% + 16px);}
+/* 说明卡（标题/日期/简介），点击可跳转 */
+.mk-card{position:absolute;left:50%;transform:translateX(-50%);width:206px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 13px;box-shadow:0 6px 18px rgba(60,52,42,.09);text-align:center;transition:transform .22s,box-shadow .22s,border-color .22s;}
+.mk-card:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 12px 26px rgba(60,52,42,.16);border-color:#d4a017;}
+.mk-node.up .mk-card{bottom:calc(50% + 100px);}
+.mk-node.down .mk-card{top:calc(50% + 100px);}
+.mk-card-link{display:block;text-decoration:none;color:inherit;}
+.mk-card-img{width:100%;aspect-ratio:4/3;object-fit:cover;object-position:center top;border-radius:10px;background:#f0eee6;display:block;margin-bottom:10px;}
+.mk-card-date{font-size:12px;color:#b3862f;font-weight:700;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
+.mk-card-title{font-size:17px;font-weight:800;color:var(--txt);line-height:1.35;letter-spacing:.5px;}
+.mk-card-desc{margin-top:8px;font-size:12px;color:#8f8a80;line-height:1.6;}
+/* 单条时刻为空时回落 */
+.mk-empty{padding:40px;text-align:center;color:#b3ac9e;font-size:15px;background:#faf8f2;border-radius:14px;border:1px dashed var(--line);}
 
 /* ---- 3:4 营销卡片区 ---- */
 .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
@@ -2040,8 +2047,11 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .mk-viz-ops .op-edit{background:#d4a017;color:#fff;}
 .mk-viz-ops .op-del{background:#c25e5a;color:#fff;}
 .mk-viz-ops .op-toggle{background:#2c2c2c;color:#fff;}
-.mk-viz .mk-node-ops{position:absolute;top:6px;right:8px;z-index:3;display:flex;gap:6px;opacity:0;transform:translateY(-4px);transition:.2s;}
-.mk-viz .mk-node:hover .mk-node-ops{opacity:1;transform:none;}
+.mk-viz .mk-node-ops{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:6px;opacity:0;transform:translateY(-4px);transition:.2s;}
+.mk-viz .mk-card:hover .mk-node-ops{opacity:1;transform:none;}
+.mk-viz .mk-node-ops button{font-size:11px;padding:3px 9px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(60,52,42,.1);}
+.mk-viz .mk-node-ops .op-edit{color:#8a6d1e;border-color:#e6d9b0;}
+.mk-viz .mk-node-ops .op-del{color:#c0392b;border-color:#efc7c0;}
 .mk-viz .mk-node-ops button{padding:5px 10px;border:none;border-radius:999px;font-size:12px;cursor:pointer;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.18);}
 .mk-node-ops .op-edit{background:#d4a017;color:#fff;}
 .mk-node-ops .op-del{background:#c25e5a;color:#fff;}
