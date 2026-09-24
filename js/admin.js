@@ -604,36 +604,37 @@
     });
   }
   async function loadManage() {
-    const grid = $("#manage-grid");
     const menu = $("#manage-menu");
-    // 先并行取全部图片 + 有图类目
-    let allImgs = [];
+    // 轻量取「图片中有图」的类目列表（仅取 category 列，服务端排序）
+    let usedCats = [];
     try {
-      allImgs = await SB.listImages(null);
-    } catch (e) {
-      grid.innerHTML = "<p class='hint'>读取失败</p>";
-      return;
-    }
-    // 有图的类目（去重，拼音排序）
-    const usedCats = [...new Set(allImgs.map(i => i.category))].sort((a, b) => a.localeCompare(b, "zh"));
+      const q = await SB.manageCategories();
+      usedCats = q || [];
+    } catch (e) { usedCats = []; }
 
     // 渲染左侧类目菜单
     menu.innerHTML = "";
-    // 已配置的启用类目 + 候选类目（用于判断是否为"残留类目"——图片中有但无配置）
     let activeCats = [];
     try { activeCats = await SB.listActiveCats(); } catch (e) { activeCats = []; }
     let cfgOpts = [];
     try { cfgOpts = await SB.listCategories(); } catch (e) { cfgOpts = []; }
     const configured = new Set([...activeCats, ...cfgOpts.map(c => c.name)]);
+
+    // 各类目图片数（后台 RLS 生效口径）
+    const catCounts = {};
+    try {
+      catCounts["全部"] = await SB.countImages(null);
+      for (const c of usedCats) { try { catCounts[c] = await SB.countImages(c); } catch (e) { catCounts[c] = 0; } }
+    } catch (e) { catCounts["全部"] = 0; }
+
     ["全部"].concat(usedCats).forEach(c => {
       const row = document.createElement("div");
       row.className = "cat-menu-row";
       const b = document.createElement("button");
       b.className = "cat-menu-item" + (c === currentManageCat ? " active" : "");
-      b.textContent = c + "（" + (c === "全部" ? allImgs.length : allImgs.filter(i => i.category === c).length) + "）";
-      b.onclick = () => { currentManageCat = c; renderManageGrid(allImgs, usedCats); };
+      b.textContent = c + "（" + (catCounts[c] != null ? catCounts[c] : 0) + "）";
+      b.onclick = () => { currentManageCat = c; renderManageGrid(null, usedCats); };
       row.appendChild(b);
-      // 残留类目：图片中有该类目但未在配置表中 → 提供一键删除（清空该类目下图片的类目字段）
       if (c !== "全部" && !configured.has(c)) {
         const del = document.createElement("button");
         del.className = "cat-menu-del";
@@ -643,7 +644,7 @@
           ev.stopPropagation();
           if (!confirm("类目「" + c + "」未在配置表中（疑似误加）。确定删除吗？\n删除后会同步清空该类目下所有图片的类目字段（图片本身保留）。")) return;
           try {
-            const imgs = allImgs.filter(i => (i.category || "") === c);
+            const imgs = await SB.listImages(c);
             let n = 0;
             for (const img of imgs) { await SB.updateImageField(img.id, "category", ""); n++; }
             sbToast("已删除残留类目「" + c + "」，清空 " + n + " 张图片的类目");
@@ -655,127 +656,177 @@
       menu.appendChild(row);
     });
 
-    renderManageGrid(allImgs, usedCats);
+    renderManageGrid(null, usedCats);
   }
+
+  // ---------- 后台图片管理网格：服务端分页 + 无限滚动 ----------
+  const MGMT_PAGE = 60;
+  let mgrPageAll = [];         // 当前视图已加载图片
+  let mgrOffset = 0;           // 下一页偏移
+  let mgrHasMore = false;      // 是否还有下一页
+  let mgrLoading = false;      // 加载中防重
+  let mgrSentinel = null;      // 哨兵
+  let mgrObserver = null;      // 观察器
+
+  function removeMgrSentinel() {
+    if (mgrObserver) { mgrObserver.disconnect(); mgrObserver = null; }
+    if (mgrSentinel && mgrSentinel.parentNode) mgrSentinel.parentNode.removeChild(mgrSentinel);
+    mgrSentinel = null;
+  }
+
+  async function buildManageCell(img) {
+    const grid = $("#manage-grid");
+    const adminToken = await SB.currentToken().catch(() => "");
+    const thumb = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (adminToken ? "?token=" + encodeURIComponent(adminToken) : "");
+    const cell = document.createElement("div");
+    cell.className = "cell mgr-cell";
+    const holder = document.createElement("div");
+    holder.className = "holder";
+    const imgEl = document.createElement("img");
+    imgEl.dataset.src = thumb;
+    imgEl.alt = img.name || "";
+    imgEl.loading = "lazy";
+    imgEl.draggable = false;
+    imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
+    holder.appendChild(imgEl);
+    const cap = document.createElement("div");
+    cap.className = "cell-cap mgr-cap";
+    const mkCap = (lab, arr, cls) => `<span class="mgr-cap-row ${cls}"><i>${lab}</i>${(Array.isArray(arr) && arr.length) ? escHtml(arr.join("、")) : "未打标"}</span>`;
+    cap.innerHTML =
+      mkCap("类目", [img.category || ""], "cat") +
+      mkCap("渠道", img.tags, "ch") +
+      mkCap("风格", img.style_tags, "st") +
+      mkCap("元素", img.element_tags, "el") +
+      mkCap("场景", img.scene_tags, "sc") +
+      mkCap("拍摄", img.shoot_tags, "sh") +
+      mkCap("肤色", img.skin_tags, "sk");
+    if (selectedImages.has(img.id)) cell.classList.add("selected");
+    const clickCell = (e) => {
+      if (e.target.closest(".mgr-topbar") || e.target.closest(".mgr-del")) return;
+      const willSel = !selectedImages.has(img.id);
+      if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
+      cell.classList.toggle("selected", willSel);
+      const sb = cell.querySelector(".mgr-selrow");
+      if (sb) { sb.classList.toggle("on", willSel); sb.textContent = willSel ? "已选中" : "选中此行"; }
+      updateBatchBtn();
+    };
+    cell.addEventListener("click", clickCell);
+    cell.appendChild(holder);
+    cell.appendChild(cap);
+    const topbar = document.createElement("div");
+    topbar.className = "mgr-topbar";
+    const selRow = document.createElement("button");
+    selRow.className = "mgr-selrow" + (selectedImages.has(img.id) ? " on" : "");
+    selRow.textContent = selectedImages.has(img.id) ? "已选中" : "选中此行";
+    selRow.dataset.id = img.id;
+    selRow.onclick = (e) => {
+      e.stopPropagation();
+      const willSel = !selectedImages.has(img.id);
+      if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
+      cell.classList.toggle("selected", willSel);
+      selRow.classList.toggle("on", willSel);
+      selRow.textContent = willSel ? "已选中" : "选中此行";
+      updateBatchBtn();
+    };
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn-danger mgr-del";
+    delBtn.textContent = "删除";
+    delBtn.onclick = (e) => { e.stopPropagation(); removeImage(img); };
+    const linkBtn = document.createElement("button");
+    linkBtn.className = "btn-ghost small mgr-link";
+    linkBtn.textContent = img.url ? "🔗" : "🔗链接";
+    linkBtn.title = img.url ? ("当前外链：" + img.url) : "为这张图添加外链";
+    linkBtn.onclick = (e) => {
+      e.stopPropagation();
+      const v = prompt("输入外链地址（留空则清除）：", img.url || "");
+      if (v === null) return;
+      const nv = v.trim();
+      SB.setImageSingleField(img.id, "url", nv).then(() => {
+        img.url = nv; linkBtn.textContent = nv ? "🔗" : "🔗链接"; linkBtn.title = nv ? ("当前外链：" + nv) : "为这张图添加外链";
+        sbToast(nv ? "外链已保存" : "外链已清除");
+      }).catch(err => sbToast("保存失败", false));
+    };
+    topbar.appendChild(selRow);
+    topbar.appendChild(linkBtn);
+    topbar.appendChild(delBtn);
+    cell.appendChild(topbar);
+    // 懒加载
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            en.target.src = en.target.dataset.src;
+            en.target.onload = () => en.target.classList.add("loaded");
+            obs.unobserve(en.target);
+          }
+        });
+      }, { rootMargin: "200px" });
+      io.observe(imgEl);
+    } else {
+      imgEl.src = imgEl.dataset.src;
+      imgEl.classList.add("loaded");
+    }
+    return cell;
+  }
+
+  function setupMgrSentinel() {
+    if (!mgrSentinel) {
+      const grid = $("#manage-grid");
+      if (!grid || !grid.parentNode) return;
+      mgrSentinel = document.createElement("div");
+      mgrSentinel.className = "page-sentinel";
+      mgrSentinel.style.height = "1px";
+      grid.parentNode.appendChild(mgrSentinel);
+      mgrObserver = new IntersectionObserver(() => { loadMgrNextPage(); }, { rootMargin: "600px" });
+      mgrObserver.observe(mgrSentinel);
+    }
+  }
+
+  async function loadMgrNextPage() {
+    if (!mgrHasMore || mgrLoading) return;
+    mgrLoading = true;
+    try {
+      const grid = $("#manage-grid");
+      const chunk = await SB.listImages(currentManageCat, { from: mgrOffset, to: mgrOffset + MGMT_PAGE - 1 });
+      const validIds = new Set(chunk.map(i => i.id));
+      selectedImages = new Set([...selectedImages].filter(id => validIds.has(id)));
+      updateBatchBtn();
+      const newCells = [];
+      for (const img of chunk) {
+        const cell = await buildManageCell(img);
+        grid.appendChild(cell);
+        newCells.push(cell);
+      }
+      mgrOffset += chunk.length;
+      mgrHasMore = chunk.length >= MGMT_PAGE;
+      $("#manage-empty").classList.toggle("hidden", mgrPageAllConcat(chunk) > 0);
+      setupMgrSentinel();
+    } finally {
+      mgrLoading = false;
+    }
+  }
+
+  let _mgrLoadedCount = 0;
+  function mgrPageAllConcat(chunk) { _mgrLoadedCount += chunk.length; return _mgrLoadedCount; }
 
   async function renderManageGrid(allImgs, usedCats) {
     const grid = $("#manage-grid");
-    const imgList = currentManageCat === "全部" ? allImgs : allImgs.filter(i => i.category === currentManageCat);
-    // 勾选集合只保留当前列表里仍存在的项
-    const validIds = new Set(imgList.map(i => i.id));
-    selectedImages = new Set([...selectedImages].filter(id => validIds.has(id)));
-    updateBatchBtn();
-
     grid.innerHTML = "";
-    $("#manage-empty").classList.toggle("hidden", imgList.length > 0);
-    if (!imgList.length) return;
-    // 一次性取当前登录令牌
-    const adminToken = await SB.currentToken();
-    for (const img of imgList) {
-      const thumb = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "") + "/" + img.path + (adminToken ? "?token=" + encodeURIComponent(adminToken) : "");
-      const cell = document.createElement("div");
-      cell.className = "cell mgr-cell";
+    removeMgrSentinel();
+    mgrPageAll = [];
+    mgrOffset = 0;
+    mgrLoading = false;
+    _mgrLoadedCount = 0;
+    mgrHasMore = true;
 
-      const holder = document.createElement("div");
-      holder.className = "holder";
-      const imgEl = document.createElement("img");
-      imgEl.dataset.src = thumb;
-      imgEl.alt = img.name || "";
-      imgEl.loading = "lazy";
-      imgEl.draggable = false;
-      imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
-      holder.appendChild(imgEl);
-
-      const cap = document.createElement("div");
-      cap.className = "cell-cap mgr-cap";
-      const mkCap = (lab, arr, cls) => `<span class="mgr-cap-row ${cls}"><i>${lab}</i>${(Array.isArray(arr) && arr.length) ? escHtml(arr.join("、")) : "未打标"}</span>`;
-      cap.innerHTML =
-        mkCap("类目", [img.category || ""], "cat") +
-        mkCap("渠道", img.tags, "ch") +
-        mkCap("风格", img.style_tags, "st") +
-        mkCap("元素", img.element_tags, "el") +
-        mkCap("场景", img.scene_tags, "sc") +
-        mkCap("拍摄", img.shoot_tags, "sh") +
-        mkCap("肤色", img.skin_tags, "sk");
-
-      // 选中状态初始高亮
-      if (selectedImages.has(img.id)) cell.classList.add("selected");
-
-      // 点击卡片主体（图片/说明区）也可切换选中，支持连续多选；
-      // 按钮查询放到运行时执行，避免依赖 topbar 定义顺序
-      const clickCell = (e) => {
-        if (e.target.closest(".mgr-topbar") || e.target.closest(".mgr-del")) return;
-        const willSel = !selectedImages.has(img.id);
-        if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
-        cell.classList.toggle("selected", willSel);
-        const sb = cell.querySelector(".mgr-selrow");
-        if (sb) { sb.classList.toggle("on", willSel); sb.textContent = willSel ? "已选中" : "选中此行"; }
-        updateBatchBtn();
-      };
-      cell.addEventListener("click", clickCell);
-
-      // 顶部操作行：最左 =「选中此行」，最右 =「删除」；点击图片也可选中
-      cell.appendChild(holder);
-      cell.appendChild(cap);
-      const topbar = document.createElement("div");
-      topbar.className = "mgr-topbar";
-      const selRow = document.createElement("button");
-      selRow.className = "mgr-selrow" + (selectedImages.has(img.id) ? " on" : "");
-      selRow.textContent = selectedImages.has(img.id) ? "已选中" : "选中此行";
-      selRow.dataset.id = img.id;
-      selRow.onclick = (e) => {
-        e.stopPropagation();
-        const willSel = !selectedImages.has(img.id);
-        if (willSel) selectedImages.add(img.id); else selectedImages.delete(img.id);
-        cell.classList.toggle("selected", willSel);
-        selRow.classList.toggle("on", willSel);
-        selRow.textContent = willSel ? "已选中" : "选中此行";
-        updateBatchBtn();
-      };
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn-danger mgr-del";
-      delBtn.textContent = "删除";
-      delBtn.onclick = (e) => { e.stopPropagation(); removeImage(img); };
-      const linkBtn = document.createElement("button");
-      linkBtn.className = "btn-ghost small mgr-link";
-      linkBtn.textContent = img.url ? "🔗" : "🔗链接";
-      linkBtn.title = img.url ? ("当前外链：" + img.url) : "为这张图添加外链";
-      linkBtn.onclick = (e) => {
-        e.stopPropagation();
-        const v = prompt("输入外链地址（留空则清除）：", img.url || "");
-        if (v === null) return;
-        const nv = v.trim();
-        SB.setImageSingleField(img.id, "url", nv).then(() => {
-          img.url = nv; linkBtn.textContent = nv ? "🔗" : "🔗链接"; linkBtn.title = nv ? ("当前外链：" + nv) : "为这张图添加外链";
-          sbToast(nv ? "外链已保存" : "外链已清除");
-        }).catch(err => sbToast("保存失败", false));
-      };
-      topbar.appendChild(selRow);
-      topbar.appendChild(linkBtn);
-      topbar.appendChild(delBtn);
-      cell.appendChild(topbar);
-      // 点击卡片主体也切换选中（可选便捷）
-      grid.appendChild(cell);
-
-      // 懒加载缩略图
-      if ("IntersectionObserver" in window) {
-        const io = new IntersectionObserver((entries, obs) => {
-          entries.forEach(en => {
-            if (en.isIntersecting) {
-              en.target.src = en.target.dataset.src;
-              en.target.onload = () => en.target.classList.add("loaded");
-              obs.unobserve(en.target);
-            }
-          });
-        }, { rootMargin: "200px" });
-        io.observe(imgEl);
-      } else {
-        imgEl.src = imgEl.dataset.src;
-        imgEl.classList.add("loaded");
-      }
-    }
-    $("#manage-count").textContent = "共 " + imgList.length + " 张 · " + (currentManageCat === "全部" ? "全部类目" : "类目「" + currentManageCat + "」");
+    const validIds0 = new Set();
+    selectedImages = new Set([...selectedImages].filter(id => validIds0.has(id)));
+    updateBatchBtn();
+    $("#manage-empty").classList.toggle("hidden", false);
+    await loadMgrNextPage();
   }
+
+  // 更新批量操作按钮计数
 
   // 更新批量操作按钮计数
   function updateBatchBtn() {

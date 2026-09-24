@@ -563,10 +563,120 @@
   }
 
   // 标签筛选栏（吸顶）：类目/渠道/风格/元素 四组，每组可单选，四维组合过滤
-  function renderTagBar(list) {
+  // ---------- 图片懒加载并发池（模块级，供分页追加复用）----------
+  const LAZY_CONC = 4;
+  let lazyInflight = 0;
+  const lazyQueue = [];
+  function lazyPump() {
+    while (lazyInflight < LAZY_CONC && lazyQueue.length) {
+      const p = lazyQueue.shift();
+      if (!p) break;
+      lazyInflight++;
+      let settled = false;
+      const fetchFallback = async () => {
+        const au = p.dataset.authUrl;
+        const at = p.dataset.authToken;
+        p.removeAttribute("src");
+        try {
+          const headers = at ? { "Authorization": "Bearer " + at } : {};
+          const resp = await fetch(au, { headers, cache: "no-store" });
+          if (!resp.ok) throw new Error(String(resp.status));
+          const blob = await resp.blob();
+          const obj = URL.createObjectURL(blob);
+          if (!settled) {
+            settled = true;
+            lazyInflight--;
+            p.classList.add("loaded");
+            p.onerror = null; p.onload = null;
+            p.src = obj;
+            lazyPump();
+          }
+          return;
+        } catch (e) { /* fall through */ }
+        if (!settled) {
+          settled = true;
+          lazyInflight--;
+          p.classList.add("loaded", "lazy-fallback");
+          p.onerror = null; p.onload = null;
+          lazyPump();
+        }
+      };
+      let hangTimer = 0;
+      p.onload = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hangTimer);
+        lazyInflight--;
+        p.classList.add("loaded");
+        lazyPump();
+      };
+      p.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hangTimer);
+        lazyInflight--;
+        (async () => {
+          const au = p.dataset.authUrl;
+          const at = p.dataset.authToken;
+          if (au) {
+            try {
+              const headers = at ? { "Authorization": "Bearer " + at } : {};
+              const resp = await fetch(au, { headers, cache: "no-store" });
+              if (!resp.ok) throw new Error(String(resp.status));
+              const blob = await resp.blob();
+              const obj = URL.createObjectURL(blob);
+              p.classList.add("loaded");
+              p.onerror = null; p.onload = null;
+              p.src = obj;
+              return;
+            } catch (e) { /* fall through */ }
+          }
+          p.classList.add("loaded", "lazy-fallback");
+          p.onerror = null; p.onload = null;
+        })();
+      };
+      p.dataset.loading = "1";
+      hangTimer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(hangTimer);
+          lazyInflight--;
+          p.onerror = null; p.onload = null;
+          lazyPump();
+          fetchFallback();
+        }
+      }, 4000);
+      p.src = p.dataset.src;
+    }
+  }
+  function lazyEnqueue(el) { lazyQueue.push(el); lazyPump(); }
+
+  // 由全量列表构造计数对象（筛选视图使用）
+  function countsFromList(list) {
+    const C = { total: (list || []).length, category: {}, channel: {}, style: {}, element: {}, scene: {}, shoot: {}, skin: {} };
+    (list || []).forEach(i => {
+      const c = i.category || "未分类";
+      C.category[c] = (C.category[c] || 0) + 1;
+      const dims = { channel: i.tags, style: i.style_tags, element: i.element_tags, scene: i.scene_tags, shoot: i.shoot_tags, skin: i.skin_tags };
+      Object.keys(dims).forEach(k => {
+        const arr = dims[k];
+        if (Array.isArray(arr)) arr.forEach(v => { if (v) C[k][v] = (C[k][v] || 0) + 1; });
+      });
+    });
+    return C;
+  }
+
+  function renderTagBar(counts) {
     const groupsBox = $("#tf-groups");
     if (!groupsBox) return;
     groupsBox.innerHTML = "";
+    const C = counts || { total: 0 };
+
+    const countOf = (groupKey, value) => {
+      if (value === "" || value == null) return C.total || 0;
+      const m = C[groupKey];
+      return (m && m[value] != null) ? m[value] : 0;
+    };
 
     const mkChip = (groupKey, value, label, count, active) => {
       const b = document.createElement("button");
@@ -590,7 +700,7 @@
         else if (groupKey === "shoot") curShoot = value;
         else if (groupKey === "skin") curSkin = value;
         else { curElement = value; }
-        renderTagBar(list);
+        renderTagBar(C);
         renderGrid();
       };
       return b;
@@ -606,7 +716,6 @@
       { key: "skin", label: "肤色", items: skinDefs, cur: (v) => curSkin === v, field: "skin_tags" }
     ];
 
-    // 场景标签按「室内 / 室外」二级分组展示（以 group 字段为准，缺失时按名称前缀兜底）
     function sceneGroupName(t) {
       const g = sceneGroupMap[t];
       if (g === "indoor") return "室内";
@@ -624,12 +733,10 @@
       wrap.appendChild(gName);
       const chips = document.createElement("div");
       chips.className = "tag-chips";
-      // 「全部」选项
       const allActive = g.key === "category" ? (currentCat === "全部") : (g.cur(""));
-      chips.appendChild(mkChip(g.key, "", "全部", list.length, allActive));
+      chips.appendChild(mkChip(g.key, "", "全部", C.total || 0, allActive));
 
       if (g.key === "scene") {
-        // 场景标签按「室内/室外/其他」分组渲染
         const order = ["室内", "室外", "其他"];
         const buckets = {};
         g.items.forEach(t => {
@@ -648,28 +755,23 @@
           subChips.className = "tag-chips";
           buckets[k].forEach(t => {
             const active = g.cur(t);
-            const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
-            // 子组内只显示细分名，避免「室内·卧室」在「室内」分组下重复冗长
+            const cnt = countOf(g.key, t);
             const short = t.split("·")[1] || t;
             subChips.appendChild(mkChip(g.key, t, short, cnt, active));
           });
-          
           sub.appendChild(subChips);
           chips.appendChild(sub);
         });
-        // 其他未覆盖前缀场景标签一律展示（防御）
         g.items.forEach(t => {
           if (["室内", "室外", "其他"].includes(sceneGroupName(t))) return;
           const active = g.cur(t);
-          const cnt = list.filter(i => Array.isArray(i[g.field]) && i[g.field].includes(t)).length;
+          const cnt = countOf(g.key, t);
           chips.appendChild(mkChip(g.key, t, t, cnt, active));
         });
       } else {
         g.items.forEach(t => {
           const active = g.key === "category" ? (currentCat === t) : g.cur(t);
-          const cnt = list.filter(i => g.key === "category"
-            ? (i.category === t)
-            : (Array.isArray(i[g.field]) && i[g.field].includes(t))).length;
+          const cnt = countOf(g.key, t);
           chips.appendChild(mkChip(g.key, t, t, cnt, active));
         });
       }
@@ -695,10 +797,201 @@
     el.textContent = parts.length ? parts.join(" · ") : "类目·渠道·风格·元素·场景·拍摄·肤色";
   }
 
+  // ---------- 前台网格：服务端分页 + 无限滚动 ----------
+  const PAGE_SIZE = 60;            // 每页加载条数
+  let pageAll = [];                // 当前默认「全部」视图已累计加载的图片
+  let pageOffset = 0;              // 下一页偏移
+  let pageHasMore = false;         // 是否还有下一页
+  let pageLoading = false;         // 是否正在加载下一页（防重）
+  let pageSentinel = null;         // 无限滚动哨兵元素
+  let pageObserver = null;         // 哨兵观察器
+  let pageCounts = { total: 0 };   // 默认视图的标签/类目计数（来自前端聚合统计）
+
+  function removePageSentinel() {
+    if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
+    if (pageSentinel && pageSentinel.parentNode) pageSentinel.parentNode.removeChild(pageSentinel);
+    pageSentinel = null;
+  }
+
+  // 渲染一批图片（DDOM）：支持追加到已有网格
+  function buildCell(img, idx) {
+    const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+    const guestToken = window.__guestToken || "";
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const holder = document.createElement("div");
+    holder.className = "holder";
+    const imgEl = document.createElement("img");
+    imgEl.dataset.src = base + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+    imgEl.dataset.authUrl = base + "/" + img.path;
+    imgEl.dataset.authToken = guestToken || "";
+    imgEl.alt = img.name || "";
+    imgEl.decoding = "async";
+    imgEl.draggable = false;
+    imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
+    holder.appendChild(imgEl);
+    const mask = document.createElement("div");
+    mask.className = "cell-hover-mask";
+    const mk = (lab, arr, cls) => {
+      const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
+      return list.length ? `<div class="hcap-row ${cls}"><b>${lab}</b><span>${escHtml(list.join("、"))}</span></div>` : "";
+    };
+    const inner = (_dimOn("channel") ? mk("渠道", img.tags, "ch") : "") + (_dimOn("style") ? mk("风格", img.style_tags, "st") : "") + (_dimOn("element") ? mk("元素", img.element_tags, "el") : "") + (_dimOn("scene") ? mk("场景", img.scene_tags, "sc") : "") + (_dimOn("shoot") ? mk("拍摄", img.shoot_tags, "sh") : "") + (_dimOn("skin") ? mk("肤色", img.skin_tags, "sk") : "");
+    mask.innerHTML = inner || `<div class="hcap-empty">暂无标签</div>`;
+    holder.appendChild(mask);
+    cell.appendChild(holder);
+    if (img && img.url && String(img.url).trim()) {
+      const lbadge = document.createElement("a");
+      lbadge.className = "cell-link-badge";
+      lbadge.href = String(img.url).trim();
+      lbadge.target = "_blank";
+      lbadge.rel = "noopener noreferrer";
+      lbadge.title = "打开外链：" + String(img.url).trim();
+      lbadge.textContent = "开";
+      lbadge.addEventListener("click", (e) => e.stopPropagation());
+      cell.appendChild(lbadge);
+    }
+    cell.onclick = () => openLightbox(idx);
+    holder.style.background = "var(--shade)";
+    return cell;
+  }
+
+  // 设置一张图片的懒加载 + 并发池（追加渲染时复用）
+  function setupLazy(grid, imgEl) {
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            en.target.setAttribute("data-started", "1");
+            lazyEnqueue(en.target);
+            obs.unobserve(en.target);
+          }
+        });
+      }, { rootMargin: "300px" });
+      io.observe(imgEl);
+    } else {
+      imgEl.setAttribute("data-started", "1");
+      const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+      imgEl.dataset.authUrl = base + "/" + (imgEl.dataset.path || "");
+      imgEl.src = imgEl.dataset.src;
+      imgEl.classList.add("loaded");
+    }
+  }
+
+  async function showEmptyHint(hasFilter, count) {
+    const tip = $("#empty-tip");
+    if (!tip) return;
+    tip.textContent = hasFilter
+      ? "没有同时满足所选类目与标签的图片。"
+      : "该分类暂无可浏览的图片。";
+    tip.classList.toggle("hidden", count > 0);
+  }
+
+  async function loadNextPage() {
+    if (!pageHasMore || pageLoading) return;
+    pageLoading = true;
+    try {
+      const chunk = await SB.listFrontendImages(PAGE_SIZE, pageOffset);
+      pageAll = pageAll.concat(chunk || []);
+      catalog = pageAll;
+      const guestToken = window.__guestToken || "";
+      lightboxList = lightboxList.concat((chunk || []).map(i => {
+        const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+        return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+      }));
+      const grid = $("#grid");
+      const newCells = [];
+      chunk.forEach(img => {
+        const idx = catalog.indexOf(img);
+        const cell = buildCell(img, idx);
+        grid.appendChild(cell);
+        newCells.push(cell);
+        const imgEl = cell.querySelector("img");
+        setupLazy(grid, imgEl);
+      });
+      // 批量兜底
+      newCells.forEach(cell => {
+        const imgEl = cell.querySelector("img");
+        setTimeout(() => {
+          const pending = grid.querySelectorAll("img:not([data-started])");
+          if (pending.length) {
+            pending.forEach(p => { p.setAttribute("data-started", "1"); lazyEnqueue(p); });
+          }
+        }, 1500);
+      });
+      pageOffset += (chunk || []).length;
+      pageHasMore = (chunk && chunk.length >= PAGE_SIZE);
+      showEmptyHint(false, catalog.length);
+      // 滚动到底自动加载更多
+      setupSentinel();
+    } finally {
+      pageLoading = false;
+    }
+  }
+
+  function setupSentinel() {
+    if (!pageSentinel) {
+      const grid = $("#grid");
+      pageSentinel = document.createElement("div");
+      pageSentinel.className = "page-sentinel";
+      pageSentinel.style.height = "1px";
+      grid.parentNode.appendChild(pageSentinel);
+      pageObserver = new IntersectionObserver(() => {
+        loadNextPage();
+      }, { rootMargin: "600px" });
+      pageObserver.observe(pageSentinel);
+    }
+  }
+
+  // 由聚合统计构造计数对象：{ total, category:{}, channel:{}, style:{}, element:{}, scene:{}, shoot:{}, skin:{} }
+  function countsFromStats(stats) {
+    const s = stats || {};
+    const n = (o) => (o && typeof o === "object" ? o : {});
+    return {
+      total: Number(s.total) || 0,
+      category: n(s.categories),
+      channel: n(s.channel),
+      style: n(s.style),
+      element: n(s.element),
+      scene: n(s.scene),
+      shoot: n(s.shoot),
+      skin: n(s.skin)
+    };
+  }
+
   async function renderGrid(setCat) {
     if (setCat) currentCat = setCat;
     const grid = $("#grid");
     grid.innerHTML = "";
+    removePageSentinel();
+    pageAll = [];
+    pageOffset = 0;
+    pageHasMore = false;
+    pageLoading = false;
+    pageCounts = { total: 0 };
+
+    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene || curShoot || curSkin;
+    const isDefaultView = currentCat === "全部" && !curChannel && !curStyle && !curElement && !curScene && !curShoot && !curSkin;
+
+    if (isDefaultView) {
+      // ===== 服务端分页 + 无限滚动（默认「全部」视图）=====
+      catalog = [];
+      lightboxList = [];
+      window.__guestToken = await SB.currentToken().catch(() => "");
+      // 计数用聚合统计（真实总数，不依赖已加载页）
+      try {
+        const stats = await SB.frontendTagStats();
+        pageCounts = countsFromStats(stats);
+      } catch (e) { pageCounts = { total: 0 }; }
+      renderTagBar(pageCounts);
+      renderCatMenu(shownCats);
+      await showEmptyHint(false, 0);
+      pageHasMore = true;
+      await loadNextPage();
+      return;
+    }
+
+    // ===== 筛选视图：一次加载全量（结果集已收敛，保证计数准确）=====
     let imgs = [];
     try {
       imgs = await SB.listFrontendImages();
@@ -706,205 +999,32 @@
     const catImgs = imgs.filter(i => catCatVisible("visual", i.category));
     catCounts = {};
     catImgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
+    const _catImgsAll = catImgs;
     imgs = catImgs.filter(_match);
-    renderTagBar(catImgs);
+    renderTagBar(countsFromList(_catImgsAll));
 
-    const hasFilter = (currentCat && currentCat !== "全部") || curChannel || curStyle || curElement || curScene || curShoot || curSkin;
-    $("#empty-tip").textContent = hasFilter
-      ? "没有同时满足所选类目与标签的图片。"
-      : "该分类暂无可浏览的图片。";
-    $("#empty-tip").classList.toggle("hidden", imgs.length > 0);
+    await showEmptyHint(hasFilter, imgs.length);
     catalog = imgs;
-
-    const guestToken = await SB.currentToken();
+    const guestToken = await SB.currentToken().catch(() => "");
     window.__guestToken = guestToken;
     lightboxList = imgs.map(i => {
       const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
       return base + "/" + i.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
     });
 
-    // 图片并发加载限制：同一时刻最多同时加载 4 张，其余排队，避免手机一次性几十个请求同时打导致卡顿
-    const LAZY_CONC = 4;
-    let lazyInflight = 0;
-    const lazyQueue = [];
-    function lazyPump() {
-      while (lazyInflight < LAZY_CONC && lazyQueue.length) {
-        const p = lazyQueue.shift();
-        if (!p) break;
-        lazyInflight++;
-        let settled = false;
-        // 兜底拉取：改用 fetch + Authorization 头（与列表接口同链路，规避移动端超长 token URL 挂起）
-        const fetchFallback = async () => {
-          const au = p.dataset.authUrl;
-          const at = p.dataset.authToken;
-          // 先销毁挂起的 src 请求，避免其继续占着请求
-          p.removeAttribute("src");
-          try {
-            const headers = at ? { "Authorization": "Bearer " + at } : {};
-            const resp = await fetch(au, { headers, cache: "no-store" });
-            if (!resp.ok) throw new Error(String(resp.status));
-            const blob = await resp.blob();
-            const obj = URL.createObjectURL(blob);
-            if (!settled) {
-              settled = true;
-              lazyInflight--;
-              p.classList.add("loaded");
-              p.onerror = null;
-              p.onload = null;
-              p.src = obj;
-              lazyPump();
-            }
-            return;
-          } catch (e) { /* fall through */ }
-          if (!settled) {
-            settled = true;
-            lazyInflight--;
-            p.classList.add("loaded", "lazy-fallback");
-            p.onerror = null;
-            p.onload = null;
-            lazyPump();
-          }
-        };
-        let hangTimer = 0;
-        p.onload = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(hangTimer);
-          lazyInflight--;
-          p.classList.add("loaded");
-          lazyPump();
-        };
-        p.onerror = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(hangTimer);
-          // 报错也走 Authorization 头兜底（不额外加并发计数，settled 已释放）
-          lazyInflight--;
-          (async () => {
-            const au = p.dataset.authUrl;
-            const at = p.dataset.authToken;
-            if (au) {
-              try {
-                const headers = at ? { "Authorization": "Bearer " + at } : {};
-                const resp = await fetch(au, { headers, cache: "no-store" });
-                if (!resp.ok) throw new Error(String(resp.status));
-                const blob = await resp.blob();
-                const obj = URL.createObjectURL(blob);
-                p.classList.add("loaded");
-                p.onerror = null;
-                p.onload = null;
-                p.src = obj;
-                return;
-              } catch (e) { /* fall through */ }
-            }
-            p.classList.add("loaded", "lazy-fallback");
-            p.onerror = null;
-            p.onload = null;
-            lazyPump();
-          })();
-        };
-        p.dataset.loading = "1";
-        hangTimer = setTimeout(() => {
-          // 看门狗：4s 内既没 onload 也没 onerror → 移动端"挂起"。强制走 Authorization 头兜底。
-          if (!settled) {
-            settled = true;
-            clearTimeout(hangTimer);
-            lazyInflight--;
-            p.onerror = null;
-            p.onload = null;
-            // 无论兜底成功与否，先推进队列，避免并发槽一直被占用
-            lazyPump();
-            fetchFallback();
-          }
-        }, 4000);
-        p.src = p.dataset.src;
-      }
-    }
-    function lazyEnqueue(el) { lazyQueue.push(el); lazyPump(); }
-
-    imgs.forEach((img, idx) => {
-      const cell = document.createElement("div");
-      cell.className = "cell";
-      const holder = document.createElement("div");
-      holder.className = "holder";
-      const imgEl = document.createElement("img");
-      const _imgBase = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
-      imgEl.dataset.src = _imgBase + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
-      // 供 fetch 兜底用：干净的图片URL（不带超长 token query）＋ 明文 token。
-      // 部分移动端浏览器（微信内核/自带）对带数百字符 token 的超长图片 URL 请求会挂起（不返回也不报错），
-      // 导致图片一直停留在灰色占位。此处改用与"图片列表接口"完全相同的鉴权链路（Authorization 头）兜底加载。
-      imgEl.dataset.authUrl = _imgBase + "/" + img.path;
-      imgEl.dataset.authToken = guestToken || "";
-      imgEl.alt = img.name || "";
-      imgEl.decoding = "async";
-      // 注意：不再设置 loading="lazy"。原生懒加载与下方自建的 IntersectionObserver 懒加载 + 并发池在部分移动端浏览器（iOS Safari / 微信内核 / 安卓 WebView）上会冲突，
-      // 导致动态赋值 src 的图片一直停在"待加载"灰色状态（既不加载成功也不报错）。去掉原生懒加载，统一由自建按需加载控制，桌面与移动端行为一致。
-      imgEl.draggable = false;
-      imgEl.addEventListener("contextmenu", (e) => e.preventDefault());
-      holder.appendChild(imgEl);
-      // 标签信息改为「鼠标悬浮」展示（不再常驻图片下方）
-      const mask = document.createElement("div");
-      mask.className = "cell-hover-mask";
-      const mk = (lab, arr, cls) => {
-        const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
-        return list.length ? `<div class="hcap-row ${cls}"><b>${lab}</b><span>${escHtml(list.join("、"))}</span></div>` : "";
-      };
-      const inner = (_dimOn("channel") ? mk("渠道", img.tags, "ch") : "") + (_dimOn("style") ? mk("风格", img.style_tags, "st") : "") + (_dimOn("element") ? mk("元素", img.element_tags, "el") : "") + (_dimOn("scene") ? mk("场景", img.scene_tags, "sc") : "") + (_dimOn("shoot") ? mk("拍摄", img.shoot_tags, "sh") : "") + (_dimOn("skin") ? mk("肤色", img.skin_tags, "sk") : "");
-      mask.innerHTML = inner || `<div class="hcap-empty">暂无标签</div>`;
-      holder.appendChild(mask);
-      cell.appendChild(holder);
-      // 图片外链角标：有外链时在卡片右上角显示「开」标识，点击直接打开该外链（不触发灯箱）
-      if (img && img.url && String(img.url).trim()) {
-        const lbadge = document.createElement("a");
-        lbadge.className = "cell-link-badge";
-        lbadge.href = String(img.url).trim();
-        lbadge.target = "_blank";
-        lbadge.rel = "noopener noreferrer";
-        lbadge.title = "打开外链：" + String(img.url).trim();
-        lbadge.textContent = "开";
-        lbadge.addEventListener("click", (e) => e.stopPropagation());
-        cell.appendChild(lbadge);
-      }
-      cell.onclick = () => openLightbox(idx);
-      holder.style.background = "var(--shade)";
+    const _catalog = catalog;
+    imgs.forEach(img => {
+      const idx = _catalog.indexOf(img);
+      const cell = buildCell(img, idx);
       grid.appendChild(cell);
-
-      // 使用自建的按需加载（IntersectionObserver）。为避免个别移动端浏览器 IO 不触发导致图片一直空白，
-      // 同时给每张图记录"是否已开始加载"，并设一道看门狗定时器兜底。
-      if ("IntersectionObserver" in window) {
-        const io = new IntersectionObserver((entries, obs) => {
-          entries.forEach(en => {
-            if (en.isIntersecting) {
-              const target = en.target;
-              target.setAttribute("data-started", "1");
-              lazyEnqueue(target);
-              obs.unobserve(target);
-            }
-          });
-        }, { rootMargin: "300px" });
-        io.observe(imgEl);
-      } else {
-        imgEl.setAttribute("data-started", "1");
-        imgEl.src = imgEl.dataset.src;
-        // 无 IO 环境：同样记录干净 URL 与 token，供超时/失败时 fetch 兜底
-        if (!imgEl.dataset.authUrl) {
-          const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
-          imgEl.dataset.authUrl = base + "/" + (img.path || "");
-          imgEl.dataset.authToken = guestToken || "";
-        }
-        imgEl.classList.add("loaded");
-      }
-
-      // 看门狗兜底：无论 IO 是否正常触发，1.5s 后强制把仍未开始加载的图全部排队加载，确保任何设备都能出图
-      setTimeout(() => {
-        const pending = grid.querySelectorAll("img:not([data-started])");
-        if (pending.length) {
-          pending.forEach(p => { p.setAttribute("data-started", "1"); lazyEnqueue(p); });
-        }
-      }, 1500);
+      setupLazy(grid, cell.querySelector("img"));
     });
-
-    // 主看门狗：渲染完成后 2.5s 统一兜底，处理 IO 未触发 / 排队异常等边缘情况
+    setTimeout(() => {
+      const still = grid.querySelectorAll("img:not([data-started])");
+      if (still.length) {
+        still.forEach(p => { p.setAttribute("data-started", "1"); lazyEnqueue(p); });
+      }
+    }, 1500);
     setTimeout(() => {
       const still = grid.querySelectorAll("img:not([data-started])");
       if (still.length) {
@@ -912,6 +1032,7 @@
       }
     }, 2500);
   }
+
 
   // ASCII 文本转义封装（依赖 frontend.html 内无函数时本地兜底）
   function escHtml(s) {

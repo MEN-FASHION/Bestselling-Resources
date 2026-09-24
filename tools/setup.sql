@@ -938,6 +938,79 @@ as $$
 $$;
 grant execute on function public.frontend_list_used_cats() to authenticated;
 
+-- ---------- 前台图片列表（服务端分页版） ----------
+-- 供前台视觉专区默认「全部」视图分页加载：按 created_at 倒序取第 offset 页（每页 limit 条），
+-- 仅返回登录用户可见的全量图片（security definer 绕过后台 RLS，仅前台前端调用）。
+drop function if exists public.frontend_list_images_page(integer, integer);
+create function public.frontend_list_images_page(p_limit integer, p_offset integer)
+returns setof public.images
+language sql security definer stable
+as $$
+  select * from public.images
+  order by created_at desc, id desc
+  limit greatest(1, p_limit) offset greatest(0, p_offset);
+$$;
+grant execute on function public.frontend_list_images_page(integer, integer) to authenticated;
+
+-- 前台图片总数（用于分页判断是否还有下一页）
+drop function if exists public.frontend_count_images();
+create function public.frontend_count_images()
+returns bigint
+language sql security definer stable
+as $$
+  select count(*) from public.images;
+$$;
+grant execute on function public.frontend_count_images() to authenticated;
+
+-- 前台标签/类目计数聚合（供分页网格下标签栏与类目菜单显示真实总数，避免仅按已加载页统计）
+drop function if exists public.frontend_tag_stats();
+create function public.frontend_tag_stats()
+returns jsonb
+language sql security definer stable
+as $$
+  select jsonb_build_object(
+    'total', (select count(*) from public.images),
+    'categories', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select category as k, count(*)::bigint as v
+        from public.images where category is not null and category <> ''
+        group by category
+      ) t
+    ), '{}'::jsonb),
+    'channel', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb),
+    'style', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(style_tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb),
+    'element', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(element_tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb),
+    'scene', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(scene_tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb),
+    'shoot', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(shoot_tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb),
+    'skin', coalesce((
+      select jsonb_object_agg(k, v) from (
+        select unnest(skin_tags) as k, count(*)::bigint as v from public.images group by 1
+      ) t
+    ), '{}'::jsonb)
+  );
+$$;
+grant execute on function public.frontend_tag_stats() to authenticated;
+
 
 -- ---------- 登录设备 / IP 记录（安全设置） ----------
 -- 说明：记录每个用户登录时的设备（浏览器/系统）与公网 IP，供超管后台「用户权限分配表」展示。

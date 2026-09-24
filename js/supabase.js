@@ -309,19 +309,51 @@ const SB = (() => {
     },
 
     // ============ DB（图片清单） ============
-    async listImages(category) {
+    async listImages(category, opts) {
       let q = client.from("images").select("*").order("created_at", { ascending: false });
       if (category && category !== "全部") q = q.eq("category", category);
+      if (opts && typeof opts.from === "number" && typeof opts.to === "number") {
+        q = q.range(opts.from, opts.to);
+      }
       const { data, error } = await q;
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
     },
+    // 图片总数（后台分页判断；RLS 生效时仅统计当前用户可见数）
+    async countImages(category) {
+      let q = client.from("images").select("id", { count: "exact", head: true });
+      if (category && category !== "全部") q = q.eq("category", category);
+      const { count, error } = await q;
+      if (error) throw new Error(error.message || "读取失败");
+      return Number(count) || 0;
+    },
     // 前台浏览专用：所有登录用户读取全部已发布图片（走 security definer 函数，
     // 绕过后台"智能打标"里"管理员只看自己上传的"这条 RLS 限制，仅前台前端调用）
-    async listFrontendImages() {
+    async listFrontendImages(limit, offset) {
+      if (typeof limit === "number" && limit > 0) {
+        // 服务端分页：按 created_at 倒序取第 offset 页，每页 limit 条
+        const { data, error } = await client.rpc("frontend_list_images_page", {
+          p_limit: limit,
+          p_offset: typeof offset === "number" && offset > 0 ? offset : 0,
+        });
+        if (error) throw new Error(error.message || "读取失败");
+        return data || [];
+      }
       const { data, error } = await client.rpc("frontend_list_images");
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
+    },
+    // 前台图片总数（分页判断是否还有下一页）
+    async countFrontendImages() {
+      const { data, error } = await client.rpc("frontend_count_images");
+      if (error) throw new Error(error.message || "读取失败");
+      return Number(data) || 0;
+    },
+    // 前台标签/类目计数聚合（分页网格下标签栏与类目菜单显示真实总数）
+    async frontendTagStats() {
+      const { data, error } = await client.rpc("frontend_tag_stats");
+      if (error) throw new Error(error.message || "读取失败");
+      return data || {};
     },
     // 返回所有已上传图片名（用于上传时去重校验，避免重复传图）
     async listImageNames() {
@@ -333,6 +365,12 @@ const SB = (() => {
       const { data, error } = await client.from("images").select("category").order("category");
       if (error) throw new Error(error.message || "读取失败");
       return [...new Set((data || []).map(d => d.category))];
+    },
+    // 后台图片管理：图片中有图的类目列表（轻量，仅取 category 列，去重排序）
+    async manageCategories() {
+      const { data, error } = await client.from("images").select("category");
+      if (error) throw new Error(error.message || "读取失败");
+      return [...new Set((data || []).map(d => d && d.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh"));
     },
 
     // ============ 类目清单（categories 表） ============
