@@ -232,6 +232,18 @@
   }
 
   // —— 加载营销日历数据并渲染 ——
+// 标题年份：优先取已有节点日期推断的年份，否则取当前年份
+  function setHeroYear() {
+    const yearEl = document.getElementById("mk-hero-year");
+    if (!yearEl) return;
+    let y = new Date().getFullYear();
+    for (const n of nodes) {
+      const d = String(n.date || "");
+      const m = d.match(/(20\d{2})/);
+      if (m) { y = m[1]; break; }
+    }
+    yearEl.textContent = y;
+  }
   async function loadMarketing() {
     try {
       await ensureZoneVis();
@@ -239,6 +251,7 @@
       nodes = nodeRes.data || [];
       const artRes = await SB.listMarketingArticles(true);   // 仅已发布
       articles = artRes.data || [];
+      setHeroYear();
       renderNodes();
       renderCards();
       maybeFocusArticle();
@@ -247,7 +260,9 @@
     }
   }
 
-  // 顶部横向时间轴：一条横线，节点为亮点，节点上方为主题文字，下方为主图（点击查看趋势）
+  // 顶部横向时间轴（设计稿形态）：一条横向主轴贯穿全部节点，红色圆点标注日期；
+  // 上方=节日庆祝（紫色标签），下方=重大活动（绿色）/促销旺季（深紫）标签；
+  // 每个节点通过垂直虚线连接主轴，并可点击标签/主图打开对应文章。
   function renderNodes() {
     const tl = document.getElementById("mk-timeline");
     if (!tl) return;
@@ -265,33 +280,38 @@
         text: (a && a.title) || ""
       };
     };
-    // 交错时间线：相邻节点一上一下交替排布，节点圆点落在主轴上，竖虚线悬挂说明卡
+    // 分类：festival(节日庆祝-上,紫) / event(重大活动-下,绿) / promo(促销旺季-下,深紫)
+    const cat = (n) => {
+      const c = (n.category || "festival").toLowerCase();
+      return c === "event" ? "event" : (c === "promo" ? "promo" : "festival");
+    };
     tl.innerHTML = nodes.map((n, i) => {
       const date = escHtml(n.date || "");
       const title = escHtml(n.title || "");
       const desc = escHtml(n.description || "");
       const c = coverOf(n);
+      const k = cat(n);
       const href = c.url || "javascript:void(0);";
       const target = c.url ? "_blank" : "";
       const rel = c.url ? "noopener noreferrer" : "";
-      const side = i % 2 === 0 ? "up" : "down";
-      return `<div class="mk-node ${side}">
-        <div class="mk-card">
-          <a class="mk-card-link" href="${href}" target="${target}" rel="${rel}">
-            ${c.img ? `<img class="mk-card-img" src="${SB.marketingImageUrl(c.img)}" alt="${title}" loading="lazy">` : ""}
-            <div class="mk-card-date">${date}</div>
-            <div class="mk-card-title">${title}</div>
-            ${desc ? `<div class="mk-card-desc">${desc}</div>` : ""}
+      const side = k === "festival" ? "up" : "down";   // 上=节日，下=活动/促销
+      return `<div class="mk-node ${side} cat-${k}">
+        <div class="mk-tag">
+          <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
+            <div class="mk-tag-date">${date}</div>
+            <div class="mk-tag-title">${title}</div>
+            ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
         </div>
         <span class="mk-conn"></span>
-        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
+        <span class="mk-dot">${date ? `<span class="mk-dot-date">${date}</span>` : ""}<span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
-    // 图片加载失败回退占位
-    tl.querySelectorAll(".mk-card-img").forEach(img => {
-      img.onerror = () => { img.style.display = "none"; };
-    });
+    // 主轴末端右箭头
+    const arrow = document.createElement("div");
+    arrow.className = "mk-axis-arrow";
+    arrow.innerHTML = "&#9654;";
+    tl.appendChild(arrow);
     // 支持鼠标按住横向拖动滑动
     enableDragScroll(tl);
   }

@@ -851,9 +851,9 @@ async removeTrendRecord(id) {
       const { data, error } = await client.from("marketing_nodes").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
       return { data: data || [], error };
     },
-    async addMarketingNode({ title, date, sort_order, image, url, description }) {
+    async addMarketingNode({ title, date, category, sort_order, image, url, description }) {
       const { error } = await client.from("marketing_nodes").insert({
-        title, date: date || "", sort_order: sort_order || 0,
+        title, date: date || "", category: category || "festival", sort_order: sort_order || 0,
         image: image || "", url: url || "", description: description || "",
       });
       return { error };

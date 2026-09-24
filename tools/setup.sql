@@ -1089,6 +1089,7 @@ create table if not exists public.marketing_nodes (
   id uuid primary key default gen_random_uuid(),
   title text not null,                 -- 时间节点名称（如"万圣节""双11"）
   date text default '',                -- 节点日期（YYYY-MM-DD 或自由文本，用于时间线定位/排序）
+  category text default 'festival',    -- 节点分类：festival=节日庆祝(上/紫)，event=重大活动(下/绿)，promo=促销旺季(下/深紫)
   sort_order int not null default 0,   -- 时间线显示顺序（升序）
   image text default '',               -- 节点展示图路径（R2 marketing/ 相对路径），可为空（前台显示标题卡）
   url text default '',                 -- 节点对应文章外链（点击跳转），可空
@@ -1096,6 +1097,8 @@ create table if not exists public.marketing_nodes (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.marketing_nodes add column if not exists category text default 'festival';
 
 alter table public.marketing_nodes enable row level security;
 

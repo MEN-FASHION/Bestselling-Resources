@@ -4872,15 +4872,6 @@ let recruitTasks = [];
       } catch (e) { /* 忽略登录记录读取失败，仅展示不到 */ }
     }
     renderPermTable(permUsers);
-    const sel = $("#perm-user");
-    if (!sel) return;
-    sel.innerHTML = "";
-    permUsers.forEach(u => {
-      const o = document.createElement("option");
-      o.value = u.user_id; o.textContent = u.email + "（" + permRoleLabel(u.role) + "）";
-      sel.appendChild(o);
-    });
-    if (permUsers.length) { await loadPermForUser(permUsers[0]); }
     await loadDefaultPerms();
   }
   // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
@@ -4955,7 +4946,7 @@ let recruitTasks = [];
         '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
         '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
         '<td class="perm-td-tag">' + tagSel + '</td>' +
-        '<td class="perm-td-note">' + noteTxt + '</td>' +
+        '<td class="perm-td-note"><span class="perm-note-edit" data-uid="' + u.user_id + '" title="点击编辑备注">' + noteTxt + '</span></td>' +
         '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
         '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
         '<td class="perm-td-device">' + devTxt + '</td>' +
@@ -4979,6 +4970,51 @@ let recruitTasks = [];
           syncPermTagEditor();
           syncPermTagFilter();
         } catch (e) { sbToast("标签保存失败：" + (e.message || ""), false); }
+      };
+      // 备注列：点击就地编辑（点击 → 输入框 → 失焦保存，就地更新，不重建整表）
+      const noteSpan = tr.querySelector(".perm-note-edit");
+      if (noteSpan) noteSpan.onclick = () => {
+        const td = noteSpan.parentElement;
+        const oldNote = u.user_note || "";
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.className = "input";
+        inp.maxLength = 120;
+        inp.value = oldNote;
+        inp.placeholder = "填写说明（如新用户名/来源/用途），可留空";
+        td.innerHTML = "";
+        td.appendChild(inp);
+        inp.focus();
+        inp.select();
+        let done = false;
+        const commit = async (save) => {
+          if (done) return;
+          done = true;
+          if (save) {
+            const v = inp.value.trim();
+            if (v !== oldNote) {
+              try {
+                await SB.setUserNote(u.user_id, v);
+                u.user_note = v;
+                sbToast("已更新备注");
+              } catch (e) { sbToast("备注保存失败：" + (e.message || ""), false); }
+            }
+          }
+          td.innerHTML = u.user_note ? escHtml(u.user_note) : '<span class="hint">未填写</span>';
+          // 恢复为可点击 span，重新绑定
+          const span = document.createElement("span");
+          span.className = "perm-note-edit";
+          span.title = "点击编辑备注";
+          span.innerHTML = u.user_note ? escHtml(u.user_note) : '<span class="hint">未填写</span>';
+          span.onclick = noteSpan.onclick;
+          td.innerHTML = "";
+          td.appendChild(span);
+        };
+        inp.onblur = () => commit(true);
+        inp.onkeydown = (e) => {
+          if (e.key === "Enter") { inp.blur(); }
+          else if (e.key === "Escape") { commit(false); }
+        };
       };
       body.appendChild(tr);
     });
@@ -5254,59 +5290,6 @@ let recruitTasks = [];
     // 按标签筛选：选择后权限表仅显示匹配标签的用户
     const tagFilter = $("#perm-tag-filter");
     if (tagFilter) tagFilter.onchange = () => { permTagFilter = tagFilter.value; renderPermTable(permUsers); };
-    // 编辑区标签下拉：切换即保存到当前用户并同步表格（与权限表行内下拉一致）
-    const tagEditor = $("#perm-tag");
-    if (tagEditor) tagEditor.onchange = async () => {
-      const uid = $("#perm-user")?.value;
-      if (!uid) return;
-      const v = tagEditor.value || "";
-      try {
-        await SB.setUserTag(uid, v);
-        const u = permUsers.find(x => x.user_id === uid);
-        if (u) u.user_tag = v;
-        sbToast("已更新该用户标签");
-        await renderPermTable(permUsers);
-      } catch (e) { sbToast("标签保存失败：" + (e.message || ""), false); }
-    };
-    const sel = $("#perm-user");
-    if (sel) sel.onchange = () => {
-      const u = permUsers.find(x => x.user_id === sel.value);
-      if (u) loadPermForUser(u);
-    };
-    const ref = $("#perm-refresh");
-    if (ref) ref.onclick = loadPermPanel;
-    const allBtn = $("#perm-cats-all");
-    if (allBtn) allBtn.onclick = () => {
-      document.querySelectorAll("#perm-cats input[type=checkbox]").forEach(cb => cb.checked = true);
-      updatePermCatCount();
-    };
-    const noneBtn = $("#perm-cats-none");
-    if (noneBtn) noneBtn.onclick = () => {
-      document.querySelectorAll("#perm-cats input[type=checkbox]").forEach(cb => cb.checked = false);
-      updatePermCatCount();
-    };
-    const save = $("#perm-save");
-    if (save) save.onclick = async () => {
-      const uid = $("#perm-user")?.value;
-      if (!uid) return sbToast("请先选择用户", false);
-      const role = $("#perm-role")?.value || "visitor";
-      const cats = [...document.querySelectorAll("#perm-cats input:checked")].map(i => i.value);
-      const zones = [...document.querySelectorAll("#perm-zones input:checked")].map(i => i.value);
-      const tag = ($("#perm-tag")?.value || "").trim();
-      const note = ($("#perm-note")?.value || "").trim();
-      try {
-        // 用户标签（备注标签，便于区分用户类别）+ 用户备注（自由文本）
-        await SB.setUserTag(uid, tag);
-        await SB.setUserNote(uid, note);
-        await SB.setUserRole(uid, role);
-        // 一套共享类目授权，四专区共用
-        await SB.setUserPermissions(uid, "", cats);
-        // 用户级可见专区白名单（空数组＝按全局）
-        await SB.setUserManageZones(uid, zones);
-        sbToast("角色与权限已保存");
-        await loadPermPanel();
-      } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
-    };
     bindDefaultPerms();
     bindPermEditModal();
     bindPermCreateUser();
@@ -6256,22 +6239,22 @@ let bestsellerTasks = [];
       tl.innerHTML = '<div class="mk-empty">暂无时间节点，点击上方「＋ 新增时间节点」创建。</div>';
       return;
     }
-    tl.innerHTML = mkNodes.map((n, i) => {
+    const catOf = (k) => { const c = (k || "festival").toLowerCase(); return c === "event" ? "event" : (c === "promo" ? "promo" : "festival"); };
+    tl.innerHTML = mkNodes.map((n) => {
       const date = escHtml(n.date || "");
       const title = escHtml(n.title || "");
       const desc = escHtml(n.description || "");
-      const img = n.image || "";
+      const k = catOf(n.category);
       const href = n.url || "javascript:void(0);";
       const target = n.url ? "_blank" : "";
       const rel = n.url ? "noopener noreferrer" : "";
-      const side = i % 2 === 0 ? "up" : "down";
-      return `<div class="mk-node ${side}">
-        <div class="mk-card">
-          <a class="mk-card-link" href="${href}" target="${target}" rel="${rel}">
-            ${img ? `<img class="mk-card-img" src="${SB.marketingImageUrl(img)}" alt="${title}" loading="lazy">` : ""}
-            <div class="mk-card-date">${date}</div>
-            <div class="mk-card-title">${title}</div>
-            ${desc ? `<div class="mk-card-desc">${desc}</div>` : ""}
+      const side = k === "festival" ? "up" : "down";
+      return `<div class="mk-node ${side} cat-${k}">
+        <div class="mk-tag">
+          <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
+            <div class="mk-tag-date">${date}</div>
+            <div class="mk-tag-title">${title}</div>
+            ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
           <div class="mk-node-ops">
             <button type="button" class="op-edit" data-act="edit" data-id="${n.id}">编辑</button>
@@ -6282,10 +6265,11 @@ let bestsellerTasks = [];
         <span class="mk-dot"><span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
-    // 图片加载失败回退占位
-    tl.querySelectorAll(".mk-card-img").forEach(img => {
-      img.onerror = () => { img.style.display = "none"; };
-    });
+    // 主轴末端右箭头
+    const arrow = document.createElement("div");
+    arrow.className = "mk-axis-arrow";
+    arrow.innerHTML = "&#9654;";
+    tl.appendChild(arrow);
     // 支持鼠标按住横向拖动滑动
     enableAdminDragScroll(tl);
     // 绑定节点管理操作
@@ -6443,9 +6427,11 @@ let bestsellerTasks = [];
     const titleEl = document.getElementById("mk-node-title");
     const dateEl = document.getElementById("mk-node-date");
     const urlEl = document.getElementById("mk-node-url");
+    const catEl = document.getElementById("mk-node-category");
     if (titleEl) titleEl.value = n ? (n.title || "") : "";
     if (dateEl) dateEl.value = n ? fmtInputDate(n.date) : "";
     if (urlEl) urlEl.value = n ? (n.url || "") : "";
+    if (catEl) catEl.value = n ? (n.category || "festival") : "festival";
     if (document.getElementById("mk-node-cover-name")) document.getElementById("mk-node-cover-name").textContent = mkNodeCoverPath || "";
     renderMarketingNodeCoverPreview();
     modal.classList.remove("hidden");
@@ -6465,12 +6451,14 @@ let bestsellerTasks = [];
     const date = dateEl && dateEl.value ? dateEl.value : new Date().toISOString();
     const urlEl = document.getElementById("mk-node-url");
     const url = urlEl ? urlEl.value.trim() : "";
+    const catEl = document.getElementById("mk-node-category");
+    const category = catEl ? catEl.value : "festival";
     try {
       if (mkEditingNodeId) {
-        await SB.updateMarketingNode(mkEditingNodeId, { title, date, image: mkNodeCoverPath || "", url });
+        await SB.updateMarketingNode(mkEditingNodeId, { title, date, category, image: mkNodeCoverPath || "", url });
         sbToast("节点已更新");
       } else {
-        await SB.addMarketingNode({ title, date, image: mkNodeCoverPath || "", url });
+        await SB.addMarketingNode({ title, date, category, image: mkNodeCoverPath || "", url });
         sbToast("节点已添加");
       }
       mkEditingNodeId = null;

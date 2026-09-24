@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923W">
+<link rel="stylesheet" href="css/style.css?v=20260923Y">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -366,39 +366,6 @@
           </div>
 
           <hr class="tag-sub-hr">
-          <div class="rg-row" style="margin-top:6px"><label class="field">编辑用户</label>
-            <select id="perm-user" class="input"></select>
-            <label class="field" style="margin-left:8px">角色</label>
-            <select id="perm-role" class="input">
-              <option value="visitor">访客</option>
-              <option value="admin">管理员</option>
-              <option value="super_admin">超级管理员</option>
-            </select>
-            <label class="field" style="margin-left:8px">标签</label>
-            <select id="perm-tag" class="input" style="max-width:140px"><option value="">无标签</option></select>
-            <label class="field" style="margin-left:8px">备注</label>
-            <input id="perm-note" class="input" style="max-width:260px" placeholder="填写说明（如新用户名/来源/用途），可留空" maxlength="120">
-            <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
-          </div>
-          <div class="perm-zone">
-            <h4 class="perm-zone-title">可管理类目（跨专区统一生效）
-              <span class="perm-cats-toolbar">
-                <span id="perm-cats-count" class="perm-cats-count">0</span>
-                <button id="perm-cats-all" class="btn-ghost small" type="button" title="勾选全部类目">全选</button>
-                <button id="perm-cats-none" class="btn-ghost small" type="button" title="取消全部类目">全不选</button>
-              </span>
-            </h4>
-            <div id="perm-cats" class="perm-cats"><span class="hint">加载中…</span></div>
-          </div>
-          <div class="perm-zone" style="margin-top:10px">
-            <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示；默认视觉/趋势/公告对所有人可见）</span></h4>
-            <div id="perm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
-          </div>
-          <div class="rg-btnrow">
-            <button id="perm-save" class="btn-primary" type="button">保存权限分配</button>
-          </div>
-
-          <hr class="tag-sub-hr">
           <div class="perm-zone" style="margin-top:12px">
             <h4 class="perm-zone-title">新用户默认权限设置 <span class="hint-inline">（对之后新注册的用户生效，不修改已有用户）</span></h4>
             <div class="rg-row" style="margin-bottom:8px">
@@ -500,7 +467,7 @@
           <div class="mk-admin-toolbar">
             <button id="mk-add-node" class="btn-primary" type="button">＋ 新增时间节点</button>
             <button id="mk-add-art" class="btn-primary" type="button">＋ 发布趋势文章</button>
-            <span class="hint-inline">时间线为横向，可左右拖动滑动查看不同时间节点；每个节点的主题文字在轴上方、主图在轴下方，点击主图跳转趋势链接；文章以 3:4 展示图卡片呈现，可生成二维码分享到微信。</span>
+            <span class="hint-inline">时间线为横向，可左右拖动滑动查看；按设计稿呈现：节日庆祝在上方（紫色）、重大活动在下方（绿色）、促销旺季在下方（深紫），每个节点悬挂在横向主轴之上/之下，红点标注日期；文章以 3:4 展示图卡片呈现，可生成二维码分享到微信。</span>
           </div>
           <div class="mk-viz-tip">操作提示：悬停时间节点或卡片，可直接「编辑 / 删除」；文章卡片还可「发布 / 下架 / 微信分享」。新增节点与文章使用上方按钮。</div>
 
@@ -529,6 +496,12 @@
               <input id="mk-node-title" class="input" placeholder="如：双11大促" maxlength="60">
               <label>时间</label>
               <input id="mk-node-date" class="input" type="datetime-local">
+              <label>节点分类（决定了显示在轴上方/下方及颜色）</label>
+              <select id="mk-node-category" class="input">
+                <option value="festival">节日庆祝（上方 · 紫色）</option>
+                <option value="event">重大活动（下方 · 绿色）</option>
+                <option value="promo">促销旺季（下方 · 深紫）</option>
+              </select>
               <label>主图（下方展示，点击查看趋势）</label>
               <div class="field-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <button id="mk-node-cover-pick" class="btn-ghost" type="button">＋ 选择主图</button>
@@ -1032,9 +1005,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923W"></script>
-  <script src="js/supabase.js?v=20260923W"></script>
-  <script src="js/admin.js?v=20260923W"></script>
+  <script src="js/config.js?v=20260923Y"></script>
+  <script src="js/supabase.js?v=20260923Y"></script>
+  <script src="js/admin.js?v=20260923Y"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

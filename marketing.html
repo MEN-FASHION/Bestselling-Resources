@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20260923W">
+<link rel="stylesheet" href="css/style.css?v=20260923Y">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -82,9 +82,22 @@
 
   <section id="marketing-view" class="gallery-view hidden">
     <div class="mk-wrap">
+      <!-- ===== 设计稿标题区 ===== -->
+      <div class="mk-hero">
+        <h1 class="mk-hero-title">节点营销攻略<span class="mk-hero-sep">——</span><span id="mk-hero-year" class="mk-hero-year">2026</span>年美国节点营销日历</h1>
+        <p class="mk-hero-sub">沿着时间轴，提前掌握全年美国节点营销节奏</p>
+      </div>
+
       <!-- ===== 顶部时间线 ===== -->
-      <div class="mk-timeline-title">营销时间线 <span class="hint-inline">← 可左右拖动滑动查看 →</span></div>
+      <div class="mk-timeline-head"><span class="mk-timeline-title">营销时间线</span><span class="mk-hint">← 可左右拖动滑动查看 →</span></div>
       <div id="mk-timeline" class="mk-timeline"><div class="mk-empty">加载中…</div></div>
+
+      <!-- ===== 设计稿底部图例 ===== -->
+      <div class="mk-legend">
+        <span class="mk-legend-item mk-leg-festival">节日庆祝</span>
+        <span class="mk-legend-item mk-leg-event">重大活动</span>
+        <span class="mk-legend-item mk-leg-promo">促销旺季</span>
+      </div>
 
       <!-- ===== 营销日历卡片区（3:4 展示图） ===== -->
       <div class="mk-grid-title">营销日历</div>
@@ -149,8 +162,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923W"></script>
-  <script src="js/supabase.js?v=20260923W"></script>
-  <script src="js/marketing.js?v=20260923W"></script>
+  <script src="js/config.js?v=20260923Y"></script>
+  <script src="js/supabase.js?v=20260923Y"></script>
+  <script src="js/marketing.js?v=20260923Y"></script>
 </body>
 </html>
