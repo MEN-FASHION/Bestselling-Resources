@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923P">
+<link rel="stylesheet" href="css/style.css?v=20260923Q">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -204,11 +204,11 @@
         <h2>⑥ 趋势专区 <span class="hint-inline">（上传类目/月度/周度趋势文件，前台登录后在线预览、不可下载）</span></h2>
         <div class="trend-upload">
           <div class="row">
-            <label class="field">文件标题</label>
+            <label class="field"><span class="req">*</span> 文件标题</label>
             <input id="trend-title" class="input" placeholder="例如：2026年9月男装趋势报告">
           </div>
           <div class="row">
-            <label class="field">标签分类（单选）</label>
+            <label class="field"><span class="req">*</span> 标签分类（单选）</label>
             <div class="trend-tag-select" id="trend-tag-select">
               <label class="chk"><input type="radio" name="trend-tag" value="类目" checked> 类目</label>
               <label class="chk"><input type="radio" name="trend-tag" value="月度"> 月度</label>
@@ -216,7 +216,7 @@
             </div>
           </div>
           <div class="row">
-            <label class="field">选择类目（复用视觉专区类目）</label>
+            <label class="field"><span class="req">*</span> 选择类目（复用视觉专区类目）</label>
             <div class="cat-picker">
               <input id="trend-cat-search" class="input" placeholder="输入关键词搜索已有类目…" autocomplete="off">
               <div id="trend-cat-results" class="cat-results hidden"></div>
@@ -228,19 +228,19 @@
             </div>
           </div>
           <div class="row">
-            <label class="field">选填 · 封面图（前台卡片展示）</label>
+            <label class="field"><span class="req">*</span> 封面图（前台卡片展示）</label>
             <div id="trend-cover-dropzone" class="dropzone">
               <div class="dz-inner">
                 <span class="dz-icon">＋</span>
                 <p>拖拽封面图到这里，或 <em>点击选择文件</em></p>
-                <p class="dz-sub">支持 JPG / PNG，可选</p>
+                <p class="dz-sub">支持 JPG / PNG</p>
               </div>
               <input type="file" id="trend-cover-input" accept="image/*" hidden>
             </div>
             <div id="trend-cover-pick" class="hint hidden" style="margin-top:8px;"></div>
           </div>
           <div class="row">
-            <label class="field">选填 · 简介/介绍</label>
+            <label class="field"><span class="req">*</span> 简介/介绍</label>
             <textarea id="trend-description" class="input" rows="2" placeholder="一句话介绍该趋势文件的内容，前台卡片会展示"></textarea>
           </div>
           <div id="trend-dropzone" class="dropzone">
@@ -1032,9 +1032,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923P"></script>
-  <script src="js/supabase.js?v=20260923P"></script>
-  <script src="js/admin.js?v=20260923P"></script>
+  <script src="js/config.js?v=20260923Q"></script>
+  <script src="js/supabase.js?v=20260923Q"></script>
+  <script src="js/admin.js?v=20260923Q"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

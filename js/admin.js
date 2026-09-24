@@ -2701,10 +2701,14 @@
   }
 
   async function doUploadTrend(t) {
-    if (!trendPickedFile) return sbToast("请先选择 PDF 文件", false);
-    if (!t) return sbToast("请填写文件标题", false);
-    const tag = (document.querySelector('input[name="trend-tag"]:checked') || {}).value || "类目";
+    // 必填校验：逐项提示哪一项没填
+    if (!trendPickedFile) return sbToast("未填写项：「PDF 文件」", false);
+    if (!t) return sbToast("未填写项：「文件标题」", false);
+    if (!trendCategory) return sbToast("未填写项：「选择类目」", false);
+    if (!trendPickedCover) return sbToast("未填写项：「封面图」", false);
     const description = (document.querySelector("#trend-description")?.value || "").trim();
+    if (!description) return sbToast("未填写项：「简介/介绍」", false);
+    const tag = (document.querySelector('input[name="trend-tag"]:checked') || {}).value || "类目";
     const upBtn = document.querySelector("#trend-upload-btn");
     const pw = document.querySelector("#trend-progress-wrap");
     const pb = document.querySelector("#trend-progress-bar");

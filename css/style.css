@@ -381,6 +381,7 @@ img { display: block; }
 .repo-info { margin-top: 14px; font-size: 13px; color: var(--sub); }
 .repo-info b { color: var(--txt); }
 .field { display: block; font-size: 13px; color: var(--sub); margin-bottom: 8px; }
+.field .req { color: #e53e3e; font-weight: 600; margin-right: 2px; }
 /* 招品回品上传三步：编号徽章 + 加粗标题 + 灰色说明 */
 .rg-step { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .rg-step-head { display: flex; align-items: center; gap: 8px; }
