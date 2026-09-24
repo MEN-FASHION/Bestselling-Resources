@@ -11,6 +11,8 @@ create table if not exists public.profiles (
   role text not null default 'visitor' check (role in ('visitor', 'admin', 'super_admin')),
   -- 用户标签：超管设置的备注标签，便于区分用户类别（如 招商/测试/内部/商家 等），无则留空
   user_tag text not null default '',
+  -- 用户备注：超管随意填写的自由文本说明（如 来源/用途/新用户名 等），无则留空
+  user_note text not null default '',
   -- 用户级前台可见专区白名单（manage_zones 数组；空/缺省 = 未配置，前台回退到全局 frontend_zone_visibility）
   manage_zones jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
@@ -881,6 +883,7 @@ $$;
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
 -- 用户标签列（兼容旧库，幂等）：超管设置的备注标签，便于区分用户类别
 alter table public.profiles add column if not exists user_tag text not null default '';
+alter table public.profiles add column if not exists user_note text not null default '';
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));

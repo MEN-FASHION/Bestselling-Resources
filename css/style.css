@@ -1858,6 +1858,7 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* 权限表「用户标签」列：不用色块区分（标签自由填写），仅稳妥展示 + 未标注占位 */
 .perm-td-role { white-space: nowrap; font-weight: 600; }
 .perm-td-tag { white-space: nowrap; font-size: 13px; color: var(--txt, #222); }
+.perm-td-note { max-width: 260px; word-break: break-word; white-space: normal; font-size: 13px; color: var(--txt, #333); }
 .perm-td-tag .hint { color: var(--sub, #999); font-size: 12px; }
 .perm-tag-select { max-width: 100px; padding: 3px 6px; border: 1px solid rgba(0,0,0,.12); border-radius: 4px; background: var(--card, #fff); color: var(--txt, #222); font-size: 12px; cursor: pointer; }
 .perm-tag-select:focus { outline: none; border-color: var(--accent, #c8a24a); }

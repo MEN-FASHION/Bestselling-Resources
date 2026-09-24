@@ -4664,8 +4664,8 @@ let recruitTasks = [];
     if (!body) return;
     // 按「标签」筛选：all=全部，__none__=仅无标签，其它=仅该标签
     const shown = permTagFilter === "" ? users : (permTagFilter === NONE_TAG ? users.filter(u => !(u.user_tag && u.user_tag.trim())) : users.filter(u => u.user_tag === permTagFilter));
-    if (!users.length) { body.innerHTML = '<tr><td colspan="8" class="hint">暂无用户</td></tr>'; return; }
-    if (!shown.length) { body.innerHTML = '<tr><td colspan="8" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="9" class="hint">暂无用户</td></tr>'; return; }
+    if (!shown.length) { body.innerHTML = '<tr><td colspan="9" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; return; }
     body.innerHTML = "";
     // 预取每个用户的类目授权，用于总览摘要（仅筛选后的行）
     const catCounts = {};
@@ -4688,31 +4688,35 @@ let recruitTasks = [];
       const ipTxt = u.ip ? escHtml(u.ip) : '<span class="hint">未记录</span>';
       // 标签列：直接以下拉选择，切换即保存到该用户（无需点编辑区保存）
       const tagSel = '<select class="perm-tag-select" data-uid="' + u.user_id + '">' + permTagOptionsHtml(users, u.user_tag || "") + "</select>";
+      // 备注列：自由文本说明（如新用户名/来源/用途）
+      const noteTxt = u.user_note ? escHtml(u.user_note) : '<span class="hint">未填写</span>';
       tr.innerHTML =
         '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
         '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
         '<td class="perm-td-tag">' + tagSel + '</td>' +
+        '<td class="perm-td-note">' + noteTxt + '</td>' +
         '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
         '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
         '<td class="perm-td-device">' + devTxt + '</td>' +
         '<td class="perm-td-ip">' + ipTxt + '</td>' +
-        '<td class="perm-td-ops"><button class="btn-ghost small" type="button" data-uid="' + u.user_id + '">编辑</button></td>';
-      const editBtn = tr.querySelector("button");
-      editBtn.onclick = () => {
-        const sel = $("#perm-user");
-        if (sel) { sel.value = u.user_id; }
-        loadPermForUser(u);
-      };
+        '<td class="perm-td-ops">' +
+          '<button class="btn-ghost small" type="button" data-act="edit" data-uid="' + u.user_id + '">编辑</button>' +
+          '<button class="btn-ghost small" type="button" data-act="del" data-uid="' + u.user_id + '" data-email="' + escAttr(u.email || "") + '" style="margin-left:6px;color:var(--danger,#c25e5a)">删除</button>' +
+        '</td>';
+      const editBtn = tr.querySelector('button[data-act="edit"]');
+      editBtn.onclick = () => openPermEditModal(u);
+      const delBtn = tr.querySelector('button[data-act="del"]');
+      if (delBtn) delBtn.onclick = () => confirmDeletePermUser(u);
       const tagSelect = tr.querySelector(".perm-tag-select");
       tagSelect.onchange = async () => {
         const v = tagSelect.value;
         try {
           await SB.setUserTag(u.user_id, v);
+          // 只更新数据与编辑区、筛选候选，绝不整表重建，保持滚动位置不跳
           u.user_tag = v;
           sbToast("已为用户标签设为「" + (v || "无") + "」");
-          // 就地刷新表格（保留筛选与下拉），并把编辑区的标签下拉同步
-          await renderPermTable(users);
           syncPermTagEditor();
+          syncPermTagFilter();
         } catch (e) { sbToast("标签保存失败：" + (e.message || ""), false); }
       };
       body.appendChild(tr);
@@ -4748,6 +4752,8 @@ let recruitTasks = [];
       tagSel.innerHTML = permTagOptionsHtml(permUsers, user.user_tag || "");
       tagSel.value = user.user_tag || "";
     }
+    const noteInp = $("#perm-note");
+    if (noteInp) noteInp.value = user.user_note || "";
     const uid = user.user_id;
     // 类目池子 = 标签管理的全量类目（跨专区同一套），授权只勾一次、四专区共用
     const [allCats, perm, myZones] = await Promise.all([
@@ -4757,6 +4763,192 @@ let recruitTasks = [];
     ]);
     renderPermCats(allCats, perm);
     renderPermZones(myZones);
+  }
+  // ============ 用户编辑弹窗（点「编辑」就地编辑，不滚到下方编辑区） ============
+  let permEditUid = null;          // 当前弹窗编辑的用户 user_id
+  let permEditAllCats = [];        // 弹窗类目池
+  let permEditZones = [];          // 弹窗已勾专区
+  let permEditCats = [];           // 弹窗已勾类目
+  function openPermEditModal(u) {
+    if (!u) return;
+    permEditUid = u.user_id;
+    const title = $("#perm-edit-title");
+    if (title) title.textContent = "编辑用户权限 · " + (u.email || u.user_id);
+    const roleSel = $("#perm-edit-role");
+    if (roleSel) roleSel.value = u.role || "visitor";
+    const tagSel = $("#perm-edit-tag");
+    if (tagSel) {
+      tagSel.innerHTML = permTagOptionsHtml(permUsers, u.user_tag || "");
+      tagSel.value = u.user_tag || "";
+    }
+    const noteInp = $("#perm-edit-note");
+    if (noteInp) noteInp.value = u.user_note || "";
+    const modal = $("#perm-edit-modal");
+    if (modal) modal.classList.remove("hidden");
+    // 异步加载类目池 + 当前授权 + 当前专区
+    Promise.all([
+      SB.listZoneCats("recruit").catch(() => []),
+      SB.listUserPermissions(u.user_id).catch(() => []),
+      SB.getUserManageZones(u.user_id).catch(() => []),
+    ]).then(([allCats, perm, myZones]) => {
+      permEditAllCats = allCats;
+      renderPermEditCats(allCats, perm);
+      renderPermEditZones(myZones);
+    });
+  }
+  function closePermEditModal() {
+    const modal = $("#perm-edit-modal");
+    if (modal) modal.classList.add("hidden");
+    permEditUid = null;
+  }
+  function renderPermEditCats(cats, checked) {
+    const box = $("#perm-edit-cats");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!cats.length) { box.innerHTML = '<span class="hint">暂无类目，请先到「标签管理/类目设置」新增。</span>'; return; }
+    const norm = s => (s || "").trim();
+    const chk = new Set((checked || []).map(norm));
+    cats.forEach(c => {
+      const lab = document.createElement("label");
+      lab.className = "perm-cat-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = c.name; cb.checked = chk.has(norm(c.name));
+      cb.onchange = updatePermEditCatCount;
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(c.name));
+      box.appendChild(lab);
+    });
+    updatePermEditCatCount();
+  }
+  function renderPermEditZones(checked) {
+    const box = $("#perm-edit-zones");
+    if (!box) return;
+    box.innerHTML = "";
+    const set = new Set((checked || []));
+    PERM_ZONES.forEach(z => {
+      const lab = document.createElement("label");
+      lab.className = "perm-zone-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = z.key; cb.checked = set.has(z.key);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
+      box.appendChild(lab);
+    });
+    permEditZones = [...(checked || [])];
+  }
+  function updatePermEditCatCount() {
+    const cnt = $("#perm-edit-cats-count");
+    if (!cnt) return;
+    const total = document.querySelectorAll("#perm-edit-cats input[type=checkbox]").length;
+    const picked = document.querySelectorAll("#perm-edit-cats input[type=checkbox]:checked").length;
+    cnt.textContent = "已选 " + picked + " / " + total;
+  }
+  // 提交弹窗编辑：写入角色/标签/备注/类目/专区，完成后就地更新该行，不重建整表
+  async function savePermEditModal() {
+    const uid = permEditUid;
+    if (!uid) return;
+    const role = $("#perm-edit-role")?.value || "visitor";
+    const tag = ($("#perm-edit-tag")?.value || "").trim();
+    const note = ($("#perm-edit-note")?.value || "").trim();
+    const cats = [...document.querySelectorAll("#perm-edit-cats input:checked")].map(i => i.value);
+    const zones = [...document.querySelectorAll("#perm-edit-zones input:checked")].map(i => i.value);
+    try {
+      await SB.setUserNote(uid, note);
+      await SB.setUserTag(uid, tag);
+      await SB.setUserRole(uid, role);
+      await SB.setUserPermissions(uid, "", cats);
+      await SB.setUserManageZones(uid, zones);
+      sbToast("该用户角色与权限已保存");
+      // 就地更新内存数据 + 刷新该行 + 同步编辑区/筛选
+      const u = permUsers.find(x => x.user_id === uid);
+      if (u) { u.role = role; u.user_tag = tag; u.user_note = note; }
+      syncPermTagEditor(); syncPermTagFilter();
+      $("#perm-note") && (($("#perm-note")).value = note);
+      await renderPermTable(permUsers);
+      closePermEditModal();
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+  }
+  function bindPermEditModal() {
+    const modal = $("#perm-edit-modal");
+    if (!modal) return;
+    const close = $("#perm-edit-close");
+    if (close) close.onclick = closePermEditModal;
+    const cancel = $("#perm-edit-cancel");
+    if (cancel) cancel.onclick = closePermEditModal;
+    const save = $("#perm-edit-save");
+    if (save) save.onclick = savePermEditModal;
+    const allBtn = $("#perm-edit-cats-all");
+    if (allBtn) allBtn.onclick = () => {
+      document.querySelectorAll("#perm-edit-cats input[type=checkbox]").forEach(cb => cb.checked = true);
+      updatePermEditCatCount();
+    };
+    const noneBtn = $("#perm-edit-cats-none");
+    if (noneBtn) noneBtn.onclick = () => {
+      document.querySelectorAll("#perm-edit-cats input[type=checkbox]").forEach(cb => cb.checked = false);
+      updatePermEditCatCount();
+    };
+// ============ 超管：新增用户（邮箱 + 密码，走 Worker Auth Admin API） ============
+  function openPermCreateModal() {
+    const modal = $("#perm-create-modal");
+    if (!modal) return;
+    const email = $("#perm-create-email");
+    const pwd = $("#perm-create-password");
+    if (email) email.value = "";
+    if (pwd) pwd.value = "";
+    modal.classList.remove("hidden");
+    setTimeout(() => email && email.focus(), 60);
+  }
+  function closePermCreateModal() {
+    const modal = $("#perm-create-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+  async function savePermCreateModal() {
+    const email = ($("#perm-create-email")?.value || "").trim();
+    const pwd = ($("#perm-create-password")?.value || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { sbToast("请输入正确的邮箱", false); return; }
+    if (pwd.length < 6) { sbToast("密码至少 6 位", false); return; }
+    const saveBtn = $("#perm-create-save");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      await SB.superCreateUser(email, pwd);
+      sbToast("已创建账户：" + email);
+      closePermCreateModal();
+      await loadPermPanel();
+    } catch (e) {
+      sbToast("创建失败：" + (e.message || ""), false);
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+  function bindPermCreateUser() {
+    const btn = $("#perm-add-user-btn");
+    if (btn) btn.onclick = openPermCreateModal;
+    const modal = $("#perm-create-modal");
+    if (!modal) return;
+    const close = $("#perm-create-close");
+    if (close) close.onclick = closePermCreateModal;
+    const cancel = $("#perm-create-cancel");
+    if (cancel) cancel.onclick = closePermCreateModal;
+    const save = $("#perm-create-save");
+    if (save) save.onclick = savePermCreateModal;
+    modal.addEventListener("click", (e) => { if (e.target === modal) closePermCreateModal(); });
+  }
+  // ============ 超管：删除用户（走 Worker Auth Admin API，二次确认） ============
+  function confirmDeletePermUser(u) {
+    if (!u || !u.user_id) return;
+    if (!confirm("确定删除用户「" + (u.email || u.user_id) + "」？\n删除后将无法登录，其权限与引导数据一并清除。此操作不可恢复。")) return;
+    (async () => {
+      try {
+        await SB.superDeleteUser(u.user_id);
+        sbToast("已删除用户：" + (u.email || ""));
+        // 就地移除该行，避免整表重建跳滚动
+        permUsers = permUsers.filter(x => x.user_id !== u.user_id);
+        renderPermTable(permUsers);
+      } catch (e) {
+        sbToast("删除失败：" + (e.message || ""), false);
+      }
+    })();
+  }
+    // 弹窗遮罩点击关闭
+    modal.addEventListener("click", (e) => { if (e.target === modal) closePermEditModal(); });
   }
   function renderPermZones(checked) {
     const box = $("#perm-zones");
@@ -4840,9 +5032,11 @@ let recruitTasks = [];
       const cats = [...document.querySelectorAll("#perm-cats input:checked")].map(i => i.value);
       const zones = [...document.querySelectorAll("#perm-zones input:checked")].map(i => i.value);
       const tag = ($("#perm-tag")?.value || "").trim();
+      const note = ($("#perm-note")?.value || "").trim();
       try {
-        // 用户标签（备注，便于区分用户类别）
+        // 用户标签（备注标签，便于区分用户类别）+ 用户备注（自由文本）
         await SB.setUserTag(uid, tag);
+        await SB.setUserNote(uid, note);
         await SB.setUserRole(uid, role);
         // 一套共享类目授权，四专区共用
         await SB.setUserPermissions(uid, "", cats);
@@ -4853,6 +5047,8 @@ let recruitTasks = [];
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
     bindDefaultPerms();
+    bindPermEditModal();
+    bindPermCreateUser();
   }
 
   // ================= 存量图片压缩池（超管 · 左=已压缩 ≤200KB，右=待压缩 >200KB） =================
@@ -5947,6 +6143,7 @@ let bestsellerTasks = [];
     if (currentRole !== "super_admin") return;
     try { mkNodes = await SB.listMarketingNodes(); } catch (e) { mkNodes = []; }
     refreshMarketingViz();
+    loadMarketingArticlePick();
   }
 
   async function loadMarketingArticles() {

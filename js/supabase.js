@@ -1221,7 +1221,7 @@ const SB = (() => {
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, user_tag").order("created_at", { ascending: true });
+      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, user_tag, user_note").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
       return data || [];
     },
@@ -1236,10 +1236,37 @@ const SB = (() => {
       const { error } = await client.from("profiles").update({ user_tag: (tag || "").trim() }).eq("user_id", userId);
       if (error) throw new Error(error.message || "更新用户标签失败");
     },
+    // 超管：设置某用户备注（自由文本说明，如 来源/用途/新用户名；空串=清除）
+    async setUserNote(userId, note) {
+      const { error } = await client.from("profiles").update({ user_note: (note || "").trim() }).eq("user_id", userId);
+      if (error) throw new Error(error.message || "更新用户备注失败");
+    },
     // 超管：设置某用户角色（visitor / admin / super_admin）
     async setUserRole(userId, role) {
       const { error } = await client.from("profiles").update({ role }).eq("user_id", userId);
       if (error) throw new Error(error.message || "更新角色失败");
+    },
+    // 超管：通过 Worker（Auth Admin API）创建用户（邮箱 + 密码），需 service_role
+    async superCreateUser(email, password) {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/admin/user/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ email, password }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "创建用户失败");
+      return j.user;
+    },
+    // 超管：通过 Worker（Auth Admin API）删除用户（级联清理 profiles），需 service_role
+    async superDeleteUser(userId) {
+      const token = await currentToken();
+      const res = await fetch(window.CONFIG.WORKER_URL + "/admin/user/delete?uid=" + encodeURIComponent(userId), {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "删除用户失败");
     },
     // 超管：读取某用户级可见专区白名单（manage_zones 数组；空/缺省 = 未配置，回退全局）
     async getUserManageZones(userId) {

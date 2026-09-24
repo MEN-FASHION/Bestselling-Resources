@@ -61,6 +61,36 @@ function isSuperRole(role) {
   return r === "super_admin";
 }
 
+// 通过 Auth Admin API 创建用户（邮箱 + 密码），仅超管可触发，需 service_role
+async function adminCreateAuthUser(env, email, password) {
+  const res = await fetch(env.SUPABASE_URL + "/auth/v1/admin/users", {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password, email_confirm: true }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.msg || j.message || "创建用户失败");
+  return j;
+}
+// 通过 Auth Admin API 删除用户（级联删除 profiles 等，需服务端 RLS/RU 权限配合），仅超管
+async function adminDeleteAuthUser(env, uid) {
+  const res = await fetch(env.SUPABASE_URL + "/auth/v1/admin/users/" + encodeURIComponent(uid), {
+    method: "DELETE",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+    },
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.msg || j.message || "删除用户失败");
+  }
+}
+
 // CORS 头
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -165,7 +195,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -188,7 +218,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path.startsWith("images/")) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const rawPath = url.pathname.replace(/^\//, "");
     // 先删解码后路径，若不存在再删原始编码路径，兼容新旧存储
     await env.IMAGES.delete(path).catch(() => {});
@@ -202,7 +232,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "trend/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -276,7 +306,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "trend/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -290,7 +320,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "notice/uploadimg") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -369,7 +399,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "recruit/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -409,7 +439,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "recruit/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -421,7 +451,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "bestseller/upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -461,7 +491,7 @@ async function isPublicAccess(env) {
   if (method === "DELETE" && path === "bestseller/delete") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("bestsellers/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -472,7 +502,7 @@ async function isPublicAccess(env) {
   if (method === "GET" && path === "admin/list-imgs") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const items = [];
     let cursor;
     do {
@@ -490,7 +520,7 @@ async function isPublicAccess(env) {
   if (method === "POST" && path === "admin/overwrite") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p) return json({ error: "参数错误" }, 400, CORS);
     const form = await request.formData().catch(() => null);
@@ -500,6 +530,48 @@ async function isPublicAccess(env) {
       httpMetadata: { contentType: file.type || "image/webp" },
     });
     return json({ ok: true }, 200, CORS);
+  }
+
+  // 9. 超管用户管理——创建 Auth 用户（邮箱 + 密码），仅超级管理员
+  if (method === "POST" && path === "admin/user/create") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ error: "服务端未配置 service_role" }, 500, CORS);
+    const body = await request.json().catch(() => ({}));
+    const email = (body.email || "").trim();
+    const password = (body.password || "").trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "邮箱格式不正确" }, 400, CORS);
+    if (!password || password.length < 6) return json({ error: "密码至少 6 位" }, 400, CORS);
+    try {
+      const u = await adminCreateAuthUser(env, email, password);
+      return json({ ok: true, user: u }, 200, CORS);
+    } catch (e) {
+      return json({ error: e.message || "创建用户失败" }, 400, CORS);
+    }
+  }
+  // 9.1 超管用户管理——删除 Auth 用户（级联清理 profiles），仅超级管理员
+  if (method === "DELETE" && path === "admin/user/delete") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ error: "服务端未配置 service_role" }, 500, CORS);
+    const uid = (url.searchParams.get("uid") || "").trim();
+    if (!uid) return json({ error: "缺少用户 ID" }, 400, CORS);
+    // 先删 profiles（防外键/触发器报错），再删 auth 用户；均忽略单步失败
+    await fetch(env.SUPABASE_URL + "/rest/v1/profiles?user_id=eq." + encodeURIComponent(uid), {
+      method: "DELETE",
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+      },
+    }).catch(() => {});
+    try {
+      await adminDeleteAuthUser(env, uid);
+      return json({ ok: true }, 200, CORS);
+    } catch (e) {
+      return json({ error: e.message || "删除用户失败" }, 400, CORS);
+    }
   }
 
   return json({ error: "未知请求" }, 404, CORS);

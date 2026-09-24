@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923K">
+<link rel="stylesheet" href="css/style.css?v=20260923P">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
@@ -341,6 +341,8 @@
               <option value="">全部标签</option>
               <option value="__none__">无标签</option>
             </select>
+            <button id="perm-add-user-btn" class="btn-primary" style="margin-left:12px" type="button">＋ 新增用户</button>
+            <span class="hint-inline">（超管可用邮箱 + 密码直接生成账户）</span>
           </div>
 
           <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
@@ -351,6 +353,7 @@
                   <th>用户</th>
                   <th>角色</th>
                   <th>标签</th>
+                  <th>备注</th>
                   <th>可管理类目</th>
                   <th>已授权专区</th>
                   <th>登录设备</th>
@@ -358,7 +361,7 @@
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="8" class="hint">加载中…</td></tr></tbody>
+              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="9" class="hint">加载中…</td></tr></tbody>
             </table>
           </div>
 
@@ -373,6 +376,8 @@
             </select>
             <label class="field" style="margin-left:8px">标签</label>
             <select id="perm-tag" class="input" style="max-width:140px"><option value="">无标签</option></select>
+            <label class="field" style="margin-left:8px">备注</label>
+            <input id="perm-note" class="input" style="max-width:260px" placeholder="填写说明（如新用户名/来源/用途），可留空" maxlength="120">
             <button id="perm-refresh" class="btn-ghost small" type="button">刷新用户</button>
           </div>
           <div class="perm-zone">
@@ -945,6 +950,63 @@
     </div>
   </div>
 
+<div id="perm-edit-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="perm-edit-title">编辑用户权限</span>
+        <button type="button" id="perm-edit-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">角色</label>
+        <select id="perm-edit-role" class="input">
+          <option value="visitor">访客</option>
+          <option value="admin">管理员</option>
+          <option value="super_admin">超级管理员</option>
+        </select>
+        <label class="field">标签</label>
+        <select id="perm-edit-tag" class="input" style="max-width:180px"><option value="">无标签</option></select>
+        <label class="field">备注</label>
+        <input id="perm-edit-note" class="input" placeholder="填写说明（如新用户名/来源/用途），可留空" maxlength="120">
+        <div class="perm-zone">
+          <h4 class="perm-zone-title">可管理类目（跨专区统一生效）
+            <span class="perm-cats-toolbar">
+              <span id="perm-edit-cats-count" class="perm-cats-count">0</span>
+              <button id="perm-edit-cats-all" class="btn-ghost small" type="button" title="勾选全部类目">全选</button>
+              <button id="perm-edit-cats-none" class="btn-ghost small" type="button" title="取消全部类目">全不选</button>
+            </span>
+          </h4>
+          <div id="perm-edit-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="perm-zone" style="margin-top:10px">
+          <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示）</span></h4>
+          <div id="perm-edit-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="modal-foot">
+          <button id="perm-edit-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="perm-edit-save" class="btn-primary" type="button">保存权限分配</button>
+        </div>
+      </div>
+    </div>
+  </div>
+<div id="perm-create-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title">新增用户</span>
+        <button type="button" id="perm-create-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="margin-bottom:10px">用邮箱 + 密码直接生成一个账户，创建后即可登录（默认角色为访客，可在权限表里再改）。邮箱需唯一。</p>
+        <label class="field">邮箱</label>
+        <input id="perm-create-email" class="input" type="email" placeholder="user@example.com" autocomplete="off">
+        <label class="field">密码</label>
+        <input id="perm-create-password" class="input" type="text" placeholder="至少 6 位" autocomplete="off">
+        <div class="modal-foot">
+          <button id="perm-create-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="perm-create-save" class="btn-primary" type="button">创建账户</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="pwd-modal" class="modal-mask hidden">
     <div class="modal">
       <div class="modal-head">
@@ -970,9 +1032,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923K"></script>
-  <script src="js/supabase.js?v=20260923K"></script>
-  <script src="js/admin.js?v=20260923K"></script>
+  <script src="js/config.js?v=20260923P"></script>
+  <script src="js/supabase.js?v=20260923P"></script>
+  <script src="js/admin.js?v=20260923P"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
