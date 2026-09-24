@@ -21,6 +21,14 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+// 日期友好化：把 "2026-09-23T21:38" 等 ISO 时间戳转成 "9月23日"；无法解析则原文回退
+  function formatDate(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return (+m[2]) + "月" + (+m[3]) + "日";
+    return s;
+  }
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
     if (!t) return;
@@ -286,7 +294,7 @@
       return c === "event" ? "event" : (c === "promo" ? "promo" : "festival");
     };
     tl.innerHTML = nodes.map((n, i) => {
-      const date = escHtml(n.date || "");
+      const date = escHtml(formatDate(n.date));
       const title = escHtml(n.title || "");
       const desc = escHtml(n.description || "");
       const c = coverOf(n);
