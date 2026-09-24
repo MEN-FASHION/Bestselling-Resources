@@ -308,6 +308,7 @@
           <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
             <div class="mk-tag-date">${date}</div>
             <div class="mk-tag-title">${title}</div>
+            ${c.img ? `<div class="mk-tag-img"><img class="mk-tag-thumb" alt="" data-path="${escAttr(c.img)}" loading="lazy"></div>` : ""}
             ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
         </div>
@@ -315,6 +316,11 @@
         <span class="mk-dot">${date ? `<span class="mk-dot-date">${date}</span>` : ""}<span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
+    // 节点主图：mage鉴权URL异步填充
+    tl.querySelectorAll(".mk-tag-thumb").forEach(function(imEl){
+      const path = imEl.getAttribute("data-path");
+      if (path) SB.marketingImageUrl(path).then(function(u){ imEl.src = u; }).catch(function(){});
+    });
     // 主轴末端右箭头
     const arrow = document.createElement("div");
     arrow.className = "mk-axis-arrow";

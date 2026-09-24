@@ -6254,6 +6254,7 @@ let bestsellerTasks = [];
           <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
             <div class="mk-tag-date">${date}</div>
             <div class="mk-tag-title">${title}</div>
+            ${n.image ? `<div class="mk-tag-img"><img class="mk-tag-thumb" alt="" data-path="${escAttr(n.image)}" loading="lazy"></div>` : ""}
             ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
           <div class="mk-node-ops">
@@ -6265,6 +6266,11 @@ let bestsellerTasks = [];
         <span class="mk-dot"><span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
+    // 节点主图：鉴权URL异步填充
+    tl.querySelectorAll(".mk-tag-thumb").forEach(function(imEl){
+      const path = imEl.getAttribute("data-path");
+      if (path) SB.marketingImageUrl(path).then(function(u){ imEl.src = u; }).catch(function(){});
+    });
     // 主轴末端右箭头
     const arrow = document.createElement("div");
     arrow.className = "mk-axis-arrow";

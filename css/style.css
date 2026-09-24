@@ -2012,7 +2012,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .mk-tag-link{display:block;text-decoration:none;color:inherit;}
 .mk-tag-date{font-size:12px;font-weight:800;letter-spacing:1.2px;opacity:.92;margin-bottom:5px;text-transform:uppercase;}
 .mk-tag-title{font-size:17px;font-weight:800;line-height:1.3;letter-spacing:.5px;}
-.mk-tag-desc{margin-top:7px;font-size:12px;line-height:1.55;opacity:.9;}
+.mk-tag-img{margin-top:8px;width:150px;height:200px;overflow:hidden;border-radius:8px;background:rgba(255,255,255,.06);}
+.mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
 /* 颜色编码：festival=节日庆祝(紫,上) / event=重大活动(绿,下) / promo=促销旺季(深紫,下) */
 .mk-node.cat-festival .mk-tag{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
 .mk-node.cat-event .mk-tag{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
