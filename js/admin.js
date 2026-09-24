@@ -5146,6 +5146,7 @@ let recruitTasks = [];
       document.querySelectorAll("#perm-edit-cats input[type=checkbox]").forEach(cb => cb.checked = false);
       updatePermEditCatCount();
     };
+  }
 // ============ 超管：新增用户（邮箱 + 密码，走 Worker Auth Admin API） ============
   function openPermCreateModal() {
     const modal = $("#perm-create-modal");
@@ -5210,7 +5211,6 @@ let recruitTasks = [];
   }
     // 弹窗遮罩点击关闭
     modal.addEventListener("click", (e) => { if (e.target === modal) closePermEditModal(); });
-  }
   function renderPermZones(checked) {
     const box = $("#perm-zones");
     if (!box) return;
