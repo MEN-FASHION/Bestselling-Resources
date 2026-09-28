@@ -23,6 +23,97 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+-- ---------- 专区权限判定函数（前移定义：所有引用它的表策略须在其后创建） ----------
+create table if not exists public.zone_permissions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  zone text not null check (zone in ('visual', 'trend', 'recruit', 'bestseller')),
+  category text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, zone, category)
+);
+-- 幂等升级旧库：旧表 zone 仅允许 recruit/bestseller，扩为全专区（含 visual/trend）
+alter table public.zone_permissions drop constraint if exists zone_permissions_zone_check;
+alter table public.zone_permissions add constraint zone_permissions_zone_check check (zone in ('visual', 'trend', 'recruit', 'bestseller'));
+alter table public.zone_permissions enable row level security;
+-- 登录用户可读自己的权限（前台/后台按权限过滤发布下拉）
+drop policy if exists "authenticated read own zone_permissions" on public.zone_permissions;
+create policy "authenticated read own zone_permissions"
+  on public.zone_permissions for select to authenticated
+  using (auth.uid() = user_id);
+-- 超管可读取全部权限（权限管理页需要）
+drop policy if exists "super read all zone_permissions" on public.zone_permissions;
+create policy "super read all zone_permissions"
+  on public.zone_permissions for select to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+-- 超管可写权限
+drop policy if exists "super insert zone_permissions" on public.zone_permissions;
+create policy "super insert zone_permissions"
+  on public.zone_permissions for insert to authenticated
+  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+drop policy if exists "super delete zone_permissions" on public.zone_permissions;
+create policy "super delete zone_permissions"
+  on public.zone_permissions for delete to authenticated
+  using (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin'));
+
+-- ---------- 安全函数：判定当前登录用户是否为超级管理员（用 security definer，避免 RLS 自引用递归） ----------
+create or replace function public.is_super_admin()
+returns boolean
+language sql security definer stable
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.user_id = auth.uid() and p.role = 'super_admin'
+  );
+$$;
+
+-- ---------- 专区写权限判定（管理员严格按超管配置的 manage_zones 授权） ----------
+-- 返回当前登录用户是否可在指定专区执行写操作：
+--   超管固定放行；非管理员一律拒绝（访客不可操作任何专区）；
+--   管理员已配置用户级专区白名单（manage_zones 非空）→ 严格按白名单；
+--   未配置专区白名单的管理员 → 默认放行业务专区（向后兼容，其管理范围按全局可见专区）。
+create or replace function public.can_write_zone(v_zone text)
+returns boolean
+language sql security definer stable
+as $$
+  select case
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin') then true
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) then
+      case when coalesce((select p.manage_zones from public.profiles p where p.user_id = auth.uid()), '[]'::jsonb) <> '[]'::jsonb
+           then v_zone = any (select jsonb_array_elements_text(p.manage_zones) from public.profiles p where p.user_id = auth.uid())
+           else true
+      end
+    else false
+  end;
+$$;
+
+-- ---------- 类目级写权限判定（管理员严格按超管配置的类目授权 zone_permissions） ----------
+-- 返回当前登录用户是否可在指定专区的指定类目执行写操作：
+--   超管固定放行；非管理员一律拒绝；
+--   管理员需先通过专区授权（can_write_zone），再要求该类目出现在其 zone_permissions 授权内；
+--   类目为空串（如趋势文章可不传类目）→ 回退专区级校验 can_write_zone；
+--   zone_permissions 未配置任何类目（空）→ 管理员不可写任何类目（严格按授权，不留默认放行）。
+create or replace function public.can_write_zone_cat(v_zone text, v_cat text)
+returns boolean
+language sql security definer stable
+as $$
+  select case
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin') then true
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+         and public.can_write_zone(v_zone) then
+      case when coalesce(v_cat, '') = '' then true
+           else exists (
+             select 1 from public.zone_permissions zp
+             where zp.user_id = auth.uid()
+               and zp.zone = v_zone
+               and lower(trim(zp.category)) = lower(trim(v_cat))
+           )
+      end
+    else false
+  end;
+$$;
+
+
 -- 任何人只能读自己的角色信息
 drop policy if exists "select own profile" on public.profiles;
 create policy "select own profile"

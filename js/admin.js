@@ -2515,6 +2515,12 @@
     if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可上传")) return;
     let cat = document.querySelector("#smart-cat").value;
     if (!cat) { sbToast("请先选择上传类目", false); return; }
+    // 类目级授权校验：超管放行；普通管理员必须该类目在其类目授权内（无授权类目不能传图）
+    if (currentRole !== "super_admin") {
+      let mineCats = [];
+      try { mineCats = await SB.myZonePermissions("visual"); } catch (e) { mineCats = []; }
+      if (mineCats.length && !mineCats.includes(cat)) { sbToast("无权限：该类目不在你的可管理类目授权内", false); return; }
+    }
     smartUploading = true;
     const btn = document.querySelector("#smart-upload-btn");
     const prog = document.querySelector("#smart-progress");
@@ -5291,13 +5297,11 @@ let recruitTasks = [];
       await SB.setUserFrontendZones(uid, frontZones);
       // 后台可管理专区（manage_zones）
       await SB.setUserManageZones(uid, manageZones);
-      // 类目授权：写入用户勾选的每个后台可管理专区（未授权专区不写入类目）
-      if (manageZones.length) {
-        for (const z of manageZones) {
-          await SB.setUserPermissions(uid, z, cats);
-        }
-      } else {
-        await SB.setUserPermissions(uid, "", []);  // 无后台专区则清空类目授权
+      // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
+      // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller"];
+      for (const z of ALL_CAT_ZONES) {
+        await SB.setUserPermissions(uid, z, cats);
       }
       sbToast("该用户角色与权限已保存");
       // 就地更新内存数据 + 刷新该行 + 同步编辑区/筛选
