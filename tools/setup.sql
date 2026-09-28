@@ -104,40 +104,36 @@ create policy "authenticated read images"
 -- 访客与登录用户均需通过 authenticated 策略读取图片；不存在匿名可读
 drop policy if exists "anon read images" on public.images;
 
--- 仅管理员可新增图片
+-- 仅管理员可新增图片（严格按超管配置的 manage_zones：视觉专区授权）
 drop policy if exists "admin insert images" on public.images;
 create policy "admin insert images"
   on public.images for insert
   to authenticated
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('visual')
   );
 
 -- 仅管理员可更新图片（用于批量打渠道标签）
--- 隔离：普通管理员只能更新「自己上传」的图（uploaded_by = auth.uid()）；超管可更新全部
+-- 隔离：普通管理员只能更新「自己上传」的图（uploaded_by = auth.uid()）且需视觉专区授权；超管可更新全部
 drop policy if exists "admin update images" on public.images;
 create policy "admin update images"
   on public.images for update
   to authenticated
   using (
-    public.is_super_admin() or (exists (select 1 from public.profiles p
-      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
+    public.is_super_admin() or (public.can_write_zone('visual') and uploaded_by = auth.uid())
   )
   with check (
-    public.is_super_admin() or (exists (select 1 from public.profiles p
-      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
+    public.is_super_admin() or (public.can_write_zone('visual') and uploaded_by = auth.uid())
   );
 
 -- 仅管理员可删除图片
--- 隔离：普通管理员只能删除「自己上传」的图；超管可删除全部
+-- 隔离：普通管理员只能删除「自己上传」的图且需视觉专区授权；超管可删除全部
 drop policy if exists "admin delete images" on public.images;
 create policy "admin delete images"
   on public.images for delete
   to authenticated
   using (
-    public.is_super_admin() or (exists (select 1 from public.profiles p
-      where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid())
+    public.is_super_admin() or (public.can_write_zone('visual') and uploaded_by = auth.uid())
   );
 
 -- ---------- 3.5 前台类目表（categories：管理员显式添加，含展示顺序） ----------
@@ -405,8 +401,7 @@ create policy "admin insert trends"
   on public.trends for insert
   to authenticated
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('trend')
   );
 
 drop policy if exists "admin update trends" on public.trends;
@@ -414,12 +409,10 @@ create policy "admin update trends"
   on public.trends for update
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('trend')
   )
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('trend')
   );
 
 drop policy if exists "admin delete trends" on public.trends;
@@ -427,8 +420,7 @@ create policy "admin delete trends"
   on public.trends for delete
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('trend')
   );
 
 -- ============================================================
@@ -468,14 +460,13 @@ create policy "admin read all announcements"
             where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
   );
 
--- 仅管理员可新增公告
+-- 仅管理员可新增公告（需公告专区授权）
 drop policy if exists "admin insert announcements" on public.announcements;
 create policy "admin insert announcements"
   on public.announcements for insert
   to authenticated
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('notice')
   );
 
 -- 仅管理员可更新公告
@@ -484,12 +475,10 @@ create policy "admin update announcements"
   on public.announcements for update
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('notice')
   )
   with check (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('notice')
   );
 
 -- 仅管理员可删除公告
@@ -498,8 +487,7 @@ create policy "admin delete announcements"
   on public.announcements for delete
   to authenticated
   using (
-    exists (select 1 from public.profiles p
-            where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+    public.can_write_zone('notice')
   );
 
 -- ---------- 公告已读记录 ----------
@@ -579,20 +567,20 @@ drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
 create policy "admin insert recruit_tasks"
   on public.recruit_tasks for insert
   to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  with check (public.can_write_zone('recruit'));
 
 drop policy if exists "admin update recruit_tasks" on public.recruit_tasks;
 create policy "admin update recruit_tasks"
   on public.recruit_tasks for update
   to authenticated
-  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()))
-  with check (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
+  using (public.is_super_admin() or (public.can_write_zone('recruit') and uploaded_by = auth.uid()))
+  with check (public.is_super_admin() or (public.can_write_zone('recruit') and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete recruit_tasks" on public.recruit_tasks;
 create policy "admin delete recruit_tasks"
   on public.recruit_tasks for delete
   to authenticated
-  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
+  using (public.is_super_admin() or (public.can_write_zone('recruit') and uploaded_by = auth.uid()));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.recruit_submissions (
@@ -689,20 +677,20 @@ drop policy if exists "admin insert bestseller_tasks" on public.bestseller_tasks
 create policy "admin insert bestseller_tasks"
   on public.bestseller_tasks for insert
   to authenticated
-  with check (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')));
+  with check (public.can_write_zone('bestseller'));
 
 drop policy if exists "admin update bestseller_tasks" on public.bestseller_tasks;
 create policy "admin update bestseller_tasks"
   on public.bestseller_tasks for update
   to authenticated
-  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()))
-  with check (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
+  using (public.is_super_admin() or (public.can_write_zone('bestseller') and uploaded_by = auth.uid()))
+  with check (public.is_super_admin() or (public.can_write_zone('bestseller') and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete bestseller_tasks" on public.bestseller_tasks;
 create policy "admin delete bestseller_tasks"
   on public.bestseller_tasks for delete
   to authenticated
-  using (public.is_super_admin() or (exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) and uploaded_by = auth.uid()));
+  using (public.is_super_admin() or (public.can_write_zone('bestseller') and uploaded_by = auth.uid()));
 
 -- ---------- 商家提交：每个用户对每个任务一条记录（spus 可多个，逗号分隔存储） ----------
 create table if not exists public.bestseller_submissions (
@@ -878,6 +866,26 @@ as $$
     select 1 from public.profiles p
     where p.user_id = auth.uid() and p.role = 'super_admin'
   );
+$$;
+
+-- ---------- 专区写权限判定（管理员严格按超管配置的 manage_zones 授权） ----------
+-- 返回当前登录用户是否可在指定专区执行写操作：
+--   超管固定放行；非管理员一律拒绝（访客不可操作任何专区）；
+--   管理员已配置用户级专区白名单（manage_zones 非空）→ 严格按白名单；
+--   未配置专区白名单的管理员 → 默认放行业务专区（向后兼容，其管理范围按全局可见专区）。
+create or replace function public.can_write_zone(v_zone text)
+returns boolean
+language sql security definer stable
+as $$
+  select case
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin') then true
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin')) then
+      case when coalesce((select p.manage_zones from public.profiles p where p.user_id = auth.uid()), '[]'::jsonb) <> '[]'::jsonb
+           then v_zone = any (select jsonb_array_elements_text(p.manage_zones) from public.profiles p where p.user_id = auth.uid())
+           else true
+      end
+    else false
+  end;
 $$;
 
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------

@@ -8,11 +8,72 @@
   let uploading = false;
   let currentUser = null;
   let currentRole = null;
+  let currentZones = null;   // 当前登录用户已授权专区（manage_zones 数组；null/空 = 未配置，回退全局）
   let currentFavCats = [];   // 当前管理员常用类目
   let currentActiveCats = []; // 前台类目（categories 表）
   let currentCatOrder = [];   // 前台类目顺序 [{id,name,sort_order}]
   let currentManageCat = "全部"; // 图片管理当前选中类目（"全部" = 显示全部）
   let selectedImages = new Set();  // 图片管理勾选集合
+
+  // ================= 后台权限守卫（角色 + 专区授权） =================
+  // 后台各面板对应的「专区」标识（key 与前台 readZone / manage_zones 一致）：
+  //   图片管理→visual，趋势专区→trend，招品回品→recruit，BESTSELLER→bestseller，
+  //   标签管理→visual，数据看板→任一授权专区即可，公告→notice，营销日历→marketing，超管→super
+  const PANEL_ZONE = {
+    "manage-card": "visual",
+    "tag-card": "visual",
+    "dash-card": "",          // 任一授权专区即可
+    "trend-card": "trend",
+    "recruit-card": "recruit",
+    "bestseller-card": "bestseller",
+    "marketing-card": "marketing",
+    "notice-card": "notice",
+    "super-card": "super",
+  };
+  const isSuper = () => currentRole === "super_admin";
+  const isAdmin = () => currentRole === "admin" || currentRole === "super_admin";
+  // 当前角色是否被授权可进入某面板
+  function canAccessPanel(target) {
+    // 超管不受限
+    if (isSuper()) return true;
+    // 管理员之外（访客）一律不可操作后台任何面板
+    if (currentRole !== "admin") return false;
+    const zone = PANEL_ZONE[target];
+    // 数据看板：任一已授权专区即可访问
+    if (target === "dash-card") return true;
+    if (!zone) return false;
+    // 超级专区（超管专属）
+    if (zone === "super") return false;
+    // 已配置用户级白名单：仅允许授权专区
+    if (Array.isArray(currentZones) && currentZones.length) {
+      return currentZones.indexOf(zone) !== -1;
+    }
+    // 未配置专区白名单的管理员：默认放行全部业务专区的写操作（向后兼容），超管面板除外
+    return zone !== "super";
+  }
+  // 当前角色是否可对某专区执行写/管理操作（供各写操作入口统一守卫）
+  function canOperateZone(zone) {
+    // 超管固定放行；访客一律禁止
+    if (isSuper()) return true;
+    if (currentRole !== "admin") return false;
+    if (!zone) return false;
+    // 管理员可管理「公告」「营销日历」「数据看板」等通用管理能力（若已授权对应面板）
+    if (["notice", "marketing"].indexOf(zone) !== -1) {
+      if (Array.isArray(currentZones) && currentZones.length) return currentZones.indexOf(zone) !== -1;
+      return true;
+    }
+    // 业务专区（visual/trend/recruit/bestseller）严格按授权专区判定
+    if (Array.isArray(currentZones) && currentZones.length) {
+      return currentZones.indexOf(zone) !== -1;
+    }
+    // 未配置专区白名单的管理员：默认放行（向后兼容，其管理范围按全局可见专区）
+    return true;
+  }
+  // 统一写操作守卫：无权限时 toast 拦截并返回 false
+  function guardZone(zone, msg) {
+    if (!canOperateZone(zone)) { sbToast(msg || "无权限：请让超管为你的账号开放对应专区", false); return false; }
+    return true;
+  }
 
   document.addEventListener("DOMContentLoaded", () => {
     // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
@@ -51,6 +112,11 @@
     });
   }
   function switchPanel(target) {
+    // 权限守卫：当前角色无权访问该面板时拦截（防菜单隐藏后仍被 JS 调用/手动切换）
+    if (!canAccessPanel(target)) {
+      sbToast("无权限：当前账号不可操作该面板", false);
+      return;
+    }
     // 统一全隐藏所有后台面板，保证任意时刻只展示选中面板，杜绝内容堆叠
     document.querySelectorAll("#admin-panel .panel-card").forEach(el => el.classList.add("hidden"));
     const show = document.getElementById(target);
@@ -143,20 +209,21 @@
     const el = $("#token-status");
     if (!currentUser) { el.textContent = "未登录"; return; }
     currentRole = await SB.myRole();
+    // 加载当前用户已授权专区（前台同款白名单；null = 未配置回退全局）
+    try { currentZones = await SB.myManageZones().catch(() => null); } catch (e) { currentZones = null; }
     const roleLabel = currentRole === "super_admin" ? "超级管理员" : (currentRole === "admin" ? "管理员" : "访客");
     el.textContent = currentUser.email + " · " + roleLabel;
     el.classList.toggle("bad", currentRole !== "admin" && currentRole !== "super_admin");
-    const canManage = currentRole === "admin" || currentRole === "super_admin";
-    const isSuper = currentRole === "super_admin";
-    // 只控制侧边菜单显隐；面板显隐统一由 switchPanel 管理，避免后台各面板连在一起
+    const canManage = isAdmin();
+    // 侧边菜单：仅展示当前角色可访问的面板
     document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
       // 超管专属菜单（权限管理）仅超管可见
-      if (n.dataset.super === "1") { n.classList.toggle("hidden", !isSuper); return; }
-      n.classList.toggle("hidden", !canManage && n.dataset.target !== "manage-card");
+      if (n.dataset.super === "1") { n.classList.toggle("hidden", !isSuper()); return; }
+      n.classList.toggle("hidden", !canAccessPanel(n.dataset.target));
     });
     // 类目设置等超管专属按钮（data-super="1"）仅超管可见
     document.querySelectorAll("#admin-panel [data-super='1']:not(.nav-item)").forEach(n => {
-      n.classList.toggle("hidden", !isSuper);
+      n.classList.toggle("hidden", !isSuper());
     });
   }
 
@@ -221,10 +288,22 @@
     panelReady = true;
     $("#admin-login").classList.add("hidden");
     $("#admin-panel").classList.remove("hidden");
-    loadCats(); loadManage(); loadAccess();
-    if (currentRole === "admin" || currentRole === "super_admin") { loadFavCats(); loadCatMgmt(); loadTagDefs(); }
-    // 默认显示“图片管理”
-    switchPanel("manage-card");
+    if (currentRole !== "admin" && currentRole !== "super_admin") {
+      // 访客（或异常角色）：不可操作后台任何功能，仅展示无权限提示
+      document.querySelectorAll("#admin-panel .panel-card").forEach(el => el.classList.add("hidden"));
+      document.querySelectorAll("#admin-panel .nav-item").forEach(n => n.classList.add("hidden"));
+      const np = $("#no-perm");
+      if (np) np.classList.remove("hidden");
+      return;
+    }
+    const noPerm = $("#no-perm");
+    if (noPerm) noPerm.classList.add("hidden");
+    loadCats(); loadManage();
+    if (isAdmin()) { loadFavCats(); loadCatMgmt(); loadTagDefs(); }
+    loadAccess();
+    // 默认进入第一个当前角色可访问的面板（超管/全量管理员：图片管理；专区受限管理员：其授权专区页面）
+    const firstPanel = document.querySelector("#admin-panel .nav-item:not(.hidden)");
+    switchPanel(firstPanel ? firstPanel.dataset.target : "manage-card");
   }
 
   // ================= 登录 / 注册引导 =================
@@ -344,7 +423,7 @@
   // ================= 上传主流程（写入 R2 + DB） =================
   async function doUpload() {
     if (!pendingFiles.length || uploading) return;
-    if (currentRole !== "admin" && currentRole !== "super_admin") { sbToast("无权限：只有管理员可上传", false); return; }
+    if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可上传")) return;
 
     let cat = $("#cat-select").value;
     if (!cat) { sbToast("请选择分类", false); return; }
@@ -898,6 +977,7 @@
   }
   // remove=true 表示移除勾选标签，否则为添加（合并保留原有）
   async function applyTags(remove = false) {
+    if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可打标")) return;
     const tags = checkedTags();
     if (!tags.length) { sbToast("请先勾选至少一个标签", false); return; }
     let allImgs = [];
@@ -1361,6 +1441,7 @@
   // 单个删除
   async function removeImage(img) {
     if (!confirm("确认删除该图片？")) return;
+    if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可删除")) return;
     try {
       if (img.path) await SB.deleteImage(img.path);
       await SB.removeImageRecord(img.id);
@@ -2002,6 +2083,7 @@
   async function smartDeleteImage(img) {
     if (!img || !img.id) return;
     if (!confirm("确认删除该图片？此操作不可恢复。")) return;
+    if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可删除")) return;
     try {
       if (img.path) await SB.deleteImage(img.path);
       await SB.removeImageRecord(img.id);
@@ -2399,6 +2481,7 @@
   async function doSmartUpload() {
     if (!smartPending.length || smartUploading) return;
     if (currentRole !== "admin" && currentRole !== "super_admin") { sbToast("无权限：只有管理员可上传", false); return; }
+    if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可上传")) return;
     let cat = document.querySelector("#smart-cat").value;
     if (!cat) { sbToast("请先选择上传类目", false); return; }
     smartUploading = true;
@@ -2760,6 +2843,7 @@
 
   async function doUploadTrend(t) {
     // 必填校验：逐项提示哪一项没填
+    if (!guardZone("trend", "无权限：只有可操作趋势专区的管理员可上传")) return;
     if (!trendPickedFile) return sbToast("未填写项：「PDF 文件」", false);
     if (!t) return sbToast("未填写项：「文件标题」", false);
     if (!trendCategory) return sbToast("未填写项：「选择类目」", false);
@@ -2866,6 +2950,7 @@
   }
   async function confirmDeleteTrend(t) {
     if (!confirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件与封面。")) return;
+    if (!guardZone("trend", "无权限：只有可操作趋势专区的管理员可删除")) return;
     try {
       await SB.deleteTrendFile(t.path, t.cover || "");
       await SB.removeTrendRecord(t.id);
@@ -2981,6 +3066,7 @@
     if (pw) pw.classList.add("hidden");
   }
   async function saveTrendEdit() {
+    if (!guardZone("trend", "无权限：只有可操作趋势专区的管理员可编辑")) return;
     const title = (document.querySelector("#trend-edit-title-inp").value || "").trim();
     const desc = (document.querySelector("#trend-edit-desc").value || "").trim();
     const radios = document.querySelectorAll('input[name="trend-edit-tag"]');
@@ -3206,6 +3292,7 @@
   }
 
   async function doSaveNotice(titleEl, pubEl) {
+    if (!guardZone("notice", "无权限：只有可管理公告的管理员可操作")) return;
     const title = (titleEl && titleEl.value || "").trim();
     if (!title) return sbToast("请填写公告标题", false);
     // 富文本正文：保留管理员编辑的 HTML（加粗/列表/插图等），空白时退回纯文本
@@ -3745,6 +3832,7 @@ let recruitTasks = [];
 
   // 导入：有URL行直接成卡片；无URL行把已匹配图片上传R2后成卡片
   async function commitRecruitImport() {
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可导入")) return;
     // 每行类目：优先取行内自动匹配/手动调整的 category；否则回退到下拉（兼容旧流程）
     const globalCat = document.querySelector("#recruit-category")?.value || "";
     const rowCat = r => String(r.category || "").trim() || globalCat;
@@ -4064,24 +4152,28 @@ let recruitTasks = [];
   }
 
   async function setRecruitStatus(t, st) {
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可操作")) return;
     try {
       await SB.updateRecruitTask(t.id, { status: st });
       t.status = st; renderRecruitList(); sbToast(st === "published" ? "已发布" : "已取消发布");
     } catch (e) { sbToast("操作失败", false); }
   }
   async function setRecruitBound(t, b) {
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可操作")) return;
     try {
       await SB.updateRecruitTask(t.id, { bound: b, bound_at: b ? new Date().toISOString() : null });
       t.bound = b; renderRecruitList(); sbToast(b ? "已标记为已绑定" : "已取消绑定");
     } catch (e) { sbToast("操作失败", false); }
   }
   async function bulkSetRecruitStatus(st) {
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可批量操作")) return;
     const ids = [...recruitSelected];
     if (!ids.length) return sbToast("请先勾选要发布的任务", false);
     try { await SB.bulkUpdateRecruitTasks(ids, { status: st }); sbToast("已批量" + (st === "published" ? "发布" : "取消发布") + " " + ids.length + " 个任务"); loadRecruitList(); }
     catch (e) { sbToast("批量操作失败", false); }
   }
   async function bulkSetRecruitBound(b) {
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可批量操作")) return;
     const ids = [...recruitSelected];
     if (!ids.length) return sbToast("请先勾选任务", false);
     try { await SB.bulkUpdateRecruitTasks(ids, { bound: b, bound_at: b ? new Date().toISOString() : null }); sbToast("已批量" + (b ? "标记绑定" : "取消绑定") + " " + ids.length + " 个任务"); loadRecruitList(); }
@@ -4098,6 +4190,7 @@ let recruitTasks = [];
 
   async function confirmDeleteRecruit(t) {
     if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可删除")) return;
     try {
       await SB.removeRecruitTask(t.id);
       sbToast("已移入回收站");
@@ -4110,6 +4203,7 @@ let recruitTasks = [];
     const ids = [...recruitSelected];
     if (!ids.length) return sbToast("请先勾选要删除的任务", false);
     if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
+    if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可删除")) return;
     try {
       await SB.bulkUpdateRecruitTasks(ids, { deleted_at: new Date().toISOString() });
       sbToast("已移入回收站 " + ids.length + " 个任务");
@@ -5668,6 +5762,7 @@ let bestsellerTasks = [];
     if (mr) mr.textContent = "下方为预览（共 " + imgs.length + " 行），点「导入」写入任务卡片";
   }
   async function commitBestsellerUrlImport() {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可导入")) return;
     if (!bsUrlImportPending.length) return sbToast("没有待导入数据", false);
     const cat = document.querySelector("#bestseller-category")?.value || "";
     if (!cat) { sbToast("请先选择上传类目再导入", false); return; }   // 类目必选：不选无法导入
@@ -5781,6 +5876,7 @@ let bestsellerTasks = [];
     if (mr) mr.textContent = "下方为预览（共 " + matched.length + " 行），点「上传并导入」图片存R2并写入任务卡片";
   }
   async function commitBestsellerImgImport() {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可导入")) return;
     if (!bsImgPending.length) return sbToast("没有待导入图片", false);
     const cat = document.querySelector("#bestseller-category")?.value || "";
     if (!cat) { sbToast("请先选择上传类目再导入", false); return; }   // 类目必选：不选无法导入
@@ -6034,24 +6130,28 @@ let bestsellerTasks = [];
   }
 
   async function setBestsellerStatus(t, st) {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可操作")) return;
     try {
       await SB.updateBestsellerTask(t.id, { status: st });
       t.status = st; renderBestsellerList(); sbToast(st === "published" ? "已发布" : "已取消发布");
     } catch (e) { sbToast("操作失败", false); }
   }
   async function setBestsellerBound(t, b) {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可操作")) return;
     try {
       await SB.updateBestsellerTask(t.id, { bound: b, bound_at: b ? new Date().toISOString() : null });
       t.bound = b; renderBestsellerList(); sbToast(b ? "已标记为已绑定" : "已取消绑定");
     } catch (e) { sbToast("操作失败", false); }
   }
   async function bulkSetBestsellerStatus(st) {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可批量操作")) return;
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选要发布的任务", false);
     try { await SB.bulkUpdateBestsellerTasks(ids, { status: st }); sbToast("已批量" + (st === "published" ? "发布" : "取消发布") + " " + ids.length + " 个任务"); loadBestsellerList(); }
     catch (e) { sbToast("批量操作失败", false); }
   }
   async function bulkSetBestsellerBound(b) {
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可批量操作")) return;
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选任务", false);
     try { await SB.bulkUpdateBestsellerTasks(ids, { bound: b, bound_at: b ? new Date().toISOString() : null }); sbToast("已批量" + (b ? "标记绑定" : "取消绑定") + " " + ids.length + " 个任务"); loadBestsellerList(); }
@@ -6068,6 +6168,7 @@ let bestsellerTasks = [];
 
   async function confirmDeleteBestseller(t) {
     if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可删除")) return;
     try {
       await SB.removeBestsellerTask(t.id);
       sbToast("已移入回收站");
@@ -6080,6 +6181,7 @@ let bestsellerTasks = [];
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选要删除的任务", false);
     if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
+    if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可删除")) return;
     try {
       await SB.bulkUpdateBestsellerTasks(ids, { deleted_at: new Date().toISOString() });
       sbToast("已移入回收站 " + ids.length + " 个任务");

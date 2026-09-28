@@ -61,6 +61,31 @@ function isSuperRole(role) {
   return r === "super_admin";
 }
 
+// 查询某用户在 profiles 表中的专区白名单（manage_zones 数组）
+async function getManageZones(userId, token, env) {
+  try {
+    const url = `${env.SUPABASE_URL}/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}&select=manage_zones`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY,
+        Authorization: "Bearer " + token,
+      },
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    const z = rows && rows.length ? rows[0].manage_zones : null;
+    return Array.isArray(z) ? z : [];
+  } catch (e) { return []; }
+}
+// 专区授权判定：超管固定放行；未配置白名单的管理员默认放行；已配置则严格按白名单
+async function canManageZone(userId, role, token, env, zone) {
+  if (isSuperRole(role)) return true;
+  if (!isAdminRole(role)) return false;
+  const zones = await getManageZones(userId, token, env);
+  if (!zones.length) return true;   // 未配置用户级专区：按全局放行（兼容）
+  return zones.indexOf(zone) !== -1;
+}
+
 // 通过 Auth Admin API 创建用户（邮箱 + 密码），仅超管可触发，需 service_role
 async function adminCreateAuthUser(env, email, password) {
   const res = await fetch(env.SUPABASE_URL + "/auth/v1/admin/users", {
@@ -196,6 +221,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "visual"))) return json({ error: "未授权该专区" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -233,6 +259,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "trend"))) return json({ error: "未授权该专区" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -268,6 +295,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "trend"))) return json({ error: "未授权该专区" }, 403, CORS);
     const form = await request.formData();
     const coverFile = form.get("cover");
     if (!coverFile || coverFile.size <= 0) return json({ error: "缺少封面" }, 400, CORS);
@@ -325,6 +353,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "trend"))) return json({ error: "未授权该专区" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("trends/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -339,6 +368,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "notice"))) return json({ error: "未授权该专区" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -418,6 +448,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "recruit"))) return json({ error: "未授权该专区" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -458,6 +489,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "recruit"))) return json({ error: "未授权该专区" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("recruits/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
@@ -470,6 +502,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "bestseller"))) return json({ error: "未授权该专区" }, 403, CORS);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -510,6 +543,7 @@ async function isPublicAccess(env) {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!(await canManageZone(userId, role, token, env, "bestseller"))) return json({ error: "未授权该专区" }, 403, CORS);
     const p = url.searchParams.get("path") || "";
     if (!p.startsWith("bestsellers/")) return json({ error: "参数错误" }, 400, CORS);
     await env.IMAGES.delete(p).catch(() => {});
