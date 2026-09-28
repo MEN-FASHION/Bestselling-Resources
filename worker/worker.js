@@ -86,6 +86,24 @@ async function canManageZone(userId, role, token, env, zone) {
   return zones.indexOf(zone) !== -1;
 }
 
+// 类目授权判定：超管放行；非管理员拒绝；管理员需专区授权 + 该类目在其 zone_permissions 内（类目为空则回退专区级）
+async function canManageZoneCat(userId, role, token, env, zone, category) {
+  if (isSuperRole(role)) return true;
+  if (!isAdminRole(role)) return false;
+  if (!(await canManageZone(userId, role, token, env, zone))) return false;
+  if (!category || !String(category).trim()) return true;
+  try {
+    const cat = String(category).trim().toLowerCase();
+    const url = `${env.SUPABASE_URL}/rest/v1/zone_permissions?user_id=eq.${encodeURIComponent(userId)}&zone=eq.${encodeURIComponent(zone)}&select=category`;
+    const res = await fetch(url, {
+      headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + token },
+    });
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return (rows || []).some(r => String(r.category || "").trim().toLowerCase() === cat);
+  } catch (e) { return false; }
+}
+
 // 通过 Auth Admin API 创建用户（邮箱 + 密码），仅超管可触发，需 service_role
 async function adminCreateAuthUser(env, email, password) {
   const res = await fetch(env.SUPABASE_URL + "/auth/v1/admin/users", {
@@ -227,6 +245,10 @@ async function isPublicAccess(env) {
     const file = form.get("file");
     const category = (form.get("category") || "").trim();
     if (!file || !category) return json({ error: "缺少文件或分类" }, 400, CORS);
+    // 类目授权校验：管理员只能上传其授权（视觉专区）类目的图片
+    if (!(await canManageZoneCat(userId, role, token, env, "visual", category))) {
+      return json({ error: "未授权该分类" }, 403, CORS);
+    }
 
     // 唯一文件名，防覆盖
     const cleanName = file.name.replace(/[^\w.\-]/g, "_");

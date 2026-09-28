@@ -139,8 +139,8 @@
     SB.onAuth((session) => {
       window.__loggedIn = !!session;
       window.__authReady = true;
-      // 登录态变化后刷新用户级可见专区白名单，重跑守卫
-      SB.myManageZones().then((z) => {
+      // 登录态变化后刷新前端可见专区白名单（frontend_zones，独立于后端 manage_zones），重跑守卫
+      SB.myFrontendZones().then((z) => {
         myZones = z;
         refreshAuthUI();
         applyZoneNav();

@@ -78,9 +78,10 @@
   document.addEventListener("DOMContentLoaded", () => {
     // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
     let enteredUserId = null; // 防重入：只跟踪真正切换的登录用户，避免 token 刷新触发重复 enterPanel
-    SB.onAuth((session) => {
+    SB.onAuth(async (session) => {
       currentUser = session ? session.user : null;
-      refreshUserBadge();
+      // 先异步加载当前用户角色/专区，再进入后台，避免 enterPanel 读到尚未就绪的角色而误判为"访客无权限"
+      await refreshUserBadge();
       const uid = session && session.user ? session.user.id : null;
       if (session) {
         if (enteredUserId !== uid) {
@@ -225,6 +226,19 @@
     document.querySelectorAll("#admin-panel [data-super='1']:not(.nav-item)").forEach(n => {
       n.classList.toggle("hidden", !isSuper());
     });
+    // ── 角色就绪后的强制纠错 ──
+    // 若此前因异步竞态（菜单已渲染但角色未就绪）误进入"访客无权限"分支，此处强制纠正：
+    // 只要当前角色是管理员/超管，就隐藏无权限提示并重新进入后台，消除"菜单在、主区无权限"的分裂状态。
+    if (isAdmin()) {
+      const noPermEl = document.querySelector("#no-perm");
+      if (noPermEl) noPermEl.classList.add("hidden");
+      const panelEl = document.querySelector("#admin-panel");
+      // 若后台面板已显示但主区仍未正常进入（卡在无权限），重置后重新进入
+      if (panelReady && panelEl && !panelEl.classList.contains("hidden") && document.querySelectorAll("#admin-panel .panel-card:not(.hidden)").length === 0) {
+        panelReady = false;
+        enterPanel();
+      }
+    }
   }
 
   // ================= 登录 / 退出 =================
@@ -283,8 +297,12 @@
     };
   }
   let panelReady = false; // 面板级防重入：已进入后台且用户未切换时，不再重复加载/拉回图片管理，避免反复重绘与菜单被覆盖
-  function enterPanel() {
+  async function enterPanel() {
     if (panelReady) return;
+    // 角色就绪保护：若角色尚未加载完成（异步竞态），先等待加载，避免误判为"访客无权限"
+    if (currentRole === null) {
+      try { await refreshUserBadge(); } catch (e) {}
+    }
     panelReady = true;
     $("#admin-login").classList.add("hidden");
     $("#admin-panel").classList.remove("hidden");
@@ -303,7 +321,13 @@
     loadAccess();
     // 默认进入第一个当前角色可访问的面板（超管/全量管理员：图片管理；专区受限管理员：其授权专区页面）
     const firstPanel = document.querySelector("#admin-panel .nav-item:not(.hidden)");
-    switchPanel(firstPanel ? firstPanel.dataset.target : "manage-card");
+    const defaultTarget = firstPanel ? firstPanel.dataset.target : "manage-card";
+    switchPanel(defaultTarget);
+    // 需求：后台点开默认进入全屏智能打标——当默认面板为图片管理时，自动打开智能打标并切换全屏
+    if (defaultTarget === "manage-card" && typeof openSmartModal === "function") {
+      openSmartModal();
+      if (typeof toggleSmartFullscreen === "function") toggleSmartFullscreen();
+    }
   }
 
   // ================= 登录 / 注册引导 =================
@@ -427,6 +451,14 @@
 
     let cat = $("#cat-select").value;
     if (!cat) { sbToast("请选择分类", false); return; }
+    // 类目授权校验：普通管理员只能传自己被授权（视觉专区）的类目；超管不限
+    if (currentRole === "admin") {
+      let mine = [];
+      try { mine = await SB.myZonePermissions("visual"); } catch (e) { mine = []; }
+      const norm = s => (s || "").trim();
+      const mineSet = new Set(mine.map(norm));
+      if (!mineSet.has(norm(cat))) { sbToast("无权限：该分类未分配给您的可管理类目", false); return; }
+    }
 
     uploading = true;
     $("#upload-btn").disabled = true;
@@ -484,10 +516,10 @@
     if (!sel) return; // 上传图片菜单已并入智能打标弹窗，面板元素不存在时跳过
     let cats = [];
     try { cats = await SB.listActiveCats(); } catch (e) {}
-    // 普通管理员：只显示被授权（共享一套）的类目；超管/访客显示全部
+    // 普通管理员：只显示被授权（视觉专区）的类目；超管/访客显示全部
     if (currentRole === "admin") {
       try {
-        const mine = await SB.myZonePermissions();
+        const mine = await SB.myZonePermissions("visual");
         const set = new Set(mine.map(s => (s || "").trim()));
         cats = cats.filter(c => set.has((c || "").trim()));
       } catch (e) {}
@@ -2770,10 +2802,10 @@
     try {
       let cats = await SB.listActiveCats().catch(() => []);
       cats = (cats || []).map(c => (typeof c === "string" ? c : (c && c.name) || "")).filter(Boolean);
-      // 普通管理员：只显示被授权（共享一套）的类目；超管/访客显示全部
+      // 普通管理员：只显示被授权（趋势专区）的类目；超管/访客显示全部
       if (currentRole === "admin") {
         try {
-          const mine = await SB.myZonePermissions();
+          const mine = await SB.myZonePermissions("trend");
           const set = new Set((mine || []).map(s => (s || "").trim()));
           cats = cats.filter(c => set.has((c || "").trim()));
         } catch (e) {}
@@ -4972,13 +5004,14 @@ let recruitTasks = [];
   async function loadDefaultPerms() {
     const roleSel = $("#dperm-role");
     if (!roleSel) return;
-    let def = { role: "visitor", zones: [] };
-    try { def = await SB.getDefaultPerms().catch(() => ({ role: "visitor", zones: [] })); } catch (e) {}
+    let def = { role: "visitor", frontZones: [], manageZones: [] };
+    try { def = await SB.getDefaultPerms().catch(() => ({ role: "visitor", frontZones: [], manageZones: [] })); } catch (e) {}
     roleSel.value = def.role || "visitor";
-    renderDefaultZones(def.zones || []);
+    renderDefaultZones(def.frontZones || [], "#dperm-zones");
+    renderDefaultZones(def.manageZones || [], "#dperm-manage-zones");
   }
-  function renderDefaultZones(checked) {
-    const box = $("#dperm-zones");
+  function renderDefaultZones(checked, containerId) {
+    const box = $(containerId || "#dperm-zones");
     if (!box) return;
     box.innerHTML = "";
     const set = new Set((checked || []));
@@ -4996,9 +5029,10 @@ let recruitTasks = [];
     if (!save) return;
     save.onclick = async () => {
       const role = $("#dperm-role")?.value || "visitor";
-      const zones = [...document.querySelectorAll("#dperm-zones input:checked")].map(i => i.value);
+      const frontZones = [...document.querySelectorAll("#dperm-zones input:checked")].map(i => i.value);
+      const manageZones = [...document.querySelectorAll("#dperm-manage-zones input:checked")].map(i => i.value);
       try {
-        await SB.setDefaultPerms(role, zones);
+        await SB.setDefaultPerms(role, frontZones, manageZones);
         sbToast("新用户默认权限已保存，之后新注册用户生效");
         await loadDefaultPerms();
       } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
@@ -5010,8 +5044,8 @@ let recruitTasks = [];
     if (!body) return;
     // 按「标签」筛选：all=全部，__none__=仅无标签，其它=仅该标签
     const shown = permTagFilter === "" ? users : (permTagFilter === NONE_TAG ? users.filter(u => !(u.user_tag && u.user_tag.trim())) : users.filter(u => u.user_tag === permTagFilter));
-    if (!users.length) { body.innerHTML = '<tr><td colspan="9" class="hint">暂无用户</td></tr>'; return; }
-    if (!shown.length) { body.innerHTML = '<tr><td colspan="9" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="10" class="hint">暂无用户</td></tr>'; return; }
+    if (!shown.length) { body.innerHTML = '<tr><td colspan="10" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; return; }
     body.innerHTML = "";
     // 预取每个用户的类目授权，用于总览摘要（仅筛选后的行）
     const catCounts = {};
@@ -5023,13 +5057,19 @@ let recruitTasks = [];
     }));
     shown.forEach(u => {
       const tr = document.createElement("tr");
-      const zones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
-      // 「已授权专区」= 用户单独配置的专区；未配置则跟随全局，直接展开列出全局可见专区（不再显示"按全局"）
-      const zoneKeys = zones.length ? zones : permGlobalZones;
-      const zoneTxt = zoneKeys.length ? zoneKeys.map(z => {
+      const frontZones = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
+      const manageZones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
+      // 「前台可见专区」= 单独配置的 frontend_zones；未配置则跟随全局，直接展开列出全局可见专区
+      const frontZoneKeys = frontZones.length ? frontZones : permGlobalZones;
+      const frontZoneTxt = frontZoneKeys.length ? frontZoneKeys.map(z => {
         const zz = PERM_ZONES.find(x => x.key === z);
         return zz ? zz.label : z;
       }).join("、") : "无";
+      // 「后台管理专区」= 单独配置的 manage_zones；未配置则为「无后台权限」
+      const manageZoneTxt = manageZones.length ? manageZones.map(z => {
+        const zz = PERM_ZONES.find(x => x.key === z);
+        return zz ? zz.label : z;
+      }).join("、") : "无（仅前台）";
       const devTxt = u.device ? escHtml(u.device) : '<span class="hint">未记录</span>';
       const ipTxt = u.ip ? escHtml(u.ip) : '<span class="hint">未记录</span>';
       // 标签列：直接以下拉选择，切换即保存到该用户（无需点编辑区保存）
@@ -5042,7 +5082,8 @@ let recruitTasks = [];
         '<td class="perm-td-tag">' + tagSel + '</td>' +
         '<td class="perm-td-note"><span class="perm-note-edit" data-uid="' + u.user_id + '" title="点击编辑备注">' + noteTxt + '</span></td>' +
         '<td class="perm-td-cats">' + (catCounts[u.user_id] ? catCounts[u.user_id] + " 个类目" : "无") + '</td>' +
-        '<td class="perm-td-zones">' + escHtml(zoneTxt) + '</td>' +
+        '<td class="perm-td-zones">' + escHtml(frontZoneTxt) + '</td>' +
+        '<td class="perm-td-zones">' + escHtml(manageZoneTxt) + '</td>' +
         '<td class="perm-td-device">' + devTxt + '</td>' +
         '<td class="perm-td-ip">' + ipTxt + '</td>' +
         '<td class="perm-td-ops">' +
@@ -5176,15 +5217,17 @@ let recruitTasks = [];
     if (noteInp) noteInp.value = u.user_note || "";
     const modal = $("#perm-edit-modal");
     if (modal) modal.classList.remove("hidden");
-    // 异步加载类目池 + 当前授权 + 当前专区
+    // 异步加载类目池 + 当前授权 + 前端可见专区(frontend_zones) + 后台可管理专区(manage_zones)
     Promise.all([
       SB.listZoneCats("recruit").catch(() => []),
       SB.listUserPermissions(u.user_id).catch(() => []),
+      SB.getUserFrontendZones(u.user_id).catch(() => []),
       SB.getUserManageZones(u.user_id).catch(() => []),
-    ]).then(([allCats, perm, myZones]) => {
+    ]).then(([allCats, perm, frontZones, manageZones]) => {
       permEditAllCats = allCats;
       renderPermEditCats(allCats, perm);
-      renderPermEditZones(myZones);
+      renderPermEditZones(frontZones, "#perm-edit-zones");
+      renderPermEditZones(manageZones, "#perm-edit-manage-zones");
     });
   }
   function closePermEditModal() {
@@ -5210,8 +5253,8 @@ let recruitTasks = [];
     });
     updatePermEditCatCount();
   }
-  function renderPermEditZones(checked) {
-    const box = $("#perm-edit-zones");
+  function renderPermEditZones(checked, containerId) {
+    const box = $(containerId || "#perm-edit-zones");
     if (!box) return;
     box.innerHTML = "";
     const set = new Set((checked || []));
@@ -5223,7 +5266,6 @@ let recruitTasks = [];
       lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
       box.appendChild(lab);
     });
-    permEditZones = [...(checked || [])];
   }
   function updatePermEditCatCount() {
     const cnt = $("#perm-edit-cats-count");
@@ -5240,13 +5282,24 @@ let recruitTasks = [];
     const tag = ($("#perm-edit-tag")?.value || "").trim();
     const note = ($("#perm-edit-note")?.value || "").trim();
     const cats = [...document.querySelectorAll("#perm-edit-cats input:checked")].map(i => i.value);
-    const zones = [...document.querySelectorAll("#perm-edit-zones input:checked")].map(i => i.value);
+    const frontZones = [...document.querySelectorAll("#perm-edit-zones input:checked")].map(i => i.value);
+    const manageZones = [...document.querySelectorAll("#perm-edit-manage-zones input:checked")].map(i => i.value);
     try {
       await SB.setUserNote(uid, note);
       await SB.setUserTag(uid, tag);
       await SB.setUserRole(uid, role);
-      await SB.setUserPermissions(uid, "", cats);
-      await SB.setUserManageZones(uid, zones);
+      // 前端可见专区（frontend_zones）
+      await SB.setUserFrontendZones(uid, frontZones);
+      // 后台可管理专区（manage_zones）
+      await SB.setUserManageZones(uid, manageZones);
+      // 类目授权：写入用户勾选的每个后台可管理专区（未授权专区不写入类目）
+      if (manageZones.length) {
+        for (const z of manageZones) {
+          await SB.setUserPermissions(uid, z, cats);
+        }
+      } else {
+        await SB.setUserPermissions(uid, "", []);  // 无后台专区则清空类目授权
+      }
       sbToast("该用户角色与权限已保存");
       // 就地更新内存数据 + 刷新该行 + 同步编辑区/筛选
       const u = permUsers.find(x => x.user_id === uid);

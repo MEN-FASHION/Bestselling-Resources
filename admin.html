@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923AI">
+<link rel="stylesheet" href="css/style.css?v=20260923AL">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
@@ -422,7 +422,8 @@
                   <th>标签</th>
                   <th>备注</th>
                   <th>可管理类目</th>
-                  <th>已授权专区</th>
+                  <th>前台可见专区</th>
+                  <th>后台管理专区</th>
                   <th>登录设备</th>
                   <th>登录 IP</th>
                   <th>操作</th>
@@ -444,8 +445,14 @@
               </select>
               <span class="hint" style="margin-left:10px">新用户注册后自动获得该角色（建议仅「访客」，管理员/超管用下方逐用户授权）</span>
             </div>
-            <h4 class="perm-zone-title">默认可见专区（前台）<span class="hint-inline">（勾选新用户注册后默认可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示）</span></h4>
-            <div id="dperm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            <div class="perm-zone" style="margin-top:10px">
+              <h4 class="perm-zone-title">默认可见专区（前台）<span class="hint-inline">（勾选新用户注册后进入前台默认可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示。仅影响前台展示，不影响后台权限）</span></h4>
+              <div id="dperm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            </div>
+            <div class="perm-zone" style="margin-top:10px">
+              <h4 class="perm-zone-title">默认管理专区（后台）<span class="hint-inline">（勾选新用户注册后默认可作为后台管理员的专区；不勾选任何项＝无后台操作权限，仅前台访问。仅影响后台，不影响前台可见性）</span></h4>
+              <div id="dperm-manage-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            </div>
             <div class="rg-btnrow">
               <button id="dperm-save" class="btn-primary" type="button">保存默认权限</button>
             </div>
@@ -1018,8 +1025,12 @@
           <div id="perm-edit-cats" class="perm-cats"><span class="hint">加载中…</span></div>
         </div>
         <div class="perm-zone" style="margin-top:10px">
-          <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示）</span></h4>
+          <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示。与后台操作权限分离）</span></h4>
           <div id="perm-edit-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="perm-zone" style="margin-top:10px">
+          <h4 class="perm-zone-title">后台可管理专区（后台操作权限）<span class="hint-inline">（勾选该管理员可进入并操作的后台专区；未勾选划分项＝无后台操作权限，仅前台访问。与前台可见性分离）</span></h4>
+          <div id="perm-edit-manage-zones" class="perm-zones"><span class="hint">加载中…</span></div>
         </div>
         <div class="modal-foot">
           <button id="perm-edit-cancel" class="btn-ghost" type="button">取消</button>
@@ -1072,9 +1083,9 @@
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923AI"></script>
-  <script src="js/supabase.js?v=20260923AI"></script>
-  <script src="js/admin.js?v=20260923AI"></script>
+  <script src="js/config.js?v=20260923AL"></script>
+  <script src="js/supabase.js?v=20260923AL"></script>
+  <script src="js/admin.js?v=20260923AL"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

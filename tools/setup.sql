@@ -15,6 +15,9 @@ create table if not exists public.profiles (
   user_note text not null default '',
   -- 用户级前台可见专区白名单（manage_zones 数组；空/缺省 = 未配置，前台回退到全局 frontend_zone_visibility）
   manage_zones jsonb not null default '[]'::jsonb,
+  -- 前端专区可见性（frontend_zones 数组；与后端 manage_zones 完全独立——前端注册用户可见哪些专区，后端管理员可管理哪些专区）
+  -- 空/缺省 = 未单独配置，前台按全局 frontend_zone_visibility 显示
+  frontend_zones jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -40,24 +43,28 @@ create policy "super update all profiles"
   with check (public.is_super_admin());
 
 -- 允许用户首次登录时自动插入自己的 profile
--- 新用户默认角色 / 默认可见专区 取自站点级「新用户默认权限设置」site_settings.default_role / default_manage_zones
--- （未配置则回退：角色=visitor、专区=按全局 frontend_zone_visibility 显示）
+-- 新用户默认角色 / 默认前台可见专区 / 默认后台管理专区 取自站点级「新用户默认权限设置」
+-- site_settings.default_role / default_frontend_zones / default_manage_zones
+-- （未配置则回退：角色=visitor、前台可见=按全局 frontend_zone_visibility 显示、后台管理=空）
 create or replace function public.handle_new_user()
 returns trigger as $$
 declare
   v_role text;
-  v_zones jsonb;
+  v_front text;
+  v_manage text;
 begin
-  select default_role, coalesce(default_manage_zones, '[]'::jsonb)
-    into v_role, v_zones
+  select default_role,
+         coalesce(default_frontend_zones, '[]'::jsonb)::text,
+         coalesce(default_manage_zones, '[]'::jsonb)::text
+    into v_role, v_front, v_manage
     from public.site_settings
     where id = 1;
   v_role := coalesce(v_role, 'visitor');
   if v_role not in ('visitor', 'admin', 'super_admin') then
     v_role := 'visitor';
   end if;
-  insert into public.profiles (user_id, email, role, manage_zones)
-  values (new.id, new.email, v_role, v_zones)
+  insert into public.profiles (user_id, email, role, frontend_zones, manage_zones)
+  values (new.id, new.email, v_role, v_front::jsonb, v_manage::jsonb)
   on conflict (user_id) do nothing;
   return new;
 end;
@@ -104,17 +111,18 @@ create policy "authenticated read images"
 -- 访客与登录用户均需通过 authenticated 策略读取图片；不存在匿名可读
 drop policy if exists "anon read images" on public.images;
 
--- 仅管理员可新增图片（严格按超管配置的 manage_zones：视觉专区授权）
+-- 仅管理员可新增图片（严格按超管配置的 manage_zones：视觉专区授权 + 类目级授权）
 drop policy if exists "admin insert images" on public.images;
 create policy "admin insert images"
   on public.images for insert
   to authenticated
   with check (
-    public.can_write_zone('visual')
+    public.can_write_zone_cat('visual', category)
   );
 
 -- 仅管理员可更新图片（用于批量打渠道标签）
 -- 隔离：普通管理员只能更新「自己上传」的图（uploaded_by = auth.uid()）且需视觉专区授权；超管可更新全部
+-- 更新会改动 category 时，同样要求新类目在授权内
 drop policy if exists "admin update images" on public.images;
 create policy "admin update images"
   on public.images for update
@@ -123,7 +131,7 @@ create policy "admin update images"
     public.is_super_admin() or (public.can_write_zone('visual') and uploaded_by = auth.uid())
   )
   with check (
-    public.is_super_admin() or (public.can_write_zone('visual') and uploaded_by = auth.uid())
+    public.is_super_admin() or (public.can_write_zone_cat('visual', category) and uploaded_by = auth.uid())
   );
 
 -- 仅管理员可删除图片
@@ -228,6 +236,18 @@ alter table public.site_settings
     check (default_role in ('visitor', 'admin', 'super_admin'));
 alter table public.site_settings
   add column if not exists default_manage_zones jsonb not null default '[]'::jsonb;
+-- 新用户默认「前台可见专区」（与后台默认管理专区 default_manage_zones 完全独立）
+alter table public.site_settings
+  add column if not exists default_frontend_zones jsonb not null default '[]'::jsonb;
+-- 数据迁移（仅首次执行）：历史版本「新用户默认权限设置」面板的默认专区存在 default_manage_zones
+-- 里，其语义实为「前台默认可见专区」——迁移到 default_frontend_zones，避免前台/后台默认值混淆；
+-- 迁移后 default_manage_zones 重置为空（后台默认管理专区改由新版两组勾选配置）。
+update public.site_settings
+  set default_frontend_zones = coalesce(default_manage_zones, '[]'::jsonb),
+      default_manage_zones = '[]'::jsonb
+  where id = 1
+    and coalesce(default_frontend_zones, '[]'::jsonb) = '[]'::jsonb
+    and coalesce(default_manage_zones, '[]'::jsonb) <> '[]'::jsonb;
 
 alter table public.site_settings enable row level security;
 
@@ -401,7 +421,7 @@ create policy "admin insert trends"
   on public.trends for insert
   to authenticated
   with check (
-    public.can_write_zone('trend')
+    public.can_write_zone_cat('trend', category)
   );
 
 drop policy if exists "admin update trends" on public.trends;
@@ -412,7 +432,7 @@ create policy "admin update trends"
     public.can_write_zone('trend')
   )
   with check (
-    public.can_write_zone('trend')
+    public.can_write_zone_cat('trend', category)
   );
 
 drop policy if exists "admin delete trends" on public.trends;
@@ -567,14 +587,14 @@ drop policy if exists "admin insert recruit_tasks" on public.recruit_tasks;
 create policy "admin insert recruit_tasks"
   on public.recruit_tasks for insert
   to authenticated
-  with check (public.can_write_zone('recruit'));
+  with check (public.can_write_zone_cat('recruit', category));
 
 drop policy if exists "admin update recruit_tasks" on public.recruit_tasks;
 create policy "admin update recruit_tasks"
   on public.recruit_tasks for update
   to authenticated
   using (public.is_super_admin() or (public.can_write_zone('recruit') and uploaded_by = auth.uid()))
-  with check (public.is_super_admin() or (public.can_write_zone('recruit') and uploaded_by = auth.uid()));
+  with check (public.is_super_admin() or (public.can_write_zone_cat('recruit', category) and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete recruit_tasks" on public.recruit_tasks;
 create policy "admin delete recruit_tasks"
@@ -677,14 +697,14 @@ drop policy if exists "admin insert bestseller_tasks" on public.bestseller_tasks
 create policy "admin insert bestseller_tasks"
   on public.bestseller_tasks for insert
   to authenticated
-  with check (public.can_write_zone('bestseller'));
+  with check (public.can_write_zone_cat('bestseller', category));
 
 drop policy if exists "admin update bestseller_tasks" on public.bestseller_tasks;
 create policy "admin update bestseller_tasks"
   on public.bestseller_tasks for update
   to authenticated
   using (public.is_super_admin() or (public.can_write_zone('bestseller') and uploaded_by = auth.uid()))
-  with check (public.is_super_admin() or (public.can_write_zone('bestseller') and uploaded_by = auth.uid()));
+  with check (public.is_super_admin() or (public.can_write_zone_cat('bestseller', category) and uploaded_by = auth.uid()));
 
 drop policy if exists "admin delete bestseller_tasks" on public.bestseller_tasks;
 create policy "admin delete bestseller_tasks"
@@ -831,11 +851,14 @@ create policy "admin delete bestseller_categories"
 create table if not exists public.zone_permissions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
-  zone text not null check (zone in ('recruit', 'bestseller')),
+  zone text not null check (zone in ('visual', 'trend', 'recruit', 'bestseller')),
   category text not null,
   created_at timestamptz not null default now(),
   unique (user_id, zone, category)
 );
+-- 幂等升级旧库：旧表 zone 仅允许 recruit/bestseller，扩为全专区（含 visual/trend）
+alter table public.zone_permissions drop constraint if exists zone_permissions_zone_check;
+alter table public.zone_permissions add constraint zone_permissions_zone_check check (zone in ('visual', 'trend', 'recruit', 'bestseller'));
 alter table public.zone_permissions enable row level security;
 -- 登录用户可读自己的权限（前台/后台按权限过滤发布下拉）
 drop policy if exists "authenticated read own zone_permissions" on public.zone_permissions;
@@ -888,10 +911,38 @@ as $$
   end;
 $$;
 
+-- ---------- 类目级写权限判定（管理员严格按超管配置的类目授权 zone_permissions） ----------
+-- 返回当前登录用户是否可在指定专区的指定类目执行写操作：
+--   超管固定放行；非管理员一律拒绝；
+--   管理员需先通过专区授权（can_write_zone），再要求该类目出现在其 zone_permissions 授权内；
+--   类目为空串（如趋势文章可不传类目）→ 回退专区级校验 can_write_zone；
+--   zone_permissions 未配置任何类目（空）→ 管理员不可写任何类目（严格按授权，不留默认放行）。
+create or replace function public.can_write_zone_cat(v_zone text, v_cat text)
+returns boolean
+language sql security definer stable
+as $$
+  select case
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role = 'super_admin') then true
+    when exists (select 1 from public.profiles p where p.user_id = auth.uid() and p.role in ('admin', 'super_admin'))
+         and public.can_write_zone(v_zone) then
+      case when coalesce(v_cat, '') = '' then true
+           else exists (
+             select 1 from public.zone_permissions zp
+             where zp.user_id = auth.uid()
+               and zp.zone = v_zone
+               and lower(trim(zp.category)) = lower(trim(v_cat))
+           )
+      end
+    else false
+  end;
+$$;
+
 -- ---------- 角色枚举约束：允许超管（幂等，处理已建旧表） ----------
 -- 用户标签列（兼容旧库，幂等）：超管设置的备注标签，便于区分用户类别
 alter table public.profiles add column if not exists user_tag text not null default '';
 alter table public.profiles add column if not exists user_note text not null default '';
+-- 前端专区可见性（与后端 manage_zones 独立）：前端注册用户可见哪些专区的独立白名单
+alter table public.profiles add column if not exists frontend_zones jsonb not null default '[]'::jsonb;
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('visitor', 'admin', 'super_admin'));

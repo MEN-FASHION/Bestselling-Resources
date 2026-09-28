@@ -237,7 +237,8 @@ const SB = (() => {
         .select("role")
         .eq("user_id", session.user.id)
         .maybeSingle();
-      if (error || !data) return "visitor";
+      if (error) return null;  // 读取出错 → 返回 null，由调用方区分"读取失败"与"真访客"，避免误判
+      if (!data || !data.role) return "visitor";
       return data.role;
     },
 
@@ -744,21 +745,24 @@ async removeTrendRecord(id) {
     },
 
     // ============ 新用户默认权限设置（超管） ============
-    // 读取新用户默认权限：{ role, zones }
-    // zones 为数组；空数组 = 新用户未配置用户级专区，前台按全局 frontend_zone_visibility 显示
+    // 读取新用户默认权限：{ role, frontZones, manageZones }
+    // frontZones = 新用户默认前台可见专区（空 = 未配置，按全局 frontend_zone_visibility 显示）
+    // manageZones = 新用户默认后台可管理专区（空 = 无后台操作权限，仅前台访问）
     async getDefaultPerms() {
       const { data, error } = await client
-        .from("site_settings").select("default_role, default_manage_zones").eq("id", 1).maybeSingle();
-      if (error || !data) return { role: "visitor", zones: [] };
-      const zones = Array.isArray(data.default_manage_zones) ? data.default_manage_zones : [];
-      return { role: data.default_role || "visitor", zones };
+        .from("site_settings").select("default_role, default_frontend_zones, default_manage_zones").eq("id", 1).maybeSingle();
+      if (error || !data) return { role: "visitor", frontZones: [], manageZones: [] };
+      const frontZones = Array.isArray(data.default_frontend_zones) ? data.default_frontend_zones : [];
+      const manageZones = Array.isArray(data.default_manage_zones) ? data.default_manage_zones : [];
+      return { role: data.default_role || "visitor", frontZones, manageZones };
     },
-    // 写入新用户默认权限（role: visitor/admin/super_admin；zones 数组，空数组 = 按全局显示）
-    async setDefaultPerms(role, zones) {
+    // 写入新用户默认权限（role: visitor/admin/super_admin；frontZones/manageZones 均为数组）
+    async setDefaultPerms(role, frontZones, manageZones) {
       const cleanRole = ["visitor", "admin", "super_admin"].includes(role) ? role : "visitor";
-      const cleanZones = [...new Set((zones || []).filter(Boolean))];
+      const cleanFront = [...new Set((frontZones || []).filter(Boolean))];
+      const cleanManage = [...new Set((manageZones || []).filter(Boolean))];
       const { error } = await client
-        .from("site_settings").update({ default_role: cleanRole, default_manage_zones: cleanZones, updated_at: new Date().toISOString() }).eq("id", 1);
+        .from("site_settings").update({ default_role: cleanRole, default_frontend_zones: cleanFront, default_manage_zones: cleanManage, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw new Error(error.message || "保存失败");
     },
 
@@ -1290,24 +1294,28 @@ async removeTrendRecord(id) {
     },
 
     // ============ 超管权限分配（zone_permissions） ============
-    // 读取某管理员被授权的类目名列表（跨专区共享同一套，不区分 zone）
+    // 读取某管理员被授权的类目名列表（按专区；不传 zone 则取全部专区并集）
     async listUserPermissions(userId, zone) {
-      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", userId);
+      let q = client.from("zone_permissions").select("category");
+      if (zone) q = q.eq("zone", zone);
+      const { data, error } = await q.eq("user_id", userId);
       if (error) throw new Error(error.message || "读取权限失败");
       return [...new Set((data || []).map(d => d.category))];
     },
-    // 读取当前登录用户被授权的所有类目（四专区共用同一套，后台发布/上传下拉过滤用）
+    // 读取当前登录用户在某专区被授权的所有类目（后台发布/上传下拉按专区精确过滤）
     async myZonePermissions(zone) {
       const s = await client.auth.getSession();
       const uid = s?.data?.session?.user?.id;
       if (!uid) return [];
-      const { data, error } = await client.from("zone_permissions").select("category").eq("user_id", uid);
+      let q = client.from("zone_permissions").select("category");
+      if (zone) q = q.eq("zone", zone);
+      const { data, error } = await q.eq("user_id", uid);
       if (error) return [];
       return [...new Set((data || []).map(d => d.category))];
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, user_tag, user_note").order("created_at", { ascending: true });
+      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, frontend_zones, user_tag, user_note").order("created_at", { ascending: true });
       if (error) throw new Error(error.message || "读取用户失败");
       return data || [];
     },
@@ -1375,19 +1383,39 @@ async removeTrendRecord(id) {
       if (error) return null;
       return (data && Array.isArray(data.manage_zones)) ? data.manage_zones : null;
     },
-    // 超管：写入某管理员的类目授权（一套共享，跨专区共用）。zone 参数仅为兼容保留，
-    // 实际把类目同时写入 recruit/bestseller 两个 zone，保证四个专区读取都能命中同一套。
+    // 前端专区可见性（frontend_zones，与后端 manage_zones 独立）：
+    // 返回当前登录用户前端可见的专区白名单；null = 未配置，按全局 frontend_zone_visibility 兜底
+    async myFrontendZones() {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return null;
+      const { data, error } = await client.from("profiles").select("frontend_zones").eq("user_id", uid).maybeSingle();
+      if (error) return null;
+      return (data && Array.isArray(data.frontend_zones)) ? data.frontend_zones : null;
+    },
+    // 超管：读取某用户前端可见专区白名单（frontend_zones）
+    async getUserFrontendZones(userId) {
+      const { data, error } = await client.from("profiles").select("frontend_zones").eq("user_id", userId).maybeSingle();
+      if (error) throw new Error(error.message || "读取前端可见专区失败");
+      return (data && Array.isArray(data.frontend_zones)) ? data.frontend_zones : [];
+    },
+    // 超管：写入某用户前端可见专区白名单（frontend_zones；传空数组 = 回退全局）
+    async setUserFrontendZones(userId, zones) {
+      const clean = [...new Set((zones || []).filter(Boolean))];
+      const { error } = await client.from("profiles").update({ frontend_zones: clean }).eq("user_id", userId);
+      if (error) throw new Error(error.message || "更新前端可见专区失败");
+    },
+    // 超管：写入某管理员在某专区的类目授权（按专区独立存储，不再跨专区共享）
+    // 删除该用户该专区旧权限行后，写入指定类目
     async setUserPermissions(userId, zone, cats) {
-      // 先删该用户旧的全部权限行（不限 zone），再整体覆盖写入
-      const { error: de } = await client.from("zone_permissions").delete().eq("user_id", userId);
+      let q = client.from("zone_permissions").delete().eq("user_id", userId);
+      if (zone) q = q.eq("zone", zone);
+      const { error: de } = await q;
       if (de) throw new Error(de.message || "更新权限失败");
       if (!cats || !cats.length) return;
       const clean = [...new Set((cats || []).map(c => (c || "").trim()).filter(Boolean))];
       if (!clean.length) return;
-      const rows = [];
-      ["recruit", "bestseller"].forEach(z => {
-        clean.forEach(c => rows.push({ user_id: userId, zone: z, category: c }));
-      });
+      const rows = clean.map(c => ({ user_id: userId, zone: zone || "recruit", category: c }));
       const { error } = await client.from("zone_permissions").insert(rows);
       if (error) throw new Error(error.message || "更新权限失败");
     },
