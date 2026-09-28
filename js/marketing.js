@@ -253,19 +253,24 @@
     yearEl.textContent = y;
   }
   async function loadMarketing() {
+    // 容错取数：任一环节失败均不弹错，回退为空继续渲染（空态由 render* 自行显示）
+    try { await ensureZoneVis(); } catch (e) { zoneVis = {}; }
     try {
-      await ensureZoneVis();
-      const nodeRes = await SB.listMarketingNodes();
-      nodes = nodeRes.data || [];
-      const artRes = await SB.listMarketingArticles(true);   // 仅已发布
-      articles = artRes.data || [];
-      setHeroYear();
-      renderNodes();
-      renderCards();
-      maybeFocusArticle();
-    } catch (e) {
-      toast("加载营销日历失败，请检查网络", false);
-    }
+      if (typeof SB.listMarketingNodes === "function") {
+        const nodeRes = await SB.listMarketingNodes();
+        nodes = nodeRes && nodeRes.data ? nodeRes.data : [];
+      } else { nodes = []; }
+    } catch (e) { nodes = []; }
+    try {
+      if (typeof SB.listMarketingArticles === "function") {
+        const artRes = await SB.listMarketingArticles(true);
+        articles = artRes && artRes.data ? artRes.data : [];
+      } else { articles = []; }
+    } catch (e) { articles = []; }
+    setHeroYear();
+    renderNodes();
+    renderCards();
+    maybeFocusArticle();
   }
 
   // 顶部横向时间轴（设计稿形态）：一条横向主轴贯穿全部节点，红色圆点标注日期；
@@ -302,18 +307,18 @@
       const href = c.url || "javascript:void(0);";
       const target = c.url ? "_blank" : "";
       const rel = c.url ? "noopener noreferrer" : "";
-      const side = k === "festival" ? "up" : "down";   // 上=节日，下=活动/促销
-      return `<div class="mk-node ${side} cat-${k}">
+      // 图上+文下：主图固定在时间轴上方，标题/时间统一在时间轴最下方
+      return `<div class="mk-node cat-${k}">
+        ${c.img ? `<a class="mk-tag-img" href="${href}" target="${target}" rel="${rel}" title="${title}"><img class="mk-tag-thumb" alt="" data-path="${escAttr(c.img)}" loading="lazy"></a>` : `<span class="mk-tag-img noimg"></span>`}
+        <span class="mk-conn"></span>
+        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
         <div class="mk-tag">
           <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
             <div class="mk-tag-date">${date}</div>
             <div class="mk-tag-title">${title}</div>
-            ${c.img ? `<div class="mk-tag-img"><img class="mk-tag-thumb" alt="" data-path="${escAttr(c.img)}" loading="lazy"></div>` : ""}
             ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
         </div>
-        <span class="mk-conn"></span>
-        <span class="mk-dot">${date ? `<span class="mk-dot-date">${date}</span>` : ""}<span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
     // 节点主图：mage鉴权URL异步填充

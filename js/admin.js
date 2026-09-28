@@ -6248,13 +6248,15 @@ let bestsellerTasks = [];
       const href = n.url || "javascript:void(0);";
       const target = n.url ? "_blank" : "";
       const rel = n.url ? "noopener noreferrer" : "";
-      const side = k === "festival" ? "up" : "down";
-      return `<div class="mk-node ${side} cat-${k}">
+      const side = "";   // 图上文下统一布局，不再上下交错
+      return `<div class="mk-node cat-${k}">
+        ${n.image ? `<a class="mk-tag-img" href="${href}" target="${target}" rel="${rel}" title="${title}"><img class="mk-tag-thumb" alt="" data-path="${escAttr(n.image)}" loading="lazy"></a>` : `<span class="mk-tag-img noimg"></span>`}
+        <span class="mk-conn"></span>
+        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
         <div class="mk-tag">
           <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
             <div class="mk-tag-date">${date}</div>
             <div class="mk-tag-title">${title}</div>
-            ${n.image ? `<div class="mk-tag-img"><img class="mk-tag-thumb" alt="" data-path="${escAttr(n.image)}" loading="lazy"></div>` : ""}
             ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
           </a>
           <div class="mk-node-ops">
@@ -6262,8 +6264,6 @@ let bestsellerTasks = [];
             <button type="button" class="op-del" data-act="del" data-id="${n.id}">删除</button>
           </div>
         </div>
-        <span class="mk-conn"></span>
-        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
       </div>`;
     }).join("");
     // 节点主图：鉴权URL异步填充

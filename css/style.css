@@ -1979,42 +1979,38 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* ============================================================
  * 营销日历（营销节日日历）：前台时间线 + 3:4 卡片 · 后台可视化编辑共用
  * ============================================================ */
-.mk-wrap{max-width:1180px;margin:0 auto;padding:26px 18px 60px;}
+.mk-wrap{max-width:1920px;margin:0 auto;padding:26px 3vw 60px;}
 .mk-timeline-title,.mk-grid-title{font-size:20px;font-weight:700;letter-spacing:1px;color:var(--txt);margin:0 0 26px;position:relative;padding-left:16px;}
 .mk-timeline-title::before,.mk-grid-title::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:5px;border-radius:3px;background:linear-gradient(180deg,#d4a017,#8b7355);}
 .mk-grid-title{margin-top:54px;}
 
-/* ---- 横向时间轴（设计稿形态：上节日/下活动促销 上下双节点 + 红点日期 + 垂直虚线） ---- */
-.mk-timeline{position:relative;display:flex;gap:18px;overflow-x:auto;overflow-y:visible;padding:150px 26px 150px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
+/* ---- 横向时间轴（图上·轴中·文下：主图固定时间轴上方，标题/时间统一在时间轴最下方，封面4:3横图） ---- */
+.mk-timeline{position:relative;display:flex;gap:18px;overflow-x:auto;overflow-y:visible;padding:40px 26px 40px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
 .mk-timeline::-webkit-scrollbar{height:8px;}
 .mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
 .mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
 /* 横向主轴线：贯穿全部节点圆点中心，末端右箭头（由 mk-axis-arrow 单独承载） */
 .mk-timeline::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#d9cfc0,#e0b84a,#d9cfc0);border-radius:3px;transform:translateY(-50%);}
 .mk-axis-arrow{position:sticky;right:0;align-self:center;flex:0 0 auto;font-size:22px;color:#c9a13c;padding-left:10px;text-shadow:0 0 8px rgba(201,161,60,.4);}
-/* 单条时刻：标签卡 + 垂直虚线 + 红点日期节点，圆点落在主轴中心 */
-.mk-node{position:relative;flex:0 0 218px;width:218px;height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;scroll-snap-align:start;}
-/* 红点日期节点（落在主轴线上，上方/下方显示日期） */
+/* 单条时刻：主图上(4:3) + 垂直虚线 + 红点(轴心) + 标题卡下 */
+.mk-node{position:relative;flex:0 0 218px;width:218px;height:500px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;scroll-snap-align:start;padding:0;}
+/* 红点日期节点（落在主轴线上） */
 .mk-dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:16px;height:16px;border-radius:50%;background:#d8382e;border:2px solid #fff;box-shadow:0 0 0 4px rgba(216,56,46,.18),0 0 12px rgba(216,56,46,.5);}
 .mk-dot-inner{display:block;width:4px;height:4px;margin:3px auto 0;border-radius:50%;background:#fff;}
-.mk-dot-date{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:700;color:#b3862f;letter-spacing:1px;}
-.mk-node.up .mk-dot-date{bottom:calc(100% + 8px);}
-.mk-node.down .mk-dot-date{top:calc(100% + 8px);}
-/* 垂直虚线：连接圆点与标签卡 */
-.mk-conn{position:absolute;left:50%;width:2px;height:86px;background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;transform:translateX(-50%);z-index:1;}
-.mk-node.up .mk-conn{top:calc(50% + 14px);}
-.mk-node.down .mk-conn{bottom:calc(50% + 14px);}
-/* 节点标签卡（标题/日期/简介），点击跳转对应文章 */
-.mk-tag{position:absolute;left:50%;transform:translateX(-50%);width:204px;border-radius:14px;padding:12px 13px;color:#fff;text-align:center;box-shadow:0 8px 20px rgba(60,52,42,.14);transition:transform .22s,box-shadow .22s;}
+/* 垂直虚线：连接主图底部与标题卡顶部，贯穿轴心 */
+.mk-conn{position:absolute;left:50%;top:calc(50% - 172px);bottom:calc(50% + 132px);width:2px;transform:translateX(-50%);background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;z-index:1;}
+/* 主图（4:3 横图，固定时间轴上方） */
+.mk-tag-img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:204px;aspect-ratio:4/3;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.06);display:block;text-decoration:none;box-shadow:0 6px 16px rgba(60,52,42,.12);transition:transform .22s,box-shadow .22s;}
+.mk-tag-img:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 12px 24px rgba(60,52,42,.18);}
+.mk-tag-img.noimg{background:linear-gradient(150deg,rgba(143,111,216,.35),rgba(111,82,192,.35));}
+.mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
+/* 标题/时间卡（统一时间轴最下方） */
+.mk-tag{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:204px;border-radius:14px;padding:12px 13px;color:#fff;text-align:center;box-shadow:0 8px 20px rgba(60,52,42,.14);transition:transform .22s,box-shadow .22s;}
 .mk-tag:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 14px 28px rgba(60,52,42,.22);}
-.mk-node.up .mk-tag{bottom:calc(50% + 104px);}
-.mk-node.down .mk-tag{top:calc(50% + 104px);}
 .mk-tag-link{display:block;text-decoration:none;color:inherit;}
 .mk-tag-date{font-size:12px;font-weight:800;letter-spacing:1.2px;opacity:.92;margin-bottom:5px;text-transform:uppercase;}
 .mk-tag-title{font-size:17px;font-weight:800;line-height:1.3;letter-spacing:.5px;}
-.mk-tag-img{margin-top:8px;width:150px;height:200px;overflow:hidden;border-radius:8px;background:rgba(255,255,255,.06);}
-.mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
-/* 颜色编码：festival=节日庆祝(紫,上) / event=重大活动(绿,下) / promo=促销旺季(深紫,下) */
+/* 颜色编码：festival=节日庆祝(紫) / event=重大活动(绿) / promo=促销旺季(深紫) */
 .mk-node.cat-festival .mk-tag{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
 .mk-node.cat-event .mk-tag{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
 .mk-node.cat-promo .mk-tag{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
