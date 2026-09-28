@@ -323,10 +323,9 @@
     const firstPanel = document.querySelector("#admin-panel .nav-item:not(.hidden)");
     const defaultTarget = firstPanel ? firstPanel.dataset.target : "manage-card";
     switchPanel(defaultTarget);
-    // 需求：后台点开默认进入全屏智能打标——当默认面板为图片管理时，自动打开智能打标并切换全屏
+    // 需求：后台点开默认进入图片管理——默认打开智能打标（小屏模式），需要全屏时用户手动点「全屏」，Esc 可退出
     if (defaultTarget === "manage-card" && typeof openSmartModal === "function") {
       openSmartModal();
-      if (typeof toggleSmartFullscreen === "function") toggleSmartFullscreen();
     }
   }
 

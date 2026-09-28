@@ -1315,9 +1315,16 @@ async removeTrendRecord(id) {
     },
     // 超管：读取所有注册用户清单（权限管理页，含访客，超管可设置任意用户角色）
     async listAdminUsers() {
-      const { data, error } = await client.from("profiles").select("user_id, email, role, manage_zones, frontend_zones, user_tag, user_note").order("created_at", { ascending: true });
-      if (error) throw new Error(error.message || "读取用户失败");
-      return data || [];
+      // 优先完整读取（含 frontend_zones）；若数据库尚未重跑 setup.sql（缺 frontend_zones 列）则降级重查，避免整张用户列表被清空
+      let res = await client.from("profiles").select("user_id, email, role, manage_zones, frontend_zones, user_tag, user_note").order("created_at", { ascending: true });
+      if (res.error && /frontend_zones/i.test(res.error.message || "")) {
+        res = await client.from("profiles").select("user_id, email, role, manage_zones, user_tag, user_note").order("created_at", { ascending: true });
+      }
+      if (res.error) throw new Error(res.error.message || "读取用户失败");
+      const rows = res.data || [];
+      // 缺失 frontend_zones 时补空数组，避免前端渲染出错
+      rows.forEach(r => { if (!Array.isArray(r.frontend_zones)) r.frontend_zones = []; });
+      return rows;
     },
     // 超管：读取每个用户最近一次登录的设备与 IP（安全设置，后台权限分配表展示）
     async lastLoginLogs() {

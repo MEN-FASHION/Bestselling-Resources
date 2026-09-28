@@ -772,6 +772,7 @@ select.input {
 .smart-head-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .smart-head-actions { display: flex; align-items: center; gap: 8px; }
 .smart-head-actions .smart-url-btn { background: var(--gold); border-color: var(--gold); color: #fff; font-weight: 600; position: relative; z-index: 20; cursor: pointer; }
+.smart-head-actions .smart-esc-hint { font-size: 12px; color: var(--muted, #8a8a8a); border: 1px dashed var(--line, #ddd); border-radius: 4px; padding: 2px 8px; white-space: nowrap; }
 .smart-head-actions .smart-url-btn:hover { background: var(--gold2); border-color: var(--gold2); color: #fff; }
 .smart-modal-box > *:not(.smart-pools) { flex: 0 0 auto; }
 .smart-dims { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; flex: 0 0 auto; }
