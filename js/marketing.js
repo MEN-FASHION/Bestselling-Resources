@@ -29,6 +29,7 @@
     if (m) return (+m[2]) + "月" + (+m[3]) + "日";
     return s;
   }
+  Common.setToast(function (m, ok) { return toast(m, ok); }); // 接入公共模块
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
     if (!t) return;
@@ -89,27 +90,7 @@
     if (h) { h.textContent = msg; h.classList.remove("hidden"); }
   }
   // 注册后若开启邮箱确认：展示醒目的确认引导面板，隐藏登录表单，支持重新发送确认邮件
-  function showAuthConfirm(email) {
-    const form = $("#login-form");
-    const panel = $("#auth-confirm");
-    if (!panel) return;
-    if (form) form.style.display = "none";
-    const em = document.getElementById("auth-confirm-email"); if (em) em.textContent = email;
-    panel.classList.remove("hidden");
-    const resend = document.getElementById("auth-resend");
-    if (resend) {
-      resend.onclick = async () => {
-        resend.disabled = true;
-        const oldText = resend.textContent;
-        resend.textContent = "发送中…";
-        const { error } = await SB.resendConfirm(email);
-        if (error) toast("发送失败：" + error.message, false);
-        else toast("确认邮件已重新发送，请查收", true);
-        resend.disabled = false;
-        resend.textContent = oldText;
-      };
-    }
-  }
+
   function hideAuthHint() {
     const h = $("#auth-hint");
     if (h) h.classList.add("hidden");
@@ -205,7 +186,7 @@
           showMain();
         } else {
           toast("注册成功！请到邮箱完成确认", true);
-          showAuthConfirm(email);
+          Common.authConfirm.show(email);
           authMode = "login";
           applyAuthMode();
         }

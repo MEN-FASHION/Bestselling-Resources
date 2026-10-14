@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>趋势上升榜 · TREND BANK</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css?v=20261014E">
+<style>
+  body { background: var(--bg); }
+  .rk-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 22px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 40; }
+  .rk-top h1 { margin: 0; font-size: 18px; letter-spacing: .04em; color: var(--ink); }
+  .rk-top .rk-top-sub { font-size: 12px; color: var(--sub); }
+  .rk-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rk-nav a { font-size: 13px; color: var(--ink); text-decoration: none; padding: 6px 12px; border-radius: 999px; }
+  .rk-nav a:hover { background: var(--bg); }
+  .rk-nav a.active { background: var(--brown); color: #fff; }
+  .rk-wrap { padding: 20px 22px 60px; max-width: 1500px; margin: 0 auto; }
+  .rk-mode { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 14px; background: #fff; }
+  .rk-mode button { border: 0; background: transparent; padding: 8px 18px; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .rk-mode button.on { background: var(--brown); color: #fff; }
+  .rk-loading { padding: 40px; text-align: center; color: var(--sub); }
+  @media (max-width: 820px) {
+    .rk-layout { flex-direction: column; }
+    .rk-side { position: static; width: 100%; flex: none; }
+    .rk-cat-list { flex-direction: row; overflow-x: auto; }
+    .rk-cat { white-space: nowrap; }
+    .rk-cards { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+
+<header class="rk-top">
+  <div>
+    <h1>趋势上升榜</h1>
+    <div class="rk-top-sub">站内环比趋势对比 · 国家 / 周次 / 标签多维筛选</div>
+  </div>
+  <nav class="rk-nav">
+    <a href="index.html">视觉专区</a>
+    <a href="trends.html">趋势专区</a>
+    <a href="marketing.html">营销日历</a>
+    <a href="rank.html" class="active">趋势上升榜</a>
+  </nav>
+</header>
+
+<div class="rk-wrap">
+  <div class="rk-mode">
+    <button type="button" id="rk-mode-h" class="on">横向 · 国家对比</button>
+    <button type="button" id="rk-mode-v">纵向 · 时间对比</button>
+  </div>
+
+  <div class="rk-layout">
+    <aside class="rk-side">
+      <h4>类目</h4>
+      <div class="rk-cat-list" id="rk-cats"><div class="hint">加载中…</div></div>
+    </aside>
+
+    <main class="rk-main">
+      <div class="rk-head" id="rk-head"></div>
+      <div id="rk-body"><div class="rk-loading">加载中…</div></div>
+    </main>
+  </div>
+</div>
+
+<script src="vendor/supabase.js?v=20261014E"></script>
+<script src="js/config.js?v=20261014E"></script>
+<script src="js/supabase.js?v=20261014E"></script>
+<script src="js/rank.js?v=20261014E"></script>
+</body>
+</html>

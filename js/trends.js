@@ -47,6 +47,7 @@
     return s;
   }
 
+  Common.setToast(function (m, ok) { return toast(m, ok); }); // 接入公共模块
   function toast(msg, ok = true) {
     const t = document.getElementById("toast");
     if (!t) return;
@@ -68,7 +69,7 @@
     $("#site-title").textContent = CONFIG.siteTitle || "TREND BANK";
     document.title = (CONFIG.siteTitle || "TREND BANK") + " · 趋势专区";
     if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
     }
 
     // 趋势专区始终需登录 —— 监听登录态
@@ -145,7 +146,7 @@
       });
     });
 
-    setupAntiDownload();
+    Common.setupAntiDownload(); // 防下载（统一实现）
     // 立即判断当前是否已登录
     SB.getSession().then(s => { window.__loggedIn = !!s; refreshUI(); }).catch(() => refreshUI());
 
@@ -166,257 +167,20 @@
       });
     });
 
-    $("#notice-tab").addEventListener("click", function (e) {
-      e.preventDefault();
-      noticeTabActive = noticeUnreadList.length === 0 ? "history" : "unread";
-      openNoticeModal();
-    });
-    $("#notice-close").addEventListener("click", closeNoticeModal);
-    $("#notice-modal").addEventListener("click", (e) => {
-      if (e.target && e.target.id === "notice-modal") closeNoticeModal();
-    });
-    const readerClose = document.getElementById("notice-reader-close");
-    if (readerClose) readerClose.addEventListener("click", closeNoticeReader);
-    const readerWrap = document.getElementById("notice-reader");
-    if (readerWrap) readerWrap.addEventListener("click", (e) => {
-      if (e.target && e.target.id === "notice-reader") closeNoticeReader();
-    });
-    document.querySelectorAll(".notice-tab-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        noticeTabActive = btn.getAttribute("data-ntab") || "unread";
-        renderNoticeBody();
-      });
-    });
+    // ===== 公告弹窗事件（统一由 common.js 绑定） =====
+    Common.notices.configure({ autoShowNeedsLogin: true, timeStyle: "full" });
+    Common.notices.bind();
     onAuthRefreshNotices();
   });
 
-  // ================= 公告：近一个月未读 + 历史记录（弹窗） =================
-  let noticeAutoShown = false;
-  let noticeUnreadList = [];
-  let noticeHistoryList = [];
-  let noticeTabActive = "unread";
-
+  // 登录态变化后刷新公告角标/弹窗（逻辑在 common.js）
   async function onAuthRefreshNotices() {
-    loadNotices();
-    SB.onAuth(() => loadNotices());
-  }
-  async function loadNotices() {
-    try {
-      const all = await SB.listRecentPublishedAnnouncements().catch(() => []);
-      const readIds = await SB.listMyReadAnnouncementIds().catch(() => []);
-      const readSet = new Set(readIds || []);
-      noticeUnreadList = (all || []).filter(a => !readSet.has(String(a.id)));
-      updateNoticeBadge();
-      if (!noticeAutoShown && window.__loggedIn && noticeUnreadList.length > 0) {
-        noticeAutoShown = true;
-        noticeTabActive = "unread";
-        openNoticeModal();
-      }
-    } catch (e) {}
-  }
-  function updateNoticeBadge() {
-    const badge = $("#notice-badge");
-    if (badge) {
-      const n = noticeUnreadList.length;
-      badge.textContent = String(n);
-      badge.classList.toggle("hidden", n === 0);
-    }
-  }
-  async function loadHistory() {
-    if (noticeHistoryList.length) return;
-    try { noticeHistoryList = await SB.listAllPublishedAnnouncements().catch(() => []); } catch (e) { noticeHistoryList = []; }
-  }
-  async function openNoticeModal() {
-    const modal = $("#notice-modal");
-    if (!modal) return;
-    modal.classList.remove("hidden");
-    await renderNoticeBody();
-  }
-  function closeNoticeModal() {
-    const modal = $("#notice-modal");
-    if (modal) modal.classList.add("hidden");
-  }
-  async function renderNoticeBody() {
-    const body = $("#notice-modal-body");
-    if (!body) return;
-    document.querySelectorAll(".notice-tab-btn").forEach(b => {
-      b.classList.toggle("active", b.getAttribute("data-ntab") === noticeTabActive);
-    });
-    if (noticeTabActive === "unread") {
-      if (!noticeUnreadList.length) { body.innerHTML = "<div class='notice-empty'>暂无未读公告</div>"; return; }
-      body.innerHTML = "";
-      noticeUnreadList.forEach(a => body.appendChild(buildNoticeCard(a, true)));
-      return;
-    }
-    await loadHistory();
-    if (!noticeHistoryList.length) { body.innerHTML = "<div class='notice-empty'>暂无历史公告</div>"; return; }
-    body.innerHTML = "";
-    noticeHistoryList.forEach(a => {
-      const isUnread = noticeUnreadList.some(u => u && String(u.id) === String(a.id));
-      body.appendChild(buildNoticeCard(a, isUnread));
-    });
-  }
-  function buildNoticeCard(a, isUnread) {
-    const card = document.createElement("div");
-    card.className = "notice-card" + (isUnread ? " unread" : "");
-    const head = document.createElement("button");
-    head.type = "button";
-    head.className = "notice-card-head";
-    head.innerHTML = "<span class='notice-dot'></span><span class='notice-card-title'></span><span class='notice-card-time'></span><span class='notice-card-arrow'>↗</span>";
-    head.querySelector(".notice-card-title").textContent = a.title || "公告";
-    head.querySelector(".notice-card-time").textContent = fmtTime(a.created_at);
-    head.onclick = async () => {
-      openNoticeReader(a);
-      if (isUnread) {
-        card.classList.remove("unread");
-        try {
-          await SB.markAnnouncementRead(a.id);
-          noticeUnreadList = noticeUnreadList.filter(u => !u || String(u.id) !== String(a.id));
-          updateNoticeBadge();
-        } catch (e) {}
-      }
-    };
-    card.appendChild(head);
-    return card;
-  }
-
-  function openNoticeReader(a) {
-    const wrap = document.getElementById("notice-reader");
-    if (!wrap) return;
-    const titleEl = document.getElementById("notice-reader-title");
-    const metaEl = document.getElementById("notice-reader-meta");
-    const bodyEl = document.getElementById("notice-reader-body");
-    if (titleEl) titleEl.textContent = a.title || "公告";
-    if (metaEl) metaEl.textContent = "发布于 " + fmtTime(a.created_at);
-    if (bodyEl) {
-      bodyEl.innerHTML = "";
-      const raw = (a.content || "");
-      const txt = document.createElement("div");
-      txt.className = "notice-rich";
-      if (/^<(p|h\d|div|ul|ol|blockquote|img|table|span|strong|em|u|s|b|br)/i.test(raw.trim())) {
-        const tmp = document.createElement("div");
-        tmp.innerHTML = raw;
-        tmp.querySelectorAll("img").forEach(im => {
-          const s = im.getAttribute("src") || "";
-          if (s && s.indexOf("http") !== 0) im.src = SB.noticeImageUrl(s);
-          im.loading = "lazy";
-        });
-        txt.appendChild(tmp);
-      } else {
-        txt.textContent = raw;
-      }
-      bodyEl.appendChild(txt);
-      const imgs = a.images || [];
-      if (imgs.length) {
-        const fig = document.createElement("div");
-        fig.className = "notice-card-imgs reader-imgs";
-        imgs.forEach(p => {
-          const im = document.createElement("img");
-          im.alt = "";
-          im.src = SB.noticeImageUrl(p);
-          im.loading = "lazy";
-          fig.appendChild(im);
-        });
-        bodyEl.appendChild(fig);
-      }
-    }
-    wrap.classList.remove("hidden");
-  }
-
-  function closeNoticeReader() {
-    const wrap = document.getElementById("notice-reader");
-    if (wrap) wrap.classList.add("hidden");
-  }
-  function fmtTime(iso) {
-    if (!iso) return "";
-    try {
-      const d = new Date(iso);
-      const p = n => String(n).padStart(2, "0");
-      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
-    } catch (e) { return ""; }
+    Common.notices.load();
+    SB.onAuth(() => Common.notices.load());
   }
 
   // 前台图片"观看无印、下载带水印"：把图片绘制到 canvas 并叠加品牌水印后下载。
   // 页面展示仍用原图（无水印），仅当用户触发下载（右键等）时生成带水印版。
-  function downloadWatermarked(src, filename) {
-    if (!src) return;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        const w = img.naturalWidth, h = img.naturalHeight;
-        if (!w || !h) return;
-        const c = document.createElement("canvas");
-        c.width = w; c.height = h;
-        const ctx = c.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        // 低调水印：顶部来源标注 + 右下角站名，均横向、半透明、不铺满
-        const fsTop = Math.max(14, Math.round(Math.min(w, h) * 0.032));
-        const fsCorner = Math.max(12, Math.round(Math.min(w, h) * 0.024));
-        // 顶部居中横幅：图片来源网络 · 仅供参考学习
-        ctx.font = "500 " + fsTop + "px sans-serif";
-        ctx.textAlign = "center"; ctx.textBaseline = "top";
-        ctx.fillStyle = "rgba(255,255,255,0.38)";
-        ctx.strokeStyle = "rgba(0,0,0,0.12)";
-        ctx.lineWidth = 1;
-        const topTxt = "图片来源网络 · 仅供参考学习";
-        const topY = Math.max(8, Math.round(h * 0.02));
-        ctx.strokeText(topTxt, w / 2, topY);
-        ctx.fillText(topTxt, w / 2, topY);
-        // 底部居中横幅：newtrend.top
-        ctx.font = "500 " + fsCorner + "px sans-serif";
-        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-        ctx.fillStyle = "rgba(255,255,255,0.38)";
-        ctx.strokeStyle = "rgba(0,0,0,0.12)";
-        ctx.lineWidth = 1;
-        const cornerTxt = "newtrend.top";
-        const cx = w / 2;
-        const cy = h - Math.max(12, Math.round(h * 0.035));
-        ctx.strokeText(cornerTxt, cx, cy);
-        ctx.fillText(cornerTxt, cx, cy);
-        c.toBlob((blob) => {
-          if (!blob) return;
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = (filename.replace(/[\\/:*?"<>|]/g, "_") || "image") + ".png";
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 600);
-        }, "image/png");
-      } catch (err) { /* 水印失败则静默 */ }
-    };
-    img.onerror = () => {};
-    img.src = src; // 保留完整 src（含鉴权 token 或 blob: 地址）
-  }
-
-  function setupAntiDownload() {
-    document.addEventListener("contextmenu", (e) => {
-      if (e.target.tagName === "IMG") {
-        e.preventDefault();
-        // 右键图片：屏蔽系统"另存为"，改为下载带水印版
-        downloadWatermarked(e.target.currentSrc || e.target.src, e.target.alt || "image");
-      } else if (["CANVAS", "IFRAME"].includes(e.target.tagName)) {
-        e.preventDefault();
-      }
-    });
-    document.addEventListener("dragstart", (e) => {
-      if (["IMG", "CANVAS", "IFRAME"].includes(e.target.tagName)) e.preventDefault();
-    });
-    let lp = null;
-    document.addEventListener("touchstart", (e) => {
-      if (["IMG", "CANVAS"].includes(e.target.tagName)) lp = setTimeout(() => e.preventDefault(), 400);
-    }, { passive: false });
-    document.addEventListener("touchend", () => clearTimeout(lp));
-    document.addEventListener("touchmove", () => clearTimeout(lp));
-    document.addEventListener("selectstart", (e) => {
-      if (["IMG", "CANVAS"].includes(e.target.tagName)) e.preventDefault();
-    });
-    document.addEventListener("keydown", (e) => {
-      const k = (e.key || "").toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && ["s", "p", "u"].includes(k)) e.preventDefault();
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "s") e.preventDefault();
-    });
-  }
 
   function hideSplash() {
     const s = document.getElementById("boot-splash");
@@ -442,27 +206,7 @@
     if (h) { h.textContent = msg; h.classList.remove("hidden"); }
   }
   // 注册后若开启邮箱确认：展示醒目的确认引导面板，隐藏登录表单，支持重新发送确认邮件
-  function showAuthConfirm(email) {
-    const form = $("#login-form");
-    const panel = $("#auth-confirm");
-    if (!panel) return;
-    if (form) form.style.display = "none";
-    const em = document.getElementById("auth-confirm-email"); if (em) em.textContent = email;
-    panel.classList.remove("hidden");
-    const resend = document.getElementById("auth-resend");
-    if (resend) {
-      resend.onclick = async () => {
-        resend.disabled = true;
-        const oldText = resend.textContent;
-        resend.textContent = "发送中…";
-        const { error } = await SB.resendConfirm(email);
-        if (error) toast("发送失败：" + error.message, false);
-        else toast("确认邮件已重新发送，请查收", true);
-        resend.disabled = false;
-        resend.textContent = oldText;
-      };
-    }
-  }
+
   function hideAuthHint() {
     const h = $("#auth-hint");
     if (h) h.classList.add("hidden");
@@ -613,7 +357,7 @@
         } else {
           // 后台开启了邮箱确认（Confirm email）→ 需点邮件链接激活
           toast("注册成功！请到邮箱完成确认", true);
-          showAuthConfirm(email);
+          Common.authConfirm.show(email);
           authMode = "login";
           applyAuthMode();
         }

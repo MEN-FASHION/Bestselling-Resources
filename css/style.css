@@ -1478,6 +1478,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .smart-row-sel { flex: 0 0 auto; align-self: center; margin-left: auto; padding: 6px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.03); color: var(--sub); cursor: pointer; white-space: nowrap; writing-mode: vertical-rl; letter-spacing: 2px; line-height: 1; transition: border-color .15s, background .15s, color .15s; }
 .smart-row-sel:hover { border-color: var(--gold); color: var(--gold); background: rgba(139,115,85,.06); }
 
+.smart-more { grid-column: 1 / -1; justify-self: center; margin: 4px auto 2px; padding: 7px 18px; font-size: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.04); color: var(--sub); cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.smart-more:hover { border-color: var(--gold); color: var(--gold); background: rgba(139,115,85,.08); }
+
 /* 全选本池去标按钮（左池） */
 #smart-pool-done .smart-pool-head { display: flex; align-items: center; }
 #smart-pool-done .smart-pool-head .sp-count { margin-right: auto; }
@@ -2095,3 +2098,60 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .auth-confirm-tip b{ color:#8a6d1e; }
 .auth-confirm-actions{ margin-top:12px; text-align:center; }
 .auth-confirm-actions .btn-ghost{ width:100%; }
+
+
+/* ================= 后台 · 站内趋势上升榜 & 前台趋势上升榜专区 ================= */
+.rank-block { margin: 18px 0; padding: 16px 18px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.rank-block h4 { margin: 0 0 10px; font-size: 15px; color: var(--brown); }
+.rank-block-sub { margin: 12px 0; padding: 10px 12px; background: var(--bg); border-radius: 10px; }
+.rank-sub-title { display: block; font-size: 12px; color: var(--sub); margin-bottom: 8px; }
+.rank-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 18px; margin-bottom: 12px; }
+.rank-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--sub); }
+.rank-field input[type="text"], .rank-field select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 13px; }
+.rank-radios { display: flex; gap: 12px; }
+.rank-site-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rank-site-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
+.rank-site-del { border: 0; background: transparent; color: var(--sub); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.rank-site-del:hover { color: #c0392b; }
+.rank-site-defaults { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.rank-file-tip { margin-top: 8px; font-size: 13px; color: var(--sub); }
+.rank-preview { margin-top: 10px; }
+.rank-kv { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 0; font-size: 13px; color: var(--sub); }
+.rank-kv b { color: var(--ink); }
+.rank-warn { color: #c0392b; }
+.rank-batch-list { display: flex; flex-direction: column; gap: 8px; }
+.rank-batch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; background: var(--bg); border-radius: 9px; font-size: 13px; }
+.rank-batch-main { color: var(--ink); }
+.rank-batch-del { flex: none; }
+
+/* 前台趋势上升榜专区 */
+.rk-layout { display: flex; gap: 18px; align-items: flex-start; }
+.rk-side { flex: 0 0 168px; position: sticky; top: 78px; }
+.rk-side h4 { margin: 0 0 10px; font-size: 13px; color: var(--sub); letter-spacing: .06em; }
+.rk-cat-list { display: flex; flex-direction: column; gap: 4px; }
+.rk-cat { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.rk-cat:hover { background: var(--bg); }
+.rk-cat.active { background: var(--brown); color: #fff; }
+.rk-main { flex: 1; min-width: 0; }
+.rk-head { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; }
+.rk-group { display: flex; flex-direction: column; gap: 6px; }
+.rk-group > span.rk-label { font-size: 12px; color: var(--sub); }
+.rk-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.rk-chip { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; cursor: pointer; color: var(--ink); }
+.rk-chip.on { background: var(--brown); color: #fff; border-color: var(--brown); }
+.rk-stack { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.rk-col { border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px; }
+.rk-col-head { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 8px; display: flex; flex-direction: column; gap: 2px; }
+.rk-col-head .rk-tag { font-size: 11px; font-weight: 400; color: var(--brown); }
+.rk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.rk-card { position: relative; border-radius: 9px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.rk-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; }
+.rk-card .rk-badge { position: absolute; top: 4px; left: 4px; padding: 2px 6px; border-radius: 6px; font-size: 10px; color: #fff; background: rgba(0,0,0,.6); }
+.rk-card .rk-move { position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 5px; font-size: 10px; text-align: center; color: #fff; background: rgba(0,0,0,.55); }
+.rk-card.is-new { outline: 2px solid var(--brown); outline-offset: -2px; }
+.rk-empty { padding: 22px; text-align: center; color: var(--sub); font-size: 13px; }
+/* 标签色 */
+.rk-badge.flag-opportunity { background: rgba(139,115,85,.92); }
+.rk-badge.flag-hot { background: rgba(192,57,43,.92); }
+.rk-badge.flag-surge { background: rgba(212,150,60,.95); }

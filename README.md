@@ -1,6 +1,6 @@
 # TREND BANK（前台浏览 + 后台传图 · 真私密版）
 
-一个部署在 **GitHub Pages** 的图片站：
+一个部署在 **Cloudflare Pages** 的图片站（主域名 `newtrend.top`；图片服务走子域 `img.newtrend.top`）：
 
 - **前台**（`index.html`）：用户用 **邮箱+密码** 登录后，按分类浏览图片（缩略图懒加载、点击看大图）。近期新增 **趋势专区入口**（`trends.html`）。
 - **后台**（`admin.html`）：**管理员**登录后，可 **网页拖拽上传/删除图片**，并管理 **趋势专区** 文件。
@@ -13,7 +13,7 @@
 ## 一、架构说明
 
 ```
-GitHub Pages（静态页面）
+Cloudflare Pages（静态页面，连 GitHub 仓库自动部署）
    ├── 前台 index.html ──┐
    └── 后台 admin.html ──┤
                         ├──► Supabase（只做登录验证 + 图片清单）
@@ -41,7 +41,8 @@ GitHub Pages（静态页面）
 ### 第 2 步：执行数据库初始化
 1. 项目 → **SQL Editor** → New query。
 2. 打开 `tools/setup.sql`，全选复制运行。
-3. 自动创建：`profiles` 表（角色/用户标签 user_tag/用户备注 user_note）、`images` 表（清单）、`categories`/`tag_defs`/`site_settings`/`announcements`/`trends`/`recruit_tasks`、`login_logs`（登录设备/IP 记录）等表、安全策略、注册自动建档，以及前台函数 `frontend_list_images`（前台读全部图片）、`frontend_list_used_cats`（前台类目菜单读全部图片类目）、`record_login`（登录记录写入）、`get_last_login_logs`（超管读取最近登录记录）。
+3. 再打开 `tools/setup_ranking.sql`，全选复制运行（**趋势上升榜专区必做**）：创建 `rank_sites`（国家站点）、`rank_batches`（上传批次）、`rank_items`（榜单条目，含首图/叶子类目/环比比例/环比绝对值与三档标签）三张表、策略与前台函数 `rank_facets`。
+4. 自动创建：`profiles` 表（角色/用户标签 user_tag/用户备注 user_note）、`images` 表（清单）、`categories`/`tag_defs`/`site_settings`/`announcements`/`trends`/`recruit_tasks`、`login_logs`（登录设备/IP 记录）等表、安全策略、注册自动建档，以及前台函数 `frontend_list_images`（前台读全部图片）、`frontend_list_used_cats`（前台类目菜单读全部图片类目）、`record_login`（登录记录写入）、`get_last_login_logs`（超管读取最近登录记录）。
 
 ### 第 3 步：开启邮箱登录
 - 项目 → **Authentication → Providers → Email** 开启，建议关闭 Confirm email。
@@ -78,9 +79,13 @@ GitHub Pages（静态页面）
 
 > **服务端分页依赖**：前台视觉专区与后台图片管理的「服务端分页 + 无限滚动」依赖三个数据库函数：`frontend_list_images_page`（前台分页取图）、`frontend_count_images`（前台图片总数）、`frontend_tag_stats`（前台标签/类目计数聚合）。请**先在 Supabase SQL Editor 执行 `tools/setup.sql` 中的这一新增段落**（在 `frontend_list_used_cats` 授权之后），创建以上函数后再部署前端，否则前台与后台默认「全部」视图无法分页加载。数据库函数属安全定义者（security definer），仅前台前端调用，向后兼容（未建函数时不影响已有全量读取路径）。
 
-### 第 7 步：部署到 GitHub Pages
-1. 把 `gallery-site` 目录所有文件推送到 GitHub 仓库。
-2. 仓库 → **Settings → Pages** → Deploy from a branch，分支 `main`，目录 `/ (root)`。
+5. **本版新增**：Worker 内已增加趋势上升榜专区的上传/删除校验，若你此前已部署过 Worker，请把新版 `worker/worker.js` 重新粘贴并 **Deploy** 一次（否则后台榜单传图会被挡）。
+
+### 第 7 步：部署（Cloudflare Pages）
+1. 用 Git 客户端（如 GitDesk）把改动推送到 GitHub 仓库的 `main` 分支。
+2. Cloudflare Pages 项目已连接该仓库，**推送后自动构建并上线**（纯静态站：Build command 留空，输出目录留空/根目录）。
+3. 站点域名：主站 `newtrend.top`；图片服务子域 `img.newtrend.top`（Worker 自定义域，需在 Cloudflare 后台绑定）。
+4. 若改动了 `js/config.js` 中的 Worker 地址，请同步检查前端 `js/config.js` 与 Worker 环境变量两边一致。
 
 ---
 
@@ -161,19 +166,44 @@ GitHub Pages（静态页面）
 ## 五、文件清单
 ```
 gallery-site/
+├── rank.html            前台 · 趋势上升榜专区（横向国家对比 / 纵向时间对比）
 ├── index.html           前台 · 视觉专区（登录 + 画廊 + 趋势入口）
 ├── trends.html          前台 · 趋势专区（三标签筛选 + PDF 受控预览）
 ├── admin.html           后台（登录 + 上传/管理 + 趋势专区管理）
 ├── css/style.css        样式
+├── vendor/              第三方库（本地化，不再依赖外部 CDN，离线/受限网络也可用）
+│   ├── supabase.js      supabase-js（登录鉴权）
+│   ├── quill.js / quill.snow.css   后台公告富文本编辑器
+│   ├── xlsx.full.min.js 后台 Excel 导入/导出
+│   ├── qrcode.min.js    二维码（分享/入驻码）
+│   ├── pdf.min.js / pdf.worker.min.js  趋势 PDF 预览
 ├── js/
 │   ├── config.js        ★ 配置（Supabase URL/anon key + Worker 地址 + 标签/类别清单）
 │   ├── supabase.js      登录 + 清单 + Worker 通道封装 + 趋势通道封装
+│   ├── common.js        公共模块（公告弹窗/水印下载/防下载/提示条/登录确认，前台与趋势专区共用）
 │   ├── frontend.js      前台视觉专区逻辑
 │   ├── trends.js        前台趋势专区逻辑
-│   └── admin.js         后台逻辑（含趋势专区管理）
+│   ├── marketing.js     前台营销日历逻辑
+│   └── admin*.js        后台逻辑（按面板拆分，**引入顺序不可调整**）：
+│       ├── admin.js             核心（权限守卫/菜单/预览/登录 与公共工具）
+│       ├── admin-images.js      图片管理、上传、类目、标签、数据看板
+│       ├── admin-smart.js       智能打标
+│       ├── admin-trend.js       趋势专区管理
+│       ├── admin-notice.js      公告管理
+│       ├── admin-marketing.js   营销日历编辑
+│       ├── admin-tasks.js       招品回品 + 导出 + 专区类目设置
+│       ├── admin-bestseller.js  BESTSELLER 专区
+│       ├── admin-perm.js        权限管理（超管）
+│       └── admin-pool.js        存量图片压缩池（超管）
 ├── worker/worker.js     Cloudflare Worker 源码（部署到 Cloudflare，含趋势端点）
 └── tools/setup.sql      Supabase 数据库初始化（含 trends 表）
 ```
+
+## 依赖本地化（本版新增）
+
+第三方库已从公网 CDN（jsdelivr）改为**仓库内 `vendor/` 本地引用**，页面不再依赖任何外部域名：
+- 受限网络/离线环境下后台不再因 CDN 不可达而整体失效（登录、富文本、Excel、二维码、PDF 预览全部本地可用）。
+- 升级方式：替换 `vendor/` 下对应文件即可；各 HTML 中以 `?v=` 版本号控制浏览器缓存，改动后同步升级版本号。
 
 ## 内容防爬 / 防复制（本版新增）
 
@@ -182,6 +212,31 @@ gallery-site/
   - 右下角：`newtrend.top`
   - 覆盖视觉专区（js/frontend.js）与趋势专区（js/trends.js）；拖拽、Ctrl+S、长按仍禁用。
 - **图片表匿名读收紧**：已移除 `images` 表的匿名读取策略（原 `anon read images`），未登录用户不再能读取图片清单/元数据，需登录后经登录态策略读取。可用脚本 `restrict_images_anon.sql` 在 Supabase SQL Editor 一键执行（旧库也适用）。
-- **图片读取限流 + 审计**：图片服务按来源 IP 做窗口限流（每 IP 每分钟 120 次，超限返回 429 并打印审计日志），用于防脚本化批量拉取，正常用户零影响。
+- **图片读取限流 + 审计**：图片服务按来源 IP 做滑动窗口限流（**每 IP 每分钟 2000 次**，见 `worker/worker.js` 的 `WLIM`，可按需调整），超限返回 429 并打印审计日志，用于防脚本化批量拉取，正常用户零影响。
 
 > **部署**：覆盖仓库 `js/frontend.js`、`js/trends.js`、`worker/worker.js` 并重新部署图片服务；执行 `restrict_images_anon.sql`（或重跑 `tools/setup.sql`，均为幂等）；前台强刷。
+
+## 六、趋势上升榜专区（本版新增）
+
+一条「站内趋势上升榜单」链路：后台按 Excel 导入 → 前台按类目做国家横向对比 / 周次纵向对比。
+
+### 6.1 后台：站内趋势上升榜单
+- Excel 表头（5 列，顺序可任意，多余列忽略）：`叶子类目名称` / `销量站点` / `首图url` / `环比绝对值` / `环比比例`。
+- 导入前选择：**周期（周度/月度）**、**期次**（如 W41 / 2026-09）、**类目**（取自「标签管理 → 前台类目」，可「自定义添加」）、**默认站点**（表格里「销量站点」为空时按默认站点展开成多行）。
+- **国家站点可自定义添加**，添加一次后续复用。
+- 自动打标签（同一周期 + 类目 + 站点内计算）：
+  - `潜力机会`：环比比例 > 0；
+  - `趋势爆款`：环比绝对值上升值排前 20 名；
+  - `周度激增`：环比比例与环比绝对值**双重上升**且位于前 20%。
+- 后台列表展示三档标签、按比例/销量排序、支持按类目筛、可删除单张或清空某类目某期。
+
+### 6.2 前台：趋势上升榜
+进入 `rank.html`（顶部导航亦有入口），按类目浏览，两种对比模式：
+- **横向国家对比**：选定一个期次，多选国家 → 各国家一列并排；列头显示该国家与其余所选国家的**重合张数 / 重合度**。
+- **纵向时间对比**：选定一个国家，多选期次 → 各期并排；相同图片标注 **新上榜 / 上升 N 位 / 下降 N 位**。
+- 附加筛选：`全部 / 周度激增 / 趋势爆款 / 潜力机会`（横向可多选、纵向单选）。
+- **页面上不出现任何环比具体数值**：一律以「500以上 / 中文数量级（万·百万·十亿）」等笼统表述呈现。
+
+### 6.3 权限
+- 权限管理 → 编辑弹窗中，前台可见专区与后台管理专区均新增了 **「趋势上升榜」**；给管理员勾选后即可进入对应端。
+- 后台榜单面板同样受「专区 + 类目」双校验（复用 `zone_permissions` 的 rank 专区）。

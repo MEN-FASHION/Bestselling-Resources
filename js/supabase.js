@@ -1426,5 +1426,100 @@ async removeTrendRecord(id) {
       const { error } = await client.from("zone_permissions").insert(rows);
       if (error) throw new Error(error.message || "更新权限失败");
     },
+
+    // ============ 趋势上升榜（rank_sites / rank_batches / rank_items） ============
+    // 前台筛选三份清单：国家站点 / 周次 / 类目（服务端聚合，避免拉全表明细）
+    async rankFacets() {
+      const { data, error } = await client.rpc("rank_facets");
+      if (error) throw new Error(error.message || "读取筛选清单失败");
+      const o = (Array.isArray(data) ? data[0] : data) || {};
+      return { sites: o.sites || [], periods: o.periods || [], categories: o.categories || [] };
+    },
+    // 国家站点清单（后台自定义维护）
+    async listRankSites() {
+      const { data, error } = await client.from("rank_sites").select("id, name, sort_order").order("sort_order").order("name");
+      if (error) throw new Error(error.message || "读取站点失败");
+      return data || [];
+    },
+    async addRankSite(name) {
+      const n = (name || "").trim();
+      if (!n) throw new Error("站点名不能为空");
+      const { error } = await client.from("rank_sites").insert({ name: n });
+      if (error) {
+        if (error.code === "23505") throw new Error("该站点已存在");
+        throw new Error(error.message || "新增站点失败");
+      }
+    },
+    async removeRankSite(name) {
+      const { error } = await client.from("rank_sites").delete().eq("name", name);
+      if (error) throw new Error(error.message || "删除站点失败");
+    },
+    // 新建上传批次，返回批次 id
+    async createRankBatch(b) {
+      const payload = {
+        period_type: b.periodType || "week",
+        period_label: b.periodLabel || "",
+        category: b.category || "",
+        site: b.site || "",
+      };
+      const { data, error } = await client.from("rank_batches").insert(payload).select("id").single();
+      if (error) throw new Error(error.message || "创建上传批次失败");
+      return data && data.id;
+    },
+    // 批量写入榜单条目（重复的自动跳过：同一 类目+站点+期次+首图url 只留一条）
+    async insertRankItems(rows) {
+      const list = (rows || []).filter(Boolean);
+      if (!list.length) return { inserted: 0 };
+      let inserted = 0;
+      for (let i = 0; i < list.length; i += 300) {
+        const chunk = list.slice(i, i + 300);
+        const { data, error } = await client
+          .from("rank_items")
+          .upsert(chunk, { onConflict: "category,site,period_type,period_label,image_url", ignoreDuplicates: true })
+          .select("id");
+        if (error) throw new Error(error.message || "写入榜单数据失败");
+        inserted += (data || []).length;
+      }
+      return { inserted };
+    },
+    async updateRankBatch(id, patch) {
+      const { error } = await client.from("rank_batches").update(patch || {}).eq("id", id);
+      if (error) throw new Error(error.message || "更新批次失败");
+    },
+    // 批次列表（后台管理）
+    async listRankBatches() {
+      const { data, error } = await client.from("rank_batches")
+        .select("id, period_type, period_label, category, site, rows, skipped, created_at")
+        .order("created_at", { ascending: false }).limit(500);
+      if (error) throw new Error(error.message || "读取上传记录失败");
+      return data || [];
+    },
+    // 删除批次（其下条目级联删除）
+    async deleteRankBatch(id) {
+      const { error } = await client.from("rank_batches").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+    async deleteRankItemsByIds(ids) {
+      const list = (ids || []).filter(v => v != null);
+      if (!list.length) return;
+      for (let i = 0; i < list.length; i += 200) {
+        const { error } = await client.from("rank_items").delete().in("id", list.slice(i, i + 200));
+        if (error) throw new Error(error.message || "删除失败");
+      }
+    },
+    // 榜单条目查询（前台对比 / 后台核对）
+    // filter: { category, sites:[], periods:[], periodType }
+    async listRankItems(filter) {
+      const f = filter || {};
+      let q = client.from("rank_items").select("*");
+      if (f.category) q = q.eq("category", f.category);
+      else if (f.categories && f.categories.length) q = q.in("category", f.categories);
+      if (f.periodType) q = q.eq("period_type", f.periodType);
+      if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
+      if (f.sites && f.sites.length) q = q.in("site", f.sites);
+      const { data, error } = await q.limit(f.limit || 4000);
+      if (error) throw new Error(error.message || "读取榜单数据失败");
+      return data || [];
+    },
   };
 })();

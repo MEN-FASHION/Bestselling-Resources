@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20260923AN">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
+<link rel="stylesheet" href="css/style.css?v=20261014E">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261014E">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -131,6 +131,7 @@
           <a class="nav-item" data-target="trend-card">趋势专区</a>
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
+        <a class="nav-item" data-target="rank-card">趋势上升榜</a>
           <a class="nav-item" data-target="super-card" data-super="1">超管权限</a>
         </nav>
       </aside>
@@ -834,6 +835,60 @@
         </div>
       </div>
 
+      <div class="panel-card hidden" id="rank-card">
+        <h3>趋势上升榜 · 数据上传</h3>
+        <p class="hint">上传榜单 Excel（含「叶子类目名称 / 销量站点 / 首图url / 环比绝对值 / 环比比例」五列），系统自动打「潜力机会 / 趋势爆款 / 周度激增」标签，前台「趋势上升榜」专区可做国家与周次对比。</p>
+
+        <div class="rank-block">
+          <h4>① 国家站点</h4>
+          <p class="hint">自定义维护站点清单（前台对比与上传时从这里选）。</p>
+          <div class="rank-inline">
+            <input id="rank-site-new" type="text" placeholder="输入站点名，例如：美国" style="max-width:220px">
+            <button id="rank-site-add" class="btn-ghost" type="button">添加站点</button>
+          </div>
+          <div id="rank-site-list" class="rank-site-list"></div>
+        </div>
+
+        <div class="rank-block">
+          <h4>② 上传榜单表格</h4>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>标签周期</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="rank-period" value="week" checked> 周度</label>
+                <label class="chk"><input type="radio" name="rank-period" value="month"> 月度</label>
+              </span>
+            </label>
+            <label class="rank-field">
+              <span>周次 / 月份</span>
+              <input id="rank-period-label" type="text" placeholder="如 W41 或 2026-09">
+            </label>
+            <label class="rank-field">
+              <span>类目</span>
+              <span class="rank-inline">
+                <select id="rank-cat" style="min-width:160px"></select>
+                <button id="rank-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">默认国家站点（表格没有「销量站点」列时按此展开，可多选）</span>
+            <div id="rank-site-defaults" class="rank-site-defaults"></div>
+          </div>
+          <div class="rank-inline">
+            <input id="rank-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rank-import" class="btn-primary" type="button" disabled>导入榜单</button>
+          </div>
+          <div id="rank-file-tip" class="rank-file-tip"></div>
+          <div id="rank-preview" class="rank-preview"></div>
+        </div>
+
+        <div class="rank-block">
+          <h4>③ 已上传记录</h4>
+          <div id="rank-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
+        </div>
+      </div>
+
       <div class="panel-card hidden" id="dash-card">
         <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
@@ -1080,13 +1135,24 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/config.js?v=20260923AN"></script>
-  <script src="js/supabase.js?v=20260923AN"></script>
-  <script src="js/admin.js?v=20260923AN"></script>
+  <script src="vendor/supabase.js?v=20261014E"></script>
+  <script src="vendor/quill.js?v=20261014E"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261014E"></script>
+  <script src="vendor/qrcode.min.js?v=20261014E"></script>
+  <script src="js/config.js?v=20261014E"></script>
+  <script src="js/supabase.js?v=20261014E"></script>
+  <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
+  <script src="js/admin.js?v=20261014E"></script>
+  <script src="js/admin-images.js?v=20261014E"></script>
+  <script src="js/admin-smart.js?v=20261014E"></script>
+  <script src="js/admin-trend.js?v=20261014E"></script>
+  <script src="js/admin-notice.js?v=20261014E"></script>
+  <script src="js/admin-marketing.js?v=20261014E"></script>
+  <script src="js/admin-tasks.js?v=20261014E"></script>
+  <script src="js/admin-bestseller.js?v=20261014E"></script>
+  <script src="js/admin-perm.js?v=20261014E"></script>
+  <script src="js/admin-pool.js?v=20261014E"></script>
+  <script src="js/admin-rank.js?v=20261014E"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
