@@ -137,17 +137,23 @@
       applyZoneNav();
     }).catch(() => { zoneVis = {}; });
 
-    SB.onAuth((session) => {
-      window.__loggedIn = !!session;
-      window.__authReady = true;
-      // 登录态变化后刷新前端可见专区白名单（frontend_zones，独立于后端 manage_zones），重跑守卫
-      SB.myFrontendZones().then((z) => {
-        myZones = z;
-        refreshAuthUI();
-        applyZoneNav();
-      }).catch(() => { myZones = null; });
-      maybeBoot();
-    });
+    // 登录态变化（含登录/退出）：与启动时共用同一份处理逻辑
+    SB.onAuth((session) => applyAuthState(session));
+
+    // 【关键修复】启动时主动读一次登录态。
+    // 本地化后的登录库（vendor/supabase.js）不再自动推送"首次登录态"，
+    // 若只依赖上面的订阅，刷新页面后页面会把已登录用户误判为访客 →
+    // 表现为"登录成功后仍回到登录页、反复登录，过很久才进来"。这里显式读一次即可根治。
+    (async () => {
+      let session = null;
+      try { session = await SB.getSession(); } catch (e) { session = null; }
+      applyAuthState(session);
+    })();
+
+    // 兜底：1.5s 内仍未拿到登录态，则先按未登录放出页面，避免一直卡在加载遮罩
+    setTimeout(() => {
+      if (!window.__authReady) { window.__authReady = true; refreshAuthUI(); }
+    }, 1500);
 
     // 兜底：异常情况下最多等3s后揭开遮罩，避免卡在加载页
     setTimeout(hideSplash, 3000);
@@ -171,18 +177,32 @@
     if (s) s.classList.add("hidden");
   }
 
-  function refreshAuthUI() {
-    // 视觉专区被隐藏守卫：即使直接访问首页也拦截，提示暂未开放
-    if (!zoneVisible("visual")) {
-      $("#login-btn").classList.add("hidden");
-      $("#changepwd-btn").classList.add("hidden");
-      $("#logout-btn").classList.add("hidden");
-      $("#gallery-view").classList.add("hidden");
-      $("#login-view").classList.remove("hidden");
-      if (window.__loggedIn) { $("#logout-btn").classList.remove("hidden"); $("#changepwd-btn").classList.remove("hidden"); }
-      Auth.toast("该专区暂未开放", false);
+  // 统一的登录态处理：启动主动读取 + 后续登录态变化共用同一份逻辑
+  function applyAuthState(session) {
+    window.__loggedIn = !!session;
+    window.__authReady = true;
+    if (!session) {
+      myZones = null;
+      refreshAuthUI();
+      applyZoneNav();
+      maybeBoot();
       return;
     }
+    // 读取该用户的前端可见专区白名单（frontend_zones，独立于后端 manage_zones）
+    SB.myFrontendZones().then((z) => {
+      myZones = z;
+      refreshAuthUI();
+      applyZoneNav();
+    }).catch(() => { myZones = null; refreshAuthUI(); });
+    maybeBoot();
+  }
+
+  function refreshAuthUI() {
+    // 登录态未就绪前不做视图判定，避免"已登录却先闪回登录页"
+    if (!window.__authReady) return;
+    // 视觉专区不可见（全站关闭，或本账号前台可见专区未包含）→ 给出明确说明，不再弹回登录页
+    if (!zoneVisible("visual")) { showZoneLocked(); return; }
+    hideZoneLocked();
     if (window.__loggedIn) { showGallery(); return; }
     if (window.__publicAccess) {
       $("#login-btn").classList.remove("hidden");
@@ -196,6 +216,7 @@
     showLogin();
   }
   function showLogin() {
+    hideZoneLocked();
     $("#login-btn").classList.add("hidden");
     $("#changepwd-btn").classList.add("hidden");
     $("#logout-btn").classList.add("hidden");
@@ -203,6 +224,7 @@
     $("#login-view").classList.remove("hidden");
   }
   function showGallery() {
+    hideZoneLocked();
     $("#login-btn").classList.add("hidden");
     $("#changepwd-btn").classList.remove("hidden");
     $("#logout-btn").classList.remove("hidden");
@@ -210,6 +232,63 @@
     $("#gallery-view").classList.remove("hidden");
     if (!galleryLoaded) { galleryLoaded = true; loadGallery(); }
     Common.notices.load();
+  }
+
+  // 视觉专区不可用时的说明面板（替代"直接弹回登录页"，避免用户反复登录也进不去）
+  const ZONE_LABELS = {
+    visual: "视觉专区", trend: "趋势专区", recruit: "招品回品",
+    bestseller: "BESTSELLER", marketing: "营销日历", notice: "公告", rank: "趋势上升榜"
+  };
+  function hideZoneLocked() {
+    const b = document.getElementById("zone-locked");
+    if (b) b.style.display = "none";
+  }
+  function showZoneLocked() {
+    const globalOff = !!(zoneVis && zoneVis.visual === false);
+    const white = (Array.isArray(myZones) && myZones.length) ? myZones : null;
+    const lackInWhite = !!white && white.indexOf("visual") === -1;
+    let box = document.getElementById("zone-locked");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "zone-locked";
+      box.setAttribute("style", "position:fixed;inset:0;z-index:60;background:rgba(24,24,28,.92);display:none;align-items:center;justify-content:center;padding:20px;overflow:auto");
+      document.body.appendChild(box);
+    }
+    const reasons = [];
+    if (globalOff) reasons.push("全站已关闭「视觉专区」的前台可见开关");
+    if (lackInWhite) reasons.push("本账号被单独限定了前台可见专区，且不含「视觉专区」（当前限定：" + white.map(k => ZONE_LABELS[k] || k).join("、") + "）");
+    if (!reasons.length) reasons.push("当前访问条件不满足视觉专区的开放要求");
+    const fix = globalOff
+      ? "进入后台 → ⑪ 超管权限 → 前台访问设置 → 把「视觉专区」切回「展示」。"
+      : (lackInWhite
+        ? "进入后台 → 权限管理 → 点本账号所在行的「编辑」→ 在「用户级可见专区（前台）」勾上「视觉专区」→ 保存（若全部取消勾选，则恢复为跟随全站设置）。"
+        : "请联系超级管理员在后台「权限管理 / 前台访问设置」中开放「视觉专区」。");
+    box.innerHTML =
+      '<div style="max-width:580px;width:100%;background:#fff;border-radius:16px;padding:28px 26px;box-shadow:0 24px 60px rgba(0,0,0,.35)">' +
+        '<div style="font-size:12px;letter-spacing:.2em;color:#b08d57;font-weight:700">TREND BANK</div>' +
+        '<h2 style="margin:10px 0 8px;font-size:20px;color:#1f1f1f">视觉专区暂时进不去</h2>' +
+        '<p style="margin:0 0 16px;color:#666;font-size:14px;line-height:1.6">' +
+          (window.__loggedIn ? "你的账号已登录，但没有「视觉专区」的前台可见权限，所以之前会被反复弹回登录页。" : "「视觉专区」当前未对外开放，登录也无法进入。") +
+        '</p>' +
+        '<div style="background:#fdf6ec;border:1px solid #f0dfc2;border-radius:10px;padding:12px 14px;margin-bottom:14px">' +
+          '<div style="font-weight:700;color:#8a6a2f;margin-bottom:6px;font-size:14px">原因</div>' +
+          reasons.map(r => '<div style="color:#6b6b6b;font-size:14px;line-height:1.7">· ' + escHtml(r) + '</div>').join("") +
+        '</div>' +
+        '<div style="background:#f6f8fa;border-radius:10px;padding:12px 14px;margin-bottom:18px">' +
+          '<div style="font-weight:700;color:#444;margin-bottom:6px;font-size:14px">怎么解决</div>' +
+          '<div style="color:#666;font-size:14px;line-height:1.7">' + escHtml(fix) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<a href="trends.html" style="flex:1;min-width:150px;text-align:center;padding:11px 16px;border-radius:10px;background:#1f1f1f;color:#fff;text-decoration:none;font-size:14px;box-sizing:border-box">先去趋势专区</a>' +
+          '<button id="zone-locked-out" type="button" style="flex:1;min-width:150px;padding:11px 16px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;color:#444;font-size:14px;cursor:pointer;box-sizing:border-box">退出登录</button>' +
+        '</div>' +
+      '</div>';
+    box.style.display = "flex";
+    const ob = document.getElementById("zone-locked-out");
+    if (ob) ob.onclick = async () => {
+      try { await SB.signOut(); } catch (e) {}
+      location.href = "index.html";
+    };
   }
 
   // 中央放大展示公告全文（标题 + 富文本正文 + 附加图片）
