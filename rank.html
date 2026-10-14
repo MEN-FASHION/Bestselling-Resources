@@ -2,70 +2,64 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>趋势上升榜 · TREND BANK</title>
 <link rel="icon" href="favicon.svg">
-<link rel="stylesheet" href="css/style.css?v=20261014F">
-<style>
-  body { background: var(--bg); }
-  .rk-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 22px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 40; }
-  .rk-top h1 { margin: 0; font-size: 18px; letter-spacing: .04em; color: var(--ink); }
-  .rk-top .rk-top-sub { font-size: 12px; color: var(--sub); }
-  .rk-nav { display: flex; gap: 8px; flex-wrap: wrap; }
-  .rk-nav a { font-size: 13px; color: var(--ink); text-decoration: none; padding: 6px 12px; border-radius: 999px; }
-  .rk-nav a:hover { background: var(--bg); }
-  .rk-nav a.active { background: var(--brown); color: #fff; }
-  .rk-wrap { padding: 20px 22px 60px; max-width: 1500px; margin: 0 auto; }
-  .rk-mode { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 14px; background: #fff; }
-  .rk-mode button { border: 0; background: transparent; padding: 8px 18px; font-size: 13px; cursor: pointer; color: var(--ink); }
-  .rk-mode button.on { background: var(--brown); color: #fff; }
-  .rk-loading { padding: 40px; text-align: center; color: var(--sub); }
-  @media (max-width: 820px) {
-    .rk-layout { flex-direction: column; }
-    .rk-side { position: static; width: 100%; flex: none; }
-    .rk-cat-list { flex-direction: row; overflow-x: auto; }
-    .rk-cat { white-space: nowrap; }
-    .rk-cards { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
-  }
-</style>
+<link rel="stylesheet" href="css/style.css?v=20261014G">
 </head>
-<body>
+<body class="front">
+  <div id="toast" class="toast"></div>
 
-<header class="rk-top">
-  <div>
-    <h1>趋势上升榜</h1>
-    <div class="rk-top-sub">站内环比趋势对比 · 国家 / 周次 / 标签多维筛选</div>
-  </div>
-  <nav class="rk-nav">
-    <a href="index.html">视觉专区</a>
-    <a href="trends.html">趋势专区</a>
-    <a href="marketing.html">营销日历</a>
-    <a href="rank.html" class="active">趋势上升榜</a>
-  </nav>
-</header>
+  <section id="rank-view">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="rk-title">趋势上升榜</span></div>
+        <nav class="top-tabs">
+          <a href="marketing.html" class="tab-link">营销日历</a>
+          <a href="index.html" class="tab-link">视觉专区</a>
+          <a href="trends.html" class="tab-link">趋势专区</a>
+          <a href="trends.html#recruit" class="tab-link">招品回品</a>
+          <a href="trends.html#bestseller" class="tab-link">BESTSELLER</a>
+          <a href="rank.html" class="tab-link active">趋势上升榜</a>
+        </nav>
+        <div class="topbar-actions">
+          <span id="rk-user" class="rk-user hidden"></span>
+          <a href="index.html" id="rk-login" class="btn-ghost hidden">去登录</a>
+          <button type="button" id="rk-logout" class="btn-ghost hidden">退出</button>
+        </div>
+      </div>
+    </header>
 
-<div class="rk-wrap">
-  <div class="rk-mode">
-    <button type="button" id="rk-mode-h" class="on">横向 · 国家对比</button>
-    <button type="button" id="rk-mode-v">纵向 · 时间对比</button>
-  </div>
+    <div class="gallery-layout">
+      <!-- ===== 左侧：类目菜单栏（与视觉专区一致） ===== -->
+      <aside class="sidebar">
+        <div class="side-head">服装类目</div>
+        <nav id="rk-cats" class="cat-menu"><div class="rk-empty">加载中…</div></nav>
+      </aside>
 
-  <div class="rk-layout">
-    <aside class="rk-side">
-      <h4>类目</h4>
-      <div class="rk-cat-list" id="rk-cats"><div class="hint">加载中…</div></div>
-    </aside>
+      <!-- ===== 右侧：上方筛选（国家 / 周次 / 标签）+ 多列对比池 ===== -->
+      <main class="grid-wrap">
+        <div id="rk-filter" class="tag-filter">
+          <div class="tf-trigger" id="rk-trigger">
+            <span class="tf-t">筛选</span>
+            <span class="tf-s" id="rk-summary">类目 · 国家站点 · 周次 · 标签</span>
+            <span class="tf-arrow">▾</span>
+          </div>
+          <div class="tf-body">
+            <div class="tf-groups" id="rk-groups"></div>
+          </div>
+        </div>
 
-    <main class="rk-main">
-      <div class="rk-head" id="rk-head"></div>
-      <div id="rk-body"><div class="rk-loading">加载中…</div></div>
-    </main>
-  </div>
-</div>
+        <div id="rk-bar" class="rk-bar"></div>
 
-<script src="vendor/supabase.js?v=20261014F"></script>
-<script src="js/config.js?v=20261014F"></script>
-<script src="js/supabase.js?v=20261014F"></script>
-<script src="js/rank.js?v=20261014F"></script>
+        <div id="rk-body" class="rk-body"><div class="rk-empty">加载中…</div></div>
+      </main>
+    </div>
+  </section>
+
+<script src="vendor/supabase.js?v=20261014G"></script>
+<script src="js/config.js?v=20261014G"></script>
+<script src="js/supabase.js?v=20261014G"></script>
+<script src="js/rank.js?v=20261014G"></script>
 </body>
 </html>

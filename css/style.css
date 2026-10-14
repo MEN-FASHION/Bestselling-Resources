@@ -2102,7 +2102,7 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 
 /* ================= 后台 · 站内趋势上升榜 & 前台趋势上升榜专区 ================= */
 .rank-block { margin: 18px 0; padding: 16px 18px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
-.rank-block h4 { margin: 0 0 10px; font-size: 15px; color: var(--brown); }
+.rank-block h4 { margin: 0 0 10px; font-size: 15px; color: var(--gold); }
 .rank-block-sub { margin: 12px 0; padding: 10px 12px; background: var(--bg); border-radius: 10px; }
 .rank-sub-title { display: block; font-size: 12px; color: var(--sub); margin-bottom: 8px; }
 .rank-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2125,33 +2125,105 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rank-batch-main { color: var(--ink); }
 .rank-batch-del { flex: none; }
 
-/* 前台趋势上升榜专区 */
-.rk-layout { display: flex; gap: 18px; align-items: flex-start; }
-.rk-side { flex: 0 0 168px; position: sticky; top: 78px; }
-.rk-side h4 { margin: 0 0 10px; font-size: 13px; color: var(--sub); letter-spacing: .06em; }
-.rk-cat-list { display: flex; flex-direction: column; gap: 4px; }
-.rk-cat { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--ink); cursor: pointer; }
-.rk-cat:hover { background: var(--bg); }
-.rk-cat.active { background: var(--brown); color: #fff; }
-.rk-main { flex: 1; min-width: 0; }
-.rk-head { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; }
-.rk-group { display: flex; flex-direction: column; gap: 6px; }
-.rk-group > span.rk-label { font-size: 12px; color: var(--sub); }
-.rk-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
-.rk-chip { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; cursor: pointer; color: var(--ink); }
-.rk-chip.on { background: var(--brown); color: #fff; border-color: var(--brown); }
-.rk-stack { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
-.rk-col { border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px; }
-.rk-col-head { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 8px; display: flex; flex-direction: column; gap: 2px; }
-.rk-col-head .rk-tag { font-size: 11px; font-weight: 400; color: var(--brown); }
-.rk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
-.rk-card { position: relative; border-radius: 9px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
-.rk-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; }
-.rk-card .rk-badge { position: absolute; top: 4px; left: 4px; padding: 2px 6px; border-radius: 6px; font-size: 10px; color: #fff; background: rgba(0,0,0,.6); }
-.rk-card .rk-move { position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 5px; font-size: 10px; text-align: center; color: #fff; background: rgba(0,0,0,.55); }
-.rk-card.is-new { outline: 2px solid var(--brown); outline-offset: -2px; }
-.rk-empty { padding: 22px; text-align: center; color: var(--sub); font-size: 13px; }
-/* 标签色 */
-.rk-badge.flag-opportunity { background: rgba(139,115,85,.92); }
-.rk-badge.flag-hot { background: rgba(192,57,43,.92); }
-.rk-badge.flag-surge { background: rgba(212,150,60,.95); }
+
+/* ================= 前台 · 趋势上升榜专区（左侧类目菜单 + 顶部筛选 + 多列对比池） ================= */
+#rank-view .gallery-layout { padding: 14px 14px 60px; }
+.rk-user { font-size: 12px; color: var(--sub); }
+.rk-note { font-size: 12px; color: var(--sub); }
+
+/* ---- 模式切换 + 信息条 ---- */
+.rk-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 9px 12px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.rk-modes { display: flex; gap: 8px; flex-wrap: wrap; }
+.rk-mode-btn {
+  padding: 6px 13px; border: 1px solid var(--line); background: transparent; border-radius: 999px;
+  font-size: 12.5px; color: var(--txt); cursor: pointer; transition: .18s;
+}
+.rk-mode-btn:hover { border-color: var(--gold); }
+.rk-mode-btn.on { background: linear-gradient(135deg, var(--gold), var(--gold2)); color: #2c2c2c; border-color: transparent; font-weight: 600; }
+.rk-bar-info { font-size: 12.5px; color: var(--sub); }
+.rk-bar-info b { color: var(--txt); }
+
+/* ---- 多列对比池：横向并排 / 纵向共用一条滚动 / 列头吸顶 ---- */
+.rk-body { min-height: 180px; }
+.rk-pools {
+  display: flex; gap: 12px; align-items: flex-start;
+  overflow: auto; max-height: 74vh; padding: 2px 2px 14px;
+}
+.rk-pool {
+  flex: 0 0 auto; width: 330px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px;
+}
+.rk-pool-head {
+  position: sticky; top: 0; z-index: 3; background: var(--card);
+  padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.rk-pool-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--txt); }
+.rk-pool-name .rk-n { font-size: 11.5px; font-weight: 400; color: var(--sub); }
+.rk-pool-meta { margin-top: 3px; font-size: 11.5px; color: var(--sub); line-height: 1.55; }
+.rk-pool-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.rk-pool-grid.sz-s { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.rk-pool-grid.sz-l { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rk-pool-foot { margin-top: 9px; font-size: 11px; color: var(--sub); text-align: center; }
+
+/* ---- 卡片（3:4 小图，比原来小一档） ---- */
+.rk-card {
+  position: relative; margin: 0; border-radius: 8px; overflow: hidden;
+  background: var(--shade); border: 1px solid var(--line); cursor: zoom-in;
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+}
+.rk-card img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; }
+.rk-card:hover { transform: translateY(-2px); border-color: var(--gold); box-shadow: 0 8px 18px rgba(60,52,42,.14); }
+.rk-badge {
+  position: absolute; top: 3px; left: 3px; padding: 1px 5px; border-radius: 5px;
+  font-size: 9.5px; line-height: 1.5; color: #fff; background: rgba(0,0,0,.55);
+}
+.rk-badge.flag-opportunity { background: rgba(139,115,85,.94); }
+.rk-badge.flag-hot { background: rgba(192,57,43,.94); }
+.rk-badge.flag-surge { background: rgba(191,138,53,.96); }
+.rk-share {
+  position: absolute; top: 3px; right: 3px; padding: 1px 5px; border-radius: 5px;
+  font-size: 9.5px; line-height: 1.5; color: #fff; background: rgba(20,20,20,.62);
+}
+.rk-move {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 4px;
+  font-size: 9.5px; text-align: center; color: #fff; background: rgba(20,20,20,.6);
+}
+.rk-card.is-new { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+
+/* ---- 展开更多 ---- */
+.rk-more-wrap { margin: 14px 0 30px; text-align: center; }
+.rk-more {
+  padding: 9px 22px; border: 1px solid var(--line); background: var(--card);
+  border-radius: 999px; font-size: 13px; color: var(--txt); cursor: pointer; transition: .18s;
+}
+.rk-more:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ---- 灯箱 ---- */
+.rk-lb {
+  position: fixed; inset: 0; z-index: 9999; background: rgba(12,12,12,.86);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px;
+}
+.rk-lb img { max-width: min(88vw, 760px); max-height: 74vh; object-fit: contain; border-radius: 10px; background: #111; }
+.rk-lb-close {
+  position: absolute; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 999px;
+  border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.rk-lb-close:hover { background: rgba(255,255,255,.26); }
+.rk-lb-meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.rk-lb-tag { padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.14); color: #fff; font-size: 12px; }
+
+/* ---- 空态 ---- */
+.rk-empty { padding: 26px 16px; text-align: center; color: var(--sub); font-size: 13px; }
+.rk-empty a { color: var(--gold); }
+
+/* ---- 小屏：对比池改为纵向堆叠，一屏一列便于看 ---- */
+@media (max-width: 900px) {
+  #rank-view .gallery-layout { padding: 10px 10px 50px; }
+  .rk-pools { flex-direction: column; max-height: none; overflow: visible; }
+  .rk-pool { width: 100%; }
+  .rk-pool-head { position: static; }
+}
