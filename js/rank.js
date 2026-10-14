@@ -118,7 +118,7 @@
   /* ---------------- 取数 ---------------- */
   function activeSites() { return MODE === "v" ? SEL_SITES.slice(0, 1) : SEL_SITES.slice(); }
   function activePeriods() {
-    if (MODE === "h") return SEL_PERIODS.slice(0, 1);
+    if (MODE === "h") { var sp = sortPeriods(SEL_PERIODS); return sp.length ? [sp[sp.length - 1]] : []; }
     return sortPeriods(SEL_PERIODS);
   }
 
@@ -216,9 +216,7 @@
         var m = b.getAttribute("data-mode");
         if (m === MODE) return;
         MODE = m;
-        if (MODE === "h") { SEL_PERIODS = SEL_PERIODS.slice(0, 1); SEL_SITES = SEL_SITES.slice(0, 3); }
-        else { SEL_SITES = SEL_SITES.slice(0, 1); }
-        CACHE = null; CAP = CAP_STEP;
+                CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
     });
@@ -326,9 +324,7 @@
         var m = b.getAttribute("data-mode");
         if (m === MODE) return;
         MODE = m;
-        if (MODE === "h") { SEL_PERIODS = SEL_PERIODS.slice(0, 1); SEL_SITES = SEL_SITES.slice(0, 3); }
-        else { SEL_SITES = SEL_SITES.slice(0, 1); }
-        CACHE = null; CAP = CAP_STEP;
+                CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
     });
@@ -566,8 +562,9 @@
 
     // 默认选择：类目取第一个（否则「全部」）、周次取最新、国家取前 2~3 个
     CAT = FACETS.categories.length ? FACETS.categories[0] : ALL;
-    SEL_PERIODS = FACETS.periods.length ? [FACETS.periods[FACETS.periods.length - 1]] : [];
-    SEL_SITES = FACETS.sites.slice(0, Math.min(3, FACETS.sites.length));
+    var _sp = sortPeriods(FACETS.periods);
+    SEL_PERIODS = _sp.slice(Math.max(0, _sp.length - 4));
+    SEL_SITES = FACETS.sites.slice(0, Math.min(4, FACETS.sites.length));
 
     renderCats();
     renderPanel();
