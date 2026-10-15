@@ -1498,6 +1498,34 @@ async removeTrendRecord(id) {
       const { error } = await client.from("rank_sites").update(patch || {}).eq("id", id);
       if (error) throw new Error(error.message || "更新站点失败");
     },
+    // 地区分组：把多个国家站点并成一个地区（如「欧洲」= 英国 / 德国 / 法国…）
+    // 存放于 site_settings.frontend_dims.rank_groups = [{ name, members:[站点名…] }]，随现有配置列一起读写，无需改表结构。
+    async getRankGroups() {
+      const { data, error } = await client
+        .from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_dims) return [];
+      const raw = data.frontend_dims.rank_groups;
+      if (!Array.isArray(raw)) return [];
+      return raw.map((g) => ({
+        name: String((g && g.name) || "").trim(),
+        members: (Array.isArray(g && g.members) ? g.members : []).map((m) => String(m || "").trim()).filter(Boolean),
+      })).filter((g) => g.name);
+    },
+    async setRankGroups(list) {
+      const clean = (Array.isArray(list) ? list : []).map((g) => ({
+        name: String((g && g.name) || "").trim(),
+        members: (Array.isArray(g && g.members) ? g.members : []).map((m) => String(m || "").trim()).filter(Boolean),
+      })).filter((g) => g.name);
+      const { data, error } = await client
+        .from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error) throw new Error(error.message || "读取配置失败");
+      const cur = Object.assign({}, (data && data.frontend_dims) || {});
+      cur.rank_groups = clean;   // 只改 rank_groups 这一个键，其余配置（各维度开关）原样保留
+      const up = await client
+        .from("site_settings").update({ frontend_dims: cur, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (up.error) throw new Error(up.error.message || "保存地区分组失败");
+      return clean;
+    },
     // 站点改名：把 rank_items / rank_batches 里的旧站点名一并迁移（表无 update 策略 → 删除后重插）
     // 站点改名：迁移 rank_items 与 rank_batches（先复制成功、再删除原数据；任一步失败即回滚，绝不先删）
     async renameRankSiteData(oldName, newName) {

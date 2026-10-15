@@ -2307,6 +2307,20 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rkadm-icon--del:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
 .rkadm-row-act { display: flex; gap: 8px; flex: none; }
 .rkadm-empty { padding: 14px 12px; font-size: 13px; color: var(--sub); background: var(--bg); border-radius: 10px; text-align: center; }
+/* 地区分组（后台）：一行地区名 + 可展开的国家勾选面板 */
+.rkadm-group { border-radius: 10px; }
+.rkadm-count {
+  flex: none; font-size: 12px; color: var(--sub); background: #fff;
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px;
+}
+.rkadm-members {
+  display: flex; flex-wrap: wrap; gap: 8px 14px;
+  padding: 10px 12px 12px; margin: -2px 0 4px;
+  background: var(--bg); border: 1px dashed var(--line); border-top: none;
+  border-radius: 0 0 10px 10px;
+}
+.rkadm-members .chk { font-size: 13px; color: var(--txt); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.rkadm-members .chk input { accent-color: var(--gold2, #b8873f); }
 .rkadm-sec--pv { padding-bottom: 12px; }
 .rkadm-pv-bar { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 10px; }
 .rkadm-pv-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); }

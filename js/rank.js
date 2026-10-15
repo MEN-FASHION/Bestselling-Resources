@@ -35,6 +35,8 @@
   var CAT = ALL;
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
+  var GROUPS = [];           // 后台定义的地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
+  var SEL_GROUP = "";        // 选中的地区名；非空时按整个地区合并成一列，只能单选
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
@@ -144,16 +146,59 @@
 
   /* ---------------- 取数 ---------------- */
   function activeSites() { return MODE === "v" ? SEL_SITES.slice(0, 1) : SEL_SITES.slice(); }
+
+  /* ---------------- 地区分组：把多个国家并成一列 ----------------
+     后台把「英国 / 德国 / 法国…」放进「欧洲」这个地区后：
+     选中国 → 多国数据合并成「欧洲」一列（同一张图在多国都上榜时只留一条）；
+     不选地区 → 仍可按单个国家对比（两种方式随你切）。 */
+  function activeGroup() {
+    if (!SEL_GROUP) return null;
+    if (MODE === "v") { /* 纵向也要能用：单列显示该地区 */ }
+    var g = GROUPS.filter(function (x) { return x.name === SEL_GROUP; })[0];
+    if (!g) return null;
+    var mem = (g.members || []).filter(function (m) { return FACETS.sites.indexOf(m) >= 0; });
+    return { name: g.name, members: mem };
+  }
+  /* 去数据库取数时用的站点清单：选了地区 → 该地区的所有国家 */
+  function sitesForQuery() {
+    var g = activeGroup();
+    if (g) return g.members.slice();
+    return activeSites();
+  }
+  /* 对比池的列名：选了地区 → 一列「欧洲」 */
+  function poolSites() {
+    var g = activeGroup();
+    return g ? [g.name] : activeSites();
+  }
+  /* 把地区内多国的同名商品合并成一条（取环比更强的那个） */
+  function mergeGroupItems(items, g) {
+    var byKey = {};
+    (items || []).forEach(function (it) {
+      if (g.members.indexOf(it.site) < 0) return;
+      var k = it.image_url || ((it.leaf_category || "") + "\u0001" + (it.title || "") + "\u0001" + (it.period_label || ""));
+      var prev = byKey[k];
+      it.site = g.name;
+      if (!prev) { byKey[k] = it; return; }
+      var a = prev.ratio, b = it.ratio;
+      var better;
+      if (b != null && a == null) better = true;
+      else if (b != null && a != null) better = b > a;
+      else if (b == null && a == null) better = Number(it.abs_delta || 0) > Number(prev.abs_delta || 0);
+      else better = false;
+      if (better) byKey[k] = it;
+    });
+    return Object.keys(byKey).map(function (k) { return byKey[k]; });
+  }
   function activePeriods() {
     if (MODE === "h") { var sp = sortPeriods(SEL_PERIODS); return sp.length ? [sp[sp.length - 1]] : []; }
     return sortPeriods(SEL_PERIODS);
   }
 
   async function fetchItems() {
-    var sites = activeSites();
+    var sites = sitesForQuery();
     var periods = activePeriods();
     if (!sites.length || !periods.length) return [];
-    var key = [CAT, MODE, sites.join("|"), periods.join("|")].join("\u00a7");
+    var key = [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|")].join("\u00a7");
     if (CACHE && CACHE.key === key) return CACHE.items;
 
     /* 纵向对比需要拿到「上一周」的数据做基线，一并取回但不单独成列 */
@@ -169,6 +214,8 @@
       it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
       return it;
     });
+    var _g = activeGroup();
+    if (_g) items = mergeGroupItems(items, _g);   // 地区模式：多国合并成一列，同名商品只留最强的那个
     flagPools(items);
     ITEMS_BY_URL = {};
     items.forEach(function (it) { if (it.image_url) ITEMS_BY_URL[it.image_url] = it; });
@@ -207,8 +254,20 @@
     var periods = sortPeriods(FACETS.periods);
 
     var sitesHtml = FACETS.sites.length
-      ? FACETS.sites.map(function (s) { return chip(s, s, SEL_SITES.indexOf(s) >= 0, "data-site"); }).join("")
+      ? FACETS.sites.map(function (s) { return chip(s, s, SEL_SITES.indexOf(s) >= 0 && !SEL_GROUP, "data-site"); }).join("")
       : '<span class="rk-note">后台还没有维护国家站点</span>';
+
+    /* 地区（后台把多个国家并成一个地区）：选中即整区合并成一列；也可以不选，直接挑单个国家 */
+    var grpList = GROUPS.filter(function (g) { return g.name && (g.members || []).length; });
+    var groupHtml = "";
+    if (grpList.length) {
+      groupHtml = '<div class="tag-group"><span class="tag-group-name">地区（合并整区对比）</span><div class="tag-chips" id="rk-g-groups">' +
+        grpList.map(function (g) {
+          return chip(g.name, g.name + "（" + g.members.length + " 国）", SEL_GROUP === g.name, "data-group");
+        }).join("") +
+        (SEL_GROUP ? chip("", "取消地区", false, "data-group") : "") +
+        '</div></div>';
+    }
 
     var periodsHtml = periods.length
       ? periods.map(function (p) { return chip(p, p, SEL_PERIODS.indexOf(p) >= 0, "data-period"); }).join("")
@@ -252,7 +311,8 @@
         '<button type="button" class="tag-more" id="rk-more">' + (MORE ? "收起次要筛选 ▴" : "展开次要筛选（排序 / 图幅 / 位次排序）▾") + '</button>' +
       '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">国家站点' + (MODE === "v" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
+      groupHtml +
+      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选）" : "（可多选）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">趋势标签</span><div class="tag-chips" id="rk-g-tags">' + tagsHtml + '</div></div>' +
       '<div class="rk-adv' + (MORE ? " open" : "") + '" id="rk-adv">' + advHtml + '</div>';
@@ -279,12 +339,24 @@
     if (siteBox) Array.prototype.forEach.call(siteBox.querySelectorAll("[data-site]"), function (b) {
       b.onclick = function () {
         var v = b.getAttribute("data-site");
+        SEL_GROUP = "";                       /* 选单个国家 → 取消地区合并 */
         if (MODE === "v") {
           SEL_SITES = [v];
         } else {
           var i = SEL_SITES.indexOf(v);
           if (i >= 0) SEL_SITES.splice(i, 1); else SEL_SITES.push(v);
         }
+        if (!SEL_SITES.length) SEL_SITES = FACETS.sites.slice(0, 4);   /* 全取消时回落到前 4 个，避免空页 */
+        CACHE = null; CAP = CAP_STEP;
+        renderPanel(); renderSummary(); renderBar(); load();
+      };
+    });
+
+    var grpBox = $("#rk-g-groups");
+    if (grpBox) Array.prototype.forEach.call(grpBox.querySelectorAll("[data-group]"), function (b) {
+      b.onclick = function () {
+        var v = b.getAttribute("data-group");
+        SEL_GROUP = (v && v !== SEL_GROUP) ? v : "";
         CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
@@ -369,7 +441,8 @@
     var parts = [];
     parts.push(CAT || ALL);
     parts.push(periods.length ? periods.join("、") : "未选周次");
-    parts.push(sites.length ? sites.join(" / ") : "未选国家");
+    var _g = activeGroup();
+    parts.push(_g ? ("地区 " + _g.name) : (sites.length ? sites.join(" / ") : "未选国家"));
     parts.push(tagLabel());
     if (MODE === "v" && MOVE !== "off") parts.push(moveLabel());
     el.textContent = parts.join(" · ");
@@ -384,7 +457,7 @@
   function renderBar() {
     var el = $("#rk-bar");
     if (!el) return;
-    var sites = activeSites();
+    var sites = sitesForQuery();
     var periods = activePeriods();
     var total = (CACHE && CACHE.items) ? CACHE.items.length : 0;
     var shown = total ? Math.min(CAP, total) : 0;
@@ -439,7 +512,7 @@
   function renderBody() {
     var box = $("#rk-body");
     if (!box) return;
-    var sites = activeSites();
+    var sites = poolSites();
     var periods = activePeriods();
 
     if (!FACETS.periods.length) {
@@ -447,7 +520,9 @@
       return;
     }
     if (!CAT) { box.innerHTML = '<div class="rk-empty">请先在左侧选择一个类目</div>'; return; }
-    if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择国家站点</div>'; return; }
+    var _gchk = activeGroup();
+    if (_gchk && !_gchk.members.length) { box.innerHTML = '<div class="rk-empty">地区「' + esc(_gchk.name) + '」还没有勾选国家。到后台「趋势上升榜 → 地区分组」点 ☑ 把国家勾进去即可。</div>'; return; }
+    if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」</div>'; return; }
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
 
@@ -482,9 +557,10 @@
         }
         var total = mine.length;
         var rate = total ? Math.round(over / total * 100) : 0;
+        var _gp = activeGroup();
         var meta = others.length
           ? ("与 " + (others.length <= 2 ? others.join("、") : ("另 " + others.length + " 国")) + " 重合 " + over + " 张 · 重合度 " + rate + "%")
-          : "单国视图";
+          : (_gp ? ("地区合并 · 含 " + _gp.members.length + " 国，同名商品只保留一条") : "单国视图");
         var list = sortItems(mine);
         if (list.length > maxLen) maxLen = list.length;
         var cards = list.slice(0, CAP).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url] }); }).join("");
@@ -604,7 +680,7 @@
   /* ---------------- 加载 ---------------- */
   async function load() {
     var box = $("#rk-body");
-    var sites = activeSites();
+    var sites = sitesForQuery();
     var periods = activePeriods();
     if (!sites.length || !periods.length) { renderBody(); renderBar(); return; }
     if (box) box.innerHTML = '<div class="rk-empty">加载中…</div>';
@@ -700,13 +776,30 @@
     FACETS.periods = sortPeriods(FACETS.periods || []);
     FACETS.categories = FACETS.categories || [];
 
+    /* 国家站点（地区）以后台「站点管理」里我自定义的清单为准。
+       表格里自带的一堆国名（如欧盟合计表里写满各国）不作为前台筛选项。
+       若后台一个站点都没定义，才退回按数据里出现过的站点展示（避免筛选项为空）。 */
+    var _dataSites = FACETS.sites.slice();
+    var _defined = [];
+    try {
+      var _raw = await SBX.listRankSites();
+      _defined = (_raw || []).map(function (s) { return s && s.name; }).filter(function (v) { return v && String(v).trim(); });
+    } catch (e) { _defined = []; }
+    if (_defined.length) FACETS.sites = _defined.slice();
+
     // 默认选择：类目取第一个（否则「全部」）、周次取最新、国家取前 2~3 个
     CAT = FACETS.categories.length ? FACETS.categories[0] : ALL;
     var _sp = sortPeriods(FACETS.periods);
     SEL_PERIODS = _sp.slice(Math.max(0, _sp.length - 4));
-    SEL_SITES = FACETS.sites.slice(0, Math.min(4, FACETS.sites.length));
+    // 有数据的站点优先进入默认选中，其余按定义顺序补齐
+    var _withData = FACETS.sites.filter(function (s) { return _dataSites.indexOf(s) >= 0; });
+    var _rest = FACETS.sites.filter(function (s) { return _dataSites.indexOf(s) < 0; });
+    SEL_SITES = _withData.concat(_rest).slice(0, Math.min(4, FACETS.sites.length));
 
-    // URL 参数（后台实时预览 / 分享链接）：mode / size / cat / sites / periods
+    try { GROUPS = await SBX.getRankGroups(); } catch (e) { GROUPS = []; }
+    GROUPS = (GROUPS || []).filter(function (g) { return g && g.name; });
+
+    // URL 参数（后台实时预览 / 分享链接）：mode / size / cat / sites / periods / group
     try {
       var _qs = new URLSearchParams(location.search);
       var _m = _qs.get("mode"); if (_m === "h" || _m === "v") MODE = _m;
@@ -714,6 +807,8 @@
       var _c = _qs.get("cat"); if (_c) CAT = _c;
       var _ss = (_qs.get("sites") || "").split(",").filter(function (v) { return v.trim(); });
       if (_ss.length) SEL_SITES = _ss;
+      var _g = _qs.get("group");
+      if (_g && GROUPS.some(function (x) { return x.name === _g; })) SEL_GROUP = _g;
       var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
       if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
     } catch (e) { /* 无参数时忽略 */ }

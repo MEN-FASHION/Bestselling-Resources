@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261015C">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015C">
+<link rel="stylesheet" href="css/style.css?v=20261015F">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015F">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -863,6 +863,14 @@
               <div id="rank-site-list" class="rkadm-list"></div>
             </section>
             <section class="rkadm-sec">
+              <h4>地区分组 <span class="rkadm-tip">把多个国家并成一个地区（如「欧洲」），前台可整区对比，也可只挑其中一个国家</span></h4>
+              <div class="rkadm-add">
+                <input id="rank-group-new" type="text" placeholder="输入地区名，例如：欧洲">
+                <button id="rank-group-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rank-group-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
               <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度</span></h4>
               <div id="rank-period-list" class="rkadm-list"></div>
             </section>
@@ -1184,24 +1192,24 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261015C"></script>
-  <script src="vendor/quill.js?v=20261015C"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261015C"></script>
-  <script src="vendor/qrcode.min.js?v=20261015C"></script>
-  <script src="js/config.js?v=20261015C"></script>
-  <script src="js/supabase.js?v=20261015C"></script>
+  <script src="vendor/supabase.js?v=20261015F"></script>
+  <script src="vendor/quill.js?v=20261015F"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261015F"></script>
+  <script src="vendor/qrcode.min.js?v=20261015F"></script>
+  <script src="js/config.js?v=20261015F"></script>
+  <script src="js/supabase.js?v=20261015F"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261015C"></script>
-  <script src="js/admin-images.js?v=20261015C"></script>
-  <script src="js/admin-smart.js?v=20261015C"></script>
-  <script src="js/admin-trend.js?v=20261015C"></script>
-  <script src="js/admin-notice.js?v=20261015C"></script>
-  <script src="js/admin-marketing.js?v=20261015C"></script>
-  <script src="js/admin-tasks.js?v=20261015C"></script>
-  <script src="js/admin-bestseller.js?v=20261015C"></script>
-  <script src="js/admin-perm.js?v=20261015C"></script>
-  <script src="js/admin-pool.js?v=20261015C"></script>
-  <script src="js/admin-rank.js?v=20261015C"></script>
+  <script src="js/admin.js?v=20261015F"></script>
+  <script src="js/admin-images.js?v=20261015F"></script>
+  <script src="js/admin-smart.js?v=20261015F"></script>
+  <script src="js/admin-trend.js?v=20261015F"></script>
+  <script src="js/admin-notice.js?v=20261015F"></script>
+  <script src="js/admin-marketing.js?v=20261015F"></script>
+  <script src="js/admin-tasks.js?v=20261015F"></script>
+  <script src="js/admin-bestseller.js?v=20261015F"></script>
+  <script src="js/admin-perm.js?v=20261015F"></script>
+  <script src="js/admin-pool.js?v=20261015F"></script>
+  <script src="js/admin-rank.js?v=20261015F"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

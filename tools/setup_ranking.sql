@@ -155,13 +155,16 @@ security definer
 set search_path = public
 as $$
   select json_build_object(
-    'sites', coalesce((select json_agg(t.name order by t.sort_order, t.name) from (
-        select name, min(sort_order) as sort_order from (
-          select site as name, 100 as sort_order from public.rank_items where site <> ''
-          union all
-          select name, sort_order from public.rank_sites
-        ) u group by name
-      ) t), '[]'::json),
+    'sites', coalesce((
+      select json_agg(x.name order by x.sort_order, x.name) from (
+        -- 以后台自定义的站点清单为准；清单为空时才退回数据里出现过的站点
+        select name, sort_order from public.rank_sites
+        where exists (select 1 from public.rank_sites)
+        union all
+        select distinct site as name, 100 as sort_order from public.rank_items
+        where site <> '' and not exists (select 1 from public.rank_sites)
+      ) x
+    ), '[]'::json),
     'periods', coalesce((select json_agg(p order by p) from (
         select distinct period_label as p from public.rank_items where period_label <> ''
       ) q), '[]'::json),

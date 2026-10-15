@@ -13,6 +13,7 @@
   let rankCats = [];      // 类目管理里的类目名
   let rankParsed = null;  // { rows:[], headers:[], missing:[] }
   let rankPeriods = [];   // 由上传记录聚合：[{label,type,rows,batches}]
+  let rankGroups = [];    // 地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
   const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
 
   const $ = (s) => document.querySelector(s);
@@ -97,6 +98,7 @@
     try { rankSites = await SB.listRankSites(); } catch (e) { rankSites = []; }
     renderRankSites();
     renderRankSiteDefaults();
+    if (rankGroups.length) renderRankGroups();   // 站点增删后，地区分组的成员勾选面板同步刷新
   }
   function renderRankSites() {
     const box = $("#rank-site-list");
@@ -123,6 +125,14 @@
         try {
           await SB.updateRankSiteById(s.id, { name: v });
           await SB.renameRankSiteData(s.name, v);
+          /* 地区分组里若含旧站点名，一并改名，避免分组空掉 */
+          if (rankGroups.some((g) => (g.members || []).indexOf(s.name) >= 0)) {
+            rankGroups.forEach((g) => {
+              const i = (g.members || []).indexOf(s.name);
+              if (i >= 0) g.members[i] = v;
+            });
+            await SB.setRankGroups(rankGroups);
+          }
           await loadRankSites();
           await loadRankBatches();
           rankPreviewRefresh();
@@ -161,6 +171,103 @@
 
       row.appendChild(name); row.appendChild(up); row.appendChild(down); row.appendChild(del);
       box.appendChild(row);
+    });
+  }
+
+  /* ---------- 地区分组（把多个国家并成一个地区） ---------- */
+  async function loadRankGroups() {
+    try { rankGroups = await SB.getRankGroups(); } catch (e) { rankGroups = []; }
+    renderRankGroups();
+  }
+  function saveRankGroups(msg) {
+    return SB.setRankGroups(rankGroups).then(() => {
+      renderRankGroups();
+      fillRankPvControls();
+      rankPreviewRefresh();
+      if (msg) sbToast(msg, true);
+    }).catch((e) => sbToast((e && e.message) || "保存地区分组失败", false));
+  }
+  function renderRankGroups() {
+    const box = $("#rank-group-list");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!rankGroups.length) {
+      box.innerHTML = '<div class="rkadm-empty">还没有地区。例如新增「欧洲」，再把英国 / 德国 / 法国等勾进去；前台就能按「欧洲」整区对比，也能只看其中一个国家。</div>';
+      return;
+    }
+    rankGroups.forEach((g, gi) => {
+      const wrap = document.createElement("div");
+      wrap.className = "rkadm-group";
+
+      const row = document.createElement("div");
+      row.className = "rkadm-row";
+
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "rkadm-name";
+      name.value = g.name;
+      name.title = "点一下即可改地区名";
+      name.onfocus = () => name.select();
+      const commit = () => {
+        const v = (name.value || "").trim();
+        if (!v || v === g.name) { name.value = g.name; return; }
+        if (rankGroups.some((x, i) => i !== gi && x.name === v)) { name.value = g.name; sbToast("已有同名地区", false); return; }
+        const old = g.name;
+        if (!confirm("把地区「" + old + "」改名为「" + v + "」？\n该地区下已选的国家不受影响。")) { name.value = old; return; }
+        rankGroups[gi].name = v;
+        saveRankGroups("已改名为「" + v + "」");
+      };
+      name.onblur = commit;
+      name.onkeydown = (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); name.blur(); }
+        if (ev.key === "Escape") { name.value = g.name; name.blur(); }
+      };
+
+      const cnt = document.createElement("span");
+      cnt.className = "rkadm-count";
+      cnt.textContent = (g.members || []).length + " 国";
+
+      const pick = document.createElement("button");
+      pick.type = "button"; pick.className = "rkadm-icon"; pick.textContent = "☑";
+      pick.title = "选择该地区包含哪些国家";
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除地区";
+      del.onclick = async () => {
+        if (!confirm("删除地区「" + g.name + "」？\n（仅删除这个分组，各国家的数据与站点清单都不受影响）")) return;
+        rankGroups.splice(gi, 1);
+        await saveRankGroups("已删除地区");
+      };
+
+      row.appendChild(name); row.appendChild(cnt); row.appendChild(pick); row.appendChild(del);
+
+      /* 成员勾选面板（默认收起，点 ☑ 展开） */
+      const mem = document.createElement("div");
+      mem.className = "rkadm-members";
+      mem.style.display = "none";
+      if (!rankSites.length) {
+        mem.innerHTML = '<span class="hint">（先在上方添加国家站点）</span>';
+      } else {
+        rankSites.forEach((s) => {
+          const l = document.createElement("label");
+          l.className = "chk";
+          l.innerHTML = '<input type="checkbox" value="' + escAttr(s.name) + '"> ' + escHtml(s.name);
+          const cb = l.querySelector("input");
+          cb.checked = (g.members || []).indexOf(s.name) >= 0;
+          cb.addEventListener("change", () => {
+            const m = rankGroups[gi].members || (rankGroups[gi].members = []);
+            const i = m.indexOf(s.name);
+            if (cb.checked) { if (i < 0) m.push(s.name); } else if (i >= 0) m.splice(i, 1);
+            cnt.textContent = rankGroups[gi].members.length + " 国";
+            saveRankGroups();
+          });
+          mem.appendChild(l);
+        });
+      }
+      pick.onclick = () => { mem.style.display = mem.style.display === "none" ? "flex" : "none"; };
+
+      wrap.appendChild(row);
+      wrap.appendChild(mem);
+      box.appendChild(wrap);
     });
   }
 
@@ -212,6 +319,29 @@
     return n;
   }
 
+  /* 取单元格里真正的图片链接。
+     很多整理表把「首图URL」列做成了超链接：单元格显示的是「查看首图」这类文字，
+     真正的网址藏在超链接里（或 =HYPERLINK("网址","查看首图") 公式里）。
+     只读显示文字就只会拿到「查看首图」，整列变成同一个值 → 导入时被当成重复数据全部跳过。 */
+  function pickUrlFromCell(cell) {
+    if (!cell) return "";
+    let t = "";
+    if (cell.l) {
+      t = (typeof cell.l === "string") ? cell.l : (cell.l.Target || cell.l.target || "");
+    } else if (cell.hyperlink) {
+      t = String(cell.hyperlink);
+    }
+    if (!t && cell.f) {
+      const m = String(cell.f).match(/HYPERLINK\(\s*"([^"]+)"/i) || String(cell.f).match(/HYPERLINK\(\s*'([^']+)'/i);
+      if (m) t = m[1];
+    }
+    t = String(t || "").trim();
+    if (t && !/^(javascript|mailto|#)/i.test(t)) return t;
+    const v = String(cell.w != null ? cell.w : (cell.v != null ? cell.v : "")).trim();
+    return /^https?:\/\//i.test(v) ? v : "";
+  }
+  const URL_PLACEHOLDER = /^(查看首图|首图|点击查看|查看图片|查看|view|open|link|图片)$/i;
+
   /* ---------- 解析文件 ---------- */
   async function onRankFileChange() {
     rankParsed = null;
@@ -235,10 +365,20 @@
         return;
       }
       const rows = [];
+      const rng = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      let noLink = 0, placeholderOnly = 0, resolvedFromLink = 0;
       for (let i = head.idx + 1; i < aoa.length; i++) {
         const c = aoa[i] || [];
-        const url = String(head.map.url >= 0 ? (c[head.map.url] || "") : "").trim();
-        if (!url) continue;                                  // 没图的行跳过
+        const ci = head.map.url;
+        let url = "";
+        if (ci >= 0) {
+          const cell = ws[XLSX.utils.encode_cell({ r: rng.s.r + i, c: rng.s.c + ci })];
+          url = pickUrlFromCell(cell);
+          if (url) { resolvedFromLink++; }
+          const shown = String(c[ci] || "").trim();
+          if (!url && URL_PLACEHOLDER.test(shown)) placeholderOnly++;
+        }
+        if (!url) { noLink++; continue; }                   // 没图的行跳过
         rows.push({
           leaf_category: String(head.map.leaf >= 0 ? (c[head.map.leaf] || "") : "").trim(),
           site: String(head.map.site >= 0 ? (c[head.map.site] || "") : "").trim(),
@@ -248,6 +388,10 @@
           hasSiteCol: head.map.site >= 0,
         });
       }
+      // 同一张图重复出现 → 合并后只留一条（与入库去重口径一致），提前告知
+      const urlSeen = {};
+      rows.forEach(r => { urlSeen[r.image_url] = (urlSeen[r.image_url] || 0) + 1; });
+      const dupUrls = Object.keys(urlSeen).filter(u => urlSeen[u] > 1).length;
       const missing = [];
       if (head.map.abs < 0) missing.push("环比绝对值");
       if (head.map.ratio < 0) missing.push("环比比例");
@@ -256,7 +400,12 @@
       const siteWarn = distinctSites.length > 1
         ? "⚠️ 表格里出现了 " + distinctSites.length + " 个站点（" + distinctSites.slice(0, 6).join("、") + (distinctSites.length > 6 ? "…" : "") + "）。若这是合计表（如欧盟），请在上方勾选目标站点，导入时会统一归入该站点。"
         : "";
-      rankParsed = { rows, headers: aoa[head.idx] || [], missing, siteWarn, fileName: f.name };
+      const urlWarn = (placeholderOnly > 0 && rows.length === 0)
+        ? "❌ 「首图URL」列里放的是「查看首图」这类文字，没有真实网址（网址没有做成可点击的超链接）。请在表格里把该列改成纯网址（https://… 文本），或给单元格加上超链接后再上传。"
+        : (noLink > 0
+          ? "⚠️ 有 " + noLink + " 行没读到图片网址，已跳过（这些行的「首图URL」既不是网址、也没有超链接）。"
+          : "");
+      rankParsed = { rows, headers: aoa[head.idx] || [], missing, siteWarn, urlWarn, dupUrls, resolvedFromLink, fileName: f.name };
       renderRankPreview();
     } catch (e) {
       if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx/.xls）文件";
@@ -288,8 +437,10 @@
         '<span>周度激增（双重提升前 ' + Math.round(RANK_SURGE_PCT * 100) + '%）：<b>' + surgeN + '</b></span>' +
         '</div>' +
         (rankParsed.missing.length ? '<div class="hint rank-warn">未识别到列：' + escHtml(rankParsed.missing.join("、")) + '</div>' : '') +
+        (rankParsed.urlWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.urlWarn) + '</div>' : '') +
+        (rankParsed.dupUrls ? '<div class="hint rank-warn">表格里有 ' + rankParsed.dupUrls + ' 张图重复出现，同一个地区下会合并为一条（保留环比更强的那条）。</div>' : '') +
         (rankParsed.siteWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.siteWarn) + '</div>' : '') +
-        '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准（忽略表格站点列）" : "按表格「销量站点」列逐行取") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
+        '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准 —— 整张表都算这个地区，表格里的「销量站点」列不生效" : "未勾选站点 → 按表格「销量站点」列逐行取（合计表请务必先勾选，如欧盟）") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
     }
     const btn = $("#rank-import");
     if (btn) btn.disabled = rows.length === 0;
@@ -357,6 +508,14 @@
     if (!periodLabel) { sbToast(periodType === "month" ? "请先用日历选择月份" : "请先用日历选择某一周", false); return; }
     if (!category) { sbToast("请选择类目", false); return; }
     const defaults = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
+
+    /* 安全网：整批网址全都一样，说明「首图URL」列里的不是真网址（例如整列都写着「查看首图」）。
+       这种情况直接拦下并说清原因，避免导入后只进去一条、看起来像"识别不出来"。 */
+    const uniqUrl = Object.keys(rankParsed.rows.reduce((m, r) => (m[r.image_url] = 1, m), {})).length;
+    if (rankParsed.rows.length > 1 && uniqUrl === 1) {
+      sbToast("「首图URL」列里 200 行都是同一个内容（不是图片网址），无法导入。请把该列改成真实网址文本、或给单元格加超链接后再上传。", false);
+      return;
+    }
 
     /* 站点归属：以「我定义的站点」为准。
        勾选了任何站点 → 全部行都归入我勾的站点（忽略表格里「销量站点」列的逐行取值，
@@ -571,7 +730,8 @@
   function rankPreviewUrl() {
     const q = [];
     if (rankPv.cat) q.push("cat=" + encodeURIComponent(rankPv.cat));
-    if (rankPv.site) q.push("sites=" + encodeURIComponent(rankPv.site));
+    if (rankPv.site && rankPv.site.indexOf("g:") === 0) q.push("group=" + encodeURIComponent(rankPv.site.slice(2)));
+    else if (rankPv.site) q.push("sites=" + encodeURIComponent(rankPv.site));
     if (rankPv.period) q.push("periods=" + encodeURIComponent(rankPv.period));
     q.push("mode=" + rankPv.mode);
     q.push("size=" + rankPv.size);
@@ -582,7 +742,7 @@
     const hint = $("#rkadm-pv-hint");
     if (!f) return;
     f.src = rankPreviewUrl();
-    if (hint) hint.textContent = "正在预览：" + (rankPv.cat || "全部类目") + " · " + (rankPv.site || "全部站点") + " · " + (rankPv.period || "最新期次") + " · " + (rankPv.mode === "v" ? "纵向时间对比" : "横向国家对比");
+    if (hint) hint.textContent = "正在预览：" + (rankPv.cat || "全部类目") + " · " + ((rankPv.site || "").replace(/^g:/, "地区 · ") || "全部站点") + " · " + (rankPv.period || "最新期次") + " · " + (rankPv.mode === "v" ? "纵向时间对比" : "横向国家对比");
   }
   function fillRankPvControls() {
     const mk = (sel, list, cur, allLabel) => {
@@ -594,6 +754,19 @@
     };
     rankPv.cat = mk($("#rkadm-pv-cat"), rankCats, rankPv.cat, "全部类目") || "";
     rankPv.site = mk($("#rkadm-pv-site"), rankSites.map((s) => s.name), rankPv.site, "全部站点") || "";
+    /* 地区分组也进预览下拉：选「地区 · 欧洲」= 整区对比 */
+    const siteSel = $("#rkadm-pv-site");
+    if (siteSel) {
+      const keep = rankPv.site || siteSel.value;
+      if (rankGroups.filter((g) => g.name).length) {
+        let html = '<option value="">全部站点</option>';
+        rankGroups.filter((g) => g.name).forEach((g) => { html += '<option value="g:' + escAttr(g.name) + '">地区 · ' + escHtml(g.name) + '</option>'; });
+        rankSites.forEach((s) => { html += '<option value="' + escAttr(s.name) + '">' + escHtml(s.name) + '</option>'; });
+        siteSel.innerHTML = html;
+        siteSel.value = (keep && Array.prototype.some.call(siteSel.options, (o) => o.value === keep)) ? keep : "";
+        rankPv.site = siteSel.value;
+      }
+    }
     rankPv.period = mk($("#rkadm-pv-period"), rankPeriods.map((p) => p.label), rankPv.period, "自动（最新）") || "";
     if (!rankPv.period && rankPeriods.length) rankPv.period = rankPeriods[0].label;
     const ps = $("#rkadm-pv-period");
@@ -603,7 +776,7 @@
   /* ---------- 面板进入 ---------- */  /* ---------- 面板进入 ---------- */
   async function enterRankPanel() {
     initRankPeriodPickers();
-    await Promise.all([loadRankSites(), loadRankCats(), loadRankBatches()]);
+    await Promise.all([loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups()]);
     if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;
     fillRankPvControls();
@@ -627,6 +800,19 @@
     };
     const siteNew = $("#rank-site-new");
     if (siteNew) siteNew.onkeydown = (ev) => { if (ev.key === "Enter" && siteAdd) siteAdd.click(); };
+
+    const groupAdd = $("#rank-group-add");
+    if (groupAdd) groupAdd.onclick = async () => {
+      const inp = $("#rank-group-new");
+      const v = ((inp && inp.value) || "").trim();
+      if (!v) { sbToast("请输入地区名", false); return; }
+      if (rankGroups.some((g) => g.name === v)) { sbToast("已有同名地区", false); return; }
+      rankGroups.push({ name: v, members: [] });
+      if (inp) inp.value = "";
+      await saveRankGroups("已添加地区「" + v + "」，点 ☑ 勾选包含哪些国家");
+    };
+    const groupNew = $("#rank-group-new");
+    if (groupNew) groupNew.onkeydown = (ev) => { if (ev.key === "Enter" && groupAdd) groupAdd.click(); };
 
     const catAdd = $("#rank-cat-add");
     if (catAdd) catAdd.onclick = async () => {
