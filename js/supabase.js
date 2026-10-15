@@ -1499,52 +1499,104 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "更新站点失败");
     },
     // 站点改名：把 rank_items / rank_batches 里的旧站点名一并迁移（表无 update 策略 → 删除后重插）
+    // 站点改名：迁移 rank_items 与 rank_batches（先复制成功、再删除原数据；任一步失败即回滚，绝不先删）
     async renameRankSiteData(oldName, newName) {
+      const from = String(oldName || "").trim(), to = String(newName || "").trim();
+      if (!to || to === from) return 0;
+      // 目标站点若已有数据，拒绝静默合并（否则会因去重跳过 + 删除原数据而丢数据）
+      const exist = await this._countRankItems({ site: to });
+      if (exist > 0) throw new Error("站点「" + to + "」已存在 " + exist + " 条数据，为避免覆盖丢失，未执行改名。请换一个名称，或先删除该站点的数据。");
       let moved = 0;
       for (let round = 0; round < 100; round++) {
-        const rows = await this.listRankItems({ sites: [oldName], limit: 500 });
+        const rows = await this.listRankItems({ sites: [from], limit: 500 });
         if (!rows.length) break;
-        const news = rows.map((r) => { const o = Object.assign({}, r, { site: newName }); delete o.id; delete o.created_at; return o; });
-        await this.insertRankItems(news);
+        const news = rows.map((r) => { const o = Object.assign({}, r, { site: to }); delete o.id; delete o.created_at; return o; });
+        // 严格插入（不做去重合并）：插入失败或数量不符即回滚，原数据保持不动
+        const ids = await this._insertRankItemsStrict(news);
+        if (ids.length !== news.length) {
+          if (ids.length) await this.deleteRankItemsByIds(ids);
+          throw new Error("改名中止：新数据未完整写入（预期 " + news.length + " 条，实际 " + ids.length + " 条），原数据已保留。");
+        }
         await this.deleteRankItemsByIds(rows.map((r) => r.id));
         moved += rows.length;
         if (rows.length < 500) break;
       }
       if (moved) this._lastSiteRenameCount = moved;
       try {
-        const { data } = await client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("site", oldName);
+        const { data } = await client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("site", from);
         for (const b of (data || [])) {
+          const { error: ie } = await client.from("rank_batches").insert({ period_type: b.period_type, period_label: b.period_label, category: b.category, site: to, rows: b.rows, skipped: b.skipped });
+          if (ie) throw new Error(ie.message || "批次写入失败");
           await client.from("rank_batches").delete().eq("id", b.id);
-          await client.from("rank_batches").insert({ period_type: b.period_type, period_label: b.period_label, category: b.category, site: newName, rows: b.rows, skipped: b.skipped });
         }
       } catch (e) { /* 批次仅作展示，失败忽略 */ }
       return moved;
     },
     // 期次改名 / 周度·月度切换：迁移 rank_items 与 rank_batches
+    // 安全原则：先复制且校验成功，再删除原数据；任何异常都不会造成"改名=丢数据"
     async updateRankPeriodData(oldLabel, oldType, newLabel, newType) {
+      const from = String(oldLabel || "").trim(), to = String(newLabel || "").trim();
+      const nt = newType || oldType || "week";
+      if (!to) throw new Error("期次名称不能为空。");
+      if (to === from && nt === (oldType || nt)) return 0;   // 无变化，直接返回，不做任何写操作
+      // 目标期次若已有数据，拒绝静默合并（会因去重跳过 + 删原数据而丢数据）
+      const exist = await this._countRankItems({ periods: [to], periodType: nt });
+      if (exist > 0) throw new Error("目标期次「" + to + "」（" + (nt === "month" ? "月度" : "周度") + "）已存在 " + exist + " 条数据，为避免覆盖丢失，未执行改名。请换一个名称，或先删除该期次。");
       let moved = 0;
       for (let round = 0; round < 100; round++) {
-        let q = client.from("rank_items").select("*").eq("period_label", oldLabel).limit(500);
+        let q = client.from("rank_items").select("*").eq("period_label", from).limit(500);
         if (oldType) q = q.eq("period_type", oldType);
         const { data: rows, error } = await q;
         if (error) throw new Error(error.message || "读取榜单条目失败");
         if (!rows || !rows.length) break;
-        const news = rows.map((r) => { const o = Object.assign({}, r, { period_label: newLabel, period_type: newType || r.period_type }); delete o.id; delete o.created_at; return o; });
-        await this.insertRankItems(news);
+        const news = rows.map((r) => { const o = Object.assign({}, r, { period_label: to, period_type: nt }); delete o.id; delete o.created_at; return o; });
+        const ids = await this._insertRankItemsStrict(news);
+        if (ids.length !== news.length) {
+          if (ids.length) await this.deleteRankItemsByIds(ids);
+          throw new Error("改名中止：新数据未完整写入（预期 " + news.length + " 条，实际 " + ids.length + " 条），原数据已保留。");
+        }
         await this.deleteRankItemsByIds(rows.map((r) => r.id));
         moved += rows.length;
         if (rows.length < 500) break;
       }
       try {
-        let bq = client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("period_label", oldLabel);
+        let bq = client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("period_label", from);
         if (oldType) bq = bq.eq("period_type", oldType);
         const { data } = await bq;
         for (const b of (data || [])) {
+          const { error: ie } = await client.from("rank_batches").insert({ period_type: nt, period_label: to, category: b.category, site: b.site, rows: b.rows, skipped: b.skipped });
+          if (ie) throw new Error(ie.message || "批次写入失败");
           await client.from("rank_batches").delete().eq("id", b.id);
-          await client.from("rank_batches").insert({ period_type: newType || b.period_type, period_label: newLabel, category: b.category, site: b.site, rows: b.rows, skipped: b.skipped });
         }
-      } catch (e) { /* 忽略 */ }
+      } catch (e) { /* 批次仅作展示，失败忽略 */ }
+      this._lastPeriodRename = { moved: moved, from: from, to: to };
       return moved;
+    },
+    // 统计条数（用于改名前的目标占用检查）
+    async _countRankItems(opt) {
+      try {
+        let q = client.from("rank_items").select("id", { count: "exact", head: true });
+        if (opt.site) q = q.eq("site", opt.site);
+        const ps = opt.periods || [];
+        if (ps.length === 1) q = q.eq("period_label", ps[0]);
+        else if (ps.length > 1) q = q.in("period_label", ps);
+        if (opt.periodType) q = q.eq("period_type", opt.periodType);
+        const { count, error } = await q;
+        if (error) return 0;
+        return count || 0;
+      } catch (e) { return 0; }
+    },
+    // 严格插入：不做 upsert 去重合并，插入失败直接抛错（用于改名迁移，确保"成功才删原数据"）
+    async _insertRankItemsStrict(rows) {
+      const list = (rows || []).filter(Boolean);
+      const ids = [];
+      for (let i = 0; i < list.length; i += 200) {
+        const chunk = list.slice(i, i + 200);
+        const { data, error } = await client.from("rank_items").insert(chunk).select("id");
+        if (error) throw new Error(error.message || "写入榜单数据失败");
+        (data || []).forEach((d) => ids.push(d.id));
+      }
+      return ids;
     },
     // 删除整个期次（其下所有榜单条目与上传批次一并删除）
     async deleteRankPeriod(oldLabel, oldType) {

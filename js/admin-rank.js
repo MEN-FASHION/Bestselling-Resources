@@ -456,10 +456,11 @@
       ren.onclick = async () => {
         const v = (prompt("该批次所属期次改名（会同步该期次全部数据）：", b.period_label) || "").trim();
         if (!v || v === b.period_label) return;
+        if (!confirm("把期次「" + b.period_label + "」改名为「" + v + "」？\n该期次全部数据会一起改名。")) return;
         try {
-          await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type);
+          const mv = await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type);
           await loadRankBatches(); rankPreviewRefresh();
-          sbToast("期次已改名为「" + v + "」", true);
+          sbToast("期次已改名为「" + v + "」（迁移 " + mv + " 条）", true);
         } catch (e) { sbToast((e && e.message) || "改名失败", false); }
       };
 
@@ -511,19 +512,25 @@
       name.value = p.label;
       name.title = "点一下即可改名（该期次全部数据一起改名）";
       name.addEventListener && name.addEventListener("focus", () => name.select());
+      let renaming = false, committed = false;
       const commit = async () => {
         const v = (name.value || "").trim();
         if (!v || v === p.label) { name.value = p.label; return; }
+        if (renaming || committed) return;
+        if (!confirm("把期次「" + p.label + "」改名为「" + v + "」？\n该期次已上传的全部数据（" + p.rows + " 条）会一起改名。")) { name.value = p.label; return; }
+        renaming = true;
         try {
-          await SB.updateRankPeriodData(p.label, p.type, v, p.type);
+          const mv = await SB.updateRankPeriodData(p.label, p.type, v, p.type);
+          committed = true;
           await loadRankBatches(); rankPreviewRefresh();
-          sbToast("期次已改名为「" + v + "」", true);
+          sbToast("期次已改名为「" + v + "」（迁移 " + mv + " 条）", true);
         } catch (e) { name.value = p.label; sbToast((e && e.message) || "改名失败", false); }
+        finally { renaming = false; }
       };
       name.onblur = commit;
       name.onkeydown = (ev) => {
         if (ev.key === "Enter") { ev.preventDefault(); name.blur(); }
-        if (ev.key === "Escape") { name.value = p.label; name.blur(); }
+        if (ev.key === "Escape") { name.value = p.label; committed = true; name.blur(); committed = false; }
       };
 
       const cnt = document.createElement("span");
