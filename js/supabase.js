@@ -1656,20 +1656,94 @@ async removeTrendRecord(id) {
       return data && data.id;
     },
     // 批量写入榜单条目（重复的自动跳过：同一 类目+站点+期次+首图url 只留一条）
+    // 导入写入：普通插入（不再让数据库层按「期次+类目+站点+图片」去重）。
+    //
+    // 旧实现用 upsert + ignoreDuplicates，结果是：只要库里已有同样的（类目, 站点, 期次, 图片网址），
+    // 这一行就被静默丢掉、而且算作「重复跳过」。用户重传同一张表 / 上传与以往有重叠的表时，
+    // 就会出现「预览显示有效行 200、导入却只进去一部分甚至 0 条」，且没有任何明确提示。
+    //
+    // 去重改由导入流程在客户端显式完成：
+    //   覆盖模式 → 先清空该期次·该类目·该站点下的旧数据，再整表写入（不与以往上传查重）
+    //   追加模式 → 先剔除库里已存在的图，只补新的
+    // 因此这里写入多少条是确定的，不会再出现静默吞行。
     async insertRankItems(rows) {
       const list = (rows || []).filter(Boolean);
       if (!list.length) return { inserted: 0 };
       let inserted = 0;
       for (let i = 0; i < list.length; i += 300) {
         const chunk = list.slice(i, i + 300);
-        const { data, error } = await client
-          .from("rank_items")
-          .upsert(chunk, { onConflict: "category,site,period_type,period_label,image_url", ignoreDuplicates: true })
-          .select("id");
-        if (error) throw new Error(error.message || "写入榜单数据失败");
-        inserted += (data || []).length;
+        const { data, error } = await client.from("rank_items").insert(chunk).select("id");
+        if (!error) { inserted += (data || []).length; continue; }
+        const code = String((error && (error.code != null ? error.code : "")) || "");
+        // 库里若还留着旧版唯一约束（同站点/期次/类目下同一张图算重复），
+        // 直接插入会整批被拒；此时改成「覆盖写入」——同键的旧行被新数据更新，不新增重复。
+        // 否则会出现「有效行 200，却一条也进不去」或「只进去一部分」。
+        if (code === "23505") {
+          const { data: d2, error: e2 } = await client
+            .from("rank_items")
+            .upsert(chunk, { onConflict: "category,site,period_type,period_label,image_url", ignoreDuplicates: false })
+            .select("id");
+          if (e2) throw new Error(e2.message || "写入榜单数据失败");
+          inserted += (d2 || []).length;
+          continue;
+        }
+        throw new Error(error.message || "写入榜单数据失败");
       }
       return { inserted };
+    },
+    // 覆盖导入用：清空「期次类型 + 期次 + 类目 + 站点」这个槽位下的旧榜单条目与上传记录。
+    // 只清目标站点，不碰其它站点（例如先传欧盟、再传美国，互不影响）。
+    async clearRankSlot(o) {
+      const periodType = (o && o.periodType) || "week";
+      const periodLabel = (o && o.periodLabel) || "";
+      const category = (o && o.category) || "";
+      const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      let items = 0;
+      for (let round = 0; round < 400; round++) {
+        let q = client.from("rank_items").select("id")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        if (sites.length) q = q.in("site", sites);
+        const { data, error } = await q.limit(500);
+        if (error) throw new Error(error.message || "读取旧榜单数据失败");
+        const rows = data || [];
+        if (!rows.length) break;
+        await this.deleteRankItemsByIds(rows.map(r => r.id));
+        items += rows.length;
+        if (rows.length < 500) break;
+      }
+      // 上传记录（批次）仅作展示用途；只有「该批次的站点完全被本次覆盖」时才一并删除
+      let batches = 0;
+      try {
+        const { data } = await client.from("rank_batches").select("id, site")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        for (const b of (data || [])) {
+          const bs = String(b.site || "").split(",").map(s => s.trim()).filter(Boolean);
+          const covered = bs.length && bs.every(s => sites.indexOf(s) >= 0);
+          if (covered) { await this.deleteRankBatch(b.id); batches++; }
+        }
+      } catch (e) { /* 批次仅作展示，失败忽略 */ }
+      return { items: items, batches: batches };
+    },
+    // 追加导入用：取出该槽位里已有的图片网址（翻页取全，避免被单次上限截断）
+    async listRankSlotUrls(o) {
+      const periodType = (o && o.periodType) || "week";
+      const periodLabel = (o && o.periodLabel) || "";
+      const category = (o && o.category) || "";
+      const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      const urls = [];
+      for (let page = 0; page < 100; page++) {
+        let q = client.from("rank_items").select("image_url")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category)
+          .order("id", { ascending: true })
+          .range(page * 1000, page * 1000 + 999);
+        if (sites.length) q = q.in("site", sites);
+        const { data, error } = await q;
+        if (error) throw new Error(error.message || "读取已有榜单图失败");
+        const rows = data || [];
+        rows.forEach(r => { if (r.image_url) urls.push(r.image_url); });
+        if (rows.length < 1000) break;
+      }
+      return urls;
     },
     async updateRankBatch(id, patch) {
       const { error } = await client.from("rank_batches").update(patch || {}).eq("id", id);

@@ -51,12 +51,24 @@
     if (iAbs < 0 && iRatio < 0 && iSite < 0 && iUrl < 0) return null;
     return { abs: iAbs, ratio: iRatio, site: iSite, url: iUrl, leaf: iLeaf >= 0 ? iLeaf : iCat };
   }
+  /* 表头行识别：在前几行里挑「识别到的列最多」的那一行。
+     有些整理表在表头之上还有标题行、说明行，说明文字里常出现「环比比例」「环比绝对值」这些字样，
+     逐行取「第一个像表头的行」会把说明行误判成表头 → 首图URL 列找不到 → 一行也读不出来。 */
+  function scoreHeaderRow(m) {
+    if (!m) return 0;
+    return (m.abs >= 0 ? 1 : 0) + (m.ratio >= 0 ? 1 : 0) + (m.site >= 0 ? 1 : 0)
+      + (m.url >= 0 ? 1 : 0) + (m.leaf >= 0 ? 1 : 0);
+  }
   function pickHeaderRow(rows) {
-    for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    let best = null, first = null;
+    for (let i = 0; i < Math.min(rows.length, 8); i++) {
       const m = mapHeaderRow(rows[i] || []);
-      if (m) return { idx: i, map: m };
+      if (!m) continue;
+      if (!first) first = { idx: i, map: m, score: scoreHeaderRow(m) };
+      const s = scoreHeaderRow(m);
+      if (s >= 2 && (!best || s > best.score)) best = { idx: i, map: m, score: s };
     }
-    return null;
+    return best || first;   // 一行都不够 2 列时，退回老做法（取第一个像表头的行）
   }
   // 数值解析：兼容 "52220%"、"1,234.5"、数值型
   function toNum(v) {
@@ -500,6 +512,66 @@
   }
 
   /* ---------- 导入 ---------- */
+  /* 计算「本次上传要写入的行」：站点归属展开 + 表内同一张图合并。
+     纯函数（不碰页面、不发请求），便于拿真实表格做验证。
+       - 勾选了站点（useMine）→ 每一行都归入勾选的站点，忽略表格里「销量站点」列的值
+       - 未勾选 → 按表格里每行自带的「销量站点」取值
+       - 同一站点内同一张图重复出现 → 只保留一条（mergedInFile 记录合并掉的条数） */
+  function buildRankImportRows(rows, opt) {
+    const o = opt || {};
+    const periodType = o.periodType || "week";
+    const periodLabel = o.periodLabel || "";
+    const category = o.category || "";
+    const sites = o.sites || [];
+    const useMine = !!o.useMine && sites.length > 0;
+    const out = [];
+    const tableSites = {};
+    let noSite = 0;
+    (rows || []).forEach(r => {
+      const targets = useMine ? sites : (r.site ? [r.site] : []);
+      if (!targets.length) { noSite++; return; }
+      if (useMine && r.site && sites.indexOf(r.site) < 0) tableSites[r.site] = 1;
+      targets.forEach(s => {
+        out.push({
+          period_type: periodType,
+          period_label: periodLabel,
+          category: category,
+          site: s,
+          leaf_category: r.leaf_category,
+          image_url: r.image_url,
+          ratio: r.ratio,
+          abs_delta: r.abs_delta,
+        });
+      });
+    });
+    const seen = {};
+    const list = [];
+    let mergedInFile = 0;
+    out.forEach(r => {
+      const k = r.site + "\u0000" + r.image_url;
+      if (seen[k]) { mergedInFile++; return; }
+      seen[k] = 1;
+      list.push(r);
+    });
+    return {
+      rows: list,
+      mergedInFile: mergedInFile,
+      noSite: noSite,
+      tableSites: tableSites,
+      slotSites: Object.keys(list.reduce((m, r) => (m[r.site] = 1, m), {})),
+    };
+  }
+
+  /* 追加导入用：剔除库里已存在的图，只补新的 */
+  function filterNotExisting(rows, existingUrls) {
+    const has = {};
+    (existingUrls || []).forEach(u => { if (u) has[u] = 1; });
+    const list = [];
+    let skipped = 0;
+    (rows || []).forEach(r => { if (has[r.image_url]) { skipped++; return; } list.push(r); });
+    return { rows: list, skipped: skipped };
+  }
+
   async function doRankImport() {
     if (!rankParsed || !rankParsed.rows.length) { sbToast("请先上传并解析 Excel", false); return; }
     const periodType = (document.querySelector('input[name="rank-period"]:checked') || {}).value || "week";
@@ -522,40 +594,42 @@
        这样欧盟这类合计表里写满各国名字时，前台就只出现「欧盟」一个地区）。
        一个都没勾 → 才退回按表格里每行自带的「销量站点」取值。 */
     const useMine = defaults.length > 0;
-    const out = [];
-    let noSite = 0;
-    const tableSites = {};   // 被忽略掉的表格站点取值，用于提示
-    rankParsed.rows.forEach(r => {
-      let sites;
-      if (useMine) sites = defaults;
-      else sites = r.site ? [r.site] : [];
-      if (!sites.length) { noSite++; return; }
-      if (useMine && r.site && defaults.indexOf(r.site) < 0) tableSites[r.site] = 1;
-      sites.forEach(s => {
-        out.push({
-          period_type: periodType,
-          period_label: periodLabel,
-          category,
-          site: s,
-          leaf_category: r.leaf_category,
-          image_url: r.image_url,
-          ratio: r.ratio,
-          abs_delta: r.abs_delta,
-        });
-      });
+    const built = buildRankImportRows(rankParsed.rows, {
+      periodType: periodType, periodLabel: periodLabel, category: category, sites: defaults, useMine: useMine,
     });
-    if (!out.length) {
-      sbToast(noSite ? "表格没有「销量站点」列，且未选择默认站点" : "没有可导入的有效行", false);
+    if (!built.rows.length) {
+      sbToast(built.noSite ? "表格没有「销量站点」列，且未选择默认站点" : "没有可导入的有效行", false);
       return;
     }
-    const ignoredList = Object.keys(tableSites);
-    const batchSite = useMine ? defaults.join(",") : Object.keys(out.reduce((m, r) => (m[r.site] = 1, m), {})).join(",");
-    computeFlags(out);
+    const rowsOut = built.rows;
+    const mergedInFile = built.mergedInFile;
+    const ignoredList = Object.keys(built.tableSites);
+    const slotSites = built.slotSites;
+    const batchSite = useMine ? defaults.join(",") : slotSites.join(",");
+    computeFlags(rowsOut);
+
+    const mode = (document.querySelector('input[name="rank-mode"]:checked') || {}).value === "append" ? "append" : "replace";
     const btn = $("#rank-import");
     if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
     try {
-      const batchId = await SB.createRankBatch({ periodType, periodLabel, category, site: batchSite });
-      const rows = out.map(r => {
+      const slot = { periodType: periodType, periodLabel: periodLabel, category: category, sites: slotSites };
+      let cleared = { items: 0, batches: 0 };
+      let skippedExisting = 0;
+      let list = rowsOut;
+
+      if (mode === "replace") {
+        // 覆盖：先清掉「本期次 · 本类目 · 本次站点」下的旧数据，再整表写入 → 不与以往上传查重
+        cleared = await SB.clearRankSlot(slot);
+      } else {
+        // 追加：保留旧数据，只补库里还没有的图
+        const exist = await SB.listRankSlotUrls(slot);
+        const f = filterNotExisting(rowsOut, exist);
+        list = f.rows;
+        skippedExisting = f.skipped;
+      }
+
+      const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: periodLabel, category: category, site: batchSite });
+      const rows = list.map(r => {
         const o = Object.assign({}, r, { batch_id: batchId });
         o.flag_opportunity = !!r.flag_opportunity;
         o.flag_hot = !!r.flag_hot;
@@ -564,11 +638,21 @@
         o.rank_abs = r.rank_abs || null;
         return o;
       });
-      const res = await SB.insertRankItems(rows);
+      const res = rows.length ? await SB.insertRankItems(rows) : { inserted: 0 };
       const inserted = (res && res.inserted) || 0;
-      const skipped = rows.length - inserted;
-      try { await SB.updateRankBatch(batchId, { rows: inserted, skipped }); } catch (e) { /* 统计失败不影响数据 */ }
-      sbToast("导入完成：" + (useMine ? "已按我定义的站点归入「" + defaults.join("、") + "」" : "已按表格站点列归入") + "，新增 " + inserted + " 条" + (skipped > 0 ? "，重复跳过 " + skipped + " 条" : "") + (ignoredList.length ? "（已忽略表格里的 " + ignoredList.length + " 个站点取值：" + ignoredList.slice(0, 4).join("、") + (ignoredList.length > 4 ? "…" : "") + "）" : ""), true);
+      try { await SB.updateRankBatch(batchId, { rows: inserted, skipped: skippedExisting + mergedInFile }); } catch (e) { /* 统计失败不影响数据 */ }
+
+      if (rows.length > 0 && inserted === 0) {
+        /* 安全网：一条都没写进去，必须说清楚，不能静默 */
+        sbToast("导入失败：0 条写入（有效行 " + rowsOut.length + " 条）。请刷新页面后重试；若仍为 0，请把这张表发给开发者排查。", false);
+      } else {
+        sbToast("导入完成：" + (useMine ? "已按我定义的站点归入「" + defaults.join("、") + "」" : "已按表格站点列归入")
+          + "，写入 " + inserted + " 条"
+          + (mode === "replace" && cleared.items > 0 ? "（已替换该期次该类目下的旧数据 " + cleared.items + " 条）" : "")
+          + (mode === "append" && skippedExisting > 0 ? "（库里已存在的 " + skippedExisting + " 条未重复写入）" : "")
+          + (mergedInFile > 0 ? "（表格里同一张图重复 " + mergedInFile + " 次，已合并为 1 条）" : "")
+          + (ignoredList.length ? "（已忽略表格里的 " + ignoredList.length + " 个站点取值：" + ignoredList.slice(0, 4).join("、") + (ignoredList.length > 4 ? "…" : "") + "）" : ""), true);
+      }
       rankParsed = null;
       $("#rank-file").value = "";
       $("#rank-file-tip").textContent = "";
