@@ -68,6 +68,7 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
+    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
   async function ensureZoneVis() {
@@ -75,6 +76,7 @@
     try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
     try { myZones = await SB.myManageZones(); } catch (e) { myZones = null; }
     zoneVisLoaded = true;
+    if (window.Common && Common.zones) { Common.zones.setVis(zoneVis); Common.zones.setMine(myZones); Common.zones.loadDefs(); }
     applyZoneNav();
   }
 

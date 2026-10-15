@@ -10,14 +10,22 @@
 let permUsers = [];
 
 // 用户级可见专区的可选项（与全局「前台访问设置」的专区集合一致）
-const PERM_ZONES = [
+// 可勾选的专区（内置 7 个 + 超管在「专区管理」新增的）；随 ZONE_DEFS 动态同步
+let PERM_ZONES = [
   { key: "marketing", label: "营销日历" },
   { key: "visual", label: "视觉专区" },
   { key: "trend", label: "趋势专区" },
   { key: "recruit", label: "招品回品" },
   { key: "bestseller", label: "BESTSELLER" },
   { key: "notice", label: "公告" },
+  { key: "rank", label: "趋势上升榜" },
 ];
+
+// 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
+function syncPermZones() {
+  const defs = window.ZONE_DEFS;
+  if (Array.isArray(defs) && defs.length) PERM_ZONES = defs.map(z => ({ key: z.key, label: z.label || z.key }));
+}
 
 // 跟随全局 = 显示全局 frontend_zone_visibility 中可见的专区；供权限表「已授权专区」列直接列出
 let permGlobalZones = [];
@@ -65,6 +73,8 @@ function permRoleLabel(r) {
   }
 
 async function loadPermPanel() {
+    try { await reloadZoneDefs(); } catch (e) { /* 忽略 */ }
+    syncPermZones();
     try { permUsers = await SB.listAdminUsers(); } catch (e) { permUsers = []; }
     // 读取全局可见专区，未单独配置（manage_zones 为空）的用户则按全局展开列出可见专区
     try {
@@ -89,6 +99,7 @@ async function loadPermPanel() {
     }
     renderPermTable(permUsers);
     await loadDefaultPerms();
+    await renderZoneDefsBox();
   }
 
 // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
@@ -540,6 +551,109 @@ function updatePermCatCount() {
     cnt.textContent = "已选 " + picked + " / " + total;
   }
 
+// ================= 专区管理（新增 / 改名 / 删除） =================
+// 专区定义存于 site_settings.frontend_zone_visibility.__defs（无需改数据库）
+const ZDEF_HREF_PRESETS = [
+  { label: "（不显示在前台菜单）", href: "" },
+  { label: "视觉专区页 (index.html)", href: "index.html" },
+  { label: "趋势专区页 (trends.html)", href: "trends.html" },
+  { label: "招品回品 (trends.html#recruit)", href: "trends.html#recruit" },
+  { label: "BESTSELLER (trends.html#bestseller)", href: "trends.html#bestseller" },
+  { label: "趋势上升榜 (rank.html)", href: "rank.html" },
+  { label: "营销日历 (marketing.html)", href: "marketing.html" },
+];
+
+function zdefKey(label) {
+  const base = String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (base) return base.slice(0, 24);
+  return "z" + Date.now().toString(36);
+}
+
+function currentZoneDefs() {
+  const d = window.ZONE_DEFS;
+  if (Array.isArray(d) && d.length) return d.map(z => ({ key: z.key, label: z.label, href: z.href || "" }));
+  return [];
+}
+
+async function persistZoneDefs(defs) {
+  await SB.setZoneDefs(defs);
+  await reloadZoneDefs();
+  syncPermZones();
+  if (window.Common && Common.zones) { Common.zones.setDefs(window.ZONE_DEFS); Common.zones.renderNav(); }
+  await renderZoneDefsBox();
+  // 让「顶部菜单项 · 前台可见」「各专区类目可见」两张表也换成新的专区集合
+  try { await loadZoneVisibility(); } catch (e) {}
+  try { await loadCatVisibility(); } catch (e) {}
+}
+
+async function renderZoneDefsBox() {
+  const box = document.querySelector("#zone-defs-box");
+  if (!box) return;
+  const defs = currentZoneDefs();
+  const builtinKeys = (window.ZONE_DEFS_DEFAULT || []).map(z => z.key);
+  box.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "zdef-row zdef-head";
+  head.innerHTML = '<span class="zdef-c1">专区名称</span><span class="zdef-c2">前台链接</span><span class="zdef-c3">标识</span><span class="zdef-c4"></span>';
+  box.appendChild(head);
+
+  defs.forEach(d => {
+    const row = document.createElement("div");
+    row.className = "zdef-row";
+    const builtin = builtinKeys.indexOf(d.key) >= 0;
+    const opts = ZDEF_HREF_PRESETS.slice();
+    if (d.href && !opts.some(o => o.href === d.href)) opts.push({ label: "自定义：" + d.href, href: d.href });
+    row.innerHTML =
+      '<input class="input zdef-label" value="' + escHtml(d.label || "") + '" placeholder="专区名称">' +
+      '<select class="input zdef-href">' + opts.map(o =>
+        '<option value="' + escHtml(o.href) + '"' + (o.href === (d.href || "") ? " selected" : "") + '>' + escHtml(o.label) + '</option>'
+      ).join("") + '</select>' +
+      '<code class="zdef-key">' + escHtml(d.key) + '</code>' +
+      '<span class="zdef-ops"><button class="btn-ghost zdef-save" type="button">保存</button>' +
+      (builtin ? '' : '<button class="btn-ghost zdef-del" type="button">删除</button>') + '</span>';
+    row.querySelector(".zdef-save").onclick = async () => {
+      const label = row.querySelector(".zdef-label").value.trim();
+      const href = row.querySelector(".zdef-href").value;
+      if (!label) { sbToast("专区名称不能为空", false); return; }
+      const next = currentZoneDefs().map(x => x.key === d.key ? { key: x.key, label: label, href: href } : x);
+      try { await persistZoneDefs(next); sbToast("已保存：" + label); }
+      catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+    };
+    if (!builtin) row.querySelector(".zdef-del").onclick = async () => {
+      if (!confirm("确定删除专区「" + (d.label || d.key) + "」？删除后该专区不再出现在前台菜单与权限勾选列表里（已勾选该专区的用户会失去这一项）。")) return;
+      const next = currentZoneDefs().filter(x => x.key !== d.key);
+      try { await persistZoneDefs(next); sbToast("已删除：" + (d.label || d.key)); }
+      catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+    };
+    box.appendChild(row);
+  });
+
+  const foot = document.createElement("div");
+  foot.className = "zdef-row zdef-new";
+  foot.innerHTML =
+    '<input id="zdef-new-label" class="input zdef-label" placeholder="新专区名称，如 上新专区">' +
+    '<select id="zdef-new-href" class="input zdef-href">' + ZDEF_HREF_PRESETS.map(o =>
+      '<option value="' + escHtml(o.href) + '"' + (o.href === "rank.html" ? " selected" : "") + '>' + escHtml(o.label) + '</option>'
+    ).join("") + '</select>' +
+    '<span class="zdef-c3"><button id="zdef-add" class="btn-primary" type="button">＋ 新增专区</button></span><span></span>';
+  box.appendChild(foot);
+
+  const add = document.querySelector("#zdef-add");
+  if (add) add.onclick = async () => {
+    const label = (document.querySelector("#zdef-new-label").value || "").trim();
+    const href = document.querySelector("#zdef-new-href").value || "";
+    if (!label) { sbToast("请填写新专区名称", false); return; }
+    const defs2 = currentZoneDefs();
+    let key = zdefKey(label), i = 2;
+    while (defs2.some(x => x.key === key)) key = zdefKey(label) + "-" + (i++);
+    defs2.push({ key: key, label: label, href: href });
+    try {
+      await persistZoneDefs(defs2);
+      sbToast("已新增专区：" + label + "（记得给管理员勾选该专区权限）");
+    } catch (e) { sbToast("新增失败：" + (e.message || ""), false); }
+  };
+}
+
 function bindPermission() {
     // 按标签筛选：选择后权限表仅显示匹配标签的用户
     const tagFilter = $("#perm-tag-filter");
@@ -551,7 +665,7 @@ function bindPermission() {
 
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission
+    permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
   });
 
 })();

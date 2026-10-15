@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261014H">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261014H">
+<link rel="stylesheet" href="css/style.css?v=20261015A">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015A">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -477,6 +477,11 @@
           </div>
           <hr class="tag-sub-hr">
           <div class="access-zone-block">
+            <h4 class="perm-zone-title">专区管理 <span class="hint-inline">（新增 / 改名 / 删除专区。新增的专区会立刻出现在上面的「顶部菜单项 · 前台可见」、以及「权限管理」的「前台可见专区」「后台管理专区」勾选列表里；填了前台链接的专区还会出现在前台顶部菜单）</span></h4>
+            <div id="zone-defs-box" class="zdef-box"><p class="hint">加载中…</p></div>
+          </div>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
             <h4 class="perm-zone-title">各专区 · 各类目 · 前台可见 <span class="hint-inline">（可随时关闭某专区某类目，前台该类目下内容立即隐藏；关闭仅影响前台展示，不影响后台数据）</span></h4>
             <p class="hint">开启「展示」= 前台该类目可见；关闭「隐藏」= 前台该类目下内容不展示（用户看不见），可随时再开启。未配置的类目默认前台可见。</p>
             <div id="cat-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
@@ -836,21 +841,57 @@
       </div>
 
       <div class="panel-card hidden" id="rank-card">
-        <h3>趋势上升榜 · 数据上传</h3>
-        <p class="hint">上传榜单 Excel（含「叶子类目名称 / 销量站点 / 首图url / 环比绝对值 / 环比比例」五列），系统自动打「潜力机会 / 趋势爆款 / 周度激增」标签，前台「趋势上升榜」专区可做国家与周次对比。</p>
-
-        <div class="rank-block">
-          <h4>① 国家站点</h4>
-          <p class="hint">自定义维护站点清单（前台对比与上传时从这里选）。</p>
-          <div class="rank-inline">
-            <input id="rank-site-new" type="text" placeholder="输入站点名，例如：美国" style="max-width:220px">
-            <button id="rank-site-add" class="btn-ghost" type="button">添加站点</button>
+        <div class="rkadm-head">
+          <div>
+            <h3>趋势上升榜 · 榜单管理工作台</h3>
+            <p class="hint">左边维护<b>国家站点</b>与<b>期次 / 频次</b>，右边就是前台的样子 —— 改完即时可见。名称直接点一下就能改。</p>
           </div>
-          <div id="rank-site-list" class="rank-site-list"></div>
+          <div class="rkadm-head-act">
+            <button id="rkadm-refresh" class="btn-ghost" type="button">刷新数据</button>
+            <button id="rkadm-open-front" class="btn-primary" type="button">前台打开</button>
+          </div>
         </div>
 
-        <div class="rank-block">
-          <h4>② 上传榜单表格</h4>
+        <div class="rkadm-split">
+          <div class="rkadm-col">
+            <section class="rkadm-sec">
+              <h4>国家站点 <span class="rkadm-tip">点名称即改，↑↓ 排序</span></h4>
+              <div class="rkadm-add">
+                <input id="rank-site-new" type="text" placeholder="输入站点名，例如：美国">
+                <button id="rank-site-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rank-site-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度</span></h4>
+              <div id="rank-period-list" class="rkadm-list"></div>
+            </section>
+          </div>
+
+          <div class="rkadm-col rkadm-col--main">
+            <section class="rkadm-sec rkadm-sec--pv">
+              <h4>实时预览 · 前台所见
+                <span class="rkadm-sec-act">
+                  <button id="rkadm-pv-reload" class="btn-ghost small" type="button">刷新</button>
+                  <button id="rkadm-pv-full" class="btn-ghost small" type="button">全屏</button>
+                </span>
+              </h4>
+              <div class="rkadm-pv-bar">
+                <label>类目<select id="rkadm-pv-cat"></select></label>
+                <label>国家<select id="rkadm-pv-site"></select></label>
+                <label>期次<select id="rkadm-pv-period"></select></label>
+                <label>对比<select id="rkadm-pv-mode"><option value="h">横向 · 国家对比</option><option value="v">纵向 · 时间对比</option></select></label>
+                <label>图幅<select id="rkadm-pv-size"><option value="s">小</option><option value="m" selected>中</option><option value="l">大</option></select></label>
+              </div>
+              <div id="rkadm-pv-hint" class="rkadm-pv-hint"></div>
+              <div class="rkadm-frame"><iframe id="rkadm-pv-frame" title="前台实时预览" src="rank.html"></iframe></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>上传榜单表格</h4>
+          <p class="hint">Excel 需含「叶子类目名称 / 销量站点 / 首图url / 环比绝对值 / 环比比例」五列，系统自动打「潜力机会 / 趋势爆款 / 周度激增」标签。</p>
           <div class="rank-grid">
             <label class="rank-field">
               <span>标签周期</span>
@@ -859,10 +900,18 @@
                 <label class="chk"><input type="radio" name="rank-period" value="month"> 月度</label>
               </span>
             </label>
-            <label class="rank-field">
-              <span>周次 / 月份</span>
-              <input id="rank-period-label" type="text" placeholder="如 W41 或 2026-09">
+            <label class="rank-field" id="rank-pw-wrap">
+              <span>选周（日历选任意一天，自动定位到该周）</span>
+              <span class="rank-inline">
+                <input id="rank-period-date" type="date">
+                <b id="rank-period-week" class="rank-week-out">—</b>
+              </span>
             </label>
+            <label class="rank-field" id="rank-pm-wrap" style="display:none">
+              <span>选月份</span>
+              <input id="rank-period-month" type="month">
+            </label>
+            <input id="rank-period-label" type="hidden" value="">
             <label class="rank-field">
               <span>类目</span>
               <span class="rank-inline">
@@ -881,12 +930,12 @@
           </div>
           <div id="rank-file-tip" class="rank-file-tip"></div>
           <div id="rank-preview" class="rank-preview"></div>
-        </div>
+        </section>
 
-        <div class="rank-block">
-          <h4>③ 已上传记录</h4>
+        <section class="rkadm-sec">
+          <h4>已上传记录</h4>
           <div id="rank-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
-        </div>
+        </section>
       </div>
 
       <div class="panel-card hidden" id="dash-card">
@@ -1135,24 +1184,24 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261014H"></script>
-  <script src="vendor/quill.js?v=20261014H"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261014H"></script>
-  <script src="vendor/qrcode.min.js?v=20261014H"></script>
-  <script src="js/config.js?v=20261014H"></script>
-  <script src="js/supabase.js?v=20261014H"></script>
+  <script src="vendor/supabase.js?v=20261015A"></script>
+  <script src="vendor/quill.js?v=20261015A"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261015A"></script>
+  <script src="vendor/qrcode.min.js?v=20261015A"></script>
+  <script src="js/config.js?v=20261015A"></script>
+  <script src="js/supabase.js?v=20261015A"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261014H"></script>
-  <script src="js/admin-images.js?v=20261014H"></script>
-  <script src="js/admin-smart.js?v=20261014H"></script>
-  <script src="js/admin-trend.js?v=20261014H"></script>
-  <script src="js/admin-notice.js?v=20261014H"></script>
-  <script src="js/admin-marketing.js?v=20261014H"></script>
-  <script src="js/admin-tasks.js?v=20261014H"></script>
-  <script src="js/admin-bestseller.js?v=20261014H"></script>
-  <script src="js/admin-perm.js?v=20261014H"></script>
-  <script src="js/admin-pool.js?v=20261014H"></script>
-  <script src="js/admin-rank.js?v=20261014H"></script>
+  <script src="js/admin.js?v=20261015A"></script>
+  <script src="js/admin-images.js?v=20261015A"></script>
+  <script src="js/admin-smart.js?v=20261015A"></script>
+  <script src="js/admin-trend.js?v=20261015A"></script>
+  <script src="js/admin-notice.js?v=20261015A"></script>
+  <script src="js/admin-marketing.js?v=20261015A"></script>
+  <script src="js/admin-tasks.js?v=20261015A"></script>
+  <script src="js/admin-bestseller.js?v=20261015A"></script>
+  <script src="js/admin-perm.js?v=20261015A"></script>
+  <script src="js/admin-pool.js?v=20261015A"></script>
+  <script src="js/admin-rank.js?v=20261015A"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

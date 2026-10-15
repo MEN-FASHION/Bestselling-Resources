@@ -358,9 +358,86 @@ window.Common = (function () {
     };
   })();
 
+  /* ============================================================
+   * 专区定义 / 顶部菜单（支持后台「专区管理」动态新增的专区）
+   *  - defs：专区列表 [{key,label,href}]（未配置时用 config.js 的 ZONE_DEFS_DEFAULT）
+   *  - renderNav()：给所有页面顶部菜单补齐动态专区入口 + 按可见性显示/隐藏
+   * ============================================================ */
+  const zones = (function () {
+    let defs = null;    // 后台配置的专区定义（null = 用默认）
+    let vis = null;     // 全局可见性 { zone: bool }
+    let mine = null;    // 当前用户的前台可见专区白名单（空/未登录 = 跟随全局）
+    let loaded = false;
+
+    function fallback() { return (window.ZONE_DEFS_DEFAULT || []).slice(); }
+    function list() { return (defs && defs.length) ? defs : fallback(); }
+
+    function visible(zone) {
+      if (!zone) return true;
+      if (Array.isArray(mine) && mine.length) {
+        if (vis && vis[zone] === false) return false;
+        return mine.indexOf(zone) !== -1;
+      }
+      return !vis || vis[zone] !== false;
+    }
+
+    function setVis(v) { vis = v || {}; }
+    function setMine(m) { mine = Array.isArray(m) ? m : null; }
+    function setDefs(d) { defs = (Array.isArray(d) && d.length) ? d : null; }
+
+    async function loadDefs() {
+      if (loaded) return list();
+      loaded = true;
+      try {
+        const SBX = window.SB;
+        if (SBX && SBX.getZoneDefs) setDefs(await SBX.getZoneDefs());
+      } catch (e) { /* 读取失败则用默认专区列表 */ }
+      return list();
+    }
+
+    // 顶部菜单：补齐动态专区入口，并按可见性显示/隐藏
+    function renderNav() {
+      const tabs = document.querySelector(".top-tabs");
+      if (!tabs) return;
+      const all = () => Array.prototype.slice.call(tabs.querySelectorAll(".tab-link"));
+      const used = {};
+      // 1) 已有菜单项按 href 认领专区
+      all().forEach((a) => {
+        if (a.getAttribute("data-zone")) { used[a.getAttribute("data-zone")] = 1; return; }
+        const href = a.getAttribute("href") || "";
+        const hit = list().find((d) => d.href && d.href === href && !used[d.key]);
+        if (hit) { used[hit.key] = 1; a.setAttribute("data-zone", hit.key); }
+      });
+      // 2) 后台新增的专区（静态菜单里没有的）动态补进去
+      const noticeTab = tabs.querySelector("#notice-tab");
+      list().forEach((d) => {
+        if (!d.href || !d.label || used[d.key]) return;
+        const a = document.createElement("a");
+        a.href = d.href;
+        a.className = "tab-link";
+        a.setAttribute("data-zone", d.key);
+        a.textContent = d.label;
+        if (noticeTab && noticeTab.parentNode === tabs) tabs.insertBefore(a, noticeTab);
+        else tabs.appendChild(a);
+        used[d.key] = 1;
+      });
+      // 3) 可见性
+      all().forEach((a) => {
+        const z = a.getAttribute("data-zone");
+        if (!z) return;
+        a.style.display = visible(z) ? "" : "none";
+      });
+    }
+
+    return {
+      visible, setVis, setMine, setDefs, loadDefs, renderNav,
+      get defs() { return list(); }
+    };
+  })();
+
   return {
     setToast, toast, escHtml, fmtTime,
     downloadWatermarked, setupAntiDownload,
-    authConfirm, notices
+    authConfirm, notices, zones
   };
 })();

@@ -403,6 +403,7 @@
     // 当前登录用户的用户级可见专区白名单（未登录/未配置 = null，回退全局）
     try { myZones = await SB.myManageZones(); } catch (e) { myZones = null; }
     zoneVisLoaded = true;
+    if (window.Common && Common.zones) { Common.zones.setVis(zoneVis); Common.zones.setMine(myZones); Common.zones.loadDefs(); }
     applyZoneNav();
   }
 
@@ -454,6 +455,7 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
+    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
   function renderCatMenu() {

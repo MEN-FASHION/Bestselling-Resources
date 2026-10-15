@@ -106,3 +106,20 @@ window.CONFIG = {
     "内衣套装","袜套","军制服","塑形衣","家居服/裙/袍","洗礼服"
   ]
 };
+
+/* ============================================================
+ * 专区定义（默认值）
+ * 超管可在后台「权限管理 → 专区管理」里改名 / 新增 / 删除专区：
+ *   - 改完即时生效于「用户级可见专区」「后台可管理专区」「前台访问设置」
+ *   - 带「前台链接」的专区会出现在前台顶部菜单（可单独开关可见性）
+ * 实际配置存于 site_settings.frontend_zone_visibility.__defs（无需改数据库）
+ * ============================================================ */
+window.ZONE_DEFS_DEFAULT = [
+  { key: "marketing",  label: "营销日历",     href: "marketing.html" },
+  { key: "visual",     label: "视觉专区",     href: "index.html" },
+  { key: "trend",      label: "趋势专区",     href: "trends.html" },
+  { key: "recruit",    label: "招品回品",     href: "trends.html#recruit" },
+  { key: "bestseller", label: "BESTSELLER",   href: "trends.html#bestseller" },
+  { key: "notice",     label: "公告",         href: "" },
+  { key: "rank",       label: "趋势上升榜",   href: "rank.html" }
+];

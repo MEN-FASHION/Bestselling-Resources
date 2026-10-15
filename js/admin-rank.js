@@ -12,8 +12,26 @@
   let rankSites = [];     // [{id,name,sort_order}]
   let rankCats = [];      // 类目管理里的类目名
   let rankParsed = null;  // { rows:[], headers:[], missing:[] }
+  let rankPeriods = [];   // 由上传记录聚合：[{label,type,rows,batches}]
+  const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
 
   const $ = (s) => document.querySelector(s);
+
+  /* 期次排序键（与前台 rank.js 同一套口径：周次 < 月份 < 具体日期） */
+  function admPeriodKey(p) {
+    const s = String(p || "").trim();
+    const ym = s.match(/(20\d{2})/);
+    const year = ym ? parseInt(ym[1], 10) : 0;
+    let m = s.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m) return parseInt(m[1], 10) * 10000 + 300 + parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
+    m = s.match(/[Ww]\s*(\d{1,2})/) || s.match(/第?\s*(\d{1,2})\s*周/);
+    if (m) return year * 10000 + 100 + parseInt(m[1], 10);
+    m = s.match(/(20\d{2})\D{0,3}(\d{1,2})\s*月?$/) || s.match(/^(\d{1,2})\s*月$/);
+    if (m) return year * 10000 + 200 + parseInt(m[m.length - 1], 10);
+    m = s.match(/^(\d{1,3})$/);
+    if (m) return year * 10000 + 100 + parseInt(m[1], 10);
+    return 990000 + (s.charCodeAt(0) || 0);
+  }
 
   /* ---------- 表头识别 ---------- */
   function normHead(h) {
@@ -85,21 +103,67 @@
     if (!box) return;
     box.innerHTML = "";
     if (!rankSites.length) {
-      box.innerHTML = '<div class="hint">暂无站点，请在上方添加（例如：美国、墨西哥、德国）</div>';
+      box.innerHTML = '<div class="rkadm-empty">还没有站点。在上方输入框新增（例如：美国、墨西哥、德国）。</div>';
       return;
     }
-    rankSites.forEach(s => {
-      const chip = document.createElement("span");
-      chip.className = "rank-site-chip";
-      chip.innerHTML = escHtml(s.name) + ' <button type="button" class="rank-site-del" title="删除站点">✕</button>';
-      chip.querySelector(".rank-site-del").onclick = async () => {
-        if (!confirm("删除站点「" + s.name + "」？（已上传的榜单数据不受影响）")) return;
-        try { await SB.removeRankSite(s.name); await loadRankSites(); sbToast("已删除站点", true); }
+    rankSites.forEach((s, idx) => {
+      const row = document.createElement("div");
+      row.className = "rkadm-row";
+
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "rkadm-name";
+      name.value = s.name;
+      name.title = "点一下即可改名（已有数据会一起改名）";
+      name.addEventListener && name.addEventListener("focus", () => name.select());
+      const commit = async () => {
+        const v = (name.value || "").trim();
+        if (!v || v === s.name) { name.value = s.name; return; }
+        if (!confirm("把站点「" + s.name + "」改名为「" + v + "」？\n该站点已上传的榜单数据会一起改名。")) { name.value = s.name; return; }
+        try {
+          await SB.updateRankSiteById(s.id, { name: v });
+          await SB.renameRankSiteData(s.name, v);
+          await loadRankSites();
+          await loadRankBatches();
+          rankPreviewRefresh();
+          sbToast("已改名为「" + v + "」", true);
+        } catch (e) { name.value = s.name; sbToast((e && e.message) || "改名失败", false); }
+      };
+      name.onblur = commit;
+      name.onkeydown = (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); name.blur(); }
+        if (ev.key === "Escape") { name.value = s.name; name.blur(); }
+      };
+
+      const move = async (dir) => {
+        const t = rankSites[idx + dir];
+        if (!t) return;
+        try {
+          await SB.updateRankSiteById(s.id, { sort_order: t.sort_order });
+          await SB.updateRankSiteById(t.id, { sort_order: s.sort_order });
+          await loadRankSites(); rankPreviewRefresh();
+        } catch (e) { sbToast("排序失败", false); }
+      };
+
+      const up = document.createElement("button");
+      up.type = "button"; up.className = "rkadm-icon"; up.textContent = "↑"; up.title = "上移";
+      up.onclick = () => move(-1);
+      const down = document.createElement("button");
+      down.type = "button"; down.className = "rkadm-icon"; down.textContent = "↓"; down.title = "下移";
+      down.onclick = () => move(1);
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除站点";
+      del.onclick = async () => {
+        if (!confirm("删除站点「" + s.name + "」？\n（已上传的榜单数据不受影响，仅从站点清单移除）")) return;
+        try { await SB.removeRankSite(s.name); await loadRankSites(); fillRankPvControls(); rankPreviewRefresh(); sbToast("已删除站点", true); }
         catch (e) { sbToast("删除失败", false); }
       };
-      box.appendChild(chip);
+
+      row.appendChild(name); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+      box.appendChild(row);
     });
   }
+
   function renderRankSiteDefaults() {
     const box = $("#rank-site-defaults");
     if (!box) return;
@@ -224,13 +288,66 @@
     if (btn) btn.disabled = rows.length === 0;
   }
 
+  /* ---------- 期次选择（周度/月度 + 日历） ---------- */
+  function rankPeriodMode() {
+    const el = document.querySelector('input[name="rank-period"]:checked');
+    return el ? el.value : "week";
+  }
+  function isoWeekLabel(dstr) {
+    const d = new Date(String(dstr || "") + "T00:00:00");
+    if (isNaN(d.getTime())) return "";
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - day);
+    const y = t.getUTCFullYear();
+    const yStart = new Date(Date.UTC(y, 0, 1));
+    const wk = Math.ceil(((t - yStart) / 86400000 + 1) / 7);
+    const nowY = new Date().getFullYear();
+    return (y === nowY ? "" : y + "-") + "W" + wk;
+  }
+  function syncRankPeriodLabel() {
+    const lab = $("#rank-period-label");
+    if (!lab) return "";
+    if (rankPeriodMode() === "month") {
+      const mv = $("#rank-period-month") ? $("#rank-period-month").value : "";
+      lab.value = mv || "";
+    } else {
+      const dv = $("#rank-period-date") ? $("#rank-period-date").value : "";
+      const w = dv ? isoWeekLabel(dv) : "";
+      lab.value = w || "";
+      const out = $("#rank-period-week");
+      if (out) out.textContent = w || "—";
+    }
+    return lab.value;
+  }
+  function initRankPeriodPickers() {
+    const now = new Date();
+    const pad = (n) => (n < 10 ? "0" : "") + n;
+    const iso = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+    const dEl = $("#rank-period-date"), mEl = $("#rank-period-month");
+    if (dEl && !dEl.value) dEl.value = iso;
+    if (mEl && !mEl.value) mEl.value = iso.slice(0, 7);
+    const flip = () => {
+      const wk = $("#rank-pw-wrap"), mo = $("#rank-pm-wrap");
+      const isWeek = rankPeriodMode() === "week";
+      if (wk) wk.style.display = isWeek ? "" : "none";
+      if (mo) mo.style.display = isWeek ? "none" : "";
+      syncRankPeriodLabel();
+    };
+    const rs = document.querySelectorAll('input[name="rank-period"]');
+    Array.prototype.forEach.call(rs, (r) => { if (r.addEventListener) r.addEventListener("change", flip); });
+    if (dEl && dEl.addEventListener) dEl.addEventListener("change", syncRankPeriodLabel);
+    if (mEl && mEl.addEventListener) mEl.addEventListener("change", syncRankPeriodLabel);
+    flip();
+  }
+
   /* ---------- 导入 ---------- */
   async function doRankImport() {
     if (!rankParsed || !rankParsed.rows.length) { sbToast("请先上传并解析 Excel", false); return; }
     const periodType = (document.querySelector('input[name="rank-period"]:checked') || {}).value || "week";
     const periodLabel = ($("#rank-period-label").value || "").trim();
     const category = ($("#rank-cat").value || "").trim();
-    if (!periodLabel) { sbToast(periodType === "month" ? "请填写月份（如 2026-09）" : "请填写周次（如 W41）", false); return; }
+    if (!periodLabel) { sbToast(periodType === "month" ? "请先用日历选择月份" : "请先用日历选择某一周", false); return; }
     if (!category) { sbToast("请选择类目", false); return; }
     const defaults = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
 
@@ -291,40 +408,188 @@
   /* ---------- 已上传记录 ---------- */
   async function loadRankBatches() {
     const box = $("#rank-batch-list");
-    if (!box) return;
     let list = [];
     try { list = await SB.listRankBatches(); } catch (e) { list = []; }
-    if (!list.length) { box.innerHTML = '<div class="hint">还没有上传记录</div>'; return; }
+
+    /* 条数不再依赖导入时写入的统计值（旧批次可能为 0），直接数榜单里的真实条目 */
+    let items = [], itemsOk = true;
+    try { items = await SB.listRankItems({ limit: 8000 }); } catch (e) { items = []; itemsOk = false; }
+    const realCnt = {};
+    (items || []).forEach((it) => {
+      const k = (it.period_type || "") + "|" + (it.period_label || "") + "|" + (it.category || "");
+      realCnt[k] = (realCnt[k] || 0) + 1;
+    });
+    const cntOf = (b) => {
+      const k = (b.period_type || "") + "|" + (b.period_label || "") + "|" + (b.category || "");
+      if (itemsOk) return realCnt[k] || 0;
+      return b.rows || 0;
+    };
+
+    // 聚合出「期次」清单（用于期次管理）
+    const map = {};
+    list.forEach((b) => {
+      const k = b.period_type + "|" + b.period_label;
+      if (!map[k]) map[k] = { label: b.period_label, type: b.period_type, rows: 0, batches: 0 };
+      map[k].rows += cntOf(b);
+      map[k].batches += 1;
+    });
+    rankPeriods = Object.keys(map).map((k) => map[k]).sort((a, b) => admPeriodKey(a.label) - admPeriodKey(b.label));
+    renderRankPeriods();
+    fillRankPvControls();
+
+    if (!box) return;
+    if (!list.length) { box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>'; return; }
     box.innerHTML = "";
-    list.forEach(b => {
+    list.forEach((b) => {
       const row = document.createElement("div");
       row.className = "rank-batch-row";
-      const cell = document.createElement("span");
-      cell.className = "rank-batch-main";
-      cell.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 默认站点 " + b.site : "") + " · " + (b.rows || 0) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+
+      const main = document.createElement("span");
+      main.className = "rank-batch-main";
+      main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 默认站点 " + b.site : "") + " · " + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+
+      const act = document.createElement("span");
+      act.className = "rkadm-row-act";
+
+      const ren = document.createElement("button");
+      ren.type = "button"; ren.className = "btn-ghost small"; ren.textContent = "改期次名";
+      ren.onclick = async () => {
+        const v = (prompt("该批次所属期次改名（会同步该期次全部数据）：", b.period_label) || "").trim();
+        if (!v || v === b.period_label) return;
+        try {
+          await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("期次已改名为「" + v + "」", true);
+        } catch (e) { sbToast((e && e.message) || "改名失败", false); }
+      };
+
       const del = document.createElement("button");
-      del.type = "button";
-      del.className = "btn-ghost rank-batch-del";
-      del.textContent = "删除";
+      del.type = "button"; del.className = "btn-ghost small rank-batch-del"; del.textContent = "删除";
       del.onclick = async () => {
         if (!confirm("删除该批次「" + b.period_label + " · " + b.category + "」及其全部条目？")) return;
-        try { await SB.deleteRankBatch(b.id); await loadRankBatches(); sbToast("已删除该批次", true); }
+        try { await SB.deleteRankBatch(b.id); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该批次", true); }
         catch (e) { sbToast("删除失败", false); }
       };
-      row.appendChild(cell);
-      row.appendChild(del);
+
+      act.appendChild(ren); act.appendChild(del);
+      row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });
   }
 
-  /* ---------- 面板进入 ---------- */
+  /* ---------- 期次 / 周度频次管理 ---------- */
+  function renderRankPeriods() {
+    const box = $("#rank-period-list");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!rankPeriods.length) {
+      box.innerHTML = '<div class="rkadm-empty">还没有期次。上传榜单表格后会自动生成（如 W41）。</div>';
+      return;
+    }
+    rankPeriods.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "rkadm-row";
+
+      const type = document.createElement("button");
+      type.type = "button";
+      type.className = "rkadm-badge";
+      type.textContent = p.type === "month" ? "月度" : "周度";
+      type.title = "点击切换：周度 ↔ 月度";
+      type.onclick = async () => {
+        const nt = p.type === "month" ? "week" : "month";
+        if (!confirm("把期次「" + p.label + "」的频次改为「" + (nt === "month" ? "月度" : "周度") + "」？\n该期次全部数据会一起切换。")) return;
+        try {
+          await SB.updateRankPeriodData(p.label, p.type, p.label, nt);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("频次已切换", true);
+        } catch (e) { sbToast((e && e.message) || "切换失败", false); }
+      };
+
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "rkadm-name";
+      name.value = p.label;
+      name.title = "点一下即可改名（该期次全部数据一起改名）";
+      name.addEventListener && name.addEventListener("focus", () => name.select());
+      const commit = async () => {
+        const v = (name.value || "").trim();
+        if (!v || v === p.label) { name.value = p.label; return; }
+        try {
+          await SB.updateRankPeriodData(p.label, p.type, v, p.type);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("期次已改名为「" + v + "」", true);
+        } catch (e) { name.value = p.label; sbToast((e && e.message) || "改名失败", false); }
+      };
+      name.onblur = commit;
+      name.onkeydown = (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); name.blur(); }
+        if (ev.key === "Escape") { name.value = p.label; name.blur(); }
+      };
+
+      const cnt = document.createElement("span");
+      cnt.className = "rkadm-count";
+      cnt.textContent = p.rows + " 条 · " + p.batches + " 批";
+
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除整个期次";
+      del.onclick = async () => {
+        if (!confirm("删除整个期次「" + p.label + "」及其全部数据（" + p.rows + " 条）？此操作不可恢复。")) return;
+        try { await SB.deleteRankPeriod(p.label, p.type); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该期次", true); }
+        catch (e) { sbToast((e && e.message) || "删除失败", false); }
+      };
+
+      row.appendChild(type); row.appendChild(name); row.appendChild(cnt); row.appendChild(del);
+      box.appendChild(row);
+    });
+  }
+
+  /* ---------- 实时预览（所见即所得） ---------- */
+  function rankPreviewUrl() {
+    const q = [];
+    if (rankPv.cat) q.push("cat=" + encodeURIComponent(rankPv.cat));
+    if (rankPv.site) q.push("sites=" + encodeURIComponent(rankPv.site));
+    if (rankPv.period) q.push("periods=" + encodeURIComponent(rankPv.period));
+    q.push("mode=" + rankPv.mode);
+    q.push("size=" + rankPv.size);
+    return "rank.html?" + q.join("&");
+  }
+  function rankPreviewRefresh() {
+    const f = $("#rkadm-pv-frame");
+    const hint = $("#rkadm-pv-hint");
+    if (!f) return;
+    f.src = rankPreviewUrl();
+    if (hint) hint.textContent = "正在预览：" + (rankPv.cat || "全部类目") + " · " + (rankPv.site || "全部站点") + " · " + (rankPv.period || "最新期次") + " · " + (rankPv.mode === "v" ? "纵向时间对比" : "横向国家对比");
+  }
+  function fillRankPvControls() {
+    const mk = (sel, list, cur, allLabel) => {
+      if (!sel) return;
+      const keep = cur || sel.value;
+      sel.innerHTML = '<option value="">' + allLabel + '</option>' + list.map((v) => '<option value="' + escAttr(v) + '">' + escHtml(v) + '</option>').join("");
+      if (keep && list.indexOf(keep) >= 0) sel.value = keep; else sel.value = "";
+      return sel.value;
+    };
+    rankPv.cat = mk($("#rkadm-pv-cat"), rankCats, rankPv.cat, "全部类目") || "";
+    rankPv.site = mk($("#rkadm-pv-site"), rankSites.map((s) => s.name), rankPv.site, "全部站点") || "";
+    rankPv.period = mk($("#rkadm-pv-period"), rankPeriods.map((p) => p.label), rankPv.period, "自动（最新）") || "";
+    if (!rankPv.period && rankPeriods.length) rankPv.period = rankPeriods[0].label;
+    const ps = $("#rkadm-pv-period");
+    if (ps && rankPv.period) ps.value = rankPv.period;
+  }
+
+  /* ---------- 面板进入 ---------- */  /* ---------- 面板进入 ---------- */
   async function enterRankPanel() {
+    initRankPeriodPickers();
     await Promise.all([loadRankSites(), loadRankCats(), loadRankBatches()]);
+    if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
+    if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;
+    fillRankPvControls();
+    rankPreviewRefresh();
   }
 
   /* ---------- 事件绑定（script 顺序保证本文件在 admin.js 之后加载） ---------- */
   function bindRankPanel() {
     if (!$("#rank-card")) return;
+
     const siteAdd = $("#rank-site-add");
     if (siteAdd) siteAdd.onclick = async () => {
       const v = ($("#rank-site-new").value || "").trim();
@@ -332,26 +597,51 @@
       try {
         await SB.addRankSite(v);
         $("#rank-site-new").value = "";
-        await loadRankSites();
+        await loadRankSites(); await loadRankBatches(); rankPreviewRefresh();
         sbToast("已添加站点「" + v + "」", true);
       } catch (e) { sbToast((e && e.message) || "添加失败", false); }
     };
+    const siteNew = $("#rank-site-new");
+    if (siteNew) siteNew.onkeydown = (ev) => { if (ev.key === "Enter" && siteAdd) siteAdd.click(); };
+
     const catAdd = $("#rank-cat-add");
     if (catAdd) catAdd.onclick = async () => {
       const v = (prompt("输入新类目名称（将同步到「标签管理 → 前台类目」）：") || "").trim();
       if (!v) return;
       try {
         await SB.addCategory(v);
-        await loadRankCats();
+        await loadRankCats(); fillRankPvControls();
         const sel = $("#rank-cat");
         if (sel) sel.value = v;
         sbToast("已新增类目「" + v + "」", true);
       } catch (e) { sbToast((e && e.message) || "新增类目失败", false); }
     };
+
     const file = $("#rank-file");
     if (file) file.onchange = onRankFileChange;
     const imp = $("#rank-import");
     if (imp) imp.onclick = doRankImport;
+
+    // 预览参数
+    const bindPv = (sel, key) => {
+      const el = $(sel);
+      if (!el) return;
+      el.onchange = () => { rankPv[key] = el.value; rankPreviewRefresh(); };
+    };
+    bindPv("#rkadm-pv-cat", "cat");
+    bindPv("#rkadm-pv-site", "site");
+    bindPv("#rkadm-pv-period", "period");
+    bindPv("#rkadm-pv-mode", "mode");
+    bindPv("#rkadm-pv-size", "size");
+
+    const reload = $("#rkadm-pv-reload");
+    if (reload) reload.onclick = () => rankPreviewRefresh();
+    const full = $("#rkadm-pv-full");
+    if (full) full.onclick = () => { const f = $("#rkadm-pv-frame"); if (f && f.requestFullscreen) f.requestFullscreen(); };
+    const openFront = $("#rkadm-open-front");
+    if (openFront) openFront.onclick = () => window.open(rankPreviewUrl(), "_blank");
+    const refresh = $("#rkadm-refresh");
+    if (refresh) refresh.onclick = async () => { await enterRankPanel(); sbToast("已刷新", true); };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindRankPanel);
@@ -360,5 +650,6 @@
   Object.assign(window, {
     enterRankPanel, loadRankBatches, loadRankSites, loadRankCats,
     doRankImport, onRankFileChange, computeRankFlags: computeFlags,
+    rankPreviewRefresh, renderRankPeriods, fillRankPvControls,
   });
 }

@@ -729,15 +729,55 @@ async removeTrendRecord(id) {
     // 各专区 本身 是否在前台可见（frontend_zone_visibility）
     // 返回形如 { visual: true/false, trend: ..., recruit: ..., bestseller: ... }
     // 未配置或缺失的专区默认为可见（true）
-    async getFrontendZoneVisibility() {
+    // 原始读取（含内部保留键 __defs，仅内部使用）
+    async _zoneRaw() {
       const { data, error } = await client
         .from("site_settings").select("frontend_zone_visibility").eq("id", 1).maybeSingle();
-      if (error || !data || !data.frontend_zone_visibility) return {};
-      return data.frontend_zone_visibility;
+      if (error || !data || !data.frontend_zone_visibility || typeof data.frontend_zone_visibility !== "object") return {};
+      return Object.assign({}, data.frontend_zone_visibility);
     },
-    // zone: visual / trend / recruit / bestseller；visible=false 表示前台隐藏整个专区入口
+    async getFrontendZoneVisibility() {
+      const raw = await this._zoneRaw();
+      const out = {};
+      Object.keys(raw).forEach(k => { if (k !== "__defs") out[k] = raw[k]; });
+      return out;
+    },
+    // 专区定义（超管在「权限管理 → 专区管理」维护）：[{key,label,href}]；未配置返回 null
+    async getZoneDefs() {
+      try {
+        const raw = await this._zoneRaw();
+        const saved = Array.isArray(raw.__defs) ? raw.__defs : [];
+        // 内置专区始终存在：历史保存的 __defs 可能早于某个内置专区（如「趋势上升榜」）上线，
+        // 若直接用保存值覆盖，会导致该专区在「专区管理 / 权限勾选 / 前台导航」里整体消失。
+        // 因此以「内置清单」为底，用保存值覆盖同 key 的名称与链接，再追加超管新增的专区。
+        const out = (window.ZONE_DEFS_DEFAULT || []).map(d => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
+        const idx = {};
+        out.forEach((d, i) => { idx[d.key] = i; });
+        saved.forEach(d => {
+          if (!d || !d.key) return;
+          const k = String(d.key);
+          if (idx[k] != null) {
+            const t = out[idx[k]];
+            if (d.label) t.label = String(d.label);
+            if (d.href != null && d.href !== "") t.href = String(d.href);
+          } else {
+            idx[k] = out.length;
+            out.push({ key: k, label: String(d.label || k), href: String(d.href || "") });
+          }
+        });
+        return out.length ? out : null;
+      } catch (e) { return null; }
+    },
+    async setZoneDefs(defs) {
+      const raw = await this._zoneRaw();
+      raw.__defs = (defs || []).map(d => ({ key: String(d.key || ""), label: String(d.label || ""), href: String(d.href || "") }));
+      const { error } = await client
+        .from("site_settings").update({ frontend_zone_visibility: raw, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+    // zone: 专区 key；visible=false 表示前台隐藏整个专区入口（保留 __defs，避免覆盖专区定义）
     async setFrontendZoneVisibility(zone, visible) {
-      const cur = await this.getFrontendZoneVisibility();
+      const cur = await this._zoneRaw();
       cur[zone] = !!visible;
       const { error } = await client
         .from("site_settings").update({ frontend_zone_visibility: cur, updated_at: new Date().toISOString() }).eq("id", 1);
@@ -1454,7 +1494,76 @@ async removeTrendRecord(id) {
       const { error } = await client.from("rank_sites").delete().eq("name", name);
       if (error) throw new Error(error.message || "删除站点失败");
     },
-    // 新建上传批次，返回批次 id
+    async updateRankSiteById(id, patch) {
+      const { error } = await client.from("rank_sites").update(patch || {}).eq("id", id);
+      if (error) throw new Error(error.message || "更新站点失败");
+    },
+    // 站点改名：把 rank_items / rank_batches 里的旧站点名一并迁移（表无 update 策略 → 删除后重插）
+    async renameRankSiteData(oldName, newName) {
+      let moved = 0;
+      for (let round = 0; round < 100; round++) {
+        const rows = await this.listRankItems({ sites: [oldName], limit: 500 });
+        if (!rows.length) break;
+        const news = rows.map((r) => { const o = Object.assign({}, r, { site: newName }); delete o.id; delete o.created_at; return o; });
+        await this.insertRankItems(news);
+        await this.deleteRankItemsByIds(rows.map((r) => r.id));
+        moved += rows.length;
+        if (rows.length < 500) break;
+      }
+      if (moved) this._lastSiteRenameCount = moved;
+      try {
+        const { data } = await client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("site", oldName);
+        for (const b of (data || [])) {
+          await client.from("rank_batches").delete().eq("id", b.id);
+          await client.from("rank_batches").insert({ period_type: b.period_type, period_label: b.period_label, category: b.category, site: newName, rows: b.rows, skipped: b.skipped });
+        }
+      } catch (e) { /* 批次仅作展示，失败忽略 */ }
+      return moved;
+    },
+    // 期次改名 / 周度·月度切换：迁移 rank_items 与 rank_batches
+    async updateRankPeriodData(oldLabel, oldType, newLabel, newType) {
+      let moved = 0;
+      for (let round = 0; round < 100; round++) {
+        let q = client.from("rank_items").select("*").eq("period_label", oldLabel).limit(500);
+        if (oldType) q = q.eq("period_type", oldType);
+        const { data: rows, error } = await q;
+        if (error) throw new Error(error.message || "读取榜单条目失败");
+        if (!rows || !rows.length) break;
+        const news = rows.map((r) => { const o = Object.assign({}, r, { period_label: newLabel, period_type: newType || r.period_type }); delete o.id; delete o.created_at; return o; });
+        await this.insertRankItems(news);
+        await this.deleteRankItemsByIds(rows.map((r) => r.id));
+        moved += rows.length;
+        if (rows.length < 500) break;
+      }
+      try {
+        let bq = client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("period_label", oldLabel);
+        if (oldType) bq = bq.eq("period_type", oldType);
+        const { data } = await bq;
+        for (const b of (data || [])) {
+          await client.from("rank_batches").delete().eq("id", b.id);
+          await client.from("rank_batches").insert({ period_type: newType || b.period_type, period_label: newLabel, category: b.category, site: b.site, rows: b.rows, skipped: b.skipped });
+        }
+      } catch (e) { /* 忽略 */ }
+      return moved;
+    },
+    // 删除整个期次（其下所有榜单条目与上传批次一并删除）
+    async deleteRankPeriod(oldLabel, oldType) {
+      let removed = 0;
+      for (let round = 0; round < 100; round++) {
+        const rows = await this.listRankItems({ periods: [oldLabel], periodType: oldType || undefined, limit: 500 });
+        if (!rows.length) break;
+        await this.deleteRankItemsByIds(rows.map((r) => r.id));
+        removed += rows.length;
+        if (rows.length < 500) break;
+      }
+      let q = client.from("rank_batches").select("id").eq("period_label", oldLabel);
+      if (oldType) q = q.eq("period_type", oldType);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message || "读取批次失败");
+      for (const b of (data || [])) await this.deleteRankBatch(b.id);
+      this._lastPeriodDelete = { items: removed, batches: (data || []).length };
+      return this._lastPeriodDelete;
+    },
     async createRankBatch(b) {
       const payload = {
         period_type: b.periodType || "week",

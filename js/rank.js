@@ -37,6 +37,8 @@
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
+  var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
+  var MOVE_SCOPE = "all";    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
   var CAP = CAP_STEP;
   var CACHE = null;          // { key, items }
@@ -44,16 +46,40 @@
 
   /* ---------------- 期次排序 ---------------- */
   function periodKey(p) {
-    var s = String(p || "");
-    var m = s.match(/W\s*(\d+)/i);
-    if (m) return 100000 + parseInt(m[1], 10);
-    m = s.match(/(\d{4})\D{0,3}(\d{1,2})/);
-    if (m) return 200000 + parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
-    m = s.match(/(\d+)/);
-    if (m) return 300000 + parseInt(m[1], 10);
-    return 900000;
+    var s = String(p || "").trim();
+    var ym = s.match(/(20\d{2})/);
+    var year = ym ? parseInt(ym[1], 10) : 0;
+    var m;
+    /* 1) 明确日期 2026-10-14 */
+    m = s.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m) return parseInt(m[1], 10) * 10000 + 300 + parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
+    /* 2) 周次：W41 / w41 / 41周 / 第41周 / 2026-W41 */
+    m = s.match(/[Ww]\s*(\d{1,2})/) || s.match(/第?\s*(\d{1,2})\s*周/);
+    if (m) return year * 10000 + 100 + parseInt(m[1], 10);
+    /* 3) 月份：2026-09 / 2026年9月 / 9月 */
+    m = s.match(/(20\d{2})\D{0,3}(\d{1,2})\s*月?$/) || s.match(/^(\d{1,2})\s*月$/);
+    if (m) return year * 10000 + 200 + parseInt(m[m.length - 1], 10);
+    /* 4) 纯数字当周次 */
+    m = s.match(/^(\d{1,3})$/);
+    if (m) return year * 10000 + 100 + parseInt(m[1], 10);
+    return 990000 + (s.charCodeAt(0) || 0);
   }
   function sortPeriods(arr) { return arr.slice().sort(function (a, b) { return periodKey(a) - periodKey(b); }); }
+
+  /* 数据时间轴里排在某一期次前面的那一期（不受当前勾选影响；纵向对比永远比"上一周"） */
+  function prevOfPeriod(p) {
+    var all = sortPeriods(FACETS.periods);
+    var i = all.indexOf(p);
+    return i > 0 ? all[i - 1] : null;
+  }
+  function withBasePeriods(periods) {
+    var need = periods.slice();
+    periods.forEach(function (p) {
+      var q = prevOfPeriod(p);
+      if (q && need.indexOf(q) < 0) need.push(q);
+    });
+    return need;
+  }
 
   /* ---------------- 三档标签（A 口径：类目+站点+期次 各自一池） ---------------- */
   function flagPools(items) {
@@ -129,7 +155,9 @@
     var key = [CAT, MODE, sites.join("|"), periods.join("|")].join("\u00a7");
     if (CACHE && CACHE.key === key) return CACHE.items;
 
-    var filter = { sites: sites, periods: periods };
+    /* 纵向对比需要拿到「上一周」的数据做基线，一并取回但不单独成列 */
+    var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
+    var filter = { sites: sites, periods: needPeriods };
     if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
 
@@ -198,11 +226,26 @@
       chip("h", "横向 · 国家对比", MODE === "h", "data-mode") +
       chip("v", "纵向 · 时间对比", MODE === "v", "data-mode");
 
+    /* 位次排序（仅纵向有效）：新上榜 / 上升位次最多的排最前面 */
+    var moveHtml =
+      chip("off", "默认（环比）", MOVE === "off", "data-move") +
+      chip("move", "位次上升最多", MOVE === "move", "data-move") +
+      chip("new", "新上榜优先", MOVE === "new", "data-move");
+    var scopeHtml = "";
+    if (MODE === "v" && MOVE !== "off") {
+      scopeHtml = chip("all", "全部期次", MOVE_SCOPE === "all", "data-scope") +
+        sortPeriods(SEL_PERIODS).map(function (p) { return chip(p, "仅 " + p, MOVE_SCOPE === p, "data-scope"); }).join("");
+    }
+    var moveGroup = '<div class="tag-group"><span class="tag-group-name">位次排序' +
+      (MODE === "v" ? "（对比上一周）" : "（仅纵向对比有效）") + '</span><div class="tag-chips" id="rk-g-move">' + moveHtml + '</div></div>';
+    if (scopeHtml) moveGroup += '<div class="tag-group"><span class="tag-group-name">位次排序作用范围</span><div class="tag-chips" id="rk-g-scope">' + scopeHtml + '</div></div>';
+
     box.innerHTML =
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (MODE === "v" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">趋势标签</span><div class="tag-chips" id="rk-g-tags">' + tagsHtml + '</div></div>' +
+      moveGroup +
       '<div class="tag-group"><span class="tag-group-name">排序</span><div class="tag-chips" id="rk-g-sort">' + sortHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">图幅</span><div class="tag-chips" id="rk-g-size">' + sizeHtml + '</div></div>';
 
@@ -266,6 +309,23 @@
       };
     });
 
+    var moveBox = $("#rk-g-move");
+    if (moveBox) Array.prototype.forEach.call(moveBox.querySelectorAll("[data-move]"), function (b) {
+      b.onclick = function () {
+        MOVE = b.getAttribute("data-move");
+        if (MOVE === "off") MOVE_SCOPE = "all";
+        renderPanel(); renderSummary(); renderBody();
+      };
+    });
+
+    var scopeBox = $("#rk-g-scope");
+    if (scopeBox) Array.prototype.forEach.call(scopeBox.querySelectorAll("[data-scope]"), function (b) {
+      b.onclick = function () {
+        MOVE_SCOPE = b.getAttribute("data-scope");
+        renderPanel(); renderSummary(); renderBody();
+      };
+    });
+
     var sortBox = $("#rk-g-sort");
     if (sortBox) Array.prototype.forEach.call(sortBox.querySelectorAll("[data-sort]"), function (b) {
       b.onclick = function () {
@@ -300,7 +360,14 @@
     parts.push(periods.length ? periods.join("、") : "未选周次");
     parts.push(sites.length ? sites.join(" / ") : "未选国家");
     parts.push(tagLabel());
+    if (MODE === "v" && MOVE !== "off") parts.push(moveLabel());
     el.textContent = parts.join(" · ");
+  }
+
+  function moveLabel() {
+    var base = (MOVE === "move") ? "位次上升最多优先" : "新上榜优先";
+    if (MOVE_SCOPE === "all") return base + "（全部期次）";
+    return base + "（仅 " + MOVE_SCOPE + "）";
   }
 
   function renderBar() {
@@ -415,12 +482,13 @@
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
       var site = sites[0];
+      var basePeriods = withBasePeriods(periods);
       var byPeriod = {};
-      periods.forEach(function (p) { byPeriod[p] = []; });
+      basePeriods.forEach(function (p) { byPeriod[p] = []; });
       all.forEach(function (it) { if (byPeriod[it.period_label]) byPeriod[it.period_label].push(it); });
 
       var hasOf = {}, rankOf = {};
-      periods.forEach(function (p) {
+      basePeriods.forEach(function (p) {
         var lst = sortItems(byPeriod[p] || []);
         var hs = {}, m = {};
         lst.forEach(function (i) { hs[i.image_url] = 1; });
@@ -428,13 +496,33 @@
         hasOf[p] = hs; rankOf[p] = m;
       });
 
-      periods.forEach(function (p, pi) {
-        var prev = pi > 0 ? periods[pi - 1] : null;
+      periods.forEach(function (p) {
+        var prev = prevOfPeriod(p);
         var list = sortItems(byPeriod[p] || []);
+        /* 位次排序：与该列的「上一周」比较 —— 新上榜置顶 / 上升位次最多的排前面。
+           排序用的位次与卡片上「上升 N 位」标签同源（同一套 rankOf），保证显示与顺序一致。 */
+        if (MOVE !== "off" && (MOVE_SCOPE === "all" || MOVE_SCOPE === p) && prev) {
+          var keyed = list.map(function (it, i) {
+            var isNew = !hasOf[prev][it.image_url];
+            var d = 0;
+            if (!isNew) {
+              var pr = rankOf[prev][it.image_url];
+              var cr = rankOf[p][it.image_url];
+              if (pr != null && cr != null) d = pr - cr;
+            }
+            /* 「新上榜优先」：新上榜的排最前；
+               「位次上升最多」：只按上升位次排（新上榜无位次可比，沉到末尾），
+               两种模式结果明显区分。 */
+            var key = (MOVE === "new") ? (isNew ? 1e9 : 0) : (isNew ? -1e9 : d);
+            return { it: it, i: i, key: key };
+          });
+          keyed.sort(function (a, b) { return (b.key - a.key) || (a.i - b.i); });
+          list = keyed.map(function (o) { return o.it; });
+        }
         if (list.length > maxLen) maxLen = list.length;
         var newCnt = 0;
         if (prev) list.forEach(function (i) { if (!hasOf[prev][i.image_url]) newCnt++; });
-        var meta = site + (prev ? (" · 较上一期新上榜 " + newCnt + " 张") : "");
+        var meta = site + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
         var cards = list.slice(0, CAP).map(function (it) {
           var move = "", isNew = false;
           if (prev) {
@@ -534,6 +622,38 @@
     return ok;
   }
 
+  /* ---------------- 无权限时的说明面板 ---------------- */
+  function renderGate(box, why) {
+    if ($("#rk-groups")) $("#rk-groups").innerHTML = '<div class="rk-note">当前账号不可访问该专区</div>';
+    if ($("#rk-cats")) $("#rk-cats").innerHTML = '<div class="rk-empty">—</div>';
+    if ($("#rk-bar")) $("#rk-bar").innerHTML = "";
+    if ($("#rk-summary")) $("#rk-summary").textContent = "";
+    if (!box) return;
+    box.innerHTML = ''
+      + '<div class="rk-gate">'
+      +   '<div class="rk-gate-ico">🔒</div>'
+      +   '<div class="rk-gate-title">暂无法查看「趋势上升榜」</div>'
+      +   '<div class="rk-gate-why">' + String(why || "当前账号不可访问该专区").replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }) + '</div>'
+      +   '<div class="rk-gate-tip">'
+      +     '<div class="rk-gate-h">怎么解决</div>'
+      +     '<div class="rk-gate-steps">'
+      +       '① 请联系超级管理员，在后台 <b>权限管理 → 该用户「编辑」</b> 中勾选「<b>趋势上升榜</b>」并保存；<br>'
+      +       '② 若为全站开关问题，请在后台 <b>超管权限 → 前台访问设置 → 顶部菜单项·前台可见</b> 中将「趋势上升榜」设为「展示」；<br>'
+      +       '③ 改完后回到本页强制刷新（Ctrl+F5）即可。'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="rk-gate-btns">'
+      +     '<a class="rk-gate-btn ghost" href="index.html">返回视觉专区</a>'
+      +     '<button class="rk-gate-btn" id="rk-gate-out" type="button">退出登录</button>'
+      +   '</div>'
+      + '</div>';
+    var out = $("#rk-gate-out");
+    if (out) out.onclick = async function () {
+      try { await SBX.signOut(); } catch (e) { /* 忽略 */ }
+      location.href = "index.html";
+    };
+  }
+
   /* ---------------- 初始化 ---------------- */
   async function boot() {
     var box = $("#rk-body");
@@ -544,16 +664,25 @@
 
     var logged = await renderAuth();
 
-    // 专区可见性守门：超管在「前台访问设置」关闭该专区时，前台不展示内容
-    try {
-      var vis = await SBX.getFrontendZoneVisibility();
-      if (vis && vis.rank === false) {
-        if (box) box.innerHTML = '<div class="rk-empty">该专区暂未开放。</div>';
-        if ($("#rk-groups")) $("#rk-groups").innerHTML = '<div class="rk-note">该专区暂未开放</div>';
-        if ($("#rk-cats")) $("#rk-cats").innerHTML = '<div class="rk-empty">—</div>';
-        return;
-      }
-    } catch (e) { /* 读取失败时照常展示 */ }
+    // 专区可见性守门（两级）：①全站开关（后台「前台访问设置」） ②用户级白名单（后台「权限管理」勾选）
+    var vis = null, myz = null;
+    try { vis = await SBX.getFrontendZoneVisibility(); } catch (e) { /* 读取失败时照常展示 */ }
+    try { myz = await SBX.myFrontendZones(); } catch (e) { myz = null; }
+    if (window.Common && Common.zones) {
+      Common.zones.setVis(vis || {});
+      Common.zones.setMine(Array.isArray(myz) ? myz : null);
+      Common.zones.renderNav();
+    }
+    var gateWhy = "";
+    if (vis && vis.rank === false) {
+      gateWhy = "全站开关：该专区已在后台「前台访问设置」中被关闭";
+    } else if (logged && Array.isArray(myz) && myz.length && myz.indexOf("rank") === -1) {
+      gateWhy = "账号授权：你的账号未获授权访问本专区";
+    }
+    if (gateWhy) {
+      renderGate(box, gateWhy);
+      return;
+    }
 
     try { FACETS = await SBX.rankFacets(); } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     FACETS.sites = FACETS.sites || [];
@@ -565,6 +694,18 @@
     var _sp = sortPeriods(FACETS.periods);
     SEL_PERIODS = _sp.slice(Math.max(0, _sp.length - 4));
     SEL_SITES = FACETS.sites.slice(0, Math.min(4, FACETS.sites.length));
+
+    // URL 参数（后台实时预览 / 分享链接）：mode / size / cat / sites / periods
+    try {
+      var _qs = new URLSearchParams(location.search);
+      var _m = _qs.get("mode"); if (_m === "h" || _m === "v") MODE = _m;
+      var _z = _qs.get("size"); if (_z === "s" || _z === "m" || _z === "l") SIZE = _z;
+      var _c = _qs.get("cat"); if (_c) CAT = _c;
+      var _ss = (_qs.get("sites") || "").split(",").filter(function (v) { return v.trim(); });
+      if (_ss.length) SEL_SITES = _ss;
+      var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
+      if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
+    } catch (e) { /* 无参数时忽略 */ }
 
     renderCats();
     renderPanel();

@@ -132,10 +132,11 @@
     // 提前读取各专区前台可见性配置，用于视觉专区"被隐藏即拦截"守卫
     SB.getFrontendZoneVisibility().then((z) => {
       zoneVis = z || {};
+      if (window.Common && Common.zones) Common.zones.setVis(zoneVis);
       // 视觉专区被隐藏时，即使已登录也重刷一次守卫拦截
       refreshAuthUI();
       applyZoneNav();
-    }).catch(() => { zoneVis = {}; });
+    }).catch(() => { zoneVis = {}; if (window.Common && Common.zones) Common.zones.setVis({}); });
 
     // 登录态变化（含登录/退出）：与启动时共用同一份处理逻辑
     SB.onAuth((session) => applyAuthState(session));
@@ -162,6 +163,8 @@
     Common.setupAntiDownload(); // 防下载（统一实现）
 
     // ===== 公告弹窗事件（统一由 common.js 绑定） =====
+    Common.zones.loadDefs().then(() => Common.zones.renderNav());
+
     Common.notices.configure({ autoShowNeedsLogin: false, timeStyle: "short" });
     Common.notices.bind();
   });
@@ -183,6 +186,7 @@
     window.__authReady = true;
     if (!session) {
       myZones = null;
+      if (window.Common && Common.zones) Common.zones.setMine(null);
       refreshAuthUI();
       applyZoneNav();
       maybeBoot();
@@ -191,9 +195,10 @@
     // 读取该用户的前端可见专区白名单（frontend_zones，独立于后端 manage_zones）
     SB.myFrontendZones().then((z) => {
       myZones = z;
+      if (window.Common && Common.zones) Common.zones.setMine(myZones);
       refreshAuthUI();
       applyZoneNav();
-    }).catch(() => { myZones = null; refreshAuthUI(); });
+    }).catch(() => { myZones = null; if (window.Common && Common.zones) Common.zones.setMine(null); refreshAuthUI(); });
     maybeBoot();
   }
 
@@ -356,8 +361,10 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
+    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
+  // 后台新增的专区（静态菜单里没有的）也要出现在顶部菜单
   function renderCatMenu(cats) {
     const menu = $("#cat-menu");
     menu.innerHTML = "";

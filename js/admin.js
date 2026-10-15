@@ -70,6 +70,22 @@ const CAT_VIS_ZONES = [
   { key: "rank", label: "趋势上升榜" }
 ];
 
+// 当前生效的专区定义（内置 7 个 + 超管在「专区管理」里新增的），
+// 由 reloadZoneDefs() 载入；「专区可见开关」「专区类目可见」「权限管理勾选」共用这一份。
+let ZONE_DEFS = CAT_VIS_ZONES.map(z => Object.assign({}, z));
+
+async function reloadZoneDefs() {
+  let defs = null;
+  try { defs = await SB.getZoneDefs(); } catch (e) { defs = null; }
+  if (Array.isArray(defs) && defs.length) {
+    ZONE_DEFS = defs.filter(d => d && d.key).map(d => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
+  } else {
+    ZONE_DEFS = CAT_VIS_ZONES.map(z => Object.assign({}, z));
+  }
+  if (window.Common && Common.zones) Common.zones.setDefs(ZONE_DEFS);
+  return ZONE_DEFS;
+}
+
 // 各专区 本身 前台可见开关
 let zoneVisCfg = {};
 (function () {
@@ -387,6 +403,7 @@ async function loadAccess() {
       document.querySelector("#public-access-toggle").checked = !!pub;
       document.querySelector("#access-save").disabled = true;
     } catch (e) { /* 忽略读取失败 */ }
+    await reloadZoneDefs();
     await loadCatVisibility();
     await loadZoneVisibility();
   }
@@ -397,7 +414,7 @@ async function loadAccess() {
     if (!box) return;
     try { zoneVisCfg = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVisCfg = {}; }
     box.innerHTML = "";
-    for (const z of CAT_VIS_ZONES) {
+    for (const z of ZONE_DEFS) {
       const item = document.createElement("div");
       const on = zoneVisCfg[z.key] !== false; // 未配置默认可见
       item.className = "cat-vis-item " + (on ? "on" : "off");
@@ -432,7 +449,7 @@ async function loadAccess() {
     // 视觉/趋势专区：用前台类目表；招品/BESTSELLER：用各自专区类目表
     const zonesMeta = { visual: "cats", trend: "cats", recruit: "recruit", bestseller: "bestseller" };
     box.innerHTML = "";
-    for (const z of CAT_VIS_ZONES) {
+    for (const z of ZONE_DEFS) {
       const wrap = document.createElement("div");
       wrap.className = "cat-vis-zone";
       const head = document.createElement("div");
