@@ -176,6 +176,8 @@
       const l = document.createElement("label");
       l.className = "chk";
       l.innerHTML = '<input type="checkbox" value="' + escAttr(s.name) + '"> ' + escHtml(s.name);
+      const cb = l.querySelector('input');
+      if (cb) cb.addEventListener("change", () => { if (rankParsed) renderRankPreview(); });
       box.appendChild(l);
     });
   }
@@ -249,8 +251,12 @@
       const missing = [];
       if (head.map.abs < 0) missing.push("环比绝对值");
       if (head.map.ratio < 0) missing.push("环比比例");
-      if (head.map.site < 0) missing.push("销量站点（将使用下方选择的默认站点）");
-      rankParsed = { rows, headers: aoa[head.idx] || [], missing, fileName: f.name };
+      if (head.map.site < 0) missing.push("销量站点（勾选上方站点即可）");
+      const distinctSites = Object.keys(rows.reduce((m, r) => (r.site && (m[r.site] = 1), m), {}));
+      const siteWarn = distinctSites.length > 1
+        ? "⚠️ 表格里出现了 " + distinctSites.length + " 个站点（" + distinctSites.slice(0, 6).join("、") + (distinctSites.length > 6 ? "…" : "") + "）。若这是合计表（如欧盟），请在上方勾选目标站点，导入时会统一归入该站点。"
+        : "";
+      rankParsed = { rows, headers: aoa[head.idx] || [], missing, siteWarn, fileName: f.name };
       renderRankPreview();
     } catch (e) {
       if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx/.xls）文件";
@@ -282,7 +288,8 @@
         '<span>周度激增（双重提升前 ' + Math.round(RANK_SURGE_PCT * 100) + '%）：<b>' + surgeN + '</b></span>' +
         '</div>' +
         (rankParsed.missing.length ? '<div class="hint rank-warn">未识别到列：' + escHtml(rankParsed.missing.join("、")) + '</div>' : '') +
-        '<div class="hint">标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
+        (rankParsed.siteWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.siteWarn) + '</div>' : '') +
+        '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准（忽略表格站点列）" : "按表格「销量站点」列逐行取") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
     }
     const btn = $("#rank-import");
     if (btn) btn.disabled = rows.length === 0;
@@ -351,12 +358,20 @@
     if (!category) { sbToast("请选择类目", false); return; }
     const defaults = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
 
-    // 展开：行内自带站点 → 用之；否则用所选默认站点（可多个）
+    /* 站点归属：以「我定义的站点」为准。
+       勾选了任何站点 → 全部行都归入我勾的站点（忽略表格里「销量站点」列的逐行取值，
+       这样欧盟这类合计表里写满各国名字时，前台就只出现「欧盟」一个地区）。
+       一个都没勾 → 才退回按表格里每行自带的「销量站点」取值。 */
+    const useMine = defaults.length > 0;
     const out = [];
     let noSite = 0;
+    const tableSites = {};   // 被忽略掉的表格站点取值，用于提示
     rankParsed.rows.forEach(r => {
-      const sites = r.site ? [r.site] : defaults;
+      let sites;
+      if (useMine) sites = defaults;
+      else sites = r.site ? [r.site] : [];
       if (!sites.length) { noSite++; return; }
+      if (useMine && r.site && defaults.indexOf(r.site) < 0) tableSites[r.site] = 1;
       sites.forEach(s => {
         out.push({
           period_type: periodType,
@@ -374,11 +389,13 @@
       sbToast(noSite ? "表格没有「销量站点」列，且未选择默认站点" : "没有可导入的有效行", false);
       return;
     }
+    const ignoredList = Object.keys(tableSites);
+    const batchSite = useMine ? defaults.join(",") : Object.keys(out.reduce((m, r) => (m[r.site] = 1, m), {})).join(",");
     computeFlags(out);
     const btn = $("#rank-import");
     if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
     try {
-      const batchId = await SB.createRankBatch({ periodType, periodLabel, category, site: defaults.join(",") });
+      const batchId = await SB.createRankBatch({ periodType, periodLabel, category, site: batchSite });
       const rows = out.map(r => {
         const o = Object.assign({}, r, { batch_id: batchId });
         o.flag_opportunity = !!r.flag_opportunity;
@@ -392,7 +409,7 @@
       const inserted = (res && res.inserted) || 0;
       const skipped = rows.length - inserted;
       try { await SB.updateRankBatch(batchId, { rows: inserted, skipped }); } catch (e) { /* 统计失败不影响数据 */ }
-      sbToast("导入完成：新增 " + inserted + " 条" + (skipped > 0 ? "，重复跳过 " + skipped + " 条" : ""), true);
+      sbToast("导入完成：" + (useMine ? "已按我定义的站点归入「" + defaults.join("、") + "」" : "已按表格站点列归入") + "，新增 " + inserted + " 条" + (skipped > 0 ? "，重复跳过 " + skipped + " 条" : "") + (ignoredList.length ? "（已忽略表格里的 " + ignoredList.length + " 个站点取值：" + ignoredList.slice(0, 4).join("、") + (ignoredList.length > 4 ? "…" : "") + "）" : ""), true);
       rankParsed = null;
       $("#rank-file").value = "";
       $("#rank-file-tip").textContent = "";

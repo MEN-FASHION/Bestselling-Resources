@@ -40,6 +40,7 @@
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
   var MOVE_SCOPE = "all";    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
+  var MORE = false;          // 筛选栏「更多选项」是否展开（默认收起，避免菜单栏过长）
   var CAP = CAP_STEP;
   var CACHE = null;          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
@@ -240,19 +241,29 @@
       (MODE === "v" ? "（对比上一周）" : "（仅纵向对比有效）") + '</span><div class="tag-chips" id="rk-g-move">' + moveHtml + '</div></div>';
     if (scopeHtml) moveGroup += '<div class="tag-group"><span class="tag-group-name">位次排序作用范围</span><div class="tag-chips" id="rk-g-scope">' + scopeHtml + '</div></div>';
 
+    /* 常用项常驻；次要项收进「更多选项」，避免菜单栏拉得过长 */
+    var advHtml =
+      '<div class="tag-group"><span class="tag-group-name">排序</span><div class="tag-chips" id="rk-g-sort">' + sortHtml + '</div></div>' +
+      '<div class="tag-group"><span class="tag-group-name">图幅</span><div class="tag-chips" id="rk-g-size">' + sizeHtml + '</div></div>' +
+      moveGroup;
+
     box.innerHTML =
+      '<div class="tag-group"><span class="tag-group-name">更多选项</span><div class="tag-chips">' +
+        '<button type="button" class="tag-more" id="rk-more">' + (MORE ? "收起次要筛选 ▴" : "展开次要筛选（排序 / 图幅 / 位次排序）▾") + '</button>' +
+      '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (MODE === "v" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">趋势标签</span><div class="tag-chips" id="rk-g-tags">' + tagsHtml + '</div></div>' +
-      moveGroup +
-      '<div class="tag-group"><span class="tag-group-name">排序</span><div class="tag-chips" id="rk-g-sort">' + sortHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">图幅</span><div class="tag-chips" id="rk-g-size">' + sizeHtml + '</div></div>';
+      '<div class="rk-adv' + (MORE ? " open" : "") + '" id="rk-adv">' + advHtml + '</div>';
 
     bindPanel();
   }
 
   function bindPanel() {
+    var moreBtn = $("#rk-more");
+    if (moreBtn) moreBtn.onclick = function () { MORE = !MORE; renderPanel(); };
+
     var modeBox = $("#rk-g-mode");
     if (modeBox) Array.prototype.forEach.call(modeBox.querySelectorAll("[data-mode]"), function (b) {
       b.onclick = function () {

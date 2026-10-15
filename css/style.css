@@ -604,6 +604,24 @@ select.input {
 }
 .tag-chip.active .tc-count { background: rgba(44,44,44,.18); }
 
+/* ===== 榜单页筛选栏紧凑化：每组压成一行 + 横向滚动，避免菜单栏过长 ===== */
+.tf-groups .tag-group { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; padding: 1px 0; }
+.tf-groups .tag-group-name { flex: 0 0 auto; min-width: 86px; }
+.tf-groups .tag-chips { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 3px; scrollbar-width: thin; }
+.tf-groups .tag-chips::-webkit-scrollbar { height: 5px; }
+.tf-groups .tag-chips::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
+.tf-groups .tag-chip { flex: 0 0 auto; font-size: 12px; padding: 3px 9px; }
+.tag-more {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--gold);
+  background: rgba(156,139,116,.10); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
+}
+.tag-more:hover { border-color: var(--gold); color: var(--txt); }
+.rk-adv { display: none; }
+.rk-adv.open { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.rk-adv.open .tag-group { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+.rk-adv.open .tag-chips { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 3px; }
+
 /* ================= 批量打标签弹窗（后台） ================= */
 .modal-mask {
   position: fixed; inset: 0; z-index: 300;
@@ -660,8 +678,10 @@ select.input {
   .tag-filter { top: 0; margin-bottom: 10px; }
   .tf-trigger { border-radius: 0; border-left: none; border-right: none; }
   .tf-body { left: 0; right: 0; }
-  .tf-groups .tag-group { flex-direction: column; align-items: stretch; gap: 6px; }
-  .tf-groups .tag-group-name { border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 6px; }
+  .tf-groups .tag-group { flex-direction: row; align-items: center; gap: 8px; flex-wrap: nowrap; }
+  .tf-groups .tag-group-name { border-right: none; border-bottom: none; padding: 0; min-width: 0; flex: 0 0 auto; }
+  .tf-groups .tag-chips { flex-wrap: nowrap; overflow-x: auto; }
+  .tf-groups .tag-group-name { font-size: 11px; }
   .tag-chip { white-space: nowrap; }
   .modal { padding: 18px; }
 }
