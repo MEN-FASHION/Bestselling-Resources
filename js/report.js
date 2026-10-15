@@ -444,9 +444,14 @@
   async function ensureLibs() {
     var v = assetV();
     var q = v ? ("?v=" + v) : "";
-    if (!window.html2canvas) await loadScript("vendor/html2canvas.min.js" + q);
-    if (!window.PptxGenJS) await loadScript("vendor/pptxgen.min.js" + q);
-    return !!(window.html2canvas && window.PptxGenJS);
+    /* 顺序不能改：pptxgen 是 (JSZip) 形式的立即执行函数，必须先有 JSZip，否则报未定义 */
+    try {
+      if (!window.JSZip) await loadScript("vendor/jszip.min.js" + q);
+      if (!window.html2canvas) await loadScript("vendor/html2canvas.min.js" + q);
+      if (!window.PptxGenJS) await loadScript("vendor/pptxgen.min.js" + q);
+    } catch (e) { /* 文件缺失/网络异常：统一落到下面的存在性判定，不向上抛 */ }
+    /* 逐项判定：任何一个没就绪都算失败，交给调用方给出明确提示 */
+    return !!(window.JSZip && window.html2canvas && window.PptxGenJS);
   }
 
   async function shoot(node) {
