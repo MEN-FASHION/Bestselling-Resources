@@ -42,7 +42,6 @@
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
   var MOVE_SCOPE = "all";    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
-  var MORE = false;          // 筛选栏「更多选项」是否展开（默认收起，避免菜单栏过长）
   var CAP = CAP_STEP;
   var CACHE = null;          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
@@ -296,34 +295,33 @@
       scopeHtml = chip("all", "全部期次", MOVE_SCOPE === "all", "data-scope") +
         sortPeriods(SEL_PERIODS).map(function (p) { return chip(p, "仅 " + p, MOVE_SCOPE === p, "data-scope"); }).join("");
     }
-    var moveGroup = '<div class="tag-group"><span class="tag-group-name">位次排序' +
-      (MODE === "v" ? "（对比上一周）" : "（仅纵向对比有效）") + '</span><div class="tag-chips" id="rk-g-move">' + moveHtml + '</div></div>';
-    if (scopeHtml) moveGroup += '<div class="tag-group"><span class="tag-group-name">位次排序作用范围</span><div class="tag-chips" id="rk-g-scope">' + scopeHtml + '</div></div>';
-
-    /* 常用项常驻；次要项收进「更多选项」，避免菜单栏拉得过长 */
-    var advHtml =
-      '<div class="tag-group"><span class="tag-group-name">排序</span><div class="tag-chips" id="rk-g-sort">' + sortHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">图幅</span><div class="tag-chips" id="rk-g-size">' + sizeHtml + '</div></div>' +
-      moveGroup;
+    /* 趋势标签 + 排序 / 图幅 / 位次排序 全部并列在同一排直接展示，无需再点开 */
+    var mergedRow =
+      '<div class="tag-group"><span class="tag-group-name">趋势标签 / 排序</span><div class="tag-chips" id="rk-g-merge">' +
+        '<span class="tag-inline" id="rk-g-tags">' + tagsHtml + '</span>' +
+        '<span class="tag-sep"></span><span class="tag-sub">排序</span>' +
+        '<span class="tag-inline" id="rk-g-sort">' + sortHtml + '</span>' +
+        '<span class="tag-sep"></span><span class="tag-sub">图幅</span>' +
+        '<span class="tag-inline" id="rk-g-size">' + sizeHtml + '</span>' +
+        '<span class="tag-sep"></span><span class="tag-sub">位次排序' +
+          (MODE === "v" ? "（对比上一周）" : "（仅纵向有效）") + '</span>' +
+        '<span class="tag-inline" id="rk-g-move">' + moveHtml + '</span>' +
+        (scopeHtml
+          ? '<span class="tag-sep"></span><span class="tag-sub">范围</span><span class="tag-inline" id="rk-g-scope">' + scopeHtml + '</span>'
+          : '') +
+      '</div></div>';
 
     box.innerHTML =
-      '<div class="tag-group"><span class="tag-group-name">更多选项</span><div class="tag-chips">' +
-        '<button type="button" class="tag-more" id="rk-more">' + (MORE ? "收起次要筛选 ▴" : "展开次要筛选（排序 / 图幅 / 位次排序）▾") + '</button>' +
-      '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
       groupHtml +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选）" : "（可多选）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选）" : "（可多选）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">趋势标签</span><div class="tag-chips" id="rk-g-tags">' + tagsHtml + '</div></div>' +
-      '<div class="rk-adv' + (MORE ? " open" : "") + '" id="rk-adv">' + advHtml + '</div>';
+      mergedRow;
 
     bindPanel();
   }
 
   function bindPanel() {
-    var moreBtn = $("#rk-more");
-    if (moreBtn) moreBtn.onclick = function () { MORE = !MORE; renderPanel(); };
-
     var modeBox = $("#rk-g-mode");
     if (modeBox) Array.prototype.forEach.call(modeBox.querySelectorAll("[data-mode]"), function (b) {
       b.onclick = function () {
@@ -632,11 +630,11 @@
     html += '</div>';
 
     if (maxLen > CAP) {
-      html += '<div class="rk-more-wrap"><button type="button" class="rk-more" id="rk-more">展开更多（已展示 ' + CAP + ' / 最多 ' + maxLen + '）</button></div>';
+      html += '<div class="rk-more-wrap"><button type="button" class="rk-loadmore" id="rk-loadmore">展开更多（已展示 ' + CAP + ' / 最多 ' + maxLen + '）</button></div>';
     }
     box.innerHTML = html;
 
-    var more = $("#rk-more");
+    var more = $("#rk-loadmore");
     if (more) more.onclick = function () {
       CAP = Math.min(CAP_MAX, CAP + CAP_STEP);
       renderBody(); renderBar();
@@ -818,6 +816,21 @@
     renderSummary();
     renderBar();
     bindTrigger();
+
+    // 「生成报告」（PDF / PPT）：只有超级管理员会看到按钮；封装在 report.js 里，失败不影响榜单页
+    if (window.ReportKit) {
+      try {
+        window.ReportKit.init({
+          btn: "#rk-report-btn",
+          isSuper: isSuperAdmin,
+          state: reportState,
+          itemOf: function (url) { return ITEMS_BY_URL[url] || null; },
+          poolsEl: function () { return document.querySelector("#rk-pools"); },
+          expandAll: expandAllForReport
+        });
+      } catch (e) { /* 报告功能不可用时不阻塞页面 */ }
+    }
+
     await load();
 
     // 未登录 / 无数据时的兜底提示
@@ -829,6 +842,41 @@
       }
     } else if (!logged && box && !CACHE.items.length) {
       if (box) box.innerHTML = '<div class="rk-empty">暂无可查看的数据。</div>';
+    }
+  }
+
+  /* ---------------- 生成报告（PDF / PPT）用的桥接 ----------------
+   * 报表内容直接取自屏幕上正在渲染的对比池（DOM），
+   * 因此「网页什么样、导出就什么样」，不会出现两套口径。 */
+  async function isSuperAdmin() {
+    try {
+      if (!SBX || !SBX.myRole) return false;
+      return (await SBX.myRole()) === "super_admin";
+    } catch (e) { return false; }
+  }
+
+  function reportState() {
+    var items = (CACHE && CACHE.items) ? CACHE.items.filter(hitTags) : [];
+    var sizeMap = { s: "小图", m: "中图", l: "大图" };
+    return {
+      zone: "趋势上升榜",
+      cat: CAT || ALL,
+      modeLabel: MODE === "h" ? "横向 · 国家对比（多国 × 单周）" : "纵向 · 时间对比（单国 × 多周）",
+      sites: poolSites(),
+      group: activeGroup() ? activeGroup().name : "",
+      periods: activePeriods(),
+      tags: tagLabel(),
+      sizeLabel: sizeMap[SIZE] || "",
+      total: items.length
+    };
+  }
+
+  /* 「每列全部条目」：把每列展开到上限，并等图片加载完再交给报告模块 */
+  async function expandAllForReport() {
+    if (CAP < CAP_MAX) { CAP = CAP_MAX; renderBody(); renderBar(); }
+    var box = document.querySelector("#rk-pools");
+    if (box && window.ReportKit && window.ReportKit._ && window.ReportKit._.waitImages) {
+      await window.ReportKit._.waitImages(box, 15000);
     }
   }
 

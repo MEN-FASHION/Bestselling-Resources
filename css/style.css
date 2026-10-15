@@ -611,16 +611,10 @@ select.input {
 .tf-groups .tag-chips::-webkit-scrollbar { height: 5px; }
 .tf-groups .tag-chips::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
 .tf-groups .tag-chip { flex: 0 0 auto; font-size: 12px; padding: 3px 9px; }
-.tag-more {
-  font: inherit; font-size: 12px; font-weight: 600; color: var(--gold);
-  background: rgba(156,139,116,.10); border: 1px solid var(--line);
-  border-radius: 999px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
-}
-.tag-more:hover { border-color: var(--gold); color: var(--txt); }
-.rk-adv { display: none; }
-.rk-adv.open { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; border-top: 1px dashed var(--line); }
-.rk-adv.open .tag-group { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
-.rk-adv.open .tag-chips { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 3px; }
+/* 同一排内的分区小标题与分隔线：趋势标签 / 排序 / 图幅 / 位次排序 并列展示 */
+.tag-inline { display: inline-flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
+.tag-sep { flex: 0 0 auto; width: 1px; height: 14px; margin: 0 3px; background: var(--line); }
+.tag-sub { flex: 0 0 auto; font-size: 11.5px; font-weight: 700; color: var(--sub); letter-spacing: .3px; white-space: nowrap; }
 
 /* ================= 批量打标签弹窗（后台） ================= */
 .modal-mask {
@@ -2185,6 +2179,20 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rk-pool-grid.sz-l { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rk-pool-foot { margin-top: 9px; font-size: 11px; color: var(--sub); text-align: center; }
 
+/* ---- 「展开更多」按钮（长列表分批加载；必须有可见样式，否则点了像没反应） ---- */
+.rk-more-wrap { margin-top: 10px; text-align: center; }
+.rk-loadmore {
+  display: inline-block; min-width: 160px; padding: 7px 18px;
+  font-size: 12.5px; font-weight: 600; font-family: inherit;
+  color: var(--ink); background: #fff; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.rk-loadmore:hover { border-color: var(--gold); color: var(--gold); background: #fffdf6; }
+.rk-loadmore:active { transform: translateY(1px); }
+.rk-loadmore[disabled] { opacity: .55; cursor: default; }
+.rk-loadmore[disabled]:hover { border-color: var(--line); color: var(--ink); background: #fff; }
+
 /* ---- 卡片（3:4 小图，比原来小一档） ---- */
 .rk-card {
   position: relative; margin: 0; border-radius: 8px; overflow: hidden;
@@ -2381,3 +2389,189 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rk-gate-btn:hover { filter: brightness(1.06); }
 .rk-gate-btn.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
 @media (max-width: 640px) { .rk-gate { margin: 18px 12px; padding: 22px 18px; } .rk-gate-btns { flex-direction: column; } .rk-gate-btn { width: 100%; } }
+
+/* ==========================================================================
+   前台「悬浮抽屉」：顶部筛选栏 + 左侧类目菜单
+   —— 默认收起，把宽度/高度都让给图片；鼠标移入自动弹出，移出自动收回。
+   —— 只作用于前台（body.front），后台（body.admin）完全不受影响。
+   —— 展开时浮在内容之上，不推挤右侧图片，所以图片始终占满可用空间。
+   ========================================================================== */
+
+/* ---------- 一、左侧类目菜单：细轨 ⇄ 展开面板 ---------- */
+@media (min-width: 901px) {
+  /* 布局列宽按「细轨」算，图片区多出约 158px */
+  body.front .gallery-layout { grid-template-columns: 54px 1fr; gap: 10px; }
+
+  body.front .sidebar {
+    position: sticky; top: 78px;
+    width: 54px; padding: 14px 0;
+    max-height: 118px;                    /* 收起态：只留一张小卡片当把手 */
+    overflow: hidden;
+    transition: width .22s cubic-bezier(.4,0,.2,1),
+                max-height .24s cubic-bezier(.4,0,.2,1),
+                padding .22s cubic-bezier(.4,0,.2,1),
+                box-shadow .22s ease;
+    transition-delay: .12s;               /* 鼠标匆匆划过不误触发；移出后有 120ms 缓冲 */
+  }
+
+  /* 收起态：标题竖排，menu 隐去 */
+  body.front .sidebar .side-head {
+    writing-mode: vertical-rl; text-orientation: upright;
+    letter-spacing: 4px; font-size: 12px; font-weight: 600;
+    color: var(--gold); text-transform: none; white-space: nowrap;
+    width: auto; margin: 0 auto; padding: 0 0 10px;
+    border-bottom: none;
+  }
+  body.front .sidebar .cat-menu { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+
+  /* 右侧边缘的小把手，提示「可以展开」 */
+  body.front .sidebar::after {
+    content: "›";
+    position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+    width: 17px; height: 32px; display: grid; place-items: center;
+    font-size: 14px; line-height: 1; color: var(--gold);
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 999px;
+    pointer-events: none; transition: opacity .16s ease, transform .16s ease;
+  }
+
+  /* 展开态 */
+  body.front .sidebar:hover,
+  body.front .sidebar:focus-within {
+    width: 212px; padding: 16px 12px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    z-index: 55;
+    box-shadow: 0 20px 48px rgba(20,20,20,.18);
+    transition-delay: 0s;
+  }
+  body.front .sidebar:hover .side-head,
+  body.front .sidebar:focus-within .side-head {
+    writing-mode: horizontal-tb; letter-spacing: 2px;
+    margin: 0 0 8px; padding: 4px 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  body.front .sidebar:hover .cat-menu,
+  body.front .sidebar:focus-within .cat-menu { opacity: 1; pointer-events: auto; }
+  body.front .sidebar:hover::after,
+  body.front .sidebar:focus-within::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
+
+  /* 滚动条收细，展开态更干净 */
+  body.front .sidebar::-webkit-scrollbar { width: 6px; }
+  body.front .sidebar::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
+}
+
+/* ---------- 二、顶部筛选栏：修掉「鼠标移过去就收回」的死区 + 收回缓冲 ---------- */
+/* 触发条更扁，少占一行高度 */
+body.front .tf-trigger { padding: 7px 14px; }
+/* 触发条与面板之间原来有 6px 空隙，鼠标穿过空隙会脱离 hover 区 → 面板提前收起。
+   把空隙补进「触发条」的命中区域（触发条始终可命中），鼠标一路滑进面板不会掉线。 */
+.tf-trigger::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 8px;
+}
+/* 移出后延迟 160ms 再收起：手抖一下也不闪退 */
+.tf-body { transition: opacity .18s ease, transform .18s ease, visibility .18s ease; transition-delay: .16s; }
+.tag-filter:hover .tf-body,
+.tag-filter:focus-within .tf-body { transition-delay: 0s; }
+/* 键盘也能展开 */
+.tag-filter:focus-within .tf-body { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+.tag-filter:focus-within .tf-arrow { transform: rotate(180deg); }
+
+@media (min-width: 901px) {
+  /* 展开面板更紧凑，少遮挡图片 */
+  .tf-body { padding: 12px 14px 4px; }
+  .tf-groups { max-height: 46vh; gap: 10px; }
+}
+
+/* ================= 前台 · 生成报告（PDF / PPT，仅超级管理员） ================= */
+.rp-open { border-color: var(--gold) !important; color: var(--gold) !important; }
+.rp-open:hover { background: #fffdf6 !important; }
+
+.rp-modal {
+  position: fixed; inset: 0; z-index: 9998; padding: 22px;
+  background: rgba(28,24,20,.5); display: flex; align-items: center; justify-content: center;
+  overflow: auto; backdrop-filter: blur(2px);
+}
+.rp-mbox {
+  width: 100%; max-width: 640px; background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow); padding: 20px 22px 18px;
+}
+.rp-mhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.rp-mtitle { font-size: 17px; font-weight: 700; color: var(--txt); }
+.rp-msub { margin-top: 5px; font-size: 12.5px; color: var(--sub); line-height: 1.6; }
+.rp-mx {
+  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--sub); font-size: 17px; line-height: 1; cursor: pointer;
+}
+.rp-mx:hover { border-color: var(--gold); color: var(--gold); }
+.rp-sec { margin-top: 16px; }
+.rp-lab { font-size: 12px; color: var(--sub); letter-spacing: .5px; margin-bottom: 7px; }
+.rp-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rp-opt {
+  text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; cursor: pointer; font-family: inherit; transition: .16s;
+}
+.rp-opt b { display: block; font-size: 13px; color: var(--txt); font-weight: 600; }
+.rp-opt span { display: block; margin-top: 3px; font-size: 11.5px; color: var(--sub); line-height: 1.5; }
+.rp-opt:hover { border-color: var(--gold); background: #fffdf6; }
+.rp-opt.on { border-color: var(--gold); background: #fdf9f1; box-shadow: inset 0 0 0 1px var(--gold); }
+.rp-act { margin-top: 18px; display: flex; gap: 10px; align-items: center; }
+.rp-go {
+  padding: 10px 26px; border: 0; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-size: 14px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+}
+.rp-go:hover { filter: brightness(1.06); }
+.rp-go[disabled] { opacity: .6; cursor: default; filter: none; }
+.rp-ghost {
+  padding: 10px 20px; border: 1px solid var(--line); border-radius: 999px; background: transparent;
+  color: var(--txt); font-size: 13.5px; cursor: pointer; font-family: inherit;
+}
+.rp-ghost:hover { border-color: var(--gold); color: var(--gold); }
+.rp-prog { margin-top: 14px; }
+.rp-pbar { height: 5px; border-radius: 999px; background: var(--shade); overflow: hidden; }
+.rp-pbar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width .25s; }
+.rp-ptxt { margin-top: 7px; font-size: 12px; color: var(--sub); line-height: 1.6; }
+.rp-ptxt.bad { color: var(--danger); }
+.rp-tip { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--shade); font-size: 11.5px; color: var(--sub); line-height: 1.7; }
+@media (max-width: 560px) { .rp-opts { grid-template-columns: 1fr; } }
+
+/* ---- 报表版式（屏幕不显示，仅打印 / 生成 PDF 时生效；PPT 抓图复用同一版式） ---- */
+.rp-sheet {
+  display: none; --rp-cols: 4; --rp-inner: 3;
+  background: #fff; color: #2c2c2c;
+  font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+}
+.rp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm; border-bottom: 1.2pt solid var(--gold); padding-bottom: 3mm; margin-bottom: 4mm; }
+.rp-h-t { font-size: 16pt; font-weight: 700; }
+.rp-h-s { margin-top: 1.4mm; font-size: 8.5pt; color: #6b665e; line-height: 1.55; }
+.rp-h-r { text-align: right; font-size: 8pt; color: #6b665e; line-height: 1.6; white-space: nowrap; }
+.rp-h-brand { font-size: 10.5pt; font-weight: 700; color: var(--gold); letter-spacing: .6pt; }
+.rp-grid { column-count: var(--rp-cols); column-gap: 5mm; }
+.rp-col { width: 100%; display: inline-block; margin: 0 0 5mm; padding: 2.6mm; border: .6pt solid var(--line); border-radius: 2.4mm; background: #fff; }
+.rp-col-title { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; }
+.rp-col-title b { font-size: 10pt; }
+.rp-col-n { font-size: 7.5pt; color: #8a857c; }
+.rp-col-meta { margin-top: .8mm; font-size: 7.5pt; color: #8a857c; line-height: 1.5; }
+.rp-col-head { padding-bottom: 2mm; margin-bottom: 2mm; border-bottom: .6pt solid var(--line); }
+.rp-cards { display: grid; grid-template-columns: repeat(var(--rp-inner), minmax(0, 1fr)); gap: 1.8mm; }
+.rp-card { position: relative; margin: 0; border: .6pt solid var(--line); border-radius: 1.6mm; overflow: hidden; background: var(--shade); break-inside: avoid; page-break-inside: avoid; }
+.rp-card img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; }
+.rp-badge { position: absolute; top: 1px; left: 1px; padding: 0 1mm; border-radius: 1mm; font-size: 6pt; line-height: 1.6; color: #fff; background: rgba(0,0,0,.6); }
+.rp-move { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 1mm; font-size: 6pt; text-align: center; color: #fff; background: rgba(20,20,20,.62); }
+.rp-none { grid-column: 1 / -1; padding: 6mm 0; text-align: center; font-size: 8pt; color: #8a857c; }
+.rp-foot { margin-top: 3mm; padding-top: 2mm; border-top: .6pt solid var(--line); display: flex; justify-content: space-between; gap: 4mm; font-size: 7.5pt; color: #8a857c; }
+
+/* ---- 抓图（生成 PPT 时把对比池还原成不滚动、不吸顶的完整版式） ---- */
+.rk-pools.rp-capture { max-height: none !important; overflow: visible !important; }
+.rk-pool.rp-capture { max-width: none !important; }
+.rp-capture .rk-pool-head { position: static !important; }
+.rp-capture .rk-card { transition: none !important; }
+.rp-capture .rk-card:hover { transform: none !important; box-shadow: none !important; }
+
+/* ---- 打印：只输出报表 ---- */
+@media print {
+  html, body { background: #fff !important; }
+  body.rp-printing > *:not(#rp-sheet) { display: none !important; }
+  body.rp-printing #rp-sheet { display: block !important; }
+  .rp-card img, .rp-col, .rp-head, .rp-foot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
