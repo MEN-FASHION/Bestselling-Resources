@@ -665,33 +665,85 @@
     }
   }
 
+  /* ---------- 已上传记录：条数口径 ----------
+     条数一律按「期次 + 类目 + 站点」这个槽位向数据库精确计数。
+     不采用「一次性把全表拉回来自己在浏览器里数」的做法：接口单次返回有上限，
+     榜单数据一多就被截断，于是上传记录显示的条数会凭空变少（几个/几十个），
+     而前台是按槽位分次查的、看到的是完整的 200 条 —— 两边就会对不上。
+     精确计数失败时退回批次自带条数，绝不当成 0。 */
+  function batchSites(b) {
+    return String((b && b.site) || "").split(",").map(s => s.trim()).filter(Boolean);
+  }
+  function batchSlotKey(b) {
+    return [(b && b.period_type) || "week", (b && b.period_label) || "", (b && b.category) || "",
+      batchSites(b).slice().sort().join("|")].join("\u0001");
+  }
+  function batchPeriodKey(b) {
+    return ((b && b.period_type) || "week") + "\u0001" + ((b && b.period_label) || "");
+  }
+  /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求） */
+  async function computeRankCounts(list, opt) {
+    const countFn = (opt && opt.countFn) || ((o) => SB.countRankSlot(o));
+    const bySlot = {}, byPeriod = {};
+    const slotDone = {}, periodDone = {};
+    for (const b of (list || [])) {
+      const sk = batchSlotKey(b);
+      if (!slotDone[sk]) {
+        slotDone[sk] = true;
+        let n = null;
+        try {
+          n = await countFn({
+            periodType: b.period_type || "week", periodLabel: b.period_label || "",
+            category: b.category || "", sites: batchSites(b),
+          });
+        } catch (e) { n = null; }
+        bySlot[sk] = (typeof n === "number" && isFinite(n)) ? n : null;
+      }
+      const pk = batchPeriodKey(b);
+      if (!periodDone[pk]) {
+        periodDone[pk] = true;
+        let n = null;
+        try {
+          n = await countFn({
+            periodType: b.period_type || "week", periodLabel: b.period_label || "",
+            category: "", sites: [],
+          });
+        } catch (e) { n = null; }
+        byPeriod[pk] = (typeof n === "number" && isFinite(n)) ? n : null;
+      }
+    }
+    return { bySlot: bySlot, byPeriod: byPeriod };
+  }
+
   /* ---------- 已上传记录 ---------- */
   async function loadRankBatches() {
     const box = $("#rank-batch-list");
     let list = [];
     try { list = await SB.listRankBatches(); } catch (e) { list = []; }
 
-    /* 条数不再依赖导入时写入的统计值（旧批次可能为 0），直接数榜单里的真实条目 */
-    let items = [], itemsOk = true;
-    try { items = await SB.listRankItems({ limit: 8000 }); } catch (e) { items = []; itemsOk = false; }
-    const realCnt = {};
-    (items || []).forEach((it) => {
-      const k = (it.period_type || "") + "|" + (it.period_label || "") + "|" + (it.category || "");
-      realCnt[k] = (realCnt[k] || 0) + 1;
-    });
+    const counts = await computeRankCounts(list);
+    const fallback = (b) => (typeof b.rows === "number" ? b.rows : 0);
+    /* 条数：精确计数优先；拿不到才退回批次自带条数（标 ≈，不装作准确） */
     const cntOf = (b) => {
-      const k = (b.period_type || "") + "|" + (b.period_label || "") + "|" + (b.category || "");
-      if (itemsOk) return realCnt[k] || 0;
-      return b.rows || 0;
+      const v = counts.bySlot[batchSlotKey(b)];
+      return (v == null) ? fallback(b) : v;
     };
+    const cntApprox = (b) => (counts.bySlot[batchSlotKey(b)] == null);
 
     // 聚合出「期次」清单（用于期次管理）
     const map = {};
     list.forEach((b) => {
       const k = b.period_type + "|" + b.period_label;
-      if (!map[k]) map[k] = { label: b.period_label, type: b.period_type, rows: 0, batches: 0 };
-      map[k].rows += cntOf(b);
+      if (!map[k]) map[k] = { label: b.period_label, type: b.period_type, rows: 0, batches: 0, approx: false };
       map[k].batches += 1;
+    });
+    Object.keys(map).forEach((k) => {
+      const p = map[k];
+      const exact = counts.byPeriod[batchPeriodKey({ period_type: p.type, period_label: p.label })];
+      if (exact == null) {
+        p.rows = list.filter(b => b.period_type === p.type && b.period_label === p.label).reduce((s, b) => s + cntOf(b), 0);
+        p.approx = true;
+      } else { p.rows = exact; }
     });
     rankPeriods = Object.keys(map).map((k) => map[k]).sort((a, b) => admPeriodKey(a.label) - admPeriodKey(b.label));
     renderRankPeriods();
@@ -706,7 +758,7 @@
 
       const main = document.createElement("span");
       main.className = "rank-batch-main";
-      main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 默认站点 " + b.site : "") + " · " + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+      main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
 
       const act = document.createElement("span");
       act.className = "rkadm-row-act";
@@ -945,5 +997,6 @@
     enterRankPanel, loadRankBatches, loadRankSites, loadRankCats,
     doRankImport, onRankFileChange, computeRankFlags: computeFlags,
     rankPreviewRefresh, renderRankPeriods, fillRankPvControls,
+    computeRankCounts, batchSlotKey, batchSites,
   });
 }

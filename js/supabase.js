@@ -1745,6 +1745,29 @@ async removeTrendRecord(id) {
       }
       return urls;
     },
+    // 按槽位精确计数（后台「上传记录」显示条数用）
+    //
+    // ⚠️ 计数必须交给数据库做，不能「一次性把全表拉回来自己在浏览器里数」：
+    //    接口单次返回是有上限的，表一大就被截断，于是「上传记录」显示的条数会凭空变少
+    //    （几个/几十个），而前台按槽位分次查却是完整的 —— 两边就对不上了。
+    //    这里用 head 计数（数据库只回条数、不回行），既不受单次上限影响，也不浪费流量。
+    // 返回：条数；若服务端没回数字（异常/不支持）→ 返回 null，由调用方决定退回展示口径。
+    async countRankSlot(o) {
+      const periodType = (o && o.periodType) || "week";
+      const periodLabel = (o && o.periodLabel) || "";
+      const category = (o && o.category) || "";
+      const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      try {
+        let q = client.from("rank_items").select("id", { count: "exact", head: true })
+          .eq("period_type", periodType);
+        if (periodLabel) q = q.eq("period_label", periodLabel);
+        if (category) q = q.eq("category", category);
+        if (sites.length) q = q.in("site", sites);
+        const res = await q;
+        if (res && res.error) return null;
+        return (res && typeof res.count === "number") ? res.count : null;
+      } catch (e) { return null; }
+    },
     async updateRankBatch(id, patch) {
       const { error } = await client.from("rank_batches").update(patch || {}).eq("id", id);
       if (error) throw new Error(error.message || "更新批次失败");
