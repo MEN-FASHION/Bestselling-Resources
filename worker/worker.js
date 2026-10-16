@@ -30,7 +30,11 @@ async function getUserId(token, env) {
     const user = await res.json();
     id = user?.id || null;
   }
-  _uidCache.set(token, { id, at: now });
+  // 只缓存「成功解析出用户」的结果。
+  // 鉴权失败往往是一次性的（访问令牌刚过期、瞬时网络抖动），若把失败也缓存 5 分钟，
+  // 该令牌后续所有图片请求都会被判未登录，表现为整页图片/图片清单打不开。
+  if (id) _uidCache.set(token, { id, at: now });
+  else _uidCache.delete(token);
   return id;
 }
 

@@ -1,13 +1,38 @@
 -- ============================================================
 -- TREND BANK · 数据看板（访问统计 / 用户增长 / 地区分布）
--- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表）
+-- 版本：20261016C
+-- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「用户从哪来、有多少、在干什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 停留时长 / IP / 国家地区）
 --   ② record_visit()：页面打开时登记一次访问
 --   ③ visit_ping()：页面心跳累加停留时长（含离开页面时补最后一次）
 --   ④ admin_dashboard()：超管专用，一次返回全部看板指标（用户增长 / 在线时长 / 各专区 / 地区分布 / 最近活跃）
+--   ⑤ is_super_admin()：超管判定（本脚本一并重建，容错大小写与首尾空格）
 -- 说明：只统计「已登录用户」的真实访问（游客不计），避免匿名流量污染口径。
+--
+-- 本版重点修复「明明是超级管理员，却提示没有查看看板的权限」：
+--   · 明确为三个接口补齐「登录用户可调用」的授权（grant execute to authenticated）；
+--   · 超管判定改为容错大小写与空格，避免角色值写成 Super_Admin / "super_admin " 时被误判为非超管；
+--   · 看板接口在返回数据里附带 meta（本次判定到的账号与角色），便于一眼看出判定结果；
+--   · 结尾附自检：直接列出「接口授权是否就绪 / 谁是超管账号 / 现有数据量」。
 -- ============================================================
+
+-- ---------- 0. 超管判定（容错大小写与首尾空格） ----------
+-- 注意：站内多处权限策略都调用本函数，这里统一重建，避免角色值写法差异导致"明明是超管却说没权限"。
+create or replace function public.is_super_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.user_id = auth.uid()
+      and lower(btrim(coalesce(p.role, ''))) = 'super_admin'
+  );
+$$;
+grant execute on function public.is_super_admin() to authenticated, anon, service_role;
 
 -- ---------- 1. 访问记录表 ----------
 create table if not exists public.visit_logs (
@@ -56,6 +81,7 @@ create function public.record_visit(
 )
 returns bigint
 language plpgsql security definer volatile
+set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid;
@@ -81,6 +107,7 @@ begin
   return v_id;
 end;
 $$;
+revoke all on function public.record_visit(text, text, text, text, text, text) from public, anon;
 grant execute on function public.record_visit(text, text, text, text, text, text) to authenticated;
 
 -- ---------- 3. 累加停留时长（心跳） ----------
@@ -90,6 +117,7 @@ drop function if exists public.visit_ping(bigint, integer);
 create function public.visit_ping(p_id bigint, p_add integer)
 returns void
 language plpgsql security definer volatile
+set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid;
@@ -103,6 +131,7 @@ begin
    where id = p_id and user_id = v_uid;
 end;
 $$;
+revoke all on function public.visit_ping(bigint, integer) from public, anon;
 grant execute on function public.visit_ping(bigint, integer) to authenticated;
 
 -- ---------- 4. 数据看板（超管专用，一次返回全部指标） ----------
@@ -110,8 +139,11 @@ drop function if exists public.admin_dashboard();
 create function public.admin_dashboard()
 returns jsonb
 language plpgsql security definer stable
+set search_path = public, pg_temp
 as $$
 declare
+  v_uid uuid;
+  v_role text;
   v_is_super boolean;
   -- 时间口径统一按北京时间（Asia/Shanghai）切分「今日/昨日/本周/本月」，避免按 UTC 结算导致跨天偏差
   v_today timestamptz;
@@ -121,8 +153,14 @@ declare
   v_last_month timestamptz;
   v jsonb;
 begin
-  select public.is_super_admin() into v_is_super;
-  if not coalesce(v_is_super, false) then
+  -- 超管判定：直接读自己的 profiles 角色并做容错归一化（不依赖外部函数是否存在）
+  select auth.uid() into v_uid;
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  select p.role into v_role from public.profiles p where p.user_id = v_uid;
+  v_is_super := (lower(btrim(coalesce(v_role, ''))) = 'super_admin');
+  if not v_is_super then
     return null;  -- 非超管返回 null（不给任何数据）
   end if;
 
@@ -134,6 +172,13 @@ begin
   v_last_month := (((date_trunc('month', (now() at time zone 'Asia/Shanghai')::date)) - interval '1 month')::timestamp at time zone 'Asia/Shanghai');
 
   select jsonb_build_object(
+    -- ===== 本次调用元信息（便于确认"服务端认为你是谁"） =====
+    'meta', jsonb_build_object(
+      'script', '20261016C',
+      'uid', v_uid::text,
+      'role', coalesce(v_role, ''),
+      'isSuper', true
+    ),
     -- ===== 用户增长 =====
     'users', (
       select jsonb_build_object(
@@ -223,6 +268,8 @@ begin
   return v;
 end;
 $$;
+-- 授权：只有登录用户可调用（匿名用户不可调用；非超管调用会返回空）
+revoke all on function public.admin_dashboard() from public, anon;
 grant execute on function public.admin_dashboard() to authenticated;
 
 -- ---------- 5. 让新函数立刻对接口生效 + 自检 ----------
@@ -230,8 +277,7 @@ grant execute on function public.admin_dashboard() to authenticated;
 -- 这里主动通知它重载，避免出现「数据库里明明有函数、接口却报找不到」的情况。
 notify pgrst, 'reload schema';
 
--- 自检：整段执行后，下面这段会输出每个对象是否就绪（期望「已就绪」全是 true）。
--- 若某项为 false，说明这一段没执行成功，把本文件整段重新执行一次即可。
+-- 自检 ①：对象是否都建好了（期望「已就绪」全是 true）
 select '访问记录表 visit_logs' as "检查项", (to_regclass('public.visit_logs') is not null) as "已就绪"
 union all
 select '登记访问 record_visit',
@@ -246,11 +292,22 @@ select '看板接口 admin_dashboard',
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'admin_dashboard')
 union all
-select '超管判定 is_super_admin（依赖）',
+select '超管判定 is_super_admin',
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'is_super_admin');
+
+-- 自检 ②：接口授权 / 超管账号 / 现有数据量（期望：登录用户可调用 = true，匿名可调用 = false）
+-- 说明：SQL Editor 里没有浏览器登录态，所以 auth.uid() 为空属正常，不影响下面这些检查。
+select
+  has_function_privilege('authenticated', 'public.admin_dashboard()', 'EXECUTE') as "登录用户可调用看板",
+  has_function_privilege('anon', 'public.admin_dashboard()', 'EXECUTE') as "匿名可调用看板_应为false",
+  (select count(*) from public.visit_logs) as "已有访问记录数",
+  (select count(*) from public.profiles where lower(btrim(coalesce(role, ''))) = 'super_admin') as "超管账号数",
+  (select string_agg(coalesce(email, '(无邮箱)') || ' → ' || coalesce(role, '(空)'), '  |  ' order by email) from public.profiles) as "全部账号与角色";
 
 -- ============================================================
 -- 执行完成后：前台各页面打开时会自动登记访问（仅登录用户），
 -- 超管后台「权限管理 → 数据看板」即可看到今天谁来了、从哪来、看了哪个专区、待了多久。
+-- 若执行后后台仍提示"没有看板权限"，请点后台的「看板自检」按钮，
+-- 并用浏览器 F12 → Console 查看「[看板诊断]」开头的记录（里面含接口返回的真实错误码）。
 -- ============================================================

@@ -101,7 +101,7 @@ async function loadPermPanel() {
     refreshBatchZoneOptions();
     await loadDefaultPerms();
     await renderZoneDefsBox();
-    await loadDashboard();
+    await loadAnalyticsDash();
   }
 
 // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
@@ -671,7 +671,7 @@ function bindPermission() {
     bindPermEditModal();
     bindPermCreateUser();
     bindPermBatch();
-    bindDashboard();
+    bindAnalyticsDash();
   }
 
   /* 暴露给其它模块 / 事件绑定 */
@@ -717,7 +717,7 @@ function dashTable(heads, rows) {
     '</tbody></table>';
 }
 
-function renderDashboard(d) {
+function renderAnalyticsDash(d) {
   const cards = $("#dash-cards");
   const u = (d && d.users) || {}, v = (d && d.visits) || {};
   if (cards) {
@@ -770,6 +770,11 @@ const DASH_ERR_TEXT = {
   other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请确认 tools/setup_analytics.sql 已在数据库执行过。"
 };
 
+// 账号确实是超级管理员、却读到「无权限」时的专属提示：
+// 这种情况基本不是账号权限问题，而是数据库里的统计接口没建好 / 接口授权没生效，
+// 必须把话说清楚，否则会误导管理员去改权限（白折腾）。
+const DASH_ERR_TEXT_SUPER_FIX = "当前账号是超级管理员，但数据库里的数据看板接口拒绝了本次读取 —— 多半是统计接口还没建好、或接口授权未生效（不是账号权限问题）。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次，等约 10 秒后点「刷新」。";
+
 function dashErrText(reason) { return DASH_ERR_TEXT[reason] || DASH_ERR_TEXT.other; }
 
 // 零数据提示：接口通了但还没有访问记录时，明确告诉去哪里产生第一条记录，避免误以为"没反应"
@@ -779,14 +784,14 @@ function dashNote(text) {
 }
 
 // 读取并渲染看板（非超管接口返回空 → 整块不显示，不给任何数据）
-async function loadDashboard() {
+async function loadAnalyticsDash() {
   const box = $("#perm-dash");
   if (!box) return;
   try {
     const d = await SB.adminDashboard();
-    if (!d) { box.classList.add("hidden"); return; }
+    if (!d) { box.classList.add("hidden"); dashNote("当前账号不是超级管理员，数据看板不显示（正常权限表现）。"); return; }
     box.classList.remove("hidden");
-    renderDashboard(d);
+    renderAnalyticsDash(d);
     const up = $("#perm-dash-updated");
     if (up) up.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
     const pv = Number((d.visits && d.visits.pvTotal) || 0);
@@ -794,41 +799,55 @@ async function loadDashboard() {
     else dashNote("");
   } catch (e) {
     const reason = (e && e.diag) || "other";
+    let text = dashErrText(reason);
+    // 「无权限」时报错信息是笼统的，容易冤枉超管：这里用真实角色复核一次。
+    // 若账号确实是超管，说明问题出在数据库接口/授权，而不是账号权限。
+    if (reason === "forbidden") {
+      let role = null;
+      try { role = await SB.myRole(); } catch (err) { role = null; }
+      if (role === "super_admin") text = DASH_ERR_TEXT_SUPER_FIX;
+    }
     box.classList.remove("hidden");
     const c = $("#dash-cards");
-    if (c) c.innerHTML = '<div class="hint">' + dashErrText(reason) + '</div>';
+    if (c) c.innerHTML = '<div class="hint">' + text + '</div>';
     ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
-    dashNote("");
+    dashNote("详细原因已输出到浏览器控制台（按 F12 → Console 查看「[看板诊断]」开头的记录）。");
   }
 }
 
-// 看板自检：一次把「接口是否可用 / 是否超管 / 有没有数据」查清楚，用一句话说明
+// 看板自检：一次把「接口是否可用 / 是不是超管 / 有没有数据」查清楚，用一句话说明
 async function dashSelfCheck() {
   dashNote("自检中…");
+  let role = null;
+  try { role = await SB.myRole(); } catch (e) { role = null; }
+  const roleText = role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : role ? "访客" : "未取到角色";
   try {
     const d = await SB.adminDashboard();
-    if (!d) { dashNote("自检结果：统计接口可用，但当前账号不是超级管理员，看板不显示（这是正常的权限表现）。"); return; }
+    if (!d) { dashNote("自检结果：统计接口可用；当前账号角色为「" + roleText + "」，不是超级管理员，看板不显示（这是正常的权限表现）。"); return; }
     const pv = Number((d.visits && d.visits.pvTotal) || 0);
     const uv = Number((d.visits && d.visits.uvTotal) || 0);
     const us = Number((d.users && d.users.total) || 0);
-    dashNote("自检结果：统计接口正常 · 已注册用户 " + us + " · 累计访问 " + pv + " 次 / " + uv +
+    dashNote("自检结果：统计接口正常 · 当前账号角色「" + roleText + "」 · 已注册用户 " + us + " · 累计访问 " + pv + " 次 / " + uv +
       " 人" + (pv === 0 ? "（还没有记录：用前台页面登录后打开一次即可产生第一条）" : ""));
   } catch (e) {
     const r = (e && e.diag) || "other";
-    const head = r === "missing_function" ? "数据库还没建统计接口" : r === "not_authenticated" ? "登录状态失效" : r === "forbidden" ? "当前账号无看板权限" : "接口读取失败";
-    const help = r === "missing_function" ? "请在 Supabase SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试" : r === "not_authenticated" ? "请重新登录" : r === "forbidden" ? "请用超级管理员账号查看" : "请稍后重试";
-    dashNote("自检结果：" + head + " —— " + help + "。");
+    const head = r === "missing_function" ? "数据库还没建统计接口" : r === "not_authenticated" ? "登录状态失效" : r === "forbidden" ? "看板接口拒绝了本次读取" : "接口读取失败";
+    let help = r === "missing_function" ? "请在 Supabase SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试"
+      : r === "not_authenticated" ? "请重新登录后再试"
+      : r === "forbidden" ? "当前账号角色「" + roleText + "」：若确为超管，说明是数据库接口授权未生效 —— 请重新执行 tools/setup_analytics.sql（内含授权语句）"
+      : "请稍后重试";
+    dashNote("自检结果：" + head + " —— " + help + "。详细报错见控制台「[看板诊断]」。");
   }
 }
 
-function bindDashboard() {
+function bindAnalyticsDash() {
   const b = $("#perm-dash-refresh");
   if (!b || b.__bound) return;
   b.__bound = true;
   b.onclick = async () => {
     const c = $("#dash-cards");
     if (c) c.innerHTML = '<span class="hint">读取中…</span>';
-    await loadDashboard();
+    await loadAnalyticsDash();
   };
   const ck = $("#perm-dash-check");
   if (ck && !ck.__bound) { ck.__bound = true; ck.onclick = () => dashSelfCheck(); }
@@ -1011,7 +1030,7 @@ async function applyBatchZone() {
 
   Object.assign(window, {
     permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel,
-    loadDashboard, renderDashboard, bindDashboard, bindPermBatch, applyBatchTag, applyBatchRole, applyBatchZone, updateBatchCount, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
+    loadAnalyticsDash, renderAnalyticsDash, bindAnalyticsDash, bindPermBatch, applyBatchTag, applyBatchRole, applyBatchZone, updateBatchCount, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
   });
 
 })();

@@ -10,23 +10,32 @@ const SB = (() => {
     window.CONFIG.SUPABASE.anonKey
   );
 
-  // 取当前登录令牌（强制刷新会话后再取，确保拿到新鲜 token，避免手机端存有已过期访问令牌）
-  async function currentToken() {
-    // 仅在会话里没有有效访问令牌时才刷新会话；每次取 token 都 refreshSession 会持续触发
-    // onAuthStateChange 的 TOKEN_REFRESHED 事件，被 onAuth 回调重复 enterPanel/loadManage，造成图片列表反复重绘闪跳。
-    try {
-      const s = await client.auth.getSession();
-      if (s?.data?.session?.access_token) return s.data.session.access_token;
-    } catch (e) { /* 忽略读取失败 */ }
-    try {
-      await client.auth.refreshSession();
-    } catch (e) { /* 无刷新 token 或刷新失败时忽略 */ }
-    try {
-      const s = await client.auth.getSession();
-      return s?.data?.session?.access_token || "";
-    } catch (e) {
-      return "";
+  // 取当前登录令牌（会话里是过期令牌时先用 refresh token 续期，确保拿到新鲜 token）
+  async function freshAccessToken() {
+    const readSess = async () => {
+      try {
+        const s = await client.auth.getSession();
+        return (s && s.data && s.data.session) || null;
+      } catch (e) { return null; }
+    };
+    // 已过期（或 60 秒内即将过期）才需要续期：不做无谓刷新，
+    // 避免每次取 token 都 refreshSession 触发 TOKEN_REFRESHED，导致图片列表反复重绘闪跳。
+    const isStale = (sess) => {
+      if (!sess || !sess.access_token) return true;
+      const exp = Number(sess.expires_at || 0);   // 秒级时间戳
+      if (!exp) return false;
+      return exp - Math.floor(Date.now() / 1000) <= 60;
+    };
+    let sess = await readSess();
+    if (isStale(sess)) {
+      try { await client.auth.refreshSession(); } catch (e) { /* 无刷新令牌或刷新失败：继续用现有令牌 */ }
+      sess = (await readSess()) || sess;
     }
+    return (sess && sess.access_token) || "";
+  }
+
+  async function currentToken() {
+    return await freshAccessToken();
   }
 
   // ---------- 上传前自动压缩：按体积强制压到 200KB 以下 WebP ----------
@@ -208,21 +217,9 @@ const SB = (() => {
       const { data } = await client.auth.getSession();
       return data.session;
     },
-    // 暴露当前登录令牌
+    // 暴露当前登录令牌（过期时自动续期，避免把过期令牌发给接口被判未登录）
     async currentToken() {
-      // 仅在无有效令牌时才刷新会话；每次调用都 refreshSession 会触发 onAuthStateChange 的
-      // TOKEN_REFRESHED 事件，进而被 onAuth 回调重复 enterPanel/loadManage，造成图片列表反复重绘闪跳。
-      let token = "";
-      try {
-        const s = await client.auth.getSession();
-        token = (s && s.data && s.data.session && s.data.session.access_token) || "";
-      } catch (e) { /* 忽略读取失败 */ }
-      if (!token) {
-        try { await client.auth.refreshSession(); } catch (e) { /* 忽略刷新失败 */ }
-        const s2 = await client.auth.getSession();
-        token = (s2 && s2.data && s2.data.session && s2.data.session.access_token) || "";
-      }
-      return token || "";
+      return await freshAccessToken();
     },
     onAuth(cb) {
       client.auth.onAuthStateChange((_event, session) => cb(session));
@@ -1492,18 +1489,31 @@ async removeTrendRecord(id) {
     },
     // 超管：读取数据看板全部指标（非超管返回 null）
     // 失败时把原因归一化到 e.diag（missing_function / not_authenticated / forbidden / other），
-    // 界面据此给出人话提示；原始报错文本不外抛，避免把接口细节带到页面上。
+    // 界面据此给出人话提示；原始报错只输出到浏览器控制台（便于排查），不显示到页面上。
     async adminDashboard() {
       const { data, error } = await client.rpc("admin_dashboard");
       if (error) {
-        const raw = String(error.message || "") + " " + String(error.details || "") + " " + String(error.hint || "") + " " + String(error.code || "");
+        const code = String(error.code || "");
+        const raw = [error.message, error.details, error.hint, code].map(v => String(v || "")).join(" ");
         let diag = "other";
-        if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
-        else if (/not authenticated|jwt|invalid token|401/i.test(raw)) diag = "not_authenticated";
-        else if (/permission|not allowed|denied|403/i.test(raw)) diag = "forbidden";
+        // 先按错误码判：42501=无执行权限、PGRST301/302=登录态问题、PGRST202/42883=函数不存在
+        if (code === "PGRST202" || code === "42883") diag = "missing_function";
+        else if (code === "PGRST301" || code === "PGRST302") diag = "not_authenticated";
+        else if (code === "42501" || code === "PGRST402") diag = "forbidden";
+        else if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
+        else if (/not authenticated|jwt|invalid token|PGRST301|401/i.test(raw)) diag = "not_authenticated";
+        else if (/permission|not allowed|denied|forbidden|42501|403/i.test(raw)) diag = "forbidden";
+        try {
+          console.warn("[看板诊断] 看板接口读取失败：diag=" + diag + " code=" + (code || "(无)"),
+            { message: error.message, details: error.details, hint: error.hint });
+        } catch (e) { /* 控制台输出失败不影响流程 */ }
         const e = new Error("读取数据看板失败");
         e.diag = diag;
+        e.code = code;
         throw e;
+      }
+      if (data && typeof data === "object" && data.meta) {
+        try { console.info("[看板诊断] 看板接口正常，服务端判定：", data.meta); } catch (e) {}
       }
       return data || null;
     },
