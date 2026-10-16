@@ -10,6 +10,36 @@ const SB = (() => {
     window.CONFIG.SUPABASE.anonKey
   );
 
+  // 配置自检：判断"页面是否真的拿到了可用的访问密钥"。
+  // 为什么必须查这一步：Supabase 网关收到"没带密钥"的请求时，
+  // 会在到达接口之前就拒绝（响应体形如 No API key found in request），
+  // 页面若把它当成业务错误，就会误报成"当前账号没有权限"——把超管引向改权限的错误方向。
+  // 这里提前判定并给出人话原因（缺失 / 格式不对 / 与地址不是同一项目），一个请求都不用发。
+  function checkConfigHealth() {
+    const cfg = (window.CONFIG && window.CONFIG.SUPABASE) || {};
+    const url = String(cfg.url || "").trim();
+    const key = String(cfg.anonKey || "").trim();
+    const refFromUrl = (url.match(/^https:\/\/([a-z0-9-]+)\.supabase\./i) || [])[1] || "";
+    let refFromKey = "", role = "";
+    if (key) {
+      try {
+        const part = key.split(".")[1] || "";
+        const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+        const pad = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+        const payload = JSON.parse(atob(pad));
+        refFromKey = String(payload.ref || "");
+        role = String(payload.role || "");
+      } catch (e) { /* 解析失败按格式问题处理 */ }
+    }
+    const problems = [];
+    if (!url) problems.push("配置里缺少数据库地址");
+    if (!key) problems.push("配置里缺少访问密钥");
+    else if (key.split(".").length !== 3 || !/^eyJ/.test(key)) problems.push("访问密钥格式不正确");
+    else if (!refFromKey) problems.push("访问密钥无法解析");
+    else if (refFromUrl && refFromKey !== refFromUrl) problems.push("访问密钥与数据库地址不属于同一个项目");
+    return { ok: problems.length === 0, problems, refFromUrl, refFromKey, role };
+  }
+
   // 取当前登录令牌（会话里是过期令牌时先用 refresh token 续期，确保拿到新鲜 token）
   async function freshAccessToken() {
     const readSess = async () => {
@@ -1490,8 +1520,44 @@ async removeTrendRecord(id) {
     // 超管：读取数据看板全部指标（非超管返回 null）
     // 失败时把原因归一化到 e.diag（missing_function / not_authenticated / forbidden / other），
     // 界面据此给出人话提示；原始报错只输出到浏览器控制台（便于排查），不显示到页面上。
+    // 配置自检：一眼看出"密钥是否缺失 / 是否用错项目"
+    configCheck: checkConfigHealth,
     async adminDashboard() {
-      const { data, error } = await client.rpc("admin_dashboard");
+      // 先做配置自检：若页面没拿到可用密钥，请求会在网关就被拒，
+      // 这里直接给出人话原因，不发出注定失败的请求、也不误报成"没有权限"。
+      const cc = checkConfigHealth();
+      if (!cc.ok) {
+        try { console.warn("[看板诊断] 配置自检未通过：", cc.problems.join("；")); } catch (e) {}
+        const e1 = new Error("页面配置未生效");
+        e1.diag = "no_api_key"; e1.code = ""; e1.http = 0; e1.detail = cc.problems.join("；");
+        throw e1;
+      }
+      // 【关键】调用前先确保"手里有可用的登录令牌"：
+      // 若此时客户端还没有登录态（页面刚加载、登录态尚未恢复），
+      // 直接用 client.rpc 会以"未登录身份"打到接口 —— 接口侧只能拒绝，
+      // 页面就会把它读成"没有看板权限"，冤枉真正的超级管理员。
+      // 这里先取一次令牌（过期会自动续期）；确实取不到就直接按"登录态失效"处理，
+      // 既避免产生一次注定失败的请求，也能给出准确原因。
+      const tk = await freshAccessToken();
+      if (!tk) {
+        const e0 = new Error("登录状态已失效");
+        e0.diag = "not_authenticated"; e0.code = ""; e0.http = 0;
+        throw e0;
+      }
+      let resp;
+      try {
+        resp = await client.rpc("admin_dashboard");
+      } catch (netErr) {
+        // 请求根本没抵达数据库、或没收到回应（跨域预检被拒 / CORS / 断网）。
+        // 【重要】此时浏览器看到的"未携带密钥"往往是预检请求(OPTIONS)被拒的返回，
+        // 而预检请求本来就不带密钥 —— 不能据此判定账号权限或配置错误。
+        const m = String((netErr && netErr.message) || netErr || "");
+        try { console.warn("[看板诊断] 请求未抵达数据库（浏览器层被拦：预检/CORS/网络）：", m); } catch (e) {}
+        const e = new Error("读取数据看板失败");
+        e.diag = "blocked"; e.code = ""; e.http = 0; e.detail = m;
+        throw e;
+      }
+      const { data, error, status } = resp;
       if (error) {
         const code = String(error.code || "");
         const raw = [error.message, error.details, error.hint, code].map(v => String(v || "")).join(" ");
@@ -1501,15 +1567,17 @@ async removeTrendRecord(id) {
         else if (code === "PGRST301" || code === "PGRST302") diag = "not_authenticated";
         else if (code === "42501" || code === "PGRST402") diag = "forbidden";
         else if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
+        else if (/no api key found|no `apikey`|apikey request header/i.test(raw)) diag = "no_api_key";
         else if (/not authenticated|jwt|invalid token|PGRST301|401/i.test(raw)) diag = "not_authenticated";
         else if (/permission|not allowed|denied|forbidden|42501|403/i.test(raw)) diag = "forbidden";
         try {
-          console.warn("[看板诊断] 看板接口读取失败：diag=" + diag + " code=" + (code || "(无)"),
+          console.warn("[看板诊断] 看板接口读取失败：diag=" + diag + " code=" + (code || "(无)") + " http=" + (status || "?"),
             { message: error.message, details: error.details, hint: error.hint });
         } catch (e) { /* 控制台输出失败不影响流程 */ }
         const e = new Error("读取数据看板失败");
         e.diag = diag;
         e.code = code;
+        e.http = status || 0;
         throw e;
       }
       if (data && typeof data === "object" && data.meta) {
@@ -1517,12 +1585,55 @@ async removeTrendRecord(id) {
       }
       return data || null;
     },
+    // 一键连通性自检：一次点清「配置 → 登录态 → 最小读写 → 看板接口」四层里到底哪一层断了。
+    // 目的：不需要用户翻开发者工具，页面自己给出结论。
+    async connProbe() {
+      const out = { config: null, session: false, minimal: null, dashboard: null, verdict: "" };
+      try { out.config = checkConfigHealth(); } catch (e) { out.config = { ok: false, problems: ["配置自检异常"] }; }
+      try { const s = await client.auth.getSession(); out.session = !!(s && s.data && s.data.session); } catch (e) { out.session = false; }
+      // 最小调用：只读一行自己的档案（任何登录用户都允许，不需要特殊权限或统计接口）
+      try {
+        const r = await client.from("profiles").select("role").limit(1);
+        if (r && r.error) out.minimal = { ok: false, code: String(r.error.code || ""), http: r.status || 0, msg: String(r.error.message || "") };
+        else out.minimal = { ok: true, http: (r && r.status) || 200 };
+      } catch (e) { out.minimal = { ok: false, code: "", http: 0, msg: String((e && e.message) || e) }; }
+      // 看板接口
+      try {
+        const d = await this.adminDashboard();
+        // 「empty」判断口径：接口本身可用，但一条访问记录都还没有。
+        // 注意不能只看有没有返回 meta —— 没记录时接口同样会正常返回 meta，
+        // 若只看 meta 就会把「还没人来过」误报成「看板已正常」，用户会以为好了却还是空的。
+        const v = (d && d.visits) || {};
+        const noVisits = Number(v.pvTotal || 0) === 0 && Number(v.uvTotal || 0) === 0;
+        out.dashboard = { ok: true, empty: !d || !d.meta || noVisits };
+      }
+      catch (e) { out.dashboard = { ok: false, diag: (e && e.diag) || "other", code: (e && e.code) || "", http: (e && e.http) || 0, detail: (e && e.detail) || "" }; }
+      // 给出人话结论（逐层判断，先断的层先报）
+      const c = out.config || {}, m = out.minimal || {}, d = out.dashboard || {};
+      if (!c.ok) out.verdict = "配置未生效：页面没拿到可用的访问密钥（与账号权限无关）。";
+      else if (!out.session) out.verdict = "登录态未就绪：请先登录（或重新登录）后再试。";
+      else if (m.ok === false && !m.http) out.verdict = "请求没能抵达数据库（浏览器层被拦：预检/CORS/网络），与账号权限无关。";
+      else if (m.ok === false) out.verdict = "数据库网关拒绝了请求（密钥或授权问题），返回码 " + (m.code || "无") + "。";
+      else if (d.ok) out.verdict = d.empty ? "接口连通，但还没有访问记录：到前台页面登录后打开一次，再回来看板。" : "接口连通且有数据，看板应能正常显示。";
+      else out.verdict = "仅看板接口这一层失败，其余读写都正常：返回码 " + (d.code || "无") + "（" + d.diag + "），请把此行连同返回码反馈。";
+      try { console.info("[看板诊断] 连通性自检：", out.verdict, out); } catch (e) {}
+      return out;
+    },
     // 访问地区：由服务端按真实网络出口解析（拿不到则返回 null，看板显示「未知」）
+    // 地区/出口信息：由图片服务按真实网络出口解析。
+    // ⚠️ 必须带超时：访问统计要等这一步完成后才写库，若此处卡住（网络不通/被拦截），
+    // 整条上报就永远发不出去，后台看板会一条数据都没有。超时后按"未知地区"继续上报。
     async geoInfo() {
       try {
         const base = ((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/+$/, "");
         if (!base) return null;
-        const res = await fetch(base + "/geo", { method: "GET" });
+        const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+        let tid = null;
+        if (ctl) tid = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 2500);
+        let res;
+        try {
+          res = await fetch(base + "/geo", { method: "GET", signal: ctl ? ctl.signal : undefined });
+        } finally { if (tid) clearTimeout(tid); }
         if (!res.ok) return null;
         const j = await res.json().catch(() => null);
         if (!j) return null;

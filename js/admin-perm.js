@@ -764,10 +764,12 @@ function renderAnalyticsDash(d) {
 
 // 看板失败原因 → 人话提示（不展示任何接口原始报错）
 const DASH_ERR_TEXT = {
-  missing_function: "数据库还没有建好统计接口：请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段执行一次（可重复执行），等约 10 秒后点「刷新」。",
+  missing_function: "数据库里的统计接口还没被接口服务识别到（或函数还没建好）：请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行，末尾会自动刷新接口缓存），等约 10 秒后点「刷新」。",
   not_authenticated: "登录状态已失效：请重新登录后再打开权限管理。",
+  no_api_key: "页面没有携带访问密钥（配置文件未生效或用错了密钥）：请求在数据库网关就被拒绝，与账号权限无关。请确认 js/config.js 里的数据库地址与访问密钥都已按当前项目填好，然后强刷页面（Ctrl+F5）。",
   forbidden: "当前账号没有查看看板的权限（仅超级管理员可看）。",
-  other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请确认 tools/setup_analytics.sql 已在数据库执行过。"
+  blocked: "请求没能抵达数据库（浏览器层被拦：跨域预检被拒 / CORS / 网络中断）—— 这属于网络与站点配置问题，与账号权限无关。请先强刷页面（Ctrl+F5）重试；若仍失败，请点「看板自检」把结论反馈。",
+  other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请点「看板自检」查看结论，或确认 tools/setup_analytics.sql 已在数据库执行过。"
 };
 
 // 账号确实是超级管理员、却读到「无权限」时的专属提示：
@@ -776,6 +778,17 @@ const DASH_ERR_TEXT = {
 const DASH_ERR_TEXT_SUPER_FIX = "当前账号是超级管理员，但数据库里的数据看板接口拒绝了本次读取 —— 多半是统计接口还没建好、或接口授权未生效（不是账号权限问题）。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次，等约 10 秒后点「刷新」。";
 
 function dashErrText(reason) { return DASH_ERR_TEXT[reason] || DASH_ERR_TEXT.other; }
+
+// 把接口返回的"错误码 + HTTP 状态"拼成一小段纯文本，便于管理员一眼截图定位。
+// 只保留错误码本身（字母/数字/下划线）与状态码，绝不展示任何接口地址或原始报错。
+function dashDiagLine(e) {
+  const code = String((e && e.code) || "").replace(/[^A-Za-z0-9_]/g, "").slice(0, 24);
+  const http = Number((e && e.http) || 0);
+  const parts = [];
+  if (code) parts.push(code);
+  if (http) parts.push("HTTP " + http);
+  return parts.length ? parts.join(" · ") : "未返回错误码";
+}
 
 // 零数据提示：接口通了但还没有访问记录时，明确告诉去哪里产生第一条记录，避免误以为"没反应"
 function dashNote(text) {
@@ -787,6 +800,23 @@ function dashNote(text) {
 async function loadAnalyticsDash() {
   const box = $("#perm-dash");
   if (!box) return;
+  // 【关键防护】必须先确认"登录态已就绪"再调接口。
+  // 否则在页面刚加载、登录态尚未恢复时发起请求，会以"未登录"身份打到数据库：
+  // 接口要么返回空（被误读成"没权限"），要么直接报错 —— 都会冤枉真正的超管。
+  let sess = null;
+  try { sess = await SB.getSession(); } catch (e) { sess = null; }
+  if (!sess) {
+    await new Promise(r => setTimeout(r, 800));   // 给登录态恢复留一点时间，再试一次
+    try { sess = await SB.getSession(); } catch (e) { sess = null; }
+  }
+  if (!sess) {
+    box.classList.remove("hidden");
+    const c0 = $("#dash-cards");
+    if (c0) c0.innerHTML = '<div class="hint">' + escHtml(DASH_ERR_TEXT.not_authenticated) + '</div>';
+    ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
+    dashNote("未取到登录态，已跳过读取，避免出现误报。请重新登录后再试。");
+    return;
+  }
   try {
     const d = await SB.adminDashboard();
     if (!d) { box.classList.add("hidden"); dashNote("当前账号不是超级管理员，数据看板不显示（正常权限表现）。"); return; }
@@ -809,7 +839,7 @@ async function loadAnalyticsDash() {
     }
     box.classList.remove("hidden");
     const c = $("#dash-cards");
-    if (c) c.innerHTML = '<div class="hint">' + text + '</div>';
+    if (c) c.innerHTML = '<div class="hint">' + text + '<br><span class="dash-diag">接口返回：' + escHtml(dashDiagLine(e)) + '</span></div>';
     ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
     dashNote("详细原因已输出到浏览器控制台（按 F12 → Console 查看「[看板诊断]」开头的记录）。");
   }
@@ -818,9 +848,61 @@ async function loadAnalyticsDash() {
 // 看板自检：一次把「接口是否可用 / 是不是超管 / 有没有数据」查清楚，用一句话说明
 async function dashSelfCheck() {
   dashNote("自检中…");
+  // 一键分层自检：按「配置 → 登录态 → 最小读写 → 看板接口」逐层判断，直接给出结论。
+  // 目的：不用翻开发者工具，页面自己说清是哪一层断了。
+  let pr = null;
+  try { pr = (typeof SB.connProbe === "function") ? await SB.connProbe() : null; } catch (e) { pr = null; }
   let role = null;
   try { role = await SB.myRole(); } catch (e) { role = null; }
   const roleText = role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : role ? "访客" : "未取到角色";
+
+  if (pr) {
+    const c = pr.config || {}, m = pr.minimal || {}, d = pr.dashboard || {};
+    if (!c.ok) {
+      dashNote("自检结果：页面配置未生效 —— " + String((c.problems || []).join("；")) + "。请核对 js/config.js 里的数据库地址与访问密钥后强刷页面（Ctrl+F5）。此项与账号权限无关。");
+      return;
+    }
+    if (!pr.session) { dashNote("自检结果：登录状态已失效 —— 请重新登录后再点自检。"); return; }
+    if (m.ok === false && !m.http) {
+      dashNote("自检结果：请求没能抵达数据库（浏览器层被拦：跨域预检被拒 / CORS / 网络中断）—— 这与账号权限、数据库接口都无关。请先强刷页面（Ctrl+F5）重试；若本机开了代理/VPN 或浏览器拦截插件，请关闭后再试。");
+      return;
+    }
+    if (m.ok === false) {
+      dashNote("自检结果：数据库网关拒绝了请求（密钥或授权问题），返回码 " + (String(m.code || "") || "无") + " —— 请核对 js/config.js 里的地址与密钥是否成对来自同一个项目。此项与账号权限无关。");
+      return;
+    }
+    if (d.ok) {
+      dashNote("自检结果：接口连通（当前账号「" + roleText + "」）" + (d.empty
+        ? "，但还没有访问记录 —— 到前台页面登录后打开一次即可产生第一条。"
+        : "，看板应能正常显示，请点「刷新」。"));
+      return;
+    }
+    const r = d.diag || "other";
+    const head = r === "missing_function" ? "数据库还没建统计接口"
+      : r === "not_authenticated" ? "登录状态失效"
+      : r === "no_api_key" ? "数据库网关未收到访问密钥"
+      : r === "forbidden" ? "看板接口拒绝了本次读取"
+      : r === "blocked" ? "请求被浏览器层拦下"
+      : "看板接口读取失败";
+    const help = r === "missing_function" ? "请在 Supabase 的 SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试"
+      : r === "not_authenticated" ? "请重新登录后再试"
+      : r === "no_api_key" ? "请核对 js/config.js 里的地址与密钥是否成对来自同一个项目，然后强刷页面"
+      : r === "forbidden" ? "当前账号角色「" + roleText + "」：若确为超管，说明是数据库接口授权未生效 —— 请重新执行 tools/setup_analytics.sql（内含授权语句）"
+      : r === "blocked" ? "请强刷页面（Ctrl+F5）后重试；若本机开了代理/VPN 或浏览器拦截插件，请先关闭"
+      : "请稍后重试";
+    dashNote("自检结果：" + head + " —— " + help + "（接口返回：" + dashDiagLine({ code: d.code, http: d.http }) +
+      "）。其余读写均正常，说明账号权限与页面配置没有问题。详细记录见控制台「[看板诊断]」。");
+    return;
+  }
+
+  // 兜底：万一分层自检不可用，退回单一接口结论
+  try {
+    const cc = (typeof SB.configCheck === "function") ? SB.configCheck() : null;
+    if (cc && !cc.ok) {
+      dashNote("自检结果：页面配置未生效（" + cc.problems.join("；") + "）—— 请核对 js/config.js 里的数据库地址与访问密钥，然后强刷页面（Ctrl+F5）。此项与账号权限无关。");
+      return;
+    }
+  } catch (e) { /* 自检本身异常不阻断后续步骤 */ }
   try {
     const d = await SB.adminDashboard();
     if (!d) { dashNote("自检结果：统计接口可用；当前账号角色为「" + roleText + "」，不是超级管理员，看板不显示（这是正常的权限表现）。"); return; }
@@ -830,13 +912,7 @@ async function dashSelfCheck() {
     dashNote("自检结果：统计接口正常 · 当前账号角色「" + roleText + "」 · 已注册用户 " + us + " · 累计访问 " + pv + " 次 / " + uv +
       " 人" + (pv === 0 ? "（还没有记录：用前台页面登录后打开一次即可产生第一条）" : ""));
   } catch (e) {
-    const r = (e && e.diag) || "other";
-    const head = r === "missing_function" ? "数据库还没建统计接口" : r === "not_authenticated" ? "登录状态失效" : r === "forbidden" ? "看板接口拒绝了本次读取" : "接口读取失败";
-    let help = r === "missing_function" ? "请在 Supabase SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试"
-      : r === "not_authenticated" ? "请重新登录后再试"
-      : r === "forbidden" ? "当前账号角色「" + roleText + "」：若确为超管，说明是数据库接口授权未生效 —— 请重新执行 tools/setup_analytics.sql（内含授权语句）"
-      : "请稍后重试";
-    dashNote("自检结果：" + head + " —— " + help + "。详细报错见控制台「[看板诊断]」。");
+    dashNote("自检结果：" + dashErrText((e && e.diag) || "other") + "（接口返回：" + dashDiagLine(e) + "）。");
   }
 }
 

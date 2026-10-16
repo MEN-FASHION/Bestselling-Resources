@@ -466,7 +466,16 @@ window.Common = (function () {
       const cached = read("nl_geo");
       if (cached) { try { return JSON.parse(cached); } catch (e) {} }
       let g = null;
-      try { if (window.SB && SB.geoInfo) g = await SB.geoInfo(); } catch (e) { g = null; }
+      // 双保险：即便地区解析卡住，也最多等 3 秒就按"未知地区"继续，
+      // 保证「登记访问」这一步一定发得出去（否则看板会一直没有任何数据）。
+      try {
+        if (window.SB && SB.geoInfo) {
+          g = await Promise.race([
+            SB.geoInfo(),
+            new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })
+          ]);
+        }
+      } catch (e) { g = null; }
       g = g || {};
       write("nl_geo", JSON.stringify(g));
       return g;
