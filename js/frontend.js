@@ -30,6 +30,8 @@
   let usedCats = [];
   let shownCats = [];   // 有图且管理员展示的类目（用于顶栏类目筛选）
   let catCounts = {};   // 各类目图片数（类目筛选计数）
+  let lastTagCounts = null;   // 最近一次标签栏计数（清除筛选后用于重绘标签栏）
+  let pageErr = "";     // 默认视图取数失败原因（用于把空态说清楚）
 
   const Auth = {
     toast(msg, ok = true) {
@@ -524,6 +526,7 @@
     if (!groupsBox) return;
     groupsBox.innerHTML = "";
     const C = counts || { total: 0 };
+    lastTagCounts = C;
 
     const countOf = (groupKey, value) => {
       if (value === "" || value == null) return C.total || 0;
@@ -731,20 +734,78 @@
     }
   }
 
-  async function showEmptyHint(hasFilter, count) {
+  // 是否有任一标签维度处于筛选状态
+  function anyTagFilterOn() {
+    return !!(curChannel || curStyle || curElement || curScene || curShoot || curSkin);
+  }
+
+  // 清空全部标签筛选并重绘
+  function clearTagFilters() {
+    curChannel = ""; curStyle = ""; curElement = ""; curScene = ""; curShoot = ""; curSkin = "";
+    try { renderTagBar(lastTagCounts); } catch (e) { /* 标签栏未就绪时忽略 */ }
+    renderGrid(currentCat);
+  }
+
+  // 空态提示：必须说清「为什么是空的」，并给出可操作入口。
+  // 历史缺陷：无论"取数接口失败"还是"被标签筛掉"，都统一显示
+  //          「没有同时满足所选类目与标签的图片。」——使用者无法判断到底是
+  //          数据没了、还是接口挂了，容易被误导成"以前传的图都不见了"。
+  async function showEmptyHint(hasFilter, count, ctx) {
     const tip = $("#empty-tip");
     if (!tip) return;
-    tip.textContent = hasFilter
-      ? "没有同时满足所选类目与标签的图片。"
-      : "该分类暂无可浏览的图片。";
-    tip.classList.toggle("hidden", count > 0);
+    tip.innerHTML = "";
+    if (count > 0) { tip.classList.add("hidden"); return; }
+    const c = ctx || {};
+
+    const line = (t) => { const d = document.createElement("div"); d.textContent = t; tip.appendChild(d); };
+    const act = (label, fn) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label;
+      b.style.cssText = "margin-top:8px;padding:6px 14px;border:1px solid #d9c9a6;border-radius:8px;background:#fff;color:#8a6a2f;font-size:13px;cursor:pointer";
+      b.onclick = fn;
+      tip.appendChild(b);
+    };
+
+    tip.classList.remove("hidden");
+
+    // ① 取数接口失败：这是"故障"，必须与"确实没图"区分开
+    if (c.err) {
+      line("图片没有取到：前台读图接口调用失败。");
+      line("原因：" + String(c.err).slice(0, 160));
+      line("若后台能正常看到图片，说明数据还在，是前台这一层没拿到（多为此接口未生效或当前登录态未就绪）。");
+      act("重试", () => renderGrid(currentCat));
+      return;
+    }
+    // ② 该分类有图，但被标签筛选清空
+    if (anyTagFilterOn()) {
+      line("该分类下共有 " + (c.catCount || 0) + " 张图片，但都被当前的标签筛选过滤掉了。");
+      act("清除标签筛选", clearTagFilters);
+      return;
+    }
+    // ③ 该分类确实没有图片
+    if (hasFilter) {
+      line("该分类下暂时没有图片。");
+      line("该分类仍显示在清单中，可先切回「全部」确认整站图片是否正常。");
+      return;
+    }
+    // ④ 整站没有图片
+    line("该专区暂时没有可浏览的图片。");
   }
 
   async function loadNextPage() {
     if (!pageHasMore || pageLoading) return;
     pageLoading = true;
     try {
-      const chunk = await SB.listFrontendImages(PAGE_SIZE, pageOffset);
+      let chunk;
+      try {
+        chunk = await SB.listFrontendImages(PAGE_SIZE, pageOffset);
+      } catch (e) {
+        // 取数失败：把真实原因显示出来，而不是让页面显示"该分类没有图片"
+        pageErr = (e && (e.message || e.error_description)) || "未知原因";
+        await showEmptyHint(false, 0, { err: pageErr });
+        return;
+      }
+      pageErr = "";
       pageAll = pageAll.concat(chunk || []);
       catalog = pageAll;
       const guestToken = window.__guestToken || "";
@@ -774,7 +835,7 @@
       });
       pageOffset += (chunk || []).length;
       pageHasMore = (chunk && chunk.length >= PAGE_SIZE);
-      showEmptyHint(false, catalog.length);
+      showEmptyHint(false, catalog.length, { err: pageErr });
       // 滚动到底自动加载更多
       setupSentinel();
     } finally {
@@ -838,7 +899,8 @@
       } catch (e) { pageCounts = { total: 0 }; }
       renderTagBar(pageCounts);
       renderCatMenu(shownCats);
-      await showEmptyHint(false, 0);
+      // 先清空上一次的空态提示，等首个分页结果回来后再按真实情况显示
+      { const _et = $("#empty-tip"); if (_et) { _et.innerHTML = ""; _et.classList.add("hidden"); } }
       pageHasMore = true;
       await loadNextPage();
       return;
@@ -846,9 +908,19 @@
 
     // ===== 筛选视图：一次加载全量（结果集已收敛，保证计数准确）=====
     let imgs = [];
+    let readErr = "";
     try {
       imgs = await SB.listFrontendImages();
-    } catch (e) { Auth.toast("读取图片失败", false); }
+    } catch (e) {
+      readErr = (e && (e.message || e.error_description)) || "未知原因";
+      // 回退：换用服务端分页接口再取一次（两条读图链路互为备份，
+      // 其中一条未生效时另一条仍能显示图片，避免整页空白）
+      try {
+        imgs = await SB.listFrontendImages(1000, 0);
+        readErr = "";
+      } catch (e2) { /* 两条都失败：保留首个失败原因展示 */ }
+      if (readErr) Auth.toast("读取图片失败", false);
+    }
     const catImgs = imgs.filter(i => catCatVisible("visual", i.category));
     catCounts = {};
     catImgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
@@ -856,7 +928,7 @@
     imgs = catImgs.filter(_match);
     renderTagBar(countsFromList(_catImgsAll));
 
-    await showEmptyHint(hasFilter, imgs.length);
+    await showEmptyHint(hasFilter, imgs.length, { err: readErr, catCount: _catImgsAll.length });
     catalog = imgs;
     const guestToken = await SB.currentToken().catch(() => "");
     window.__guestToken = guestToken;
