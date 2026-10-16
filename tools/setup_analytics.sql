@@ -225,6 +225,31 @@ end;
 $$;
 grant execute on function public.admin_dashboard() to authenticated;
 
+-- ---------- 5. 让新函数立刻对接口生效 + 自检 ----------
+-- 新建或修改函数后，接口层的结构缓存可能还要一会儿才认识这些函数；
+-- 这里主动通知它重载，避免出现「数据库里明明有函数、接口却报找不到」的情况。
+notify pgrst, 'reload schema';
+
+-- 自检：整段执行后，下面这段会输出每个对象是否就绪（期望「已就绪」全是 true）。
+-- 若某项为 false，说明这一段没执行成功，把本文件整段重新执行一次即可。
+select '访问记录表 visit_logs' as "检查项", (to_regclass('public.visit_logs') is not null) as "已就绪"
+union all
+select '登记访问 record_visit',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'record_visit')
+union all
+select '停留时长 visit_ping',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'visit_ping')
+union all
+select '看板接口 admin_dashboard',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'admin_dashboard')
+union all
+select '超管判定 is_super_admin（依赖）',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'is_super_admin');
+
 -- ============================================================
 -- 执行完成后：前台各页面打开时会自动登记访问（仅登录用户），
 -- 超管后台「权限管理 → 数据看板」即可看到今天谁来了、从哪来、看了哪个专区、待了多久。

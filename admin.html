@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261015N">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015N">
+<link rel="stylesheet" href="css/style.css?v=20261016A">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261016A">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -406,9 +406,11 @@
             <div class="dash-head">
               <h4 class="dash-title">数据看板 <span class="hint-inline">（只统计已登录用户；今日 / 昨日 / 本周 / 本月按北京时间结算）</span></h4>
               <button id="perm-dash-refresh" class="btn-ghost small" type="button">刷新</button>
+              <button id="perm-dash-check" class="btn-ghost small" type="button">看板自检</button>
               <span id="perm-dash-updated" class="hint-inline"></span>
             </div>
             <div id="dash-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+            <div id="perm-dash-note" class="dash-note"></div>
             <div class="dash-cols">
               <div class="dash-col">
                 <h5 class="dash-sub">各专区 · 访问量与停留时长 <span class="hint-inline">（在干什么、干了多久）</span></h5>
@@ -1256,24 +1258,24 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261015N"></script>
-  <script src="vendor/quill.js?v=20261015N"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261015N"></script>
-  <script src="vendor/qrcode.min.js?v=20261015N"></script>
-  <script src="js/config.js?v=20261015N"></script>
-  <script src="js/supabase.js?v=20261015N"></script>
+  <script src="vendor/supabase.js?v=20261016A"></script>
+  <script src="vendor/quill.js?v=20261016A"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261016A"></script>
+  <script src="vendor/qrcode.min.js?v=20261016A"></script>
+  <script src="js/config.js?v=20261016A"></script>
+  <script src="js/supabase.js?v=20261016A"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261015N"></script>
-  <script src="js/admin-images.js?v=20261015N"></script>
-  <script src="js/admin-smart.js?v=20261015N"></script>
-  <script src="js/admin-trend.js?v=20261015N"></script>
-  <script src="js/admin-notice.js?v=20261015N"></script>
-  <script src="js/admin-marketing.js?v=20261015N"></script>
-  <script src="js/admin-tasks.js?v=20261015N"></script>
-  <script src="js/admin-bestseller.js?v=20261015N"></script>
-  <script src="js/admin-perm.js?v=20261015N"></script>
-  <script src="js/admin-pool.js?v=20261015N"></script>
-  <script src="js/admin-rank.js?v=20261015N"></script>
+  <script src="js/admin.js?v=20261016A"></script>
+  <script src="js/admin-images.js?v=20261016A"></script>
+  <script src="js/admin-smart.js?v=20261016A"></script>
+  <script src="js/admin-trend.js?v=20261016A"></script>
+  <script src="js/admin-notice.js?v=20261016A"></script>
+  <script src="js/admin-marketing.js?v=20261016A"></script>
+  <script src="js/admin-tasks.js?v=20261016A"></script>
+  <script src="js/admin-bestseller.js?v=20261016A"></script>
+  <script src="js/admin-perm.js?v=20261016A"></script>
+  <script src="js/admin-pool.js?v=20261016A"></script>
+  <script src="js/admin-rank.js?v=20261016A"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

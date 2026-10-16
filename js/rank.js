@@ -561,7 +561,9 @@
     var share = (opt.share && opt.share.length >= 2) ? opt.share : null;
     var title = [it.site, it.period_label, it.leaf_category, b ? b.txt : ""].filter(Boolean).join(" · ");
     var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '">';
-    h += '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '">';
+    /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
+    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '"' +
+      (opt.eager ? ' decoding="async"' : '') + '>';
     if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
     if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
     if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
@@ -584,10 +586,12 @@
   /* ---------------- 主体：多列对比池 ---------------- */
   /* 组装多列对比池 HTML（只出列，不含外层容器）。
      limit = 每列最多渲染多少张；天眼传 Infinity，一次把该列全部图片都出出来。 */
-  function buildPools(limit) {
-    var sites = poolSites();
-    var periods = activePeriods();
-    var all = (CACHE && CACHE.items) ? CACHE.items.filter(hitTags) : [];
+  function buildPools(limit, opts) {
+    opts = opts || {};
+    var sites = opts.sites || poolSites();
+    var periods = opts.periods || activePeriods();
+    var src = opts.items || (CACHE && CACHE.items) || [];
+    var all = src.filter(hitTags);
     var html = "", maxLen = 0;
 
     /* ===== 横向 · 国家对比：每国一列 ===== */
@@ -621,8 +625,8 @@
           : (_gp ? ("地区合并 · 含 " + _gp.members.length + " 国，同名商品只保留一条") : "单国视图");
         var list = sortItems(mine);
         if (list.length > maxLen) maxLen = list.length;
-        var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url] }); }).join("");
-        html += poolHtml(s, meta, total, cards, Math.min(limit, total));
+        var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager }); }).join("");
+        html += poolHtml(s, meta, total, cards, opts.noFoot ? null : Math.min(limit, total));
       });
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
@@ -682,9 +686,9 @@
               }
             }
           }
-          return cardHtml(it, { move: move, isNew: isNew });
+          return cardHtml(it, { move: move, isNew: isNew, eager: opts.eager });
         }).join("");
-        html += poolHtml(p, meta, list.length, cards, Math.min(limit, list.length));
+        html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
       });
     }
     return { html: html, maxLen: maxLen };
@@ -731,14 +735,106 @@
     });
   }
 
-  /* ---------------- 天眼：一屏查看全部对比列的全部图片 ---------------- */
-  /* 与对比池同源（同一个 buildPools），列名 / 顺序 / 标签完全一致；
-     区别是这里不设每列张数上限，也不弹「加载更多」。 */
+  /* ---------------- 天眼：一屏铺满「每一列的全部图」 ---------------- */
+  /* 需求口径：打开天眼 → 每一列（每个国家 / 每个期次）的【全部图片】都在，
+     不受「每列最多展示 N 张」限制、不需要点「加载更多」；图片全部直接加载（不懒加载）、
+     比例自适应、尽量铺满一屏——一眼就能看全，不用下滑。
+     列范围可切换：默认=当前对比列（2/3/4 列），另可切「全部站点 × 全部期次」。 */
+  var EYE_ALL = false;        /* 列范围：false=当前对比列，true=全部站点×全部期次 */
+  var EYE_EAGER_MAX = 1500;   /* 图数超过此上限才退回懒加载，避免一次拉爆（默认全加载） */
+  var EYE_R_MAX = 60;         /* 每行最多排几张（真正的下限由「最小卡片宽度」兜住） */
+  var EYE_MIN_CARD = 20;      /* 卡片最小宽度（px）：低于这个就看不清了 */
+  var eyeFitBound = null;
+
+  /* 天眼要铺开的列范围 */
+  function eyeScope() {
+    if (!EYE_ALL) return { sites: poolSites(), periods: activePeriods() };
+    if (MODE === "h") return { sites: orderedSites(), periods: sortPeriods(FACETS.periods).slice(-1) };
+    return { sites: sitesForQuery(), periods: sortPeriods(FACETS.periods) };
+  }
+
+  /* 天眼自己的取数（独立于页面缓存口径；纵向仍需取「上一期」做基线） */
+  async function eyeFetch(sc) {
+    var sites = sc.sites || [], periods = sc.periods || [];
+    if (!sites.length || !periods.length) return { items: [], sites: sites, periods: periods };
+    var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
+    var filter = { sites: sites, periods: needPeriods };
+    if (CAT && CAT !== ALL) filter.category = CAT;
+    else if (FACETS.categories.length) filter.categories = FACETS.categories;
+    var items = [];
+    try { items = await SBX.listRankItems(filter); } catch (e) { items = []; }
+    items = (items || []).map(function (it) {
+      it.ratio = (it.ratio == null ? null : Number(it.ratio));
+      it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
+      return it;
+    });
+    flagPools(items);
+    /* 补进「图 → 归属信息」索引，天眼里点开大图也能看到站点/期次/标签 */
+    items.forEach(function (it) { if (it.image_url && !ITEMS_BY_URL[it.image_url]) ITEMS_BY_URL[it.image_url] = it; });
+    return { items: items, sites: sites, periods: periods };
+  }
+
+  /* 纯计算：按可用宽高反推「每行几张 + 卡片多宽」，让每列全部图都落在首屏内
+     （图实在太多、压到最小尺寸仍放不下时，clipped=true 表示允许下滑看剩余部分） */
+  function eyeFitCalc(availW, availH, K, maxN, opt) {
+    opt = opt || {};
+    var gap = opt.gap == null ? 4 : opt.gap;
+    var vgap = opt.vgap == null ? 4 : opt.vgap;
+    var headH = opt.headH == null ? 46 : opt.headH;
+    var minW = opt.minW == null ? EYE_MIN_CARD : opt.minW;
+    var rMax = opt.rMax == null ? EYE_R_MAX : opt.rMax;
+    K = Math.max(1, K || 1);
+    var colW = (availW - gap * (K - 1)) / K;
+    if (!(colW > 0) || !(availH > 0) || !(maxN > 0)) {
+      return { r: 1, cardW: Math.max(minW, colW > 0 ? colW : minW), clipped: true };
+    }
+    /* 从「每行最少的张数」开始试：第一个能把该列全部图塞进可用高度的方案，
+       就是卡片最大的方案 —— 一屏放得下，且图尽量大、看得清。 */
+    var best = 0, bestW = 0;
+    for (var r = 1; r <= rMax; r++) {
+      var cardW = (colW - gap * (r - 1)) / r;
+      if (cardW < minW) break;                       /* 再密就低于最小可读宽度了 */
+      var rows = Math.ceil(maxN / r);
+      var needH = headH + rows * (cardW * 4 / 3 + vgap);
+      if (needH <= availH) { best = r; bestW = cardW; break; }
+    }
+    if (best) return { r: best, cardW: bestW, clipped: false };
+    for (var r2 = rMax; r2 >= 1; r2--) {
+      var cw = (colW - gap * (r2 - 1)) / r2;
+      if (cw >= minW) return { r: r2, cardW: cw, clipped: true };
+    }
+    return { r: 1, cardW: colW > 0 ? colW : minW, clipped: true };
+  }
+
+  /* 把算出来的「每行几张 / 卡片宽 / 字号」落到样式变量上，并决定是否还需要下滑 */
+  function fitEye(panel) {
+    var body = panel.querySelector("#rk-eye-body") || panel.querySelector(".rk-eye-body");
+    var pools = body ? body.querySelector(".rk-pools") : null;
+    if (!body || !pools) return;
+    var cols = pools.querySelectorAll(".rk-pool");
+    var K = cols.length || 1;
+    var maxN = 0;
+    Array.prototype.forEach.call(cols, function (c) {
+      var n = c.querySelectorAll(".rk-card").length;
+      if (n > maxN) maxN = n;
+    });
+    if (!maxN) return;
+    var headH = 46;
+    var hd = cols[0] ? cols[0].querySelector(".rk-pool-head") : null;
+    if (hd && hd.offsetHeight) headH = hd.offsetHeight + 6;
+    var fit = eyeFitCalc(pools.clientWidth || body.clientWidth, body.clientHeight, K, maxN, { headH: headH });
+    pools.style.setProperty("--eye-r", String(fit.r));
+    pools.style.setProperty("--eye-card", fit.cardW.toFixed(1) + "px");
+    pools.style.setProperty("--eye-fs", Math.max(7, Math.min(12, fit.cardW * 0.22)).toFixed(1) + "px");
+    body.style.overflowY = fit.clipped ? "auto" : "hidden";
+    panel.setAttribute("data-eye-clip", fit.clipped ? "1" : "0");
+    var note = panel.querySelector("#rk-eye-clip");
+    if (note) note.style.display = fit.clipped ? "" : "none";
+  }
+
   function openEye() {
     var old = $("#rk-eye");
     if (old && old.parentNode) old.parentNode.removeChild(old);
-    var R = buildPools(Infinity);
-    var st = reportState();
     var d = document.createElement("div");
     d.id = "rk-eye";
     d.className = "rk-eye";
@@ -746,27 +842,57 @@
       '<div class="rk-eye-panel">' +
         '<div class="rk-eye-head">' +
           '<div class="rk-eye-title">天眼 · 全部对比图</div>' +
-          '<div class="rk-eye-sub" id="rk-eye-sub">' + esc(st.cat) + ' · ' + esc(st.sites.join("、") || "—") +
-            ' · ' + esc(st.periods.join("、") || "—") + ' · ' + esc(st.tags) + '</div>' +
+          '<div class="rk-eye-sub" id="rk-eye-sub">加载中…</div>' +
+          '<button type="button" class="rk-eye-scope" id="rk-eye-scope"></button>' +
           '<button type="button" class="rk-eye-close" id="rk-eye-close" title="关闭（Esc）">×</button>' +
         '</div>' +
-        '<div class="rk-eye-body">' +
-          (R.html ? '<div class="rk-pools">' + R.html + '</div>' : '<div class="rk-empty">当前口径下没有可显示的图片</div>') +
-        '</div>' +
+        '<div class="rk-eye-body" id="rk-eye-body"><div class="rk-empty">加载中…</div></div>' +
+        '<div class="rk-eye-note" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余部分可下滑查看</div>' +
       '</div>';
     document.body.appendChild(d);
+    bindEye(d);
+    fillEye(d);
+  }
 
-    var n = d.querySelectorAll(".rk-card").length;
-    var sub = d.querySelector("#rk-eye-sub");
-    if (sub) sub.innerHTML += ' · 共 <b>' + n + '</b> 张';
-
+  function bindEye(d) {
     d.addEventListener("click", function (e) {
       var t = e.target;
       if (t && (t.id === "rk-eye-close" || t.id === "rk-eye-mask")) { closeEye(); return; }
+      if (t && t.id === "rk-eye-scope") { EYE_ALL = !EYE_ALL; openEye(); return; }   /* 切换列范围 */
       var card = (t && t.closest) ? t.closest(".rk-card") : null;
       if (card) openLB(card.getAttribute("data-url"));
     });
     document.addEventListener("keydown", eyeEsc);
+    eyeFitBound = function () { fitEye(d); };
+    window.addEventListener("resize", eyeFitBound);      /* 窗口变化重新铺满 */
+  }
+
+  async function fillEye(d) {
+    var body = d.querySelector("#rk-eye-body");
+    var sub = d.querySelector("#rk-eye-sub");
+    var scb = d.querySelector("#rk-eye-scope");
+    if (scb) scb.textContent = EYE_ALL ? "范围：全部站点 × 全部期次" : "范围：当前对比列";
+    var sc = eyeScope();
+    var R = { items: [], sites: sc.sites, periods: sc.periods };
+    try { R = await eyeFetch(sc); } catch (e) { R = { items: [], sites: sc.sites, periods: sc.periods }; }
+    if (!d.parentNode) return;                            /* 取数期间被关掉就不画了 */
+    var total = (R.items || []).length;
+    var eager = total <= EYE_EAGER_MAX;                   /* 默认「全部加载」，只有极端量级才退回懒加载 */
+    var built = buildPools(Infinity, { items: R.items, sites: sc.sites, periods: sc.periods, noFoot: true, eager: eager });
+    var n = 0;
+    if (built.html) {
+      body.innerHTML = '<div class="rk-pools">' + built.html + '</div>';
+      n = body.querySelectorAll(".rk-card").length;
+    } else {
+      body.innerHTML = '<div class="rk-empty">当前口径下没有可显示的图片</div>';
+    }
+    if (sub) {
+      var colsN = (MODE === "v") ? sc.periods.length : sc.sites.length;
+      var scopeTxt = (MODE === "v") ? (R.sites.join("、") || "—") : (R.periods.join("、") || "—");
+      sub.innerHTML = esc(CAT) + ' · ' + esc(scopeTxt) + ' · <b>' + colsN + '</b> 列 · 共 <b>' + n + '</b> 张' +
+        (eager ? '' : ' · <span class="rk-eye-warn">图数过多，已改为随滚动加载</span>');
+    }
+    if (n) fitEye(d);
   }
 
   function eyeEsc(e) {
@@ -779,6 +905,7 @@
     var d = $("#rk-eye");
     if (d && d.parentNode) d.parentNode.removeChild(d);
     document.removeEventListener("keydown", eyeEsc);
+    if (eyeFitBound) { window.removeEventListener("resize", eyeFitBound); eyeFitBound = null; }
   }
 
   /* ---------------- 灯箱（仅看图 + 归属信息，不显示任何环比数值） ---------------- */

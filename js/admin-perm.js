@@ -762,6 +762,22 @@ function renderDashboard(d) {
   }
 }
 
+// 看板失败原因 → 人话提示（不展示任何接口原始报错）
+const DASH_ERR_TEXT = {
+  missing_function: "数据库还没有建好统计接口：请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段执行一次（可重复执行），等约 10 秒后点「刷新」。",
+  not_authenticated: "登录状态已失效：请重新登录后再打开权限管理。",
+  forbidden: "当前账号没有查看看板的权限（仅超级管理员可看）。",
+  other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请确认 tools/setup_analytics.sql 已在数据库执行过。"
+};
+
+function dashErrText(reason) { return DASH_ERR_TEXT[reason] || DASH_ERR_TEXT.other; }
+
+// 零数据提示：接口通了但还没有访问记录时，明确告诉去哪里产生第一条记录，避免误以为"没反应"
+function dashNote(text) {
+  const n = $("#perm-dash-note");
+  if (n) n.textContent = text || "";
+}
+
 // 读取并渲染看板（非超管接口返回空 → 整块不显示，不给任何数据）
 async function loadDashboard() {
   const box = $("#perm-dash");
@@ -773,11 +789,35 @@ async function loadDashboard() {
     renderDashboard(d);
     const up = $("#perm-dash-updated");
     if (up) up.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    const pv = Number((d.visits && d.visits.pvTotal) || 0);
+    if (pv === 0) dashNote("统计接口已连通，目前还没有访问记录：用前台任意页面（保持登录）打开一次，回来点「刷新」即可看到数据。");
+    else dashNote("");
   } catch (e) {
+    const reason = (e && e.diag) || "other";
     box.classList.remove("hidden");
     const c = $("#dash-cards");
-    if (c) c.innerHTML = '<div class="hint">看板读取失败：请确认已在数据库执行过一次统计脚本（tools/setup_analytics.sql），然后点「刷新」重试。</div>';
+    if (c) c.innerHTML = '<div class="hint">' + dashErrText(reason) + '</div>';
     ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
+    dashNote("");
+  }
+}
+
+// 看板自检：一次把「接口是否可用 / 是否超管 / 有没有数据」查清楚，用一句话说明
+async function dashSelfCheck() {
+  dashNote("自检中…");
+  try {
+    const d = await SB.adminDashboard();
+    if (!d) { dashNote("自检结果：统计接口可用，但当前账号不是超级管理员，看板不显示（这是正常的权限表现）。"); return; }
+    const pv = Number((d.visits && d.visits.pvTotal) || 0);
+    const uv = Number((d.visits && d.visits.uvTotal) || 0);
+    const us = Number((d.users && d.users.total) || 0);
+    dashNote("自检结果：统计接口正常 · 已注册用户 " + us + " · 累计访问 " + pv + " 次 / " + uv +
+      " 人" + (pv === 0 ? "（还没有记录：用前台页面登录后打开一次即可产生第一条）" : ""));
+  } catch (e) {
+    const r = (e && e.diag) || "other";
+    const head = r === "missing_function" ? "数据库还没建统计接口" : r === "not_authenticated" ? "登录状态失效" : r === "forbidden" ? "当前账号无看板权限" : "接口读取失败";
+    const help = r === "missing_function" ? "请在 Supabase SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试" : r === "not_authenticated" ? "请重新登录" : r === "forbidden" ? "请用超级管理员账号查看" : "请稍后重试";
+    dashNote("自检结果：" + head + " —— " + help + "。");
   }
 }
 
@@ -790,6 +830,8 @@ function bindDashboard() {
     if (c) c.innerHTML = '<span class="hint">读取中…</span>';
     await loadDashboard();
   };
+  const ck = $("#perm-dash-check");
+  if (ck && !ck.__bound) { ck.__bound = true; ck.onclick = () => dashSelfCheck(); }
 }
 
 // ========================================================================

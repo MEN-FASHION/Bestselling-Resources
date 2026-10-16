@@ -1491,9 +1491,20 @@ async removeTrendRecord(id) {
       } catch (e) { /* 统计失败不影响正常使用 */ }
     },
     // 超管：读取数据看板全部指标（非超管返回 null）
+    // 失败时把原因归一化到 e.diag（missing_function / not_authenticated / forbidden / other），
+    // 界面据此给出人话提示；原始报错文本不外抛，避免把接口细节带到页面上。
     async adminDashboard() {
       const { data, error } = await client.rpc("admin_dashboard");
-      if (error) throw new Error(error.message || "读取数据看板失败");
+      if (error) {
+        const raw = String(error.message || "") + " " + String(error.details || "") + " " + String(error.hint || "") + " " + String(error.code || "");
+        let diag = "other";
+        if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
+        else if (/not authenticated|jwt|invalid token|401/i.test(raw)) diag = "not_authenticated";
+        else if (/permission|not allowed|denied|403/i.test(raw)) diag = "forbidden";
+        const e = new Error("读取数据看板失败");
+        e.diag = diag;
+        throw e;
+      }
       return data || null;
     },
     // 访问地区：由服务端按真实网络出口解析（拿不到则返回 null，看板显示「未知」）
