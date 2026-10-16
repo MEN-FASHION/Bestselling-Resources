@@ -66,6 +66,29 @@ function makeSB(window, cfg) {
       if (typeof limit === "number") return imgs.slice(offset || 0, (offset || 0) + limit);
       return imgs;
     },
+    // 分页取全量：忠实模拟"服务端单次最大返回条数"截断（serverCap），
+    // 以及"取到一半失败"（failAfter），用于验证前台能否取全、以及不完整时如何提示。
+    listAllFrontendImages: async (pageSize) => {
+      const PAGE = (typeof pageSize === "number" && pageSize > 0) ? pageSize : 1000;
+      const cap = (typeof cfg.serverCap === "number" && cfg.serverCap > 0) ? cfg.serverCap : PAGE;
+      const rows = [];
+      let total = null, failed = false;
+      try { total = await impl.countFrontendImages(); } catch (e) { total = null; }
+      let offset = 0;
+      for (let guard = 0; guard < 500; guard++) {
+        let page;
+        try { page = await impl.listFrontendImages(PAGE, offset); }
+        catch (e) { failed = true; if (!rows.length) throw e; break; }
+        if (!Array.isArray(page) || page.length === 0) break;
+        const cut = page.slice(0, cap);
+        for (let i = 0; i < cut.length; i++) rows.push(cut[i]);
+        offset += cut.length;
+        if (cfg.failAfter && rows.length >= cfg.failAfter) { failed = true; break; }
+        if (total != null && rows.length >= total) break;
+        if (cut.length < PAGE && total == null) break;
+      }
+      return { rows: rows, total: total, complete: !failed && (total == null ? true : rows.length >= total) };
+    },
   };
 
   // 其余未显式实现的方法：按需返回安全默认值，保证真实代码继续往下跑
@@ -190,20 +213,51 @@ const IMG = (cat, extra) => Object.assign({
     ok("无未捕获脚本错误", r.errors.length === 0, r.errors.join(" | ").slice(0, 120));
   }
 
-  // ---------- 场景 5：无参取数失败，但分页接口可用 → 自动回退，图片照常显示 ----------
+  // ---------- 场景 5：服务端「单次最大返回条数」截断 → 分页循环取全（本轮核心修复）----------
+  // 复现线上实况：后台共 1875 张图，单次取数被上限截断，旧图整批落在线外，
+  // 于是「类目菜单有 T恤、点进去却是 0 张」。这里把上限（serverCap=25）压到远小于总量（60），
+  // 若仍能取全并在该类目渲染出图片，即证明分页取全生效。
   {
-    console.log("\n[5] 两条读图链路互为备份：无参失败时自动回退到分页接口");
-    const imgs = [IMG("T恤"), IMG("T恤"), IMG("卫衣")];
+    console.log("\n[5] 单次返回被上限截断时，分页循环仍能取全（旧图不再消失）");
+    const imgs = [];
+    for (let i = 0; i < 40; i++) imgs.push(IMG("卫衣"));   // 较新的 40 张
+    for (let i = 0; i < 20; i++) imgs.push(IMG("T恤"));    // 较旧的 20 张（会被单次上限截掉）
     const r = await boot({ session: { access_token: "T", user: { id: "u1", email: "a@b.c" } },
       usedCats: ["T恤", "卫衣"], activeCats: ["T恤", "卫衣"], images: imgs,
-      failNoArgOnly: "无参取全量失败（模拟）",
-      stats: { total: 3, categories: { "T恤": 2, "卫衣": 1 } } });
+      serverCap: 25,
+      stats: { total: 60, categories: { "T恤": 20, "卫衣": 40 } } });
     const btns = [...r.window.document.querySelectorAll("#cat-menu button")];
     const t = btns.find(b => b.textContent.trim() === "T恤");
-    if (t) { t.click(); for (let i = 0; i < 24; i++) await sleep(50); }
+    if (t) { t.click(); for (let i = 0; i < 30; i++) await sleep(50); }
     const cells = r.window.document.querySelectorAll("#grid > *").length;
-    ok("回退生效：该类目图片正常渲染出来", cells === 2, "cells=" + cells);
-    ok("回退成功时不显示空态（不误报数据没了）", !(r.$("#empty-tip") && !r.$("#empty-tip").classList.contains("hidden")));
+    ok("被上限截掉的旧类目图片仍能全部渲染（20 张）", cells === 20, "cells=" + cells);
+    ok("取全后不显示空态（不误报数据没了）", !(r.$("#empty-tip") && !r.$("#empty-tip").classList.contains("hidden")));
+    console.log("    服务端单次上限=25，总量=60，该类目渲染出 " + cells + " 张");
+  }
+
+  // ---------- 场景 7：取数不完整时，必须说"只取到一部分"，不能说"没有图片" ----------
+  {
+    console.log("\n[7] 取数不完整（取到一半失败）时如实提示，不误报「该分类没有图片」");
+    const imgs = [];
+    for (let i = 0; i < 60; i++) imgs.push(IMG("卫衣"));
+    for (let i = 0; i < 140; i++) imgs.push(IMG("T恤"));
+    const r = await boot({ session: { access_token: "T", user: { id: "u1", email: "a@b.c" } },
+      usedCats: ["T恤", "卫衣"], activeCats: ["T恤", "卫衣"], images: imgs,
+      serverCap: 60, failAfter: 60,
+      stats: { total: 200, categories: { "T恤": 140, "卫衣": 60 } } });
+    const btns = [...r.window.document.querySelectorAll("#cat-menu button")];
+    const t = btns.find(b => b.textContent.trim() === "T恤");
+    if (t) { t.click(); for (let i = 0; i < 30; i++) await sleep(50); }
+    const tip = r.$("#empty-tip");
+    const txt = tip ? tip.textContent.trim() : "";
+    const vis = tip && !tip.classList.contains("hidden");
+    console.log("    实际提示：" + txt.slice(0, 140));
+    ok("空态提示可见", vis);
+    ok("明确说明「只取到一部分」并给出已取/总数",
+      /只取到一部分/.test(txt) && /60/.test(txt) && /200/.test(txt), txt.slice(0, 80));
+    ok("不得说成「该分类下暂时没有图片」（否则会被误认为历史数据丢失）",
+      !/该分类下暂时没有图片/.test(txt), txt.slice(0, 80));
+    ok("给出「重试」入口", !!r.$("#empty-tip button"), txt.slice(0, 60));
   }
 
   // ---------- 场景 6：「清除标签筛选」按钮真能恢复出图 ----------

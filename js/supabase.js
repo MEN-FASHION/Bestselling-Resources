@@ -379,6 +379,36 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
     },
+    // 前台「筛选视图」全量取图（分页循环累加）
+    // 背景：单次调用一次性返回全部图片，会被数据库 API 的"单次最大返回条数"上限截断
+    //       （超管后台看到 1875 张、前台某类目却 0 张，就是旧图整批落在上限之外）。
+    //       类目菜单走的是聚合函数（只返回 1 行），不受上限影响，于是出现"类目还在、图没了"。
+    // 做法：按页循环取，偏移量按"实际返回条数"推进（兼容服务端上限比请求值更小的情况）；
+    //       总数来自计数接口，取满即停；中途失败则保留已取到的部分并标记不完整。
+    async listAllFrontendImages(pageSize) {
+      const PAGE = (typeof pageSize === "number" && pageSize > 0) ? pageSize : 1000;
+      const rows = [];
+      let total = null;
+      let failed = false;
+      try { total = await this.countFrontendImages(); } catch (e) { total = null; }
+      let offset = 0;
+      for (let guard = 0; guard < 500; guard++) {
+        let page;
+        try {
+          page = await this.listFrontendImages(PAGE, offset);
+        } catch (e) {
+          failed = true;
+          if (!rows.length) throw e;   // 一条都没取到：如实抛错，交给上层展示真实原因
+          break;                        // 已取到部分：保留，并标记不完整
+        }
+        if (!Array.isArray(page) || page.length === 0) break;
+        for (let i = 0; i < page.length; i++) rows.push(page[i]);
+        offset += page.length;
+        if (total != null && rows.length >= total) break;
+        if (page.length < PAGE && total == null) break;   // 未知总数且不足一页 → 视为取完
+      }
+      return { rows: rows, total: total, complete: !failed && (total == null ? true : rows.length >= total) };
+    },
     // 前台图片总数（分页判断是否还有下一页）
     async countFrontendImages() {
       const { data, error } = await client.rpc("frontend_count_images");

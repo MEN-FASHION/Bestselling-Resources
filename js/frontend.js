@@ -782,13 +782,20 @@
       act("清除标签筛选", clearTagFilters);
       return;
     }
-    // ③ 该分类确实没有图片
+    // ③ 取数不完整（分页中途失败）：绝不能笼统说"没有图片"，否则会被误认为历史数据丢了
+    if (c.incomplete && c.total != null && (c.loaded || 0) < c.total) {
+      line("图片只取到一部分：已取 " + (c.loaded || 0) + " / 共 " + c.total + " 张，没有取完。");
+      line("所以这个类目看起来是空的，但图片数据仍在（后台能看到），是前台这次没取全。");
+      act("重试", () => renderGrid(currentCat));
+      return;
+    }
+    // ④ 该分类确实没有图片
     if (hasFilter) {
       line("该分类下暂时没有图片。");
       line("该分类仍显示在清单中，可先切回「全部」确认整站图片是否正常。");
       return;
     }
-    // ④ 整站没有图片
+    // ⑤ 整站没有图片
     line("该专区暂时没有可浏览的图片。");
   }
 
@@ -906,21 +913,22 @@
       return;
     }
 
-    // ===== 筛选视图：一次加载全量（结果集已收敛，保证计数准确）=====
+    // ===== 筛选视图：分页取全量（保证计数准确，且不会被单次返回上限截断）=====
     let imgs = [];
     let readErr = "";
+    let incomplete = false;
+    let expectTotal = null;
     try {
-      imgs = await SB.listFrontendImages();
+      const r = await SB.listAllFrontendImages();
+      imgs = (r && r.rows) || [];
+      expectTotal = (r && typeof r.total === "number") ? r.total : null;
+      incomplete = !!(r && r.complete === false);
     } catch (e) {
       readErr = (e && (e.message || e.error_description)) || "未知原因";
-      // 回退：换用服务端分页接口再取一次（两条读图链路互为备份，
-      // 其中一条未生效时另一条仍能显示图片，避免整页空白）
-      try {
-        imgs = await SB.listFrontendImages(1000, 0);
-        readErr = "";
-      } catch (e2) { /* 两条都失败：保留首个失败原因展示 */ }
-      if (readErr) Auth.toast("读取图片失败", false);
+      Auth.toast("读取图片失败", false);
     }
+    if (!readErr && incomplete) incomplete = true;
+    const loadedCount = imgs.length;   // 本次实际取到的条数（用于"取数不完整"提示，不能取筛选后的数量）
     const catImgs = imgs.filter(i => catCatVisible("visual", i.category));
     catCounts = {};
     catImgs.forEach(i => { const c = i.category || "未分类"; catCounts[c] = (catCounts[c] || 0) + 1; });
@@ -928,7 +936,7 @@
     imgs = catImgs.filter(_match);
     renderTagBar(countsFromList(_catImgsAll));
 
-    await showEmptyHint(hasFilter, imgs.length, { err: readErr, catCount: _catImgsAll.length });
+    await showEmptyHint(hasFilter, imgs.length, { err: readErr, catCount: _catImgsAll.length, loaded: loadedCount, total: expectTotal, incomplete: incomplete });
     catalog = imgs;
     const guestToken = await SB.currentToken().catch(() => "");
     window.__guestToken = guestToken;
