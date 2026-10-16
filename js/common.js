@@ -370,7 +370,15 @@ window.Common = (function () {
     let loaded = false;
 
     function fallback() { return (window.ZONE_DEFS_DEFAULT || []).slice(); }
-    function list() { return (defs && defs.length) ? defs : fallback(); }
+    // 专区顺序：趋势上升榜固定在第一位（用户打开站点默认进入的专区），其余保持原有配置顺序。
+    // 这样即使数据库里存着早年保存的旧专区配置，榜单入口也不会被排到最后或漏掉。
+    function rankFirst(arr) {
+      const out = (arr || []).slice();
+      const i = out.findIndex((z) => z && z.key === "rank");
+      if (i > 0) out.unshift(out.splice(i, 1)[0]);
+      return out;
+    }
+    function list() { return rankFirst((defs && defs.length) ? defs : fallback()); }
 
     function visible(zone) {
       if (!zone) return true;
@@ -435,9 +443,84 @@ window.Common = (function () {
     };
   })();
 
+
+  /* ============================================================
+   * 访问统计（后台「数据看板」的数据来源）
+   *  - 页面打开后登记一次访问（同一会话、同一专区只登记一次，避免来回切页刷出重复记录）
+   *  - 每 20 秒累加一次停留时长；页面隐藏/关闭时补最后一次
+   *  - 来源地区由服务端按真实网络出口解析（拿不到就记为空，看板显示「未知」）
+   * 只统计已登录用户；任何一步失败都静默处理，绝不影响正常浏览。
+   * ============================================================ */
+  const visit = (function () {
+    const STEP = 20;      // 心跳间隔（秒）
+    let rid = null;       // 本次访问记录 id
+    let zone = "";
+    let timer = null;
+    let acc = 0;          // 尚未上报的秒数
+
+    function ridKey(z) { return "nl_visit_" + (z || ""); }
+    function read(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
+    function write(key, v) { try { sessionStorage.setItem(key, v); } catch (e) {} }
+
+    async function ensureGeo() {
+      const cached = read("nl_geo");
+      if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+      let g = null;
+      try { if (window.SB && SB.geoInfo) g = await SB.geoInfo(); } catch (e) { g = null; }
+      g = g || {};
+      write("nl_geo", JSON.stringify(g));
+      return g;
+    }
+
+    function tick() {
+      if (!rid) return;
+      acc += STEP;
+      flush();
+    }
+
+    function flush() {
+      if (!rid || acc <= 0) return;
+      const add = acc;
+      acc = 0;
+      try { if (window.SB && SB.visitPing) SB.visitPing(rid, add); } catch (e) {}
+    }
+
+    function start() {
+      if (timer || !rid) return;
+      timer = setInterval(tick, STEP * 1000);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") flush(); else acc = 0;
+      });
+      window.addEventListener("pagehide", flush);
+    }
+
+    async function track(z) {
+      try {
+        zone = z || zone || "";
+        if (!zone || !window.SB || !SB.recordVisit) return;
+        const saved = read(ridKey(zone));
+        if (saved) { rid = Number(saved) || null; start(); return; }
+        const session = SB.getSession ? await SB.getSession() : null;
+        if (!session || !session.user) return;   // 未登录不统计（口径：只算登录用户）
+        const geo = await ensureGeo();
+        const id = await SB.recordVisit({
+          zone: zone,
+          path: location.pathname + location.hash,
+          ip: geo.ip || "", country: geo.country || "", region: geo.region || "", city: geo.city || "",
+        });
+        if (!id) return;
+        rid = id;
+        write(ridKey(zone), String(id));
+        start();
+      } catch (e) { /* 统计失败不影响正常使用 */ }
+    }
+
+    return { track: track, flush: flush };
+  })();
+
   return {
     setToast, toast, escHtml, fmtTime,
     downloadWatermarked, setupAntiDownload,
-    authConfirm, notices, zones
+    authConfirm, notices, zones, visit
   };
 })();

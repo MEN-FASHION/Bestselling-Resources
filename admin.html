@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261015L">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015L">
+<link rel="stylesheet" href="css/style.css?v=20261015N">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261015N">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -400,6 +400,28 @@
         <hr class="tag-sub-hr">
         <div class="super-sub" data-sv="sv-2" style="display:none;">
           <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
+
+          <!-- 数据看板：用户从哪来、有多少、在干什么、干了多久（只统计已登录用户） -->
+          <div id="perm-dash" class="dash-box hidden">
+            <div class="dash-head">
+              <h4 class="dash-title">数据看板 <span class="hint-inline">（只统计已登录用户；今日 / 昨日 / 本周 / 本月按北京时间结算）</span></h4>
+              <button id="perm-dash-refresh" class="btn-ghost small" type="button">刷新</button>
+              <span id="perm-dash-updated" class="hint-inline"></span>
+            </div>
+            <div id="dash-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+            <div class="dash-cols">
+              <div class="dash-col">
+                <h5 class="dash-sub">各专区 · 访问量与停留时长 <span class="hint-inline">（在干什么、干了多久）</span></h5>
+                <div id="dash-zones" class="dash-table-wrap"></div>
+              </div>
+              <div class="dash-col">
+                <h5 class="dash-sub">用户地区分布 <span class="hint-inline">（按网络 IP 解析 · 从哪来）</span></h5>
+                <div id="dash-regions" class="dash-table-wrap"></div>
+              </div>
+            </div>
+            <h5 class="dash-sub">最近活跃 <span class="hint-inline">（最近 20 次访问：谁、在哪个专区、从哪来、待了多久）</span></h5>
+            <div id="dash-recent" class="dash-table-wrap"></div>
+          </div>
           <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【用户】【角色】【标签】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
 
           <!-- 按标签筛选：权限表顶部直接按用户标签筛选 -->
@@ -413,11 +435,44 @@
             <span class="hint-inline">（超管可用邮箱 + 密码直接生成账户）</span>
           </div>
 
+          <!-- 批量维护：勾选多个用户后，批量打标签 / 改角色 / 加减专区 -->
+          <div id="perm-batch-bar" class="perm-batch-bar">
+            <span class="pbb-count">已选 <b id="perm-batch-n">0</b> 人</span>
+            <span class="pbb-group">
+              <label class="pbb-lab">标签</label>
+              <select id="perm-batch-tag" class="input"><option value="">选择标签…</option></select>
+              <button id="perm-batch-tag-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <span class="pbb-group">
+              <label class="pbb-lab">角色</label>
+              <select id="perm-batch-role" class="input">
+                <option value="">选择角色…</option>
+                <option value="visitor">访客</option>
+                <option value="admin">管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+              <button id="perm-batch-role-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <span class="pbb-group">
+              <label class="pbb-lab">专区</label>
+              <select id="perm-batch-zone" class="input"></select>
+              <select id="perm-batch-zone-act" class="input">
+                <option value="addFront">加入 · 前台可见</option>
+                <option value="remFront">移出 · 前台可见</option>
+                <option value="addManage">加入 · 后台管理</option>
+                <option value="remManage">移出 · 后台管理</option>
+              </select>
+              <button id="perm-batch-zone-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <button id="perm-batch-clear" class="btn-ghost small" type="button">清空选择</button>
+          </div>
+
           <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
           <div class="perm-table-wrap">
             <table class="perm-table" id="perm-table">
               <thead>
                 <tr>
+                  <th class="perm-th-check"><input type="checkbox" id="perm-check-all" title="全选当前筛选出的用户"></th>
                   <th>用户</th>
                   <th>角色</th>
                   <th>标签</th>
@@ -430,7 +485,7 @@
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="9" class="hint">加载中…</td></tr></tbody>
+              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="11" class="hint">加载中…</td></tr></tbody>
             </table>
           </div>
 
@@ -1201,36 +1256,27 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261015L"></script>
-  <script src="vendor/quill.js?v=20261015L"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261015L"></script>
-  <script src="vendor/qrcode.min.js?v=20261015L"></script>
-  <script src="js/config.js?v=20261015L"></script>
-  <script src="js/supabase.js?v=20261015L"></script>
+  <script src="vendor/supabase.js?v=20261015N"></script>
+  <script src="vendor/quill.js?v=20261015N"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261015N"></script>
+  <script src="vendor/qrcode.min.js?v=20261015N"></script>
+  <script src="js/config.js?v=20261015N"></script>
+  <script src="js/supabase.js?v=20261015N"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261015L"></script>
-  <script src="js/admin-images.js?v=20261015L"></script>
-  <script src="js/admin-smart.js?v=20261015L"></script>
-  <script src="js/admin-trend.js?v=20261015L"></script>
-  <script src="js/admin-notice.js?v=20261015L"></script>
-  <script src="js/admin-marketing.js?v=20261015L"></script>
-  <script src="js/admin-tasks.js?v=20261015L"></script>
-  <script src="js/admin-bestseller.js?v=20261015L"></script>
-  <script src="js/admin-perm.js?v=20261015L"></script>
-  <script src="js/admin-pool.js?v=20261015L"></script>
-  <script src="js/admin-rank.js?v=20261015L"></script>
+  <script src="js/admin.js?v=20261015N"></script>
+  <script src="js/admin-images.js?v=20261015N"></script>
+  <script src="js/admin-smart.js?v=20261015N"></script>
+  <script src="js/admin-trend.js?v=20261015N"></script>
+  <script src="js/admin-notice.js?v=20261015N"></script>
+  <script src="js/admin-marketing.js?v=20261015N"></script>
+  <script src="js/admin-tasks.js?v=20261015N"></script>
+  <script src="js/admin-bestseller.js?v=20261015N"></script>
+  <script src="js/admin-perm.js?v=20261015N"></script>
+  <script src="js/admin-pool.js?v=20261015N"></script>
+  <script src="js/admin-rank.js?v=20261015N"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
-    <div class="mk-share-card">
-      <h4 id="mk-share-title">分享到微信</h4>
-      <p class="mk-share-tip">用微信「扫一扫」扫描二维码，即可打开并转发文章；也可复制下方链接分享。</p>
-      <div class="mk-share-qr" id="mk-share-qr"></div>
-      <div class="mk-share-link" id="mk-share-link"></div>
-      <button id="mk-share-close" class="btn-primary" type="button">关闭</button>
-    </div>
-  </div>
-<div class="mk-share-mask hidden" id="mk-share-mask">
     <div class="mk-share-card">
       <h4 id="mk-share-title">分享到微信</h4>
       <p class="mk-share-tip">用微信「扫一扫」扫描二维码，即可打开并转发文章；也可复制下方链接分享。</p>

@@ -1467,6 +1467,106 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "更新权限失败");
     },
 
+    // ============ 数据看板（访问统计 / 在线时长 / 地区分布） ============
+    // 说明：只统计「已登录用户」的真实访问（游客不计），口径见 tools/setup_analytics.sql。
+    // 页面打开时登记一次访问，返回该条记录 id；随后用心跳累加停留时长。
+    async recordVisit(o) {
+      const d = o || {};
+      const { data, error } = await client.rpc("record_visit", {
+        p_zone: d.zone || "",
+        p_path: d.path || "",
+        p_ip: d.ip || "",
+        p_country: d.country || "",
+        p_region: d.region || "",
+        p_city: d.city || "",
+      });
+      if (error) throw new Error(error.message || "登记访问失败");
+      return data;
+    },
+    // 累加停留时长（前端每 20 秒一次，离开页面时补最后一次）；失败静默，不影响浏览
+    async visitPing(id, addSec) {
+      if (!id) return;
+      try {
+        await client.rpc("visit_ping", { p_id: id, p_add: Math.max(0, Math.round(addSec || 0)) });
+      } catch (e) { /* 统计失败不影响正常使用 */ }
+    },
+    // 超管：读取数据看板全部指标（非超管返回 null）
+    async adminDashboard() {
+      const { data, error } = await client.rpc("admin_dashboard");
+      if (error) throw new Error(error.message || "读取数据看板失败");
+      return data || null;
+    },
+    // 访问地区：由服务端按真实网络出口解析（拿不到则返回 null，看板显示「未知」）
+    async geoInfo() {
+      try {
+        const base = ((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/+$/, "");
+        if (!base) return null;
+        const res = await fetch(base + "/geo", { method: "GET" });
+        if (!res.ok) return null;
+        const j = await res.json().catch(() => null);
+        if (!j) return null;
+        return { ip: j.ip || "", country: j.country || "", region: j.region || "", city: j.city || "" };
+      } catch (e) { return null; }
+    },
+
+    // ============ 批量维护用户（多选后批量打标签 / 改角色 / 加减专区） ============
+    // opts: { tag, role, addFront:[], remFront:[], addManage:[], remManage:[], seedFront:[] }
+    //  - 标签 / 角色：直接整批写入
+    //  - 专区：先一次性取回这批用户现有配置，在本地做并集/差集，再逐个写回（保持各用户原配置不被覆盖）
+    //  - seedFront：某用户前台可见专区为空（=跟随全局）却要「移除」时，用全局可见专区作为起点，否则移除无效果
+    // 返回 { updated, failed }
+    async bulkPatchUsers(ids, opts) {
+      const list = [...new Set((ids || []).filter(Boolean))];
+      if (!list.length) return { updated: 0, failed: 0 };
+      const o = opts || {};
+      const addFront = (o.addFront || []).filter(Boolean);
+      const remFront = (o.remFront || []).filter(Boolean);
+      const addManage = (o.addManage || []).filter(Boolean);
+      const remManage = (o.remManage || []).filter(Boolean);
+      const seedFront = (o.seedFront || []).filter(Boolean);
+      const hasTag = Object.prototype.hasOwnProperty.call(o, "tag") && o.tag !== undefined;
+      const hasRole = !!o.role;
+      const needZones = addFront.length || remFront.length || addManage.length || remManage.length;
+      const zoneMap = {};
+      if (needZones) {
+        const { data, error } = await client.from("profiles")
+          .select("user_id, frontend_zones, manage_zones").in("user_id", list);
+        if (error) throw new Error(error.message || "读取用户专区配置失败");
+        (data || []).forEach(r => { zoneMap[r.user_id] = r; });
+      }
+      const merge = (cur, add, rem, seed) => {
+        let base = (Array.isArray(cur) ? cur : []).filter(Boolean);
+        if (!base.length && rem.length && seed.length) base = seed.slice();
+        const set = new Set(base);
+        add.forEach(z => set.add(z));
+        rem.forEach(z => set.delete(z));
+        return [...set];
+      };
+      let updated = 0, failed = 0;
+      const CHUNK = 8;
+      for (let i = 0; i < list.length; i += CHUNK) {
+        const part = list.slice(i, i + CHUNK);
+        await Promise.all(part.map(async (uid) => {
+          const patch = {};
+          if (hasTag) patch.user_tag = String(o.tag == null ? "" : o.tag).trim();
+          if (hasRole) patch.role = o.role;
+          if (needZones) {
+            const cur = zoneMap[uid] || {};
+            if (addFront.length || remFront.length) {
+              patch.frontend_zones = merge(cur.frontend_zones, addFront, remFront, seedFront);
+            }
+            if (addManage.length || remManage.length) {
+              patch.manage_zones = merge(cur.manage_zones, addManage, remManage, []);
+            }
+          }
+          if (!Object.keys(patch).length) return;
+          const { error } = await client.from("profiles").update(patch).eq("user_id", uid);
+          if (error) failed++; else updated++;
+        }));
+      }
+      return { updated, failed };
+    },
+
     // ============ 趋势上升榜（rank_sites / rank_batches / rank_items） ============
     // 前台筛选三份清单：国家站点 / 周次 / 类目（服务端聚合，避免拉全表明细）
     async rankFacets() {

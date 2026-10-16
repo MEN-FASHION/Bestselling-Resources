@@ -2436,7 +2436,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 
   /* 展开态 */
   body.front .sidebar:hover,
-  body.front .sidebar:focus-within {
+  body.front .sidebar:focus-within,
+  body.front .sidebar.rail-open {          /* .rail-open 由 js/rail.js 按「整列命中」加上 */
     width: 212px; padding: 16px 12px;
     max-height: calc(100vh - 100px);
     overflow-y: auto;
@@ -2445,15 +2446,18 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
     transition-delay: 0s;
   }
   body.front .sidebar:hover .side-head,
-  body.front .sidebar:focus-within .side-head {
+  body.front .sidebar:focus-within .side-head,
+  body.front .sidebar.rail-open .side-head {
     writing-mode: horizontal-tb; letter-spacing: 2px;
     margin: 0 0 8px; padding: 4px 8px 12px;
     border-bottom: 1px solid var(--line);
   }
   body.front .sidebar:hover .cat-menu,
-  body.front .sidebar:focus-within .cat-menu { opacity: 1; pointer-events: auto; }
+  body.front .sidebar:focus-within .cat-menu,
+  body.front .sidebar.rail-open .cat-menu { opacity: 1; pointer-events: auto; }
   body.front .sidebar:hover::after,
-  body.front .sidebar:focus-within::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
+  body.front .sidebar:focus-within::after,
+  body.front .sidebar.rail-open::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
 
   /* 滚动条收细，展开态更干净 */
   body.front .sidebar::-webkit-scrollbar { width: 6px; }
@@ -2575,3 +2579,79 @@ body.front .tf-trigger { padding: 7px 14px; }
   body.rp-printing #rp-sheet { display: block !important; }
   .rp-card img, .rp-col, .rp-head, .rp-foot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- 三、天眼：一次查看全部对比列的全部图片 ---------- */
+.rk-eye-btn {
+  margin-left: auto; flex: 0 0 auto;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: #2c2c2c; background: linear-gradient(135deg, var(--gold), var(--gold2));
+  border: 1px solid transparent; border-radius: 999px;
+}
+.rk-eye-btn:hover { filter: brightness(1.06); }
+.rk-eye-btn:active { transform: translateY(1px); }
+
+.rk-eye { position: fixed; inset: 0; z-index: 9000; }
+.rk-eye-mask { position: absolute; inset: 0; background: rgba(26,24,21,.74); }
+.rk-eye-panel {
+  position: absolute; inset: 3vh 3vw;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); border-radius: 16px;
+  box-shadow: 0 26px 64px rgba(0,0,0,.38);
+}
+.rk-eye-head {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 13px 18px; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.rk-eye-title { flex: 0 0 auto; font-size: 16px; font-weight: 700; color: var(--txt); }
+.rk-eye-sub { flex: 1 1 auto; font-size: 12.5px; color: var(--sub); line-height: 1.5; }
+.rk-eye-close {
+  flex: 0 0 auto; width: 32px; height: 32px; font-size: 18px; line-height: 1;
+  color: var(--sub); background: transparent; border: 1px solid var(--line);
+  border-radius: 8px; cursor: pointer;
+}
+.rk-eye-close:hover { color: var(--gold); border-color: var(--gold); }
+.rk-eye-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px 40px; }
+/* 天眼里没有「每列最多几张」的限制，也不弹「加载更多」：整块交给外层滚动 */
+.rk-eye-body .rk-pools { max-height: none; overflow: visible; padding-bottom: 0; }
+@media (max-width: 900px) {
+  .rk-eye-panel { inset: 0; border-radius: 0; }
+  .rk-eye-body { padding: 10px 10px 28px; }
+}
+
+/* ============================================================
+   后台「数据看板」（权限管理最上层）：用户从哪来 / 有多少 / 在干什么 / 干了多久
+   ============================================================ */
+.dash-box { border: 1px solid var(--line, #2a2a2a); border-radius: 10px; padding: 12px 14px 14px; margin: 10px 0 14px; background: rgba(255,255,255,.02); }
+.dash-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.dash-title { margin: 0; font-size: 15px; color: var(--gold, #d8b766); }
+.dash-head .hint-inline { margin-left: 4px; }
+#dash-updated { margin-left: auto; }
+.dash-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.dash-card { border: 1px solid var(--line, #2a2a2a); border-radius: 9px; padding: 10px 12px; background: rgba(0,0,0,.18); }
+.dc-label { font-size: 12px; opacity: .72; margin-bottom: 6px; }
+.dc-value { font-size: 22px; font-weight: 700; color: var(--gold, #d8b766); line-height: 1.2; }
+.dc-sub { font-size: 12px; opacity: .72; margin-top: 6px; }
+.dc-delta.up { color: #43b581; }
+.dc-delta.down { color: #e06c5f; }
+.dc-delta.flat { opacity: .6; }
+.dash-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.dash-sub { margin: 0 0 8px; font-size: 13px; color: var(--gold, #d8b766); font-weight: 600; }
+.dash-cols + .dash-sub { margin-top: 14px; }
+.dash-table-wrap { overflow-x: auto; }
+.dash-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dash-table th, .dash-table td { padding: 6px 8px; border-bottom: 1px solid var(--line, #2a2a2a); text-align: left; white-space: nowrap; }
+.dash-table th { opacity: .7; font-weight: 600; }
+.dash-table td:not(:first-child) { text-align: right; }
+@media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   后台「批量维护用户」工具条：勾选多人后批量打标签 / 改角色 / 加减专区
+   ============================================================ */
+.perm-batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 8px; padding: 8px 10px; border: 1px dashed var(--line, #2a2a2a); border-radius: 9px; font-size: 12.5px; }
+.perm-batch-bar.has-sel { border-style: solid; border-color: var(--gold, #d8b766); background: rgba(216,183,102,.06); }
+.pbb-count { opacity: .8; }
+.pbb-count b { color: var(--gold, #d8b766); font-size: 14px; }
+.pbb-group { display: inline-flex; align-items: center; gap: 6px; }
+.pbb-lab { opacity: .72; }
+.perm-batch-bar .input { height: 28px; padding: 0 6px; font-size: 12.5px; max-width: 150px; }
+.perm-th-check { width: 34px; text-align: center; }

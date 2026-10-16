@@ -115,11 +115,11 @@ window.CONFIG = {
  * 实际配置存于 site_settings.frontend_zone_visibility.__defs（无需改数据库）
  * ============================================================ */
 window.ZONE_DEFS_DEFAULT = [
-  { key: "marketing",  label: "营销日历",     href: "marketing.html" },
-  { key: "visual",     label: "视觉专区",     href: "index.html" },
-  { key: "trend",      label: "趋势专区",     href: "trends.html" },
-  { key: "recruit",    label: "招品回品",     href: "trends.html#recruit" },
-  { key: "bestseller", label: "BESTSELLER",   href: "trends.html#bestseller" },
-  { key: "notice",     label: "公告",         href: "" },
-  { key: "rank",       label: "趋势上升榜",   href: "rank.html" }
+  { key: "rank",          label: "趋势上升榜",     href: "rank.html" },
+  { key: "marketing",     label: "营销日历",      href: "marketing.html" },
+  { key: "visual",        label: "视觉专区",      href: "index.html" },
+  { key: "trend",         label: "趋势专区",      href: "trends.html" },
+  { key: "recruit",       label: "招品回品",      href: "trends.html#recruit" },
+  { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
+  { key: "notice",        label: "公告",        href: "" }
 ];

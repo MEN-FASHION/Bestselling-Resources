@@ -98,8 +98,10 @@ async function loadPermPanel() {
       } catch (e) { /* 忽略登录记录读取失败，仅展示不到 */ }
     }
     renderPermTable(permUsers);
+    refreshBatchZoneOptions();
     await loadDefaultPerms();
     await renderZoneDefsBox();
+    await loadDashboard();
   }
 
 // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
@@ -149,8 +151,8 @@ function bindDefaultPerms() {
     if (!body) return;
     // 按「标签」筛选：all=全部，__none__=仅无标签，其它=仅该标签
     const shown = permTagFilter === "" ? users : (permTagFilter === NONE_TAG ? users.filter(u => !(u.user_tag && u.user_tag.trim())) : users.filter(u => u.user_tag === permTagFilter));
-    if (!users.length) { body.innerHTML = '<tr><td colspan="10" class="hint">暂无用户</td></tr>'; return; }
-    if (!shown.length) { body.innerHTML = '<tr><td colspan="10" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="11" class="hint">暂无用户</td></tr>'; updateBatchCount(); return; }
+    if (!shown.length) { body.innerHTML = '<tr><td colspan="11" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; updateBatchCount(); return; }
     body.innerHTML = "";
     // 预取每个用户的类目授权，用于总览摘要（仅筛选后的行）
     const catCounts = {};
@@ -162,6 +164,9 @@ function bindDefaultPerms() {
     }));
     shown.forEach(u => {
       const tr = document.createElement("tr");
+      tr.dataset.uid = u.user_id;          // 批量维护：按行定位该用户
+      // 勾选框（批量维护入口）：勾中的用户可批量打标签 / 改角色 / 加减专区
+      const ckOn = permBatchSel.has(u.user_id) ? " checked" : "";
       const frontZones = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
       const manageZones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
       // 「前台可见专区」= 单独配置的 frontend_zones；未配置则跟随全局，直接展开列出全局可见专区
@@ -182,6 +187,7 @@ function bindDefaultPerms() {
       // 备注列：自由文本说明（如新用户名/来源/用途）
       const noteTxt = u.user_note ? escHtml(u.user_note) : '<span class="hint">未填写</span>';
       tr.innerHTML =
+        '<td class="perm-th-check"><input type="checkbox" class="perm-ck" data-uid="' + u.user_id + '"' + ckOn + '></td>' +
         '<td class="perm-td-user">' + escHtml(u.email || "") + '</td>' +
         '<td class="perm-td-role">' + permRoleLabel(u.role) + '</td>' +
         '<td class="perm-td-tag">' + tagSel + '</td>' +
@@ -260,6 +266,9 @@ function bindDefaultPerms() {
     });
     // 同步顶部「按标签筛选」下拉（保留用户当前选择）
     syncPermTagFilter();
+    // 同步批量维护工具条（已选人数 / 全选态 / 标签候选）
+    refreshBatchTagOptions();
+    updateBatchCount();
   }
 
 // 同步编辑区的标签下拉（与权限表标签一致）
@@ -661,11 +670,306 @@ function bindPermission() {
     bindDefaultPerms();
     bindPermEditModal();
     bindPermCreateUser();
+    bindPermBatch();
+    bindDashboard();
   }
 
   /* 暴露给其它模块 / 事件绑定 */
+
+// ========================================================================
+// 数据看板：用户从哪来（地区分布）/ 有多少（用户增长）/ 在干什么（各专区访问）/ 干了多久（停留时长）
+// ========================================================================
+function fmtDur(sec) {
+  const n = Math.max(0, Math.round(Number(sec) || 0));
+  if (n < 60) return n + " 秒";
+  const m = Math.floor(n / 60);
+  if (m < 60) return m + " 分 " + (n % 60) + " 秒";
+  return Math.floor(m / 60) + " 小时 " + (m % 60) + " 分";
+}
+
+// 环比：与上一周期相比的百分比（上期为 0 时显示「新增」而不是无穷大）
+function dashDelta(now, prev) {
+  const a = Number(now) || 0, b = Number(prev) || 0;
+  if (b === 0) return a > 0 ? { txt: "新增 " + a, cls: "up" } : { txt: "—", cls: "flat" };
+  const pct = Math.round(((a - b) / b) * 1000) / 10;
+  return { txt: (pct >= 0 ? "↑ " : "↓ ") + Math.abs(pct) + "%", cls: pct > 0 ? "up" : (pct < 0 ? "down" : "flat") };
+}
+
+function zoneLabelOf(k) {
+  const z = PERM_ZONES.find(x => x.key === k);
+  return z ? z.label : (k || "未知");
+}
+
+function dashCard(label, value, sub, delta) {
+  return '<div class="dash-card">' +
+    '<div class="dc-label">' + escHtml(label) + '</div>' +
+    '<div class="dc-value">' + escHtml(String(value)) + '</div>' +
+    '<div class="dc-sub">' + (delta ? '<span class="dc-delta ' + delta.cls + '">' + escHtml(delta.txt) + '</span> ' : '') + escHtml(sub || "") + '</div>' +
+    '</div>';
+}
+
+function dashTable(heads, rows) {
+  if (!rows || !rows.length) return '<div class="hint">暂无数据</div>';
+  return '<table class="dash-table"><thead><tr>' +
+    heads.map(h => "<th>" + escHtml(h) + "</th>").join("") +
+    '</tr></thead><tbody>' +
+    rows.map(r => "<tr>" + r.map(c => "<td>" + c + "</td>").join("") + "</tr>").join("") +
+    '</tbody></table>';
+}
+
+function renderDashboard(d) {
+  const cards = $("#dash-cards");
+  const u = (d && d.users) || {}, v = (d && d.visits) || {};
+  if (cards) {
+    cards.innerHTML =
+      dashCard("总用户数", Number(u.total) || 0, "今日新增 " + (Number(u.newToday) || 0) + " · 昨日 " + (Number(u.newYday) || 0), dashDelta(u.newToday, u.newYday)) +
+      dashCard("今日访问量", Number(v.pvToday) || 0, "较昨日 · 今日活跃 " + (Number(v.uvToday) || 0) + " 人 · 累计 " + (Number(v.pvTotal) || 0) + " 次", dashDelta(v.pvToday, v.pvYday)) +
+      dashCard("今日在线时长", fmtDur(v.durToday), "较昨日 · 人均 " + fmtDur(v.durAvg) + " · 累计 " + fmtDur(v.durTotal), dashDelta(v.durToday, v.durYday)) +
+      dashCard("本期新增用户", Number(u.newWeek) || 0, "本周 · 本月 " + (Number(u.newMonth) || 0) + " · 上月 " + (Number(u.newLastMonth) || 0), dashDelta(u.newMonth, u.newLastMonth));
+  }
+  const zones = $("#dash-zones");
+  if (zones) {
+    zones.innerHTML = dashTable(["专区", "今日访问", "累计访问", "今日人数", "累计时长"],
+      ((d && d.zones) || []).map(z => [
+        escHtml(zoneLabelOf(z.zone)),
+        String(z.pvToday || 0),
+        String(z.pvTotal || 0),
+        String(z.uvToday || 0),
+        escHtml(fmtDur(z.durTotal)),
+      ]));
+  }
+  const regions = $("#dash-regions");
+  if (regions) {
+    regions.innerHTML = dashTable(["国家 / 地区", "用户数", "今日访问", "累计访问", "累计时长"],
+      ((d && d.regions) || []).map(r => [
+        escHtml([r.country, r.region, r.city].filter(Boolean).join(" · ") || "未知"),
+        String(r.users || 0),
+        String(r.pvToday || 0),
+        String(r.pvTotal || 0),
+        escHtml(fmtDur(r.durTotal)),
+      ]));
+  }
+  const recent = $("#dash-recent");
+  if (recent) {
+    recent.innerHTML = dashTable(["用户", "专区", "地区", "停留", "时间"],
+      ((d && d.recent) || []).map(r => [
+        escHtml(r.email || ""),
+        escHtml(zoneLabelOf(r.zone) || "—"),
+        escHtml([r.country, r.region].filter(Boolean).join(" · ") || "未知"),
+        escHtml(fmtDur(r.duration)),
+        escHtml(r.startedAt ? new Date(r.startedAt).toLocaleString("zh-CN", { hour12: false }) : ""),
+      ]));
+  }
+}
+
+// 读取并渲染看板（非超管接口返回空 → 整块不显示，不给任何数据）
+async function loadDashboard() {
+  const box = $("#perm-dash");
+  if (!box) return;
+  try {
+    const d = await SB.adminDashboard();
+    if (!d) { box.classList.add("hidden"); return; }
+    box.classList.remove("hidden");
+    renderDashboard(d);
+    const up = $("#perm-dash-updated");
+    if (up) up.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  } catch (e) {
+    box.classList.remove("hidden");
+    const c = $("#dash-cards");
+    if (c) c.innerHTML = '<div class="hint">看板读取失败：请确认已在数据库执行过一次统计脚本（tools/setup_analytics.sql），然后点「刷新」重试。</div>';
+    ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
+  }
+}
+
+function bindDashboard() {
+  const b = $("#perm-dash-refresh");
+  if (!b || b.__bound) return;
+  b.__bound = true;
+  b.onclick = async () => {
+    const c = $("#dash-cards");
+    if (c) c.innerHTML = '<span class="hint">读取中…</span>';
+    await loadDashboard();
+  };
+}
+
+// ========================================================================
+// 批量维护用户：勾选多个用户后，批量打标签 / 改角色 / 加减专区
+// 口径：写库走 SB.bulkPatchUsers（各用户原有配置做并集/差集，不覆盖）；界面就地更新，不重建整表（避免页面跳动）
+// ========================================================================
+let permBatchSel = new Set();
+
+function batchIds() { return [...permBatchSel]; }
+
+function updateBatchCount() {
+  const n = $("#perm-batch-n");
+  if (n) n.textContent = String(permBatchSel.size);
+  const bar = $("#perm-batch-bar");
+  if (bar) bar.classList.toggle("has-sel", permBatchSel.size > 0);
+  const all = $("#perm-check-all");
+  if (all) {
+    const rows = document.querySelectorAll("#perm-table-body tr[data-uid]");
+    let sel = 0;
+    rows.forEach(tr => { if (permBatchSel.has(tr.dataset.uid)) sel++; });
+    all.checked = rows.length > 0 && sel === rows.length;
+    all.indeterminate = sel > 0 && sel < rows.length;
+  }
+}
+
+function refreshBatchTagOptions() {
+  const sel = $("#perm-batch-tag");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">选择标签…</option><option value="' + NONE_TAG + '">清空标签（无标签）</option>' +
+    permTagChoices(permUsers).map(t => '<option value="' + escAttr(t) + '">' + escHtml(t) + '</option>').join("");
+  if (cur) sel.value = cur;
+}
+
+function refreshBatchZoneOptions() {
+  const sel = $("#perm-batch-zone");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = PERM_ZONES.map(z => '<option value="' + escAttr(z.key) + '">' + escHtml(z.label) + '</option>').join("");
+  if (cur) sel.value = cur;
+}
+
+function batchZoneTexts(u) {
+  const front = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
+  const manage = Array.isArray(u.manage_zones) ? u.manage_zones : [];
+  const fk = front.length ? front : permGlobalZones;     // 未单独配置 = 跟随全局
+  return [
+    fk.length ? fk.map(zoneLabelOf).join("、") : "无",
+    manage.length ? manage.map(zoneLabelOf).join("、") : "无（仅前台）",
+  ];
+}
+
+// 只刷新该行的专区列（不重建整表）
+function updateRowZoneCells(uid) {
+  const u = permUsers.find(x => x.user_id === uid);
+  const tr = document.querySelector('#perm-table-body tr[data-uid="' + uid + '"]');
+  if (!u || !tr) return;
+  const tds = tr.querySelectorAll(".perm-td-zones");
+  const txt = batchZoneTexts(u);
+  if (tds[0]) tds[0].textContent = txt[0];
+  if (tds[1]) tds[1].textContent = txt[1];
+}
+
+function bindPermBatch() {
+  const all = $("#perm-check-all");
+  if (all && !all.__bound) {
+    all.__bound = true;
+    all.onchange = () => {
+      document.querySelectorAll("#perm-table-body tr[data-uid]").forEach(tr => {
+        const cb = tr.querySelector(".perm-ck");
+        if (cb) cb.checked = all.checked;
+        if (all.checked) permBatchSel.add(tr.dataset.uid); else permBatchSel.delete(tr.dataset.uid);
+      });
+      updateBatchCount();
+    };
+  }
+  // 行勾选用事件委托：表格重绘后依然生效
+  const body = $("#perm-table-body");
+  if (body && !body.__ckBound) {
+    body.__ckBound = true;
+    body.addEventListener("change", (e) => {
+      const cb = e.target && e.target.closest ? e.target.closest(".perm-ck") : null;
+      if (!cb) return;
+      const tr = cb.closest("tr");
+      const uid = (tr && tr.dataset.uid) || cb.dataset.uid;
+      if (!uid) return;
+      if (cb.checked) permBatchSel.add(uid); else permBatchSel.delete(uid);
+      updateBatchCount();
+    });
+  }
+  const bt = $("#perm-batch-tag-apply");
+  if (bt && !bt.__bound) { bt.__bound = true; bt.onclick = applyBatchTag; }
+  const br = $("#perm-batch-role-apply");
+  if (br && !br.__bound) { br.__bound = true; br.onclick = applyBatchRole; }
+  const bz = $("#perm-batch-zone-apply");
+  if (bz && !bz.__bound) { bz.__bound = true; bz.onclick = applyBatchZone; }
+  const bc = $("#perm-batch-clear");
+  if (bc && !bc.__bound) {
+    bc.__bound = true;
+    bc.onclick = () => {
+      permBatchSel.clear();
+      document.querySelectorAll("#perm-table-body .perm-ck").forEach(cb => { cb.checked = false; });
+      updateBatchCount();
+    };
+  }
+}
+
+async function applyBatchTag() {
+  const ids = batchIds();
+  if (!ids.length) return sbToast("请先勾选要维护的用户", false);
+  const sel = $("#perm-batch-tag");
+  const v = sel ? sel.value : "";
+  if (!v) return sbToast("请先选择要应用的标签", false);
+  const tag = v === NONE_TAG ? "" : v;
+  try {
+    const r = await SB.bulkPatchUsers(ids, { tag: tag });
+    // 就地更新：只改这几行的标签下拉与本地数据，不重建整表
+    ids.forEach(uid => {
+      const u = permUsers.find(x => x.user_id === uid);
+      if (u) u.user_tag = tag;
+      const tr = document.querySelector('#perm-table-body tr[data-uid="' + uid + '"]');
+      const s2 = tr ? tr.querySelector(".perm-tag-select") : null;
+      if (s2) s2.value = tag;
+    });
+    syncPermTagEditor();
+    syncPermTagFilter();
+    sbToast("已为 " + r.updated + " 个用户设置标签「" + (tag || "无") + "」" + (r.failed ? "（" + r.failed + " 个失败）" : ""), !r.failed);
+  } catch (e) { sbToast("批量打标签失败：" + (e.message || ""), false); }
+}
+
+async function applyBatchRole() {
+  const ids = batchIds();
+  if (!ids.length) return sbToast("请先勾选要维护的用户", false);
+  const sel = $("#perm-batch-role");
+  const role = sel ? sel.value : "";
+  if (!role) return sbToast("请先选择要应用的角色", false);
+  try {
+    const r = await SB.bulkPatchUsers(ids, { role: role });
+    ids.forEach(uid => {
+      const u = permUsers.find(x => x.user_id === uid);
+      if (u) u.role = role;
+      const tr = document.querySelector('#perm-table-body tr[data-uid="' + uid + '"]');
+      const td = tr ? tr.querySelector(".perm-td-role") : null;
+      if (td) td.textContent = permRoleLabel(role);
+    });
+    sbToast("已把 " + r.updated + " 个用户角色改为「" + permRoleLabel(role) + "」" + (r.failed ? "（" + r.failed + " 个失败）" : ""), !r.failed);
+  } catch (e) { sbToast("批量改角色失败：" + (e.message || ""), false); }
+}
+
+async function applyBatchZone() {
+  const ids = batchIds();
+  if (!ids.length) return sbToast("请先勾选要维护的用户", false);
+  const zsel = $("#perm-batch-zone"), asel = $("#perm-batch-zone-act");
+  const zone = zsel ? zsel.value : "";
+  const act = asel ? asel.value : "addFront";
+  if (!zone) return sbToast("请先选择专区", false);
+  const opts = {};
+  if (act === "addFront") opts.addFront = [zone];
+  else if (act === "remFront") { opts.remFront = [zone]; opts.seedFront = permGlobalZones.slice(); }  // 「跟随全局」的用户也能移出
+  else if (act === "addManage") opts.addManage = [zone];
+  else opts.remManage = [zone];
+  const actTxt = { addFront: "加入前台可见", remFront: "移出前台可见", addManage: "加入后台管理", remManage: "移出后台管理" }[act] || act;
+  try {
+    const r = await SB.bulkPatchUsers(ids, opts);
+    // 写库后以数据库为准刷新这几行（只更新受影响的行，不重建整表）
+    try {
+      const fresh = await SB.listAdminUsers();
+      (fresh || []).forEach(f => {
+        const u = permUsers.find(x => x.user_id === f.user_id);
+        if (u) { u.frontend_zones = f.frontend_zones; u.manage_zones = f.manage_zones; }
+      });
+    } catch (e) { /* 读不到就保留原展示，下次进面板会以数据库为准 */ }
+    ids.forEach(updateRowZoneCells);
+    sbToast("已把 " + r.updated + " 个用户的「" + zoneLabelOf(zone) + "」" + actTxt + (r.failed ? "（" + r.failed + " 个失败）" : ""), !r.failed);
+  } catch (e) { sbToast("批量改专区失败：" + (e.message || ""), false); }
+}
+
   Object.assign(window, {
-    permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
+    permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel,
+    loadDashboard, renderDashboard, bindDashboard, bindPermBatch, applyBatchTag, applyBatchRole, applyBatchZone, updateBatchCount, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
   });
 
 })();

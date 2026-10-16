@@ -163,6 +163,18 @@ async function handleRequest(request, env) {
   let token = auth.startsWith("Bearer ") ? auth.slice(7) : (url.searchParams.get("token") || "");
   const userId = await getUserId(token, env);
 
+  // ---------- 0. GET /geo：返回访问者的网络出口信息（国家 / 省州 / 城市 / IP）----------
+  // 供前台「数据看板」记录用户来源地区。只返回调用者自己的信息，不查库、不读他人数据。
+  if (method === "GET" && path === "geo") {
+    const cf = request.cf || {};
+    return json({
+      ip: request.headers.get("CF-Connecting-IP") || "",
+      country: (cf.country || cf.countryCode || "").toString(),
+      region: (cf.region || cf.regionCode || "").toString(),
+      city: (cf.city || "").toString(),
+    }, 200, CORS);
+  }
+
 // 读取前台公开浏览开关（site_settings.public_access），带 60 秒时间戳缓存避免每次查库
 let _pubVal = false;
 let _pubAt = 0;

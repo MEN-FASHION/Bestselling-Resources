@@ -192,14 +192,38 @@
       maybeBoot();
       return;
     }
+    // 访问统计（后台「数据看板」）：登记本次进入「视觉专区」的访问与停留时长
+    if (window.Common && Common.visit) Common.visit.track("visual");
+
     // 读取该用户的前端可见专区白名单（frontend_zones，独立于后端 manage_zones）
     SB.myFrontendZones().then((z) => {
       myZones = z;
       if (window.Common && Common.zones) Common.zones.setMine(myZones);
       refreshAuthUI();
       applyZoneNav();
+      // 默认落地专区：已登录且账号可见「趋势上升榜」时，本次会话首次打开站点直接进入榜单页
+      maybeLandOnRank(myZones);
     }).catch(() => { myZones = null; if (window.Common && Common.zones) Common.zones.setMine(null); refreshAuthUI(); });
     maybeBoot();
+  }
+
+  // 默认落地专区：把「趋势上升榜」作为打开站点后的默认专区。
+  // 规则：①仅已登录 ②账号可见榜单专区（受全局开关 + 用户级白名单约束）③同一会话只落地一次
+  //      —— 之后从顶部菜单点回「视觉专区」不会再被弹走；退出登录后重置，下次登录仍默认进榜单。
+  function maybeLandOnRank(myZones) {
+    try {
+      if (window.__landChecked) return;
+      window.__landChecked = true;
+      if (sessionStorage.getItem("nl_landed")) return;
+      if (location.hash) return;                                  // 带锚点（指定到某专区某位置）时不跳
+      const qs = new URLSearchParams(location.search);
+      if (qs.get("zone") || qs.get("cat") || qs.get("noland")) return;  // 显式指定专区/类目时不跳
+      if (zoneVis && zoneVis.rank === false) return;              // 全局已关闭榜单专区 → 不落地
+      const canSee = (!myZones || !myZones.length) ? true : myZones.indexOf("rank") !== -1;
+      if (!canSee) return;                                        // 账号未授权榜单专区 → 留在视觉专区
+      sessionStorage.setItem("nl_landed", "1");
+      location.replace("rank.html");
+    } catch (e) { /* 落地失败就留在视觉专区，不影响使用 */ }
   }
 
   function refreshAuthUI() {
@@ -966,7 +990,11 @@
     $("#auth-title").textContent = authMode === "login" ? "访客登录" : "注册账号";
     $("#auth-submit").textContent = authMode === "login" ? "进入网站" : "注册并进入";
   };
-  $("#logout-btn").onclick = async () => { await SB.signOut(); refreshAuthUI(); };
+  $("#logout-btn").onclick = async () => {
+    await SB.signOut();
+    try { sessionStorage.removeItem("nl_landed"); } catch (e) {}   // 退出后重置落地标记：下次登录仍默认进榜单
+    refreshAuthUI();
+  };
 
   // ---------- 修改密码（安全设置） ----------
   const pwdModal = $("#pwd-modal");

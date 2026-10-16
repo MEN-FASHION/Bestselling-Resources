@@ -546,7 +546,10 @@ function bindArticleModalClose() {
     SB.onAuth((session) => {
       window.__loggedIn = !!session;
       refreshUI();
+      if (session && window.Common && Common.visit) Common.visit.track("marketing");
     });
+    // 访问统计（后台「数据看板」）：登记本次进入专区的访问与停留时长
+    SB.getSession().then((s) => { if (s && window.Common && Common.visit) Common.visit.track("marketing"); }).catch(() => {});
 
     $("#login-form").addEventListener("submit", onLogin);
     bindEmailSuggest();

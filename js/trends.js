@@ -76,7 +76,10 @@
     SB.onAuth((session) => {
       window.__loggedIn = !!session;
       refreshUI();
+      if (session && window.Common && Common.visit) Common.visit.track("trend");
     });
+    // 访问统计（后台「数据看板」）：登记本次进入专区的访问与停留时长
+    SB.getSession().then((s) => { if (s && window.Common && Common.visit) Common.visit.track("trend"); }).catch(() => {});
     // 兜底：异常情况下最多等3s后揭开遮罩
     setTimeout(hideSplash, 3000);
 
