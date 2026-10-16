@@ -1566,6 +1566,13 @@ async removeTrendRecord(id) {
         if (code === "PGRST202" || code === "42883") diag = "missing_function";
         else if (code === "PGRST301" || code === "PGRST302") diag = "not_authenticated";
         else if (code === "42501" || code === "PGRST402") diag = "forbidden";
+        // 42803 等 SQL 执行类错误（错误码 42xxx = "语法错误或访问规则违反"）：
+        // 这类错误是「函数内部那条 SQL 自己写错了」，**与账号权限无关**，
+        // 但报文里常带 "not allowed" / "denied" 字样，若不单独归类就会被误判成 forbidden（让用户以为要去改权限）。
+        // 典型实例：统计脚本里 `group by 1, 2, 3` 引用输出列位置，而该输出列里含聚合函数 →
+        // 数据库返回 42803 "aggregate functions are not allowed in GROUP BY"。
+        // → 必须放在通用的 permission 判断之前，否则会被吞掉。
+        else if (/^42[0-9]{3}$/.test(code) || /not allowed in group by|grouping error|syntax error at|invalid input syntax/i.test(raw)) diag = "sql_exec";
         else if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
         else if (/no api key found|no `apikey`|apikey request header/i.test(raw)) diag = "no_api_key";
         else if (/not authenticated|jwt|invalid token|PGRST301|401/i.test(raw)) diag = "not_authenticated";
@@ -1615,6 +1622,13 @@ async removeTrendRecord(id) {
       else if (m.ok === false && !m.http) out.verdict = "请求没能抵达数据库（浏览器层被拦：预检/CORS/网络），与账号权限无关。";
       else if (m.ok === false) out.verdict = "数据库网关拒绝了请求（密钥或授权问题），返回码 " + (m.code || "无") + "。";
       else if (d.ok) out.verdict = d.empty ? "接口连通，但还没有访问记录：到前台页面登录后打开一次，再回来看板。" : "接口连通且有数据，看板应能正常显示。";
+      // 函数内部 SQL 自身报错（42xxx）：与账号权限无关，必须重跑统计脚本
+      else if (d.diag === "sql_exec") out.verdict = "数据库执行统计接口时报错（错误码 " + (d.code || "无") + "）：统计脚本内部那段查询写错了，请把仓库里 tools/setup_analytics.sql 整段重新执行一次（与账号权限无关）。";
+      else if (d.diag === "forbidden") out.verdict = "登录用户没有统计接口的执行授权：请重跑 tools/setup_analytics.sql（其中含授权语句）。";
+      else if (d.diag === "missing_function") out.verdict = "数据库里还没有统计接口（或接口缓存未刷新）：请先执行 tools/setup_analytics.sql。";
+      else if (d.diag === "blocked") out.verdict = "仅看板接口这一层失败：请求被浏览器/网络层拦下（与账号权限无关），请强刷页面、关闭代理或拦截插件后再试。";
+      else if (d.diag === "not_authenticated") out.verdict = "登录状态已失效：请重新登录后再试。";
+      else if (d.diag === "no_api_key") out.verdict = "页面未携带访问密钥：请核对配置里的地址与密钥（与账号权限无关）。";
       else out.verdict = "仅看板接口这一层失败，其余读写都正常：返回码 " + (d.code || "无") + "（" + d.diag + "），请把此行连同返回码反馈。";
       try { console.info("[看板诊断] 连通性自检：", out.verdict, out); } catch (e) {}
       return out;

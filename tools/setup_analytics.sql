@@ -1,6 +1,6 @@
 -- ============================================================
 -- TREND BANK · 数据看板（访问统计 / 用户增长 / 地区分布）
--- 版本：20261016E
+-- 版本：20261016H
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「用户从哪来、有多少、在干什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 停留时长 / IP / 国家地区）
@@ -174,7 +174,7 @@ begin
   select jsonb_build_object(
     -- ===== 本次调用元信息（便于确认"服务端认为你是谁"） =====
     'meta', jsonb_build_object(
-      'script', '20261016E',
+      'script', '20261016H',
       'uid', v_uid::text,
       'role', coalesce(v_role, ''),
       'isSuper', true
@@ -240,7 +240,15 @@ begin
           'durTotal', coalesce(sum(duration_sec), 0)::int
         ) as x
         from public.visit_logs
-        group by 1, 2, 3
+        -- ⚠️ 必须按「表达式」分组，不能用 group by 1,2,3：
+        -- 本子查询的输出只有一列（jsonb_build_object(...) as x），
+        -- 而 group by 序号指的是「输出列的位置」。group by 2 会因为「select 列表里没有第 2 列」
+        -- 直接报错 42803（GROUP BY position 2 is not in select list）—— 而且每次调用都会报，
+        -- 导致看板接口永远 400、页面读不到任何数据。
+        -- 该错误只在函数被调用（首次执行）时抛出，所以"函数是否存在"的自检会显示为已建好，掩盖这个问题。
+        group by coalesce(nullif(country, ''), '未知'),
+                 coalesce(nullif(region, ''), nullif(country, ''), '未知'),
+                 coalesce(nullif(city, ''), '')
       ) t
     ), '[]'::jsonb),
     -- ===== 最近活跃（谁、在哪个专区、停留多久、从哪个地区来） =====

@@ -174,12 +174,24 @@ function loadSB(opts) {
     [{ code: "", message: "No API key found in request", status: 401 }, "no_api_key", "未携带访问密钥"],
     [{ code: "42501", message: "permission denied for function admin_dashboard", status: 403 }, "forbidden", "无执行权限"],
     [{ code: "PGRST301", message: "JWT expired", status: 401 }, "not_authenticated", "登录态失效"],
+    // 2026-10-16 生产故障：统计脚本内 group by 序号 → 42803 aggregate functions are not allowed in GROUP BY
+    [{ code: "42803", message: "aggregate functions are not allowed in GROUP BY", status: 400 }, "sql_exec", "统计脚本内部 SQL 报错"],
   ];
   for (const [err, want, label] of cases) {
     console.log("\n[归类] " + label);
     const { SB } = loadSB({ dashError: err });
     const r = await SB.connProbe();
     ok(r.dashboard.diag === want, "归类为 " + want, "实际 " + r.dashboard.diag);
+  }
+
+  // --- 10b. sql_exec 结论不能把用户引向「去改权限」，要说清是脚本内部报错 ---
+  {
+    console.log("\n[10b] SQL 执行类错误的自检结论");
+    const { SB } = loadSB({ dashError: { code: "42803", message: "aggregate functions are not allowed in GROUP BY", status: 400 } });
+    const r = await SB.connProbe();
+    ok(/执行统计接口时报错/.test(r.verdict), "结论说明是「执行统计接口时报错」", r.verdict);
+    ok(/与账号权限无关/.test(r.verdict), "结论明确与账号权限无关");
+    ok(/setup_analytics\.sql/.test(r.verdict), "结论指名重跑统计脚本");
   }
 
   // --- 11. adminDashboard：没有令牌时不该发请求 ---
@@ -208,6 +220,8 @@ function loadSB(opts) {
     console.log("\n[13] 页面提示文案检查（admin-perm.js）");
     const perm = fs.readFileSync(path.join(ROOT, "js", "admin-perm.js"), "utf8");
     ok(/blocked:/.test(perm), "存在 blocked 分类文案");
+    ok(/sql_exec:/.test(perm), "存在 sql_exec（数据库执行报错）分类文案");
+    ok(/与账号权限无关/.test(perm.slice(perm.indexOf("sql_exec:"), perm.indexOf("sql_exec:") + 400)), "sql_exec 文案明确与账号权限无关");
     ok(/与账号权限无关/.test(perm), "文案明确「与账号权限无关」");
     ok(/跨域|CORS|预检/.test(perm), "文案说明是浏览器层拦截");
     const idx = perm.indexOf("async function dashSelfCheck");

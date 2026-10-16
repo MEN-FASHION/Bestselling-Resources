@@ -768,6 +768,10 @@ const DASH_ERR_TEXT = {
   not_authenticated: "登录状态已失效：请重新登录后再打开权限管理。",
   no_api_key: "页面没有携带访问密钥（配置文件未生效或用错了密钥）：请求在数据库网关就被拒绝，与账号权限无关。请确认 js/config.js 里的数据库地址与访问密钥都已按当前项目填好，然后强刷页面（Ctrl+F5）。",
   forbidden: "当前账号没有查看看板的权限（仅超级管理员可看）。",
+  // 函数内部那条 SQL 自己报错（错误码 42xxx）：与账号权限无关，必须重跑统计脚本。
+  // 典型实例：统计脚本里用 `group by 1,2,3` 引用输出列位置，而该输出列含聚合函数 →
+  // 数据库报 42803「aggregate functions are not allowed in GROUP BY」。
+  sql_exec: "数据库执行统计接口时内部报错（统计脚本里那段查询写错了）—— 与账号权限无关。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行、不会清数据），等约 10 秒后点「刷新」。",
   blocked: "请求没能抵达数据库（浏览器层被拦：跨域预检被拒 / CORS / 网络中断）—— 这属于网络与站点配置问题，与账号权限无关。请先强刷页面（Ctrl+F5）重试；若仍失败，请点「看板自检」把结论反馈。",
   other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请点「看板自检」查看结论，或确认 tools/setup_analytics.sql 已在数据库执行过。"
 };
@@ -775,7 +779,7 @@ const DASH_ERR_TEXT = {
 // 账号确实是超级管理员、却读到「无权限」时的专属提示：
 // 这种情况基本不是账号权限问题，而是数据库里的统计接口没建好 / 接口授权没生效，
 // 必须把话说清楚，否则会误导管理员去改权限（白折腾）。
-const DASH_ERR_TEXT_SUPER_FIX = "当前账号是超级管理员，但数据库里的数据看板接口拒绝了本次读取 —— 多半是统计接口还没建好、或接口授权未生效（不是账号权限问题）。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次，等约 10 秒后点「刷新」。";
+const DASH_ERR_TEXT_SUPER_FIX = "当前账号是超级管理员，但数据库里的数据看板接口拒绝了本次读取 —— 这属于统计接口本身的问题（接口没建好、授权未生效，或接口内部那条查询报错），不是账号权限问题。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行、不会清数据），等约 10 秒后点「刷新」。若仍失败，请点「看板自检」，它会直接告诉你断在哪一层。";
 
 function dashErrText(reason) { return DASH_ERR_TEXT[reason] || DASH_ERR_TEXT.other; }
 
