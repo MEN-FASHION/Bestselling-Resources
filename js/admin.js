@@ -520,7 +520,17 @@ function bindAccess() {
 document.addEventListener("DOMContentLoaded", () => {
     // 先注册登录状态监听：保证任何后续界面绑定异常都不影响登录进入后台
     let enteredUserId = null; // 防重入：只跟踪真正切换的登录用户，避免 token 刷新触发重复 enterPanel
-    SB.onAuth(async (session) => {
+
+    // 未登录兜底：显示登录页、隐藏后台、揭开加载遮罩
+    function showLoginView() {
+      $("#admin-login").classList.remove("hidden");
+      $("#admin-panel").classList.add("hidden");
+      const sp = document.getElementById("boot-splash");
+      if (sp) sp.classList.add("hidden");
+    }
+
+    // 统一的登录态处理：启动主动读取 + 后续登录态变化共用同一份逻辑
+    async function applyAuthState(session) {
       currentUser = session ? session.user : null;
       // 先异步加载当前用户角色/专区，再进入后台，避免 enterPanel 读到尚未就绪的角色而误判为"访客无权限"
       await refreshUserBadge();
@@ -534,14 +544,31 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         enteredUserId = null;
         panelReady = false; // 登出后允许下次登录重新进入后台
-        // 未登录：显示登录页，隐藏后台
-        $("#admin-login").classList.remove("hidden");
-        $("#admin-panel").classList.add("hidden");
+        currentRole = null; // 清掉上一位用户的角色，避免残留角色影响下次登录判定
+        showLoginView();
       }
       // 鉴权判定完成，揭开加载遮罩，避免登录页闪现
+      window.__authReady = true;
       const sp = document.getElementById("boot-splash");
       if (sp) sp.classList.add("hidden");
-    });
+    }
+
+    SB.onAuth((session) => { applyAuthState(session); });
+
+    // 【关键修复】本地化后的登录库（vendor/supabase.js）不会在页面加载时主动推送"首次登录态"：
+    // 当浏览器里没有有效会话时（例如刚点过「退出」后刷新），不会有任何登录态回调，
+    // 登录页因此永远不显示、页面一直卡在加载遮罩 —— 表现为"退出后登录界面进不去"。
+    // 这里在启动时显式读一次登录态，与上面的订阅共用同一份处理逻辑。
+    (async () => {
+      let session = null;
+      try { session = await SB.getSession(); } catch (e) { session = null; }
+      applyAuthState(session);
+    })();
+
+    // 兜底：3 秒内仍未拿到登录态，则先放出登录页，避免一直卡在加载遮罩
+    setTimeout(() => {
+      if (!window.__authReady) { window.__authReady = true; showLoginView(); }
+    }, 3000);
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
     [bindLogin, bindLogout, bindChangepwd, bindToken, bindManage, bindFavCats,
      bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindMarketing, bindSuperTabs, bindRankPanel]
