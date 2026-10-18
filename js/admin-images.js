@@ -279,10 +279,14 @@ async function loadCatMgmt() {
       currentActiveCats = await SB.listActiveCats();
       currentCatOrder = await SB.listActiveCatsWithOrder();
     } catch (e) { currentActiveCats = []; currentCatOrder = []; }
+    /* 已删除清单：内置候选清单（config.js 写死）与「图片里出现过的类目」都会把删掉的名字带回来，
+       必须在这里扣掉，否则删了又重新出现（看起来"类目删不掉"）。 */
+    try { catRemoved = await SB.getCatRemoved(); } catch (e) { catRemoved = catRemoved || []; }
     // 合并三类：候选类目 + 前台启用类目 + 图片中实际出现的类目（含误加未入库的"露脸模特"这类残留）
     let usedCats = [];
     try { usedCats = await SB.listUsedCats(); } catch (e) { usedCats = []; }
     const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(currentActiveCats).concat(usedCats));
+    catRemoved.forEach(n => opts.delete(n));
     const box = $("#cat-mgmt-list");
     box.innerHTML = "";
     [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
@@ -298,26 +302,57 @@ async function loadCatMgmt() {
         if (!confirm("确定删除类目「" + name + "」吗？\n删除后会同步清空所有归属该类目的图片的类目字段（图片本身保留）。")) return;
         try {
           await SB.removeCategory(name);
-          const imgs = await SB.listImages(null);
-          let n = 0;
-          for (const img of imgs) {
-            if ((img.category || "") === name) { await SB.updateImageField(img.id, "category", ""); n++; }
-          }
+          /* 一次性清空图片上的该类目（数据库函数；未建库时自动分批清理，单条失败不中断） */
+          const n = await SB.clearCategoryOnImages(name);
           // 同步从常用类目移除
           const fav = (currentFavCats || []).filter(c => c !== name);
           try { await SB.updateFavCats(fav); currentFavCats = fav; } catch (e) {}
+          /* 内置候选清单里的名字会自己回来 → 记进「已删除清单」把它压住，才算是真删掉 */
+          if ((window.CONFIG.CATEGORY_OPTIONS || []).includes(name) && catRemoved.indexOf(name) < 0) {
+            catRemoved = catRemoved.concat([name]);
+            try { await SB.setCatRemoved(catRemoved); } catch (e) { /* 记录失败不影响本次删除 */ }
+          }
           sbToast("已删除类目「" + name + "」" + (n ? "，清空 " + n + " 张图片" : ""));
           await loadCatMgmt(); await loadCats(); await loadFavCats(); await loadManage();
+          await refreshTagConsumers();
         } catch (err) { sbToast("删除失败：" + (err.message || ""), false); }
       };
       if (isUsedOnly) { /* 残留类目：默认不勾选，仅展示以便删除 */ }
       box.appendChild(label);
     });
+    renderCatRemovedHint(box);
     renderCatOrder();
     $("#cat-mgmt-save").disabled = true;
   }
 
+/* 已删除的内置类目：列出来，点一下即可恢复（避免"删过头"没有退路） */
+function renderCatRemovedHint(box) {
+    const old = document.getElementById("cat-removed-hint");
+    if (old) old.remove();
+    if (!catRemoved || !catRemoved.length) return;
+    const p = document.createElement("p");
+    p.id = "cat-removed-hint";
+    p.className = "hint";
+    p.innerHTML = "已删除 " + catRemoved.length + " 个类目（恢复后重新出现在上方清单）：" +
+      catRemoved.map(n => '<button type="button" class="link-btn" data-restore="' + escAttr(n) + '">' + escHtml(n) + " · 恢复</button>").join("");
+    p.querySelectorAll("[data-restore]").forEach(b => {
+      b.onclick = async (ev) => {
+        ev.preventDefault();
+        const n = b.getAttribute("data-restore");
+        catRemoved = catRemoved.filter(x => x !== n);
+        try { await SB.setCatRemoved(catRemoved); sbToast("已恢复类目：「" + n + "」"); await loadCatMgmt(); }
+        catch (e) { sbToast("恢复失败", false); }
+      };
+    });
+    box.appendChild(p);
+  }
+
 function addOptionToCatMgmt(name) {
+    // 重新加回来的类目，从「已删除清单」里移出，否则它会被一直压住
+    if (catRemoved && catRemoved.indexOf(name) >= 0) {
+      catRemoved = catRemoved.filter(x => x !== name);
+      try { SB.setCatRemoved(catRemoved); } catch (e) { /* 忽略 */ }
+    }
     // 若已存在则忽略；否则添加到勾选列表并标记待保存
     const box = $("#cat-mgmt-list");
     if (box.querySelector(`input[value="${CSS.escape(name)}"]`)) return;
@@ -859,6 +894,7 @@ async function renameTagDef(d, type, used) {
         if (used > 0) await SB.renameTagDefAndImages(type, d.name, newName);
         sbToast("已重命名：" + newName);
         await loadTagDefs();
+        await refreshTagConsumers();
       } catch (e) { sbToast("重命名失败：" + (e.message || ""), false); }
       return;
     }
@@ -871,6 +907,7 @@ async function renameTagDef(d, type, used) {
       if (used > 0) await SB.renameTagDefAndImages(type, d.name, newName);
       sbToast("已重命名：" + newName);
       await loadTagDefs();
+      await refreshTagConsumers();
     } catch (e) { sbToast("重命名失败：" + (e.message || ""), false); }
   }
 
@@ -923,30 +960,43 @@ async function addTagDef(type, input, groupSelect) {
       input.value = "";
       sbToast("已添加标签：" + fullName + (type === "scene" ? "（" + (group === "indoor" ? "室内" : "室外") + "）" : ""));
       await loadTagDefs();
+      await refreshTagConsumers();
     } catch (e) { sbToast("添加失败：" + (e.message || ""), false); }
   }
 
 async function deleteTagDef(def, type, used) {
     const tname = def.name;
-    if (!confirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并移除。" : "？"))) return;
+    if (!confirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并从这些图片上移除。" : "？"))) return;
     try {
+      /* 顺序：先把图片上的该标签清掉（数据库函数一次完成；函数未建库时自动分批清理，单条失败不中断），
+         再删标签定义本身 —— 反过来的话清除时就用不到标签名了。
+         旧写法是「拉全表 → 逐张更新 → 最后才删定义」，任意一张失败就整批中止，标签定义反而永远删不掉。 */
+      let n = 0;
       if (used > 0) {
-        const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags" };
-        const field = FIELD_FOR_DEF[type];
-        if (field) {
-          const imgs = await SB.listImages(null);
-          let n = 0;
-          for (const img of imgs) {
-            if (!Array.isArray(img[field]) || !img[field].includes(tname)) continue;
-            await SB.updateImageField(img.id, field, img[field].filter(t => t !== tname));
-            n++;
-          }
-        }
+        n = await SB.removeTagFromImages(type, tname);
+        if (SB._lastBulkFailed) sbToast("有 " + SB._lastBulkFailed + " 张图片未能清除（权限或网络原因），其余已处理", false);
       }
       await SB.deleteTagDef(def.id);
-      sbToast("已删除标签：" + tname);
+      sbToast("已删除标签：" + tname + (n ? "，并从 " + n + " 张图片上移除" : ""));
       await loadTagDefs();
+      await refreshTagConsumers();   /* 其它读「标签管理」数据的地方一起刷新 */
     } catch (e) { sbToast("删除失败：" + (e.message || ""), false); }
+  }
+
+/* 标签 / 类目 增删改后，把其它「读标签管理数据」的面板一起刷新，
+   避免出现「这边删了、那边还挂着」的不一致（智能打标候选、类目清单、常用类目、榜单类目…） */
+async function refreshTagConsumers() {
+    const jobs = [
+      () => (typeof loadSmartAll === "function" ? loadSmartAll() : null),   /* 智能打标：类目 / 标签候选 */
+      () => (typeof loadCats === "function" ? loadCats() : null),           /* 前台类目菜单 */
+      () => (typeof loadFavCats === "function" ? loadFavCats() : null),     /* 常用类目 */
+      () => (typeof loadManage === "function" ? loadManage() : null),       /* 图片管理：类目清单 */
+      () => (typeof loadCatMgmt === "function" ? loadCatMgmt() : null),     /* 类目管理勾选清单 */
+      () => (typeof loadRankCats === "function" ? loadRankCats() : null),   /* 趋势上升榜：类目下拉 */
+    ];
+    for (const job of jobs) {
+      try { await job(); } catch (e) { /* 单个面板刷新失败不影响其它 */ }
+    }
   }
 
 // ================= 数据看板（各类标签统计） =================
@@ -1195,7 +1245,7 @@ function escAttr(s) { return escHtml(s); }
 
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    bindUpload, addFiles, removePending, stripExt, handleUrlMatch, renderPending, fmtSize, doUpload, loadCats, bindFavCats, loadFavCats, saveFavCats, bindCatMgmt, loadCatMgmt, addOptionToCatMgmt, renderCatOrder, moveCatOrder, saveCatMgmt, bindManage, loadManage, removeMgrSentinel, buildManageCell, setupMgrSentinel, loadMgrNextPage, mgrPageAllConcat, ensureManageLoaded, renderManageGrid, updateBatchBtn, getTagGroups, openTagModal, closeTagModal, checkedTags, applyTags, clearTags, loadFrontendDims, renderFrontendDims, loadTagDefs, renderTagDefs, makeTagdefChip, renameTagDef, bindTagDefs, addTagDef, deleteTagDef, bindDashboard, buildDashCatFilter, loadDashboard, renderHBars, toggleSelectAll, batchDelete, refreshAfterImageChange, removeImage, escHtml, escAttr, sbToast
+    bindUpload, addFiles, removePending, stripExt, handleUrlMatch, renderPending, fmtSize, doUpload, loadCats, bindFavCats, loadFavCats, saveFavCats, bindCatMgmt, loadCatMgmt, addOptionToCatMgmt, renderCatOrder, moveCatOrder, saveCatMgmt, bindManage, loadManage, removeMgrSentinel, buildManageCell, setupMgrSentinel, loadMgrNextPage, mgrPageAllConcat, ensureManageLoaded, renderManageGrid, updateBatchBtn, getTagGroups, openTagModal, closeTagModal, checkedTags, applyTags, clearTags, loadFrontendDims, renderFrontendDims, loadTagDefs, renderTagDefs, makeTagdefChip, renameTagDef, bindTagDefs, addTagDef, deleteTagDef, refreshTagConsumers, bindDashboard, buildDashCatFilter, loadDashboard, renderHBars, toggleSelectAll, batchDelete, refreshAfterImageChange, removeImage, escHtml, escAttr, sbToast
   });
 
 })();

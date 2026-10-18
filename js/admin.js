@@ -24,6 +24,9 @@ let currentFavCats = [];
 // 当前管理员常用类目
 let currentActiveCats = [];
 
+// 已被删除的类目名（压住 config.js 内置候选清单，否则删完会被带回来）
+let catRemoved = [];
+
 // 前台类目（categories 表）
 let currentCatOrder = [];
 

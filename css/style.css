@@ -2733,3 +2733,14 @@ html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
 .pbb-lab { opacity: .72; }
 .perm-batch-bar .input { height: 28px; padding: 0 6px; font-size: 12.5px; max-width: 150px; }
 .perm-th-check { width: 34px; text-align: center; }
+
+/* 趋势上升榜后台：前台显隐「眼睛」图标 + 行内文字按钮 */
+.rkadm-icon--eye { font-size: 13px; line-height: 1; color: var(--gold); opacity: .9; }
+.rkadm-icon--eye.off { color: var(--sub); opacity: .5; }
+.rkadm-icon--eye:hover { opacity: 1; }
+.link-btn {
+  border: 0; background: none; padding: 0 2px; margin: 0 2px;
+  color: var(--gold); cursor: pointer; font: inherit; text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link-btn:hover { opacity: .8; }

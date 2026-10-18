@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261016L">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261016L">
+<link rel="stylesheet" href="css/style.css?v=20261016M">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261016M">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -901,7 +901,7 @@
         <div class="rkadm-head">
           <div>
             <h3>趋势上升榜 · 榜单管理工作台</h3>
-            <p class="hint">左边维护<b>国家站点</b>与<b>期次 / 频次</b>，右边就是前台的样子 —— 改完即时可见。名称直接点一下就能改。</p>
+            <p class="hint">左边维护<b>国家站点</b>与<b>期次 / 频次</b>，右边就是前台的样子 —— 改完即时可见。名称直接点一下就能改；<b>每行左边的 ◉ / ◌ 决定该站点 / 该周次在前台是否展示</b>（隐藏后前台不再出现，数据保留，随时可恢复）。</p>
           </div>
           <div class="rkadm-head-act">
             <button id="rkadm-refresh" class="btn-ghost" type="button">刷新数据</button>
@@ -912,7 +912,7 @@
         <div class="rkadm-split">
           <div class="rkadm-col">
             <section class="rkadm-sec">
-              <h4>国家站点 <span class="rkadm-tip">点名称即改，↑↓ 排序</span></h4>
+              <h4>国家站点 <span class="rkadm-tip">点名称即改，↑↓ 排序，◉/◌ 控制前台是否展示</span></h4>
               <div class="rkadm-add">
                 <input id="rank-site-new" type="text" placeholder="输入站点名，例如：美国">
                 <button id="rank-site-add" class="btn-primary small" type="button">＋ 新增</button>
@@ -928,7 +928,7 @@
               <div id="rank-group-list" class="rkadm-list"></div>
             </section>
             <section class="rkadm-sec">
-              <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度</span></h4>
+              <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度 · ◉/◌ 控制前台是否展示</span></h4>
               <div id="rank-period-list" class="rkadm-list"></div>
             </section>
           </div>
@@ -1258,24 +1258,24 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261016L"></script>
-  <script src="vendor/quill.js?v=20261016L"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261016L"></script>
-  <script src="vendor/qrcode.min.js?v=20261016L"></script>
-  <script src="js/config.js?v=20261016L"></script>
-  <script src="js/supabase.js?v=20261016L"></script>
+  <script src="vendor/supabase.js?v=20261016M"></script>
+  <script src="vendor/quill.js?v=20261016M"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261016M"></script>
+  <script src="vendor/qrcode.min.js?v=20261016M"></script>
+  <script src="js/config.js?v=20261016M"></script>
+  <script src="js/supabase.js?v=20261016M"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261016L"></script>
-  <script src="js/admin-images.js?v=20261016L"></script>
-  <script src="js/admin-smart.js?v=20261016L"></script>
-  <script src="js/admin-trend.js?v=20261016L"></script>
-  <script src="js/admin-notice.js?v=20261016L"></script>
-  <script src="js/admin-marketing.js?v=20261016L"></script>
-  <script src="js/admin-tasks.js?v=20261016L"></script>
-  <script src="js/admin-bestseller.js?v=20261016L"></script>
-  <script src="js/admin-perm.js?v=20261016L"></script>
-  <script src="js/admin-pool.js?v=20261016L"></script>
-  <script src="js/admin-rank.js?v=20261016L"></script>
+  <script src="js/admin.js?v=20261016M"></script>
+  <script src="js/admin-images.js?v=20261016M"></script>
+  <script src="js/admin-smart.js?v=20261016M"></script>
+  <script src="js/admin-trend.js?v=20261016M"></script>
+  <script src="js/admin-notice.js?v=20261016M"></script>
+  <script src="js/admin-marketing.js?v=20261016M"></script>
+  <script src="js/admin-tasks.js?v=20261016M"></script>
+  <script src="js/admin-bestseller.js?v=20261016M"></script>
+  <script src="js/admin-perm.js?v=20261016M"></script>
+  <script src="js/admin-pool.js?v=20261016M"></script>
+  <script src="js/admin-rank.js?v=20261016M"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

@@ -15,6 +15,9 @@
   let rankPeriods = [];   // 由上传记录聚合：[{label,type,rows,batches}]
   let rankGroups = [];    // 地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
   const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
+  /* 前台显隐：哪些国家站点 / 周次在前台展示（空数组 = 全部展示）
+     存于 site_settings.frontend_dims.rank_hidden，随现有配置列读写 */
+  let rankHidden = { sites: [], periods: [] };
 
   const $ = (s) => document.querySelector(s);
 
@@ -106,6 +109,40 @@
   }
 
   /* ---------- 站点清单 ---------- */
+  /* ---------- 前台显隐（站点 / 周次） ---------- */
+  async function loadRankHidden() {
+    try { rankHidden = await SB.getRankHidden(); }
+    catch (e) { rankHidden = { sites: [], periods: [] }; }
+    rankHidden = { sites: rankHidden.sites || [], periods: rankHidden.periods || [] };
+  }
+  function rankHiddenOn(kind, name) {
+    return (rankHidden[kind] || []).indexOf(name) >= 0;
+  }
+  async function toggleRankHidden(kind, name) {
+    const arr = (rankHidden[kind] || []).slice();
+    const i = arr.indexOf(name);
+    if (i >= 0) arr.splice(i, 1); else arr.push(name);
+    const patch = {}; patch[kind] = arr;
+    try {
+      rankHidden = await SB.setRankHidden(patch);
+      if (kind === "sites") renderRankSites(); else renderRankPeriods();
+      fillRankPvControls();
+      rankPreviewRefresh();
+      sbToast(i >= 0 ? "已恢复前台展示：" + name : "已在前台隐藏：" + name, true);
+    } catch (e) { sbToast((e && e.message) || "保存失败", false); }
+  }
+  /* 眼睛图标：前台是否展示（点一下切换） */
+  function rankEyeBtn(kind, name) {
+    const on = !rankHiddenOn(kind, name);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "rkadm-icon rkadm-icon--eye" + (on ? "" : " off");
+    b.textContent = on ? "◉" : "◌";
+    b.title = on ? "前台展示中 · 点击隐藏（前台不再出现，数据保留）" : "前台已隐藏 · 点击恢复展示";
+    b.onclick = () => toggleRankHidden(kind, name);
+    return b;
+  }
+
   async function loadRankSites() {
     try { rankSites = await SB.listRankSites(); } catch (e) { rankSites = []; }
     renderRankSites();
@@ -181,7 +218,7 @@
         catch (e) { sbToast("删除失败", false); }
       };
 
-      row.appendChild(name); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+      row.appendChild(name); row.appendChild(rankEyeBtn("sites", s.name)); row.appendChild(up); row.appendChild(down); row.appendChild(del);
       box.appendChild(row);
     });
   }
@@ -857,7 +894,7 @@
         catch (e) { sbToast((e && e.message) || "删除失败", false); }
       };
 
-      row.appendChild(type); row.appendChild(name); row.appendChild(cnt); row.appendChild(del);
+      row.appendChild(type); row.appendChild(name); row.appendChild(rankEyeBtn("periods", p.label)); row.appendChild(cnt); row.appendChild(del);
       box.appendChild(row);
     });
   }
@@ -889,7 +926,10 @@
       return sel.value;
     };
     rankPv.cat = mk($("#rkadm-pv-cat"), rankCats, rankPv.cat, "全部类目") || "";
-    rankPv.site = mk($("#rkadm-pv-site"), rankSites.map((s) => s.name), rankPv.site, "全部站点") || "";
+    /* 已在前台隐藏的站点 / 周次不进预览下拉：预览即前台所见 */
+    const pvSites = rankSites.map((s) => s.name).filter((n) => !rankHiddenOn("sites", n));
+    const pvPeriods = rankPeriods.map((p) => p.label).filter((n) => !rankHiddenOn("periods", n));
+    rankPv.site = mk($("#rkadm-pv-site"), pvSites, rankPv.site, "全部站点") || "";
     /* 地区分组也进预览下拉：选「地区 · 欧洲」= 整区对比 */
     const siteSel = $("#rkadm-pv-site");
     if (siteSel) {
@@ -897,14 +937,14 @@
       if (rankGroups.filter((g) => g.name).length) {
         let html = '<option value="">全部站点</option>';
         rankGroups.filter((g) => g.name).forEach((g) => { html += '<option value="g:' + escAttr(g.name) + '">地区 · ' + escHtml(g.name) + '</option>'; });
-        rankSites.forEach((s) => { html += '<option value="' + escAttr(s.name) + '">' + escHtml(s.name) + '</option>'; });
+        pvSites.forEach((n) => { html += '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>'; });
         siteSel.innerHTML = html;
         siteSel.value = (keep && Array.prototype.some.call(siteSel.options, (o) => o.value === keep)) ? keep : "";
         rankPv.site = siteSel.value;
       }
     }
-    rankPv.period = mk($("#rkadm-pv-period"), rankPeriods.map((p) => p.label), rankPv.period, "自动（最新）") || "";
-    if (!rankPv.period && rankPeriods.length) rankPv.period = rankPeriods[0].label;
+    rankPv.period = mk($("#rkadm-pv-period"), pvPeriods, rankPv.period, "自动（最新）") || "";
+    if (!rankPv.period && pvPeriods.length) rankPv.period = pvPeriods[0];
     const ps = $("#rkadm-pv-period");
     if (ps && rankPv.period) ps.value = rankPv.period;
   }
@@ -912,7 +952,7 @@
   /* ---------- 面板进入 ---------- */  /* ---------- 面板进入 ---------- */
   async function enterRankPanel() {
     initRankPeriodPickers();
-    await Promise.all([loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups()]);
+    await Promise.all([loadRankHidden(), loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups()]);
     if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;
     fillRankPvControls();

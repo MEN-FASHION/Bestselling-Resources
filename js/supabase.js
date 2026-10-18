@@ -2083,5 +2083,113 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "读取榜单数据失败");
       return data || [];
     },
+
+    // ============ 前台显隐（哪些国家站点 / 周次在前台展示，由后台控制） ============
+    // 存于 site_settings.frontend_dims.rank_hidden = { sites:[名…], periods:[期次…] }，随现有配置列读写，无需改表结构。
+    async getRankHidden() {
+      const clean = (a) => (Array.isArray(a) ? a : []).map((x) => String(x || "").trim()).filter(Boolean);
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_dims) return { sites: [], periods: [] };
+      const raw = data.frontend_dims.rank_hidden || {};
+      return { sites: clean(raw.sites), periods: clean(raw.periods) };
+    },
+    async setRankHidden(patch) {
+      const cur = await this.getRankHidden();
+      const p = patch || {};
+      const uniq = (a) => [...new Set((Array.isArray(a) ? a : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      const next = {
+        sites: uniq(p.sites === undefined ? cur.sites : p.sites),
+        periods: uniq(p.periods === undefined ? cur.periods : p.periods),
+      };
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error) throw new Error(error.message || "读取配置失败");
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.rank_hidden = next;    // 只改这一个键，其余配置（维度开关 / 地区分组）原样保留
+      const up = await client
+        .from("site_settings").update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (up.error) throw new Error(up.error.message || "保存显隐设置失败");
+      return next;
+    },
+
+    // 前台类目「已删除清单」：内置候选清单（config.js 写死）会把删掉的类目又带回来，
+    // 用这份清单把被删的名字压住，才能真正删掉。
+    async getCatRemoved() {
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_dims) return [];
+      const raw = data.frontend_dims.cat_removed;
+      return [...new Set((Array.isArray(raw) ? raw : []).map((x) => String(x || "").trim()).filter(Boolean))];
+    },
+    async setCatRemoved(list) {
+      const clean = [...new Set((Array.isArray(list) ? list : []).map((x) => String(x || "").trim()).filter(Boolean))];
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error) throw new Error(error.message || "读取配置失败");
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.cat_removed = clean;
+      const up = await client
+        .from("site_settings").update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (up.error) throw new Error(up.error.message || "保存类目删除记录失败");
+      return clean;
+    },
+
+    // ============ 标签 / 类目的「彻底删除」（连带清掉所有图片上的该标签） ============
+    // 旧写法是「拉全表 → 逐张更新 → 再删标签定义」：图一多就慢，且任意一张失败就整批中止，
+    // 标签定义也永远不会被删掉（表现为"标签删不掉"）。现在：
+    //   1) 优先调用数据库函数，一条 SQL 完成（快）；
+    //   2) 函数还没在库里建好时，自动退化为「只取仍带该标签的图」分批清理，单条失败不中断。
+    async removeTagFromImages(type, tagName) {
+      const FIELD_FOR_DEF = { style: "style_tags", element: "element_tags", scene: "scene_tags", shoot: "shoot_tags", skin: "skin_tags", channel: "tags" };
+      const field = FIELD_FOR_DEF[type];
+      if (!field) throw new Error("不支持的标签类型");
+      const name = String(tagName || "").trim();
+      if (!name) return 0;
+      try {
+        const { data, error } = await client.rpc("remove_tag_from_images", { p_field: field, p_tag: name });
+        if (!error) { this._lastBulkFailed = 0; return Number(data) || 0; }
+      } catch (e) { /* 函数不存在 → 走下面的兜底 */ }
+      return await this._clearFieldValue(field, name);
+    },
+    async clearCategoryOnImages(name) {
+      const v = String(name || "").trim();
+      if (!v) return 0;
+      try {
+        const { data, error } = await client.rpc("clear_image_category", { p_name: v });
+        if (!error) { this._lastBulkFailed = 0; return Number(data) || 0; }
+      } catch (e) { /* 函数不存在 → 走下面的兜底 */ }
+      return await this._clearFieldValue("category", v);
+    },
+    // 兜底清理：每轮只取「仍然带有该标签」的图片，逐条更新。
+    // 三层制动，避免在图多 / 权限受限时拖垮页面：
+    //   ① 单条失败只记数不中断（一张卡住不影响其余）；
+    //   ② 某轮一次都没成功 → 停（不会反复重试同一批）；
+    //   ③ 待处理数量没变少（服务端"成功"但实际没改，例如被策略层静默拦下）→ 停。
+    async _clearFieldValue(field, value) {
+      const PAGE = 200;
+      const isSingle = (field === "category");   // 类目是单值字段，必须走单值写入（走数组写入会写进一个空数组）
+      const NAME = { category: "category", tags: "tags", style_tags: "style_tags", element_tags: "element_tags", scene_tags: "scene_tags", shoot_tags: "shoot_tags", skin_tags: "skin_tags" };
+      const col = NAME[field] || field;
+      let ok = 0, lastLeft = Infinity;
+      const failedIds = new Set();               // 按"张"去重：同一张图被重试两次只算一次，提示里的数字才不会虚高
+      for (let round = 0; round < 200; round++) {
+        let q = client.from("images").select("*");
+        q = isSingle ? q.eq(col, value) : q.contains(col, [value]);
+        const { data, error } = await q.limit(PAGE);
+        if (error) throw new Error(error.message || "读取待清理图片失败");
+        const rows = data || [];
+        if (!rows.length) break;
+        if (rows.length >= lastLeft) break;        // 数量没减少 → 再跑也白跑
+        lastLeft = rows.length;
+        let roundOk = 0;
+        for (const img of rows) {
+          try {
+            if (isSingle) await this.setImageSingleField(img.id, col, "");
+            else await this.updateImageField(img.id, col, (Array.isArray(img[col]) ? img[col] : []).filter((t) => t !== value));
+            ok++; roundOk++;
+          } catch (e) { failedIds.add(img.id); }
+        }
+        if (!roundOk) break;
+      }
+      this._lastBulkFailed = failedIds.size;
+      return ok;
+    },
   };
 })();

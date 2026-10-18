@@ -1336,3 +1336,53 @@ create policy "admin delete marketing_articles"
     exists (select 1 from public.profiles p
             where p.user_id = auth.uid() and p.role = 'super_admin')
   );
+
+-- ============================================================
+-- 标签 / 类目的「彻底删除」：连带清理所有图片上的该标签（一条 SQL 完成）
+-- 说明：逐张更新在图片多时很慢，且任意一张失败会整批中止（表现为"标签删不掉"）。
+--       函数缺失时前端会自动退化为分批清理，因此这两段属于「可选但强烈建议」的加速项。
+-- 可重复执行（幂等）。
+-- ============================================================
+create or replace function public.remove_tag_from_images(p_field text, p_tag text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare n integer := 0;
+begin
+  if not exists (select 1 from public.profiles p
+                 where p.user_id = auth.uid() and p.role in ('admin','super_admin')) then
+    raise exception '没有权限';
+  end if;
+  if p_field not in ('tags','style_tags','element_tags','scene_tags','shoot_tags','skin_tags') then
+    raise exception '不支持的标签字段';
+  end if;
+  if coalesce(p_tag, '') = '' then return 0; end if;
+  execute format('update public.images set %I = array_remove(%I, $1) where %I @> array[$1]',
+                 p_field, p_field, p_field)
+    using p_tag;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+create or replace function public.clear_image_category(p_name text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare n integer := 0;
+begin
+  if not exists (select 1 from public.profiles p
+                 where p.user_id = auth.uid() and p.role in ('admin','super_admin')) then
+    raise exception '没有权限';
+  end if;
+  if coalesce(p_name, '') = '' then return 0; end if;
+  update public.images set category = '' where category = p_name;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+grant execute on function public.remove_tag_from_images(text, text) to authenticated;
+grant execute on function public.clear_image_category(text) to authenticated;

@@ -42,6 +42,7 @@
   var DEFAULT_SITE = "美国";  // 默认进入时优先选中的站点
   var SITE_ORDER = [];       // 站点顺序：有数据的优先，其余按后台定义顺序
   var GROUPS = [];           // 后台定义的地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
+  var HIDDEN = { sites: [], periods: [] };   // 后台控制前台显隐：这些国家站点 / 周次不在前台出现
   var SEL_GROUP = "";        // 选中的地区名；非空时按整个地区合并成一列，只能单选
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
@@ -243,6 +244,33 @@
     return (SITE_ORDER && SITE_ORDER.length) ? SITE_ORDER : (FACETS.sites || []);
   }
 
+  /* ---------------- 后台可控的前台显隐 + 单选归一化 ---------------- */
+  function siteVisible(s) { return (HIDDEN.sites || []).indexOf(s) < 0; }
+  function periodVisible(p) { return (HIDDEN.periods || []).indexOf(p) < 0; }
+  /* 把后台隐藏的国家站点 / 周次从筛选项、地区分组、当前选择里统一摘掉 */
+  function applyHiddenFilter() {
+    var before = (SEL_SITES || []).length + "|" + (SEL_PERIODS || []).length;
+    FACETS.sites = (FACETS.sites || []).filter(siteVisible);
+    FACETS.periods = sortPeriods((FACETS.periods || []).filter(periodVisible));
+    SITE_ORDER = (SITE_ORDER || []).filter(siteVisible);
+    GROUPS = (GROUPS || []).map(function (g) {
+      return { name: g.name, members: (g.members || []).filter(siteVisible) };
+    }).filter(function (g) { return g && g.name && g.members.length; });
+    if (SEL_GROUP && !GROUPS.some(function (g) { return g.name === SEL_GROUP; })) SEL_GROUP = "";
+    SEL_SITES = (SEL_SITES || []).filter(siteVisible);
+    SEL_PERIODS = (SEL_PERIODS || []).filter(periodVisible);
+    normalizeSingle();
+    return before;
+  }
+  /* 横向对比 = 单选一周（国家可比）；纵向对比 = 单选一国（周次可比）；另一维度才是多列对比 */
+  function normalizeSingle() {
+    if (MODE === "v") {
+      if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
+    } else {
+      if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
+    }
+  }
+
   /* 按「对比列数」重排选择：纵向=最近 N 周（保留当前站点）；横向=前 N 个国家（保留最新一周） */
   function applyCols() {
     var n = Math.max(2, Math.min(COLS_MAX, COLS));
@@ -265,6 +293,7 @@
       var sp2 = sortPeriods(FACETS.periods);
       SEL_PERIODS = sp2.length ? [sp2[sp2.length - 1]] : [];
     }
+    normalizeSingle();
     CACHE = null; CAP = CAP_STEP;
   }
 
@@ -346,7 +375,7 @@
     }
     /* 趋势标签 + 排序 / 图幅 / 位次排序 全部并列在同一排直接展示，无需再点开 */
     var mergedRow =
-      '<div class="tag-group"><span class="tag-group-name">趋势标签 / 排序</span><div class="tag-chips" id="rk-g-merge">' +
+      '<div class="tag-group"><span class="tag-group-name">趋势标签 / 排序（均为单选）</span><div class="tag-chips" id="rk-g-merge">' +
         '<span class="tag-inline" id="rk-g-tags">' + tagsHtml + '</span>' +
         '<span class="tag-sep"></span><span class="tag-sub">排序</span>' +
         '<span class="tag-inline" id="rk-g-sort">' + sortHtml + '</span>' +
@@ -364,8 +393,8 @@
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">' + colsLabel + '</span><div class="tag-chips" id="rk-g-cols">' + colsHtml + '</div></div>' +
       groupHtml +
-      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选）" : "（可多选）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选）" : "（可多选，最多 " + COLS_MAX + " 个）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
+      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
+      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       mergedRow;
 
     bindPanel();
@@ -400,7 +429,7 @@
         var v = b.getAttribute("data-site");
         SEL_GROUP = "";                       /* 选单个国家 → 取消地区合并 */
         if (MODE === "v") {
-          SEL_SITES = [v];
+          SEL_SITES = [v];                    /* 纵向·时间对比：国家单选，选中即自动取消其它国家 */
         } else {
           var i = SEL_SITES.indexOf(v);
           if (i >= 0) SEL_SITES.splice(i, 1);
@@ -431,7 +460,7 @@
       b.onclick = function () {
         var v = b.getAttribute("data-period");
         if (MODE === "h") {
-          SEL_PERIODS = [v];
+          SEL_PERIODS = [v];                  /* 横向·国家对比：周次单选，选中即自动取消其它周次 */
         } else {
           var i = SEL_PERIODS.indexOf(v);
           if (i >= 0) SEL_PERIODS.splice(i, 1);
@@ -449,14 +478,8 @@
     var tagBox = $("#rk-g-tags");
     if (tagBox) Array.prototype.forEach.call(tagBox.querySelectorAll("[data-tag]"), function (b) {
       b.onclick = function () {
-        var v = b.getAttribute("data-tag");
-        if (v === "all") TAGS = ["all"];
-        else {
-          TAGS = TAGS.filter(function (t) { return t !== "all"; });
-          var i = TAGS.indexOf(v);
-          if (i >= 0) TAGS.splice(i, 1); else TAGS.push(v);
-          if (!TAGS.length) TAGS = ["all"];
-        }
+        /* 趋势标签为单选：选中一个，其余自动取消 */
+        TAGS = [b.getAttribute("data-tag")];
         renderPanel(); renderSummary(); renderBody();
       };
     });
@@ -1195,6 +1218,9 @@
     }
 
     try { FACETS = await SBX.rankFacets(); } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
+    /* 后台可以控制哪些国家站点 / 周次在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */
+    try { HIDDEN = await SBX.getRankHidden(); } catch (e) { HIDDEN = { sites: [], periods: [] }; }
+    HIDDEN = { sites: (HIDDEN && HIDDEN.sites) || [], periods: (HIDDEN && HIDDEN.periods) || [] };
     FACETS.sites = FACETS.sites || [];
     FACETS.periods = sortPeriods(FACETS.periods || []);
     FACETS.categories = FACETS.categories || [];
@@ -1209,6 +1235,7 @@
       _defined = (_raw || []).map(function (s) { return s && s.name; }).filter(function (v) { return v && String(v).trim(); });
     } catch (e) { _defined = []; }
     if (_defined.length) FACETS.sites = _defined.slice();
+    applyHiddenFilter();                       /* 隐藏的站点 / 周次不参与前台筛选 */
 
     // 站点顺序：有数据的优先，其余按后台定义顺序（横向按这个顺序取前 N 个）
     var _withData = FACETS.sites.filter(function (s) { return _dataSites.indexOf(s) >= 0; });
@@ -1223,11 +1250,13 @@
 
     try { GROUPS = await SBX.getRankGroups(); } catch (e) { GROUPS = []; }
     GROUPS = (GROUPS || []).filter(function (g) { return g && g.name; });
+    applyHiddenFilter();                       /* 地区分组里若含被隐藏的国家，一并摘掉 */
 
     // URL 参数（后台实时预览 / 分享链接）：mode / size / cat / sites / periods / group
+    var _modeFromUrl = false, _urlPickedCols = false;
     try {
       var _qs = new URLSearchParams(location.search);
-      var _m = _qs.get("mode"); if (_m === "h" || _m === "v") MODE = _m;
+      var _m = _qs.get("mode"); if (_m === "h" || _m === "v") { if (_m !== MODE) _modeFromUrl = true; MODE = _m; }
       var _z = _qs.get("size"); if (_z === "s" || _z === "m" || _z === "l") SIZE = _z;
       var _c = _qs.get("cat"); if (_c) CAT = _c;
       var _ss = (_qs.get("sites") || "").split(",").filter(function (v) { return v.trim(); });
@@ -1236,7 +1265,15 @@
       if (_g && GROUPS.some(function (x) { return x.name === _g; })) SEL_GROUP = _g;
       var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
       if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
+      _urlPickedCols = !!(_ss.length || _pp.length);
     } catch (e) { /* 无参数时忽略 */ }
+
+    /* 分享链接 / 后台预览带的参数里可能含已隐藏项：再收一遍；收空了就回落到默认口径 */
+    applyHiddenFilter();
+    /* 链接里指定了对比模式、又没点名具体列：按该模式重排列（与手动点「对比模式」一致），
+       否则用 mode=h 打开会只剩 1 列，横向对比失去意义 */
+    if (_modeFromUrl && !_urlPickedCols) applyCols();
+    if (!SEL_SITES.length || !SEL_PERIODS.length) applyCols();
 
     /* 「对比列数」跟着当前实际列数走：分享链接 / 后台预览带参数时也能对上 */
     if (MODE === "v") COLS = Math.max(2, Math.min(COLS_MAX, SEL_PERIODS.length || COLS));
