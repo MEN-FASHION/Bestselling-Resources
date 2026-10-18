@@ -560,13 +560,25 @@
     var b = badgeOf(it);
     var share = (opt.share && opt.share.length >= 2) ? opt.share : null;
     var title = [it.site, it.period_label, it.leaf_category, b ? b.txt : ""].filter(Boolean).join(" · ");
-    var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '">';
+    /* 天眼模式：图上不叠任何文字（打开后就是一面纯图墙，密密麻麻的字不再挡图）。
+       标签改挂在 data-* 上，鼠标移到那张图上时由放大浮窗显示 —— 放大图 + 图下方标签。 */
+    var eyeMeta = "", eyeTags = [];
+    if (opt.eye) {
+      eyeMeta = [it.site, it.period_label, it.leaf_category].filter(Boolean).join(" · ");
+      if (b) eyeTags.push(b.txt);
+      if (opt.move) eyeTags.push(opt.move);
+      if (share) eyeTags.push("共 " + share.length + " 国同款");
+    }
+    var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '"'
+      + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
     h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '"' +
       (opt.eager ? ' decoding="async"' : '') + '>';
-    if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
-    if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
-    if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
+    if (!opt.eye) {
+      if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
+      if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
+      if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
+    }
     h += '</figure>';
     return h;
   }
@@ -625,7 +637,7 @@
           : (_gp ? ("地区合并 · 含 " + _gp.members.length + " 国，同名商品只保留一条") : "单国视图");
         var list = sortItems(mine);
         if (list.length > maxLen) maxLen = list.length;
-        var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager }); }).join("");
+        var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager, eye: opts.eye }); }).join("");
         html += poolHtml(s, meta, total, cards, opts.noFoot ? null : Math.min(limit, total));
       });
     } else {
@@ -686,7 +698,7 @@
               }
             }
           }
-          return cardHtml(it, { move: move, isNew: isNew, eager: opts.eager });
+          return cardHtml(it, { move: move, isNew: isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
         html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
       });
@@ -834,9 +846,8 @@
       var poolsW = pools.clientWidth || body.clientWidth;
       colW = Math.max(1, (poolsW - (K - 1) * 4) / Math.max(1, K) - poolPad);
     }
-    var headH = 46;
-    var hd = cols[0] ? cols[0].querySelector(".rk-pool-head") : null;
-    if (hd && hd.offsetHeight) headH = hd.offsetHeight + 6;
+    /* 天眼里列头改成「悬浮在列上、鼠标移到该列才显现」，不占列高；高度全部让给图片 */
+    var headH = 0;
     /* 可用高度要扣掉外层内边距（clientHeight 含 padding），否则会把图算高一点、挤出行外 */
     var availH = body.clientHeight;
     try {
@@ -862,18 +873,27 @@
     d.className = "rk-eye";
     d.innerHTML = '<div class="rk-eye-mask" id="rk-eye-mask"></div>' +
       '<div class="rk-eye-panel">' +
-        '<div class="rk-eye-head">' +
+        /* 顶栏整体改为「悬浮 + 鼠标悬浮才显现」：打开天眼后屏幕上没有任何文字压着图，
+           只有右上角一个关闭按钮常显（图标，不是文字）；需要看范围/张数/导出时把鼠标移到那儿即可。 */
+        '<div class="rk-eye-head" id="rk-eye-head">' +
           '<div class="rk-eye-title">天眼 · 全部对比图</div>' +
           '<div class="rk-eye-sub" id="rk-eye-sub">加载中…</div>' +
+          '<div class="rk-eye-clip" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余可下滑查看</div>' +
           '<button type="button" class="rk-eye-scope" id="rk-eye-scope"></button>' +
+          '<button type="button" class="rk-eye-ppt" id="rk-eye-ppt">导出 PPT</button>' +
           '<button type="button" class="rk-eye-close" id="rk-eye-close" title="关闭（Esc）">×</button>' +
         '</div>' +
         '<div class="rk-eye-body" id="rk-eye-body"><div class="rk-empty">加载中…</div></div>' +
-        '<div class="rk-eye-note" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余部分可下滑查看</div>' +
+        /* 悬浮放大镜：鼠标放到某张图上时，在旁边放大显示这张图，标签显示在放大图的下方 */
+        '<div class="rk-eye-loupe" id="rk-eye-loupe" style="display:none">' +
+          '<img id="rk-eye-loupe-img" alt="">' +
+          '<div class="rk-eye-loupe-tags" id="rk-eye-loupe-tags"></div>' +
+        '</div>' +
       '</div>';
     document.body.appendChild(d);
     document.documentElement.classList.add("rk-eye-on");
     bindEye(d);
+    wireEyePpt(d);
     fillEye(d);
     enterEyeFullscreen(d);     /* 真·全屏：占满电脑屏幕；不支持或被拒时自动退化为「占满视口」 */
   }
@@ -904,9 +924,30 @@
       var t = e.target;
       if (t && (t.id === "rk-eye-close" || t.id === "rk-eye-mask")) { closeEye(); return; }
       if (t && t.id === "rk-eye-scope") { EYE_ALL = !EYE_ALL; openEye(); return; }   /* 切换列范围 */
+      if (t && t.id === "rk-eye-ppt") return;                  /* 导出 PPT 由按钮自己的 onclick 处理 */
+      if (t && t.closest && t.closest("#rk-eye-loupe")) return; /* 放大镜不参与点击 */
       var card = (t && t.closest) ? t.closest(".rk-card") : null;
       if (card) openLB(card.getAttribute("data-url"));
     });
+    /* 鼠标移到某张图上 → 旁边放大显示 + 图下方显示标签；移开即收起 */
+    var body = d.querySelector("#rk-eye-body");
+    if (body) {
+      body.addEventListener("mouseover", function (e) {
+        var card = (e.target && e.target.closest) ? e.target.closest(".rk-card") : null;
+        if (!card || card === eyeHoverCard) return;
+        eyeHoverCard = card;
+        showEyeLoupe(d, card);
+      });
+      body.addEventListener("mouseout", function (e) {
+        var card = (e.target && e.target.closest) ? e.target.closest(".rk-card") : null;
+        if (!card || card !== eyeHoverCard) return;
+        var to = e.relatedTarget;
+        if (to && to.closest && to.closest(".rk-card") === card) return;   /* 还在同一张卡片内部移动 */
+        eyeHoverCard = null;
+        hideEyeLoupe(d);
+      });
+      body.addEventListener("mouseleave", function () { eyeHoverCard = null; hideEyeLoupe(d); });
+    }
     document.addEventListener("keydown", eyeEsc);
     eyeFitBound = function () { fitEye(d); };
     window.addEventListener("resize", eyeFitBound);      /* 窗口变化重新铺满 */
@@ -926,7 +967,7 @@
     if (!d.parentNode) return;                            /* 取数期间被关掉就不画了 */
     var total = (R.items || []).length;
     var eager = total <= EYE_EAGER_MAX;                   /* 默认「全部加载」，只有极端量级才退回懒加载 */
-    var built = buildPools(Infinity, { items: R.items, sites: sc.sites, periods: sc.periods, noFoot: true, eager: eager });
+    var built = buildPools(Infinity, { items: R.items, sites: sc.sites, periods: sc.periods, noFoot: true, eager: eager, eye: true });
     var n = 0;
     if (built.html) {
       body.innerHTML = '<div class="rk-pools">' + built.html + '</div>';
@@ -947,6 +988,66 @@
     if (n) fitEye(d);
   }
 
+  /* ---- 天眼 · 悬浮放大镜（纯图墙的必要补充：信息按需出现）----
+     鼠标移到某张图上：在旁边浮出这张图的放大预览，标签贴在放大图的下方；
+     移开即收起。放大镜不吃鼠标事件（pointer-events:none），不会打断滑动与点击。 */
+  var eyeHoverCard = null;
+  function hideEyeLoupe(d) {
+    var l = d ? d.querySelector("#rk-eye-loupe") : null;
+    if (l) l.style.display = "none";
+  }
+  function showEyeLoupe(d, card) {
+    var l = d.querySelector("#rk-eye-loupe");
+    if (!l) return;
+    var im = card.querySelector("img");
+    var url = card.getAttribute("data-url") || (im ? im.getAttribute("src") : "");
+    if (!url) { hideEyeLoupe(d); return; }
+    var li = l.querySelector("#rk-eye-loupe-img");
+    if (li && li.getAttribute("src") !== url) li.setAttribute("src", url);
+    var tb = l.querySelector("#rk-eye-loupe-tags");
+    if (tb) {
+      var meta = card.getAttribute("data-eye-meta") || "";
+      var tags = (card.getAttribute("data-eye-tags") || "").split("|").filter(Boolean);
+      var h = "";
+      if (meta) h += '<div class="l-meta">' + esc(meta) + '</div>';
+      if (tags.length) h += '<div class="l-chips">' + tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join("") + '</div>';
+      if (!h) h = '<div class="l-meta">—</div>';
+      tb.innerHTML = h;
+    }
+    l.style.display = "block";
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    var LW = Math.max(180, Math.min(340, Math.round(vw * 0.22)));
+    var LH = Math.round(LW * 4 / 3) + 54;                    /* 图（3:4）+ 下方标签区 */
+    var r = card.getBoundingClientRect();
+    var x = r.right + 12;
+    if (x + LW > vw - 8) x = r.left - LW - 12;
+    if (x < 8) x = Math.max(8, Math.min(r.left, vw - LW - 8));
+    var y = r.top;
+    if (y + LH > vh - 8) y = Math.max(8, vh - LH - 8);
+    l.style.width = LW + "px";
+    l.style.left = Math.round(x) + "px";
+    l.style.top = Math.round(Math.max(8, y)) + "px";
+  }
+
+  /* ---- 天眼 · 导出 PPT（仅超管可见；按钮放在悬浮才显现的顶栏里，不占图、不压图）---- */
+  var eyeSuper = null;
+  function eyeIsSuper() {
+    if (eyeSuper !== null) return Promise.resolve(eyeSuper);
+    return Promise.resolve()
+      .then(function () { return isSuperAdmin(); })
+      .then(function (ok) { eyeSuper = !!ok; return eyeSuper; })
+      .catch(function () { eyeSuper = false; return false; });
+  }
+  function wireEyePpt(d) {
+    var b = d.querySelector("#rk-eye-ppt");
+    if (!b) return;
+    b.onclick = function () {
+      if (!window.ReportKit || !window.ReportKit.exportEye) return;
+      window.ReportKit.exportEye();
+    };
+    eyeIsSuper().then(function (ok) { if (ok) b.className = "rk-eye-ppt on"; });
+  }
+
   function eyeEsc(e) {
     if (e.key !== "Escape") return;
     if ($("#rk-lb")) return;              /* 灯箱开着时，先交给灯箱自己的 Esc 处理 */
@@ -956,6 +1057,7 @@
   function closeEye() {
     var d = $("#rk-eye");
     if (d && d.parentNode) d.parentNode.removeChild(d);
+    eyeHoverCard = null;
     document.documentElement.classList.remove("rk-eye-on");
     document.removeEventListener("keydown", eyeEsc);
     if (eyeFitBound) { window.removeEventListener("resize", eyeFitBound); eyeFitBound = null; }

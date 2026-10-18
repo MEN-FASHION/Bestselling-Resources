@@ -2537,6 +2537,17 @@ body.front .tf-trigger { padding: 7px 14px; }
 .rp-ptxt { margin-top: 7px; font-size: 12px; color: var(--sub); line-height: 1.6; }
 .rp-ptxt.bad { color: var(--danger); }
 .rp-tip { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--shade); font-size: 11.5px; color: var(--sub); line-height: 1.7; }
+/* 天眼是整屏浮层，导出时用右下角的浮动进度条（不弹窗、不遮图） */
+.rp-hud {
+  position: fixed; right: 16px; bottom: 16px; z-index: 9900; width: 320px; max-width: calc(100vw - 32px);
+  padding: 11px 13px 12px; border-radius: 12px;
+  background: rgba(28,26,23,.94); color: #f4f2ee;
+  box-shadow: 0 16px 40px rgba(0,0,0,.4); font-size: 12px; line-height: 1.5;
+}
+.rp-hud-txt { word-break: break-word; }
+.rp-hud-txt.bad { color: #ffb4a8; }
+.rp-hud-bar { margin-top: 8px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.18); overflow: hidden; }
+.rp-hud-bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .2s; }
 @media (max-width: 560px) { .rp-opts { grid-template-columns: 1fr; } }
 
 /* ---- 报表版式（屏幕不显示，仅打印 / 生成 PDF 时生效；PPT 抓图复用同一版式） ---- */
@@ -2594,66 +2605,94 @@ body.front .tf-trigger { padding: 7px 14px; }
 /* 天眼打开期间锁住页面滚动，避免背景跟着动、误以为图在跑 */
 html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
 .rk-eye-mask { position: absolute; inset: 0; background: rgba(26,24,21,.74); }
-/* 全屏：占满整个可视区域（= 电脑屏幕的可见范围），四周不再留白；
-   打开时还会再请求一次浏览器全屏，支持的环境下直接铺满物理屏幕。 */
 .rk-eye-panel {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); border-radius: 0;
   box-shadow: 0 26px 64px rgba(0,0,0,.38);
 }
-/* 顶栏压成一条细线：字号小、强制单行（超出省略），不占图区高度、不遮挡图片 */
+/* ===== 天眼 · 纯图墙 =====
+   打开后屏幕上不出现任何文字：顶栏整条收成右上角的悬浮小条，平时只露一个「×」（图标）；
+   要看范围 / 张数 / 导出 PPT 时，把鼠标移到右上角，文字才浮现。
+   列头（周名 / 重合度）同样改成悬浮在列上、鼠标移到该列才显现 —— 平时不占高度、不压图。 */
 .rk-eye-head {
-  display: flex; align-items: center; gap: 8px; flex: 0 0 auto; flex-wrap: nowrap;
-  padding: 3px 10px; min-height: 28px;
-  background: var(--card); border-bottom: 1px solid var(--line);
+  position: absolute; top: 8px; right: 8px; z-index: 4;
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  padding: 0; min-height: 0; background: transparent; border: 0;
+  max-width: calc(100% - 16px);
 }
-.rk-eye-title { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; }
-.rk-eye-sub {
-  flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--sub); line-height: 1.3;
+.rk-eye-title, .rk-eye-sub, .rk-eye-clip, .rk-eye-scope, .rk-eye-ppt { display: none; }
+.rk-eye-head:hover {
+  padding: 5px 8px; border-radius: 10px;
+  background: rgba(255,255,255,.96); border: 1px solid var(--line);
+  box-shadow: 0 8px 22px rgba(0,0,0,.2);
+}
+.rk-eye-head:hover .rk-eye-title { display: block; font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; }
+.rk-eye-head:hover .rk-eye-sub {
+  display: block; flex: 0 1 auto; min-width: 0; max-width: 40vw;
+  font-size: 11px; color: var(--sub); line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.rk-eye-head:hover .rk-eye-clip { display: block; font-size: 10.5px; color: #a8760a; white-space: nowrap; }
+.rk-eye-head:hover .rk-eye-scope { display: block; }
+.rk-eye-head:hover .rk-eye-ppt.on { display: block; }
+.rk-eye-scope {
+  padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer;
+  color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  transition: border-color .15s, color .15s; white-space: nowrap;
+}
+.rk-eye-scope:hover { border-color: var(--gold); color: var(--gold); }
+.rk-eye-ppt {
+  padding: 2px 10px; font-size: 11px; font-family: inherit; cursor: pointer;
+  color: #fff; background: var(--gold); border: 1px solid var(--gold); border-radius: 999px; white-space: nowrap;
+}
+.rk-eye-ppt:hover { filter: brightness(1.06); }
+/* 常显的关闭按钮：只有图标、半透明，贴在右上角，不遮图 */
 .rk-eye-close {
-  flex: 0 0 auto; width: 22px; height: 22px; font-size: 14px; line-height: 1;
-  color: var(--sub); background: transparent; border: 1px solid var(--line);
-  border-radius: 6px; cursor: pointer;
+  flex: 0 0 auto; width: 26px; height: 26px; font-size: 15px; line-height: 1;
+  color: var(--sub); background: rgba(255,255,255,.88); border: 1px solid var(--line);
+  border-radius: 8px; cursor: pointer;
 }
 .rk-eye-close:hover { color: var(--gold); border-color: var(--gold); }
-.rk-eye-body { flex: 1 1 auto; overflow: auto; padding: 4px 6px 6px; }
-/* 天眼里没有「每列最多几张」的限制，也不弹「加载更多」：整块交给外层滚动 */
-.rk-eye-body .rk-pools { max-height: none; overflow: visible; padding-bottom: 0; }
-
-/* ---- 天眼 · 一屏铺满：列等宽并排，每列的全部图一次排完 ----
-   每行几张（--eye-r）、卡片多宽（--eye-card）、小字号（--eye-fs）、图与图的缝（--eye-gap）
-   由脚本按可用宽高反推后写在 .rk-pools 上；图数不多时一屏放得下（body 不出滚动条），一眼看全、不用下滑。
-   列与列（周与周 / 国与国）之间的缝已压到最小，不再留大片空白。 */
-.rk-eye-body { display: flex; }
-.rk-eye-body .rk-pools { flex: 1 1 auto; min-width: 0; align-items: flex-start; gap: 4px; }
-.rk-eye-body .rk-pool { flex: 1 1 0; min-width: 0; max-width: none; padding: 3px; border-radius: 6px; }
-.rk-eye-body .rk-pool-head { position: static; padding-bottom: 2px; margin-bottom: 2px; }
+/* 图区：从画面左上角一路铺到右下角，四周不留白 */
+.rk-eye-body { flex: 1 1 auto; display: flex; overflow: auto; padding: 0; }
+.rk-eye-body .rk-pools { flex: 1 1 auto; min-width: 0; max-height: none; overflow: visible; padding-bottom: 0; align-items: flex-start; gap: 3px; }
+.rk-eye-body .rk-pool { position: relative; flex: 1 1 0; min-width: 0; max-width: none; padding: 2px; border-radius: 4px; }
+/* 列头：悬浮在列上，鼠标移到该列才显现 */
+.rk-eye-body .rk-pool-head {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 3;
+  padding: 3px 6px; margin: 0; border-radius: 4px; border-bottom: 0;
+  background: rgba(255,255,255,.95); box-shadow: 0 4px 12px rgba(0,0,0,.14);
+  opacity: 0; transition: opacity .12s; pointer-events: none;
+}
+.rk-eye-body .rk-pool:hover .rk-pool-head { opacity: 1; }
 .rk-eye-body .rk-pool-name { font-size: 11px; }
 .rk-eye-body .rk-pool-name .rk-n { font-size: 9.5px; }
 .rk-eye-body .rk-pool-meta { margin-top: 1px; font-size: 9.5px; line-height: 1.3; }
 .rk-eye-body .rk-pool-grid,
 .rk-eye-body .rk-pool-grid.sz-s,
 .rk-eye-body .rk-pool-grid.sz-l { grid-template-columns: repeat(var(--eye-r, 6), minmax(0, 1fr)); gap: var(--eye-gap, 2px); }
-.rk-eye-body .rk-card { border-radius: 4px; }
-.rk-eye-body .rk-card:hover { transform: none; box-shadow: none; }
-.rk-eye-body .rk-badge,
-.rk-eye-body .rk-move,
-.rk-eye-body .rk-share { font-size: var(--eye-fs, 10px); padding: 0 3px; line-height: 1.4; }
-.rk-eye-scope {
-  flex: 0 0 auto; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer;
-  color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px;
-  transition: border-color .15s, color .15s; white-space: nowrap;
+.rk-eye-body .rk-card { border-radius: 3px; }
+.rk-eye-body .rk-card:hover { transform: none; box-shadow: none; outline: 2px solid var(--gold); outline-offset: -2px; }
+/* 悬浮放大镜：鼠标放到某张图上，旁边放大显示这张图，标签贴在放大图下方 */
+.rk-eye-loupe {
+  position: fixed; z-index: 9500; pointer-events: none;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 18px 44px rgba(0,0,0,.34);
 }
-.rk-eye-scope:hover { border-color: var(--gold); color: var(--gold); }
-.rk-eye-note { flex: 0 0 auto; padding: 2px 12px 4px; font-size: 10.5px; color: var(--sub); text-align: center; }
-.rk-eye-warn { color: #a8760a; }
+.rk-eye-loupe img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: var(--line); }
+.rk-eye-loupe-tags { padding: 5px 7px 6px; }
+.rk-eye-loupe-tags .l-meta { font-size: 10.5px; color: var(--sub); line-height: 1.35; word-break: break-word; }
+.rk-eye-loupe-tags .l-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.rk-eye-loupe-tags .l-chips span {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+  color: #7a5a12; background: rgba(196,155,54,.14); border: 1px solid rgba(196,155,54,.34);
+}
 @media (max-width: 900px) {
-  .rk-eye-body { padding: 3px 3px 4px; }
-  .rk-eye-title { display: none; }
+  .rk-eye-head:hover .rk-eye-sub { max-width: 56vw; }
+  .rk-eye-title { display: none !important; }
 }
+
 
 /* ============================================================
    后台「数据看板」（权限管理最上层）：用户从哪来 / 有多少 / 在干什么 / 干了多久

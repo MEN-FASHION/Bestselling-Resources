@@ -74,8 +74,8 @@
   /* ==========================================================================
    *  一、读取「屏幕上正在显示的内容」（报表内容 = 所见内容，从 DOM 取，避免两套口径）
    * ========================================================================*/
-  function readPools() {
-    var wrap = CFG.poolsEl ? CFG.poolsEl() : null;
+  function readPoolsFrom(root) {
+    var wrap = root || (CFG.poolsEl ? CFG.poolsEl() : null);
     if (!wrap) return [];
     return $$(".rk-pool", wrap).map(function (p) {
       var nameEl = p.querySelector(".rk-pool-name span");
@@ -104,6 +104,7 @@
       };
     }).filter(function (p) { return p.name || p.cards.length; });
   }
+  function readPools() { return readPoolsFrom(null); }
 
   /* 本站图片服务域名（来自站点配置）：只有这个域名上的图能跨域读取、被画进 PPT */
   var IMG_HOST = (function () {
@@ -506,6 +507,251 @@
   }
 
   /* ==========================================================================
+   *  四·B、天眼对比页 → PPT（真实图片 + 图片下方标签）
+   *  --------------------------------------------------------------------------
+   *  与上面「截图式」PPT 的区别：这里不再把整页拍成一张图片，
+   *  而是把每一张图片都以「真实图片对象」放进幻灯片 —— 在 PowerPoint 里可以点开放大；
+   *  标签放在该图片的正下方。默认「一列一页」，整页对比内容都在这一个 PPT 里。
+   * ========================================================================*/
+  var EYE_PPT = { maxImg: 600, maxW: 380, quality: 0.78, conc: 6 };
+  var EYE_GRID = { minCols: 4, maxCols: 16, gap: 0.06, tagH: 0.34 };
+
+  /* 独立进度条：天眼是全屏浮层，弹窗在里面不方便，改成右下角浮动小条 */
+  function hud(show, txt, pct, bad) {
+    var h = $("#rp-hud");
+    if (!show) { if (h && h.parentNode) h.parentNode.removeChild(h); return; }
+    if (!h) {
+      h = el("div", "rp-hud");
+      h.id = "rp-hud";
+      h.innerHTML = '<div class="rp-hud-txt"></div><div class="rp-hud-bar"><i></i></div>';
+      document.body.appendChild(h);
+    }
+    var t = h.querySelector(".rp-hud-txt"), f = h.querySelector(".rp-hud-bar i");
+    if (t) { t.textContent = txt || ""; t.classList.toggle("bad", !!bad); }
+    if (f) f.style.width = Math.max(0, Math.min(100, pct || 0)) + "%";
+  }
+
+  /* 图片 → base64（缩到 maxW 宽，控制文件体积）。
+     取不到像素时返回 null，由调用方留白 —— 不假装有图。 */
+  function imgDataUrl(img) {
+    return new Promise(function (res) {
+      try {
+        var iw = img.naturalWidth || 0, ih = img.naturalHeight || 0;
+        if (!iw || !ih) { res(null); return; }
+        var sc = Math.min(1, EYE_PPT.maxW / iw);
+        var w = Math.max(1, Math.round(iw * sc)), h = Math.max(1, Math.round(ih * sc));
+        var cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        var ctx = cv.getContext("2d");
+        if (!ctx) { res(null); return; }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        res(cv.toDataURL("image/jpeg", EYE_PPT.quality));
+      } catch (e) { res(null); }
+    });
+  }
+
+  /* 排布：先试「一屏放下这一列全部图」（图片最大），放不下再按行拆页 */
+  function eyeSlice(n, availW, availH) {
+    n = Math.max(1, n | 0);
+    for (var c = EYE_GRID.minCols; c <= EYE_GRID.maxCols; c++) {
+      var cw = (availW - EYE_GRID.gap * (c - 1)) / c;
+      var ch = cw * 4 / 3 + EYE_GRID.tagH;
+      var rows = Math.ceil(n / c);
+      if (rows * ch + EYE_GRID.gap * (rows - 1) <= availH) return { cols: c, cw: cw, ch: ch, per: n };
+    }
+    var C = EYE_GRID.maxCols;
+    var w2 = (availW - EYE_GRID.gap * (C - 1)) / C;
+    var h2 = w2 * 4 / 3 + EYE_GRID.tagH;
+    var rowsPer = Math.max(1, Math.floor((availH + EYE_GRID.gap) / (h2 + EYE_GRID.gap)));
+    return { cols: C, cw: w2, ch: h2, per: C * rowsPer };
+  }
+
+  /* 组装幻灯片（pptx 可为真实 PptxGenJS 实例，测试时也可为记录型替身） */
+  function assembleEye(pptx, o) {
+    var spec = o.spec, W = spec.w, H = spec.h;
+    try {
+      pptx.defineLayout({ name: "RP_EYE", width: W, height: H });
+      pptx.layout = "RP_EYE";
+    } catch (e) { /* 替身对象可忽略 */ }
+    var M = 0.3, TOP = 0.78;
+    var availW = W - M * 2, availH = H - TOP - M;
+    var st = o.state || {};
+    function page(bg) {
+      var s = pptx.addSlide();
+      s.background = { color: bg || "FFFFFF" };
+      return s;
+    }
+    /* 1) 封面 */
+    var total = 0, ncol = (o.pools || []).length;
+    (o.pools || []).forEach(function (p) { total += (p.cards || []).length; });
+    var s0 = page("F7F6F3");
+    s0.addText("TREND BANK · 趋势上升榜 · 天眼对比", {
+      x: 0.7, y: 0.7, w: W - 1.4, h: 0.4, fontSize: 13, color: "8B7355", charSpacing: 3, fontFace: FONT
+    });
+    s0.addText((st.cat && st.cat !== "全部" ? st.cat : "趋势上升榜") + "　全部对比图", {
+      x: 0.7, y: 1.3, w: W - 1.4, h: 0.9, fontSize: spec.w > 12 ? 32 : 26, bold: true, color: "2C2C2C", fontFace: FONT
+    });
+    s0.addText(stateLine(st) + (o.scope ? ("　｜　范围：" + o.scope) : ""), {
+      x: 0.7, y: 2.35, w: W - 1.4, h: 0.8, fontSize: 12, color: "8A857C", fontFace: FONT, lineSpacingMultiple: 1.4
+    });
+    s0.addText("共 " + total + " 张　·　" + ncol + " 列　·　每张都是真实图片，可在 PowerPoint 里点开放大；标签在该图下方", {
+      x: 0.7, y: 3.3, w: W - 1.4, h: 0.5, fontSize: 12, color: "2C2C2C", fontFace: FONT
+    });
+    s0.addText(fmtTime(o.now || new Date()) + " 生成　·　仅供内部使用　·　请勿外传", {
+      x: 0.7, y: H - 0.85, w: W - 1.4, h: 0.35, fontSize: 10, color: "8A857C", fontFace: FONT
+    });
+
+    /* 2) 每列一页：图片 + 图片正下方的标签 */
+    (o.pools || []).forEach(function (p, i) {
+      var cards = p.cards || [];
+      if (!cards.length) return;
+      var dataArr = (o.data && o.data[i]) || [];
+      var g = eyeSlice(cards.length, availW, availH);
+      var chunks = [];
+      for (var s = 0; s < cards.length; s += g.per) chunks.push(cards.slice(s, s + g.per));
+      chunks.forEach(function (chunk, ci) {
+        var sl = page("FFFFFF");
+        sl.addText(p.name + (p.spec ? " · " + p.spec : "") + (p.meta ? " · " + p.meta : "")
+          + (chunks.length > 1 ? "（第 " + (ci + 1) + " / " + chunks.length + " 页）" : ""), {
+          x: M, y: M, w: availW, h: 0.42, fontSize: 14, bold: true, color: "2C2C2C", fontFace: FONT
+        });
+        var fs = Math.max(6, Math.min(9, g.cw * 8));
+        chunk.forEach(function (c0, k) {
+          var gi = ci * g.per + k;
+          var col = k % g.cols, row = Math.floor(k / g.cols);
+          var x = M + col * (g.cw + EYE_GRID.gap);
+          var y = TOP + row * (g.ch + EYE_GRID.gap);
+          var imgH = g.cw * 4 / 3;
+          var d = dataArr[gi];
+          if (d) sl.addImage({ data: d, x: x, y: y, w: g.cw, h: imgH });
+          else sl.addText("图片未取到", {
+            x: x, y: y, w: g.cw, h: imgH, align: "center", valign: "middle",
+            fontSize: 6, color: "B9B2A8", fontFace: FONT, fill: { color: "F2F0EC" }
+          });
+          /* 标签放在图片正下方 */
+          var bits = [];
+          if (c0.tag) bits.push(c0.tag);
+          if (c0.move) bits.push(c0.move);
+          if (!bits.length) {
+            if (c0.period && c0.period !== p.name) bits.push(c0.period);
+            else if (c0.cat) bits.push(c0.cat);
+          }
+          var txt = bits.join(" · ");
+          if (txt) {
+            sl.addText(txt, {
+              x: x, y: y + imgH + 0.03, w: g.cw, h: EYE_GRID.tagH - 0.06,
+              fontSize: fs, color: "8A857C", align: "center", valign: "top", fontFace: FONT,
+              wrap: true, lineSpacingMultiple: 1.05
+            });
+          }
+        });
+      });
+    });
+    return pptx;
+  }
+
+  /* 天眼导出的口径（给封面与文件名用） */
+  function eyeState() {
+    var st = {};
+    try { st = (CFG.state ? CFG.state() : {}) || {}; } catch (e) { st = {}; }
+    var out = {};
+    for (var k in st) if (Object.prototype.hasOwnProperty.call(st, k)) out[k] = st[k];
+    out.zone = "趋势上升榜-天眼";
+    return out;
+  }
+  function eyeScopeTxt() {
+    var sc = document.querySelector("#rk-eye-scope");
+    var t = sc ? String(sc.textContent || "").replace(/^范围：/, "").trim() : "";
+    return t;
+  }
+
+  async function makeEyePPT(specKey) {
+    var spec = PPT_SPECS[specKey] || PPT_SPECS.wide;
+    var wrap = document.querySelector("#rk-eye-body .rk-pools");
+    if (!wrap) {
+      hud(true, "请先打开「天眼」再导出 PPT。", 100, true);
+      setTimeout(function () { hud(false); }, 2800);
+      return;
+    }
+    var pools = readPoolsFrom(wrap);
+    if (!hasContent(pools)) {
+      hud(true, NO_DATA_TXT, 100, true);
+      setTimeout(function () { hud(false); }, 2800);
+      return;
+    }
+    hud(true, "正在加载导出组件…", 4);
+    var ok = await ensureLibs();
+    if (!ok) {
+      hud(true, "导出组件加载失败，请刷新页面重试。", 100, true);
+      setTimeout(function () { hud(false); }, 2800);
+      return;
+    }
+    hud(true, "正在准备图片…", 7);
+    /* 先把本站图片以跨域方式重取一次：否则 canvas 取不到像素，导出的 PPT 会全是空白 */
+    await prepCorsImages(wrap);
+
+    var poolEls = $$(".rk-pool", wrap);
+    var data = [], plan = [], capped = false;
+    for (var i = 0; i < pools.length; i++) {
+      var cardsEl = $$(".rk-card", poolEls[i] || wrap);
+      var arr = [];
+      for (var j = 0; j < pools[i].cards.length; j++) {
+        if (plan.length >= EYE_PPT.maxImg) { capped = true; arr.push(null); continue; }
+        arr.push(null);
+        plan.push({ arr: arr, idx: arr.length - 1, im: cardsEl[j] ? cardsEl[j].querySelector("img") : null });
+      }
+      data.push(arr);
+    }
+    var kept = 0, missed = 0;
+    var step = Math.max(1, EYE_PPT.conc | 0);
+    for (var s = 0; s < plan.length; s += step) {
+      await Promise.all(plan.slice(s, s + step).map(function (t) {
+        return (t.im ? imgDataUrl(t.im) : Promise.resolve(null)).then(function (d) {
+          if (!d) { missed++; return; }
+          kept++;
+          t.arr[t.idx] = d;
+        });
+      }));
+      hud(true, "正在读取图片 " + Math.min(plan.length, s + step) + " / " + plan.length + "…",
+        7 + Math.round(Math.min(1, (s + step) / Math.max(1, plan.length)) * 66));
+      await new Promise(function (r) { setTimeout(r, 0); });   /* 让出主线程，避免页面卡死 */
+    }
+
+    hud(true, "正在组装 PPT…", 82);
+    var st = eyeState();
+    var scope = eyeScopeTxt();
+    var pptx = new window.PptxGenJS();
+    assembleEye(pptx, { spec: spec, specKey: specKey, pools: pools, data: data, state: st, scope: scope, now: new Date() });
+    var name = fileNameOf(st, "pptx", new Date());
+    await pptx.writeFile({ fileName: name });
+    var extra = [];
+    if (capped) extra.push("图片超过 " + EYE_PPT.maxImg + " 张，只放了前 " + EYE_PPT.maxImg + " 张（可缩小范围后再导）");
+    if (missed) extra.push(missed + " 张未能取到像素（站外图片或加载失败），已在原位留白");
+    if (scope) extra.push("范围：" + scope);
+    hud(true, "已生成：" + name + (extra.length ? "（" + extra.join("；") + "）" : ""), 100);
+    setTimeout(function () { hud(false); }, 5000);
+  }
+
+  /* 天眼里的「导出 PPT」入口（只有超级管理员看得到按钮） */
+  async function exportEye() {
+    try {
+      var ok = CFG.super;
+      if (!ok && CFG.isSuper) { try { ok = await CFG.isSuper(); } catch (e2) { ok = false; } }
+      if (!ok) {
+        hud(true, "只有超级管理员可以导出报告。", 100, true);
+        setTimeout(function () { hud(false); }, 2800);
+        return;
+      }
+      await makeEyePPT(SPEC_PPT);
+    } catch (e) {
+      hud(true, "导出失败，请重试。", 100, true);
+      setTimeout(function () { hud(false); }, 2800);
+    }
+  }
+
+  /* ==========================================================================
    *  五、弹窗界面
    * ========================================================================*/
   function specButtons(host, specs, cur, attr) {
@@ -695,6 +941,7 @@
     init: init,
     open: openModal,
     close: closeModal,
+    exportEye: exportEye,
     _: {
       PDF_SPECS: PDF_SPECS, PPT_SPECS: PPT_SPECS,
       readPools: readPools, buildSheet: buildSheet, injectPageStyle: injectPageStyle,
@@ -704,6 +951,9 @@
       isSiteImg: isSiteImg, offSiteCount: offSiteCount, prepCorsImages: prepCorsImages,
       waitImages: waitImages, setProgress: setProgress, openModal: openModal,
       makePDF: makePDF, makePPT: makePPT,
+      makeEyePPT: makeEyePPT, assembleEye: assembleEye, eyeSlice: eyeSlice,
+      readPoolsFrom: readPoolsFrom, imgDataUrl: imgDataUrl, hud: hud, exportEye: exportEye,
+      EYE_PPT: EYE_PPT, EYE_GRID: EYE_GRID,
       cfg: CFG, getFmt: function () { return FMT; }, getScope: function () { return SCOPE; },
       ROW_PER_SLIDE: ROW_PER_SLIDE, TABLE_MAX_ROWS: TABLE_MAX_ROWS
     }
