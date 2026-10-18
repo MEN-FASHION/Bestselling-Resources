@@ -744,7 +744,9 @@
   var EYE_EAGER_MAX = 1500;   /* 图数超过此上限才退回懒加载，避免一次拉爆（默认全加载） */
   var EYE_R_MAX = 60;         /* 每行最多排几张（真正的下限由「最小卡片宽度」兜住） */
   var EYE_MIN_CARD = 20;      /* 卡片最小宽度（px）：低于这个就看不清了 */
-  var eyeFitBound = null;
+  var EYE_GAP = 2;            /* 同列里图与图的横向缝（px）——必须与 CSS 的 --eye-gap 保持一致 */
+  var EYE_VGAP = 2;           /* 同列里图与图的纵向缝（px）——必须与 CSS 的 gap 保持一致 */
+  var eyeFitBound = null, eyeFsBound = null;
 
   /* 天眼要铺开的列范围 */
   function eyeScope() {
@@ -778,8 +780,8 @@
      （图实在太多、压到最小尺寸仍放不下时，clipped=true 表示允许下滑看剩余部分） */
   function eyeFitCalc(availW, availH, K, maxN, opt) {
     opt = opt || {};
-    var gap = opt.gap == null ? 4 : opt.gap;
-    var vgap = opt.vgap == null ? 4 : opt.vgap;
+    var gap = opt.gap == null ? EYE_GAP : opt.gap;
+    var vgap = opt.vgap == null ? EYE_VGAP : opt.vgap;
     var headH = opt.headH == null ? 46 : opt.headH;
     var minW = opt.minW == null ? EYE_MIN_CARD : opt.minW;
     var rMax = opt.rMax == null ? EYE_R_MAX : opt.rMax;
@@ -819,10 +821,30 @@
       if (n > maxN) maxN = n;
     });
     if (!maxN) return;
+    /* 单列可用宽度 = 该列网格的实测宽度（比「整行宽 ÷ 列数」准：
+       列与列之间的缝、列自身的左右内边距都已被排掉，算出的「每行几张」不会偏大而把图挤出可视高度）。 */
+    var g0 = cols[0] ? cols[0].querySelector(".rk-pool-grid") : null;
+    var colW = (g0 && g0.clientWidth) ? g0.clientWidth : 0;
+    if (!colW) {
+      var poolPad = 0;
+      try {
+        var cstyle = getComputedStyle(cols[0]);
+        poolPad = (parseFloat(cstyle.paddingLeft) || 0) + (parseFloat(cstyle.paddingRight) || 0);
+      } catch (e) { poolPad = 0; }
+      var poolsW = pools.clientWidth || body.clientWidth;
+      colW = Math.max(1, (poolsW - (K - 1) * 4) / Math.max(1, K) - poolPad);
+    }
     var headH = 46;
     var hd = cols[0] ? cols[0].querySelector(".rk-pool-head") : null;
     if (hd && hd.offsetHeight) headH = hd.offsetHeight + 6;
-    var fit = eyeFitCalc(pools.clientWidth || body.clientWidth, body.clientHeight, K, maxN, { headH: headH });
+    /* 可用高度要扣掉外层内边距（clientHeight 含 padding），否则会把图算高一点、挤出行外 */
+    var availH = body.clientHeight;
+    try {
+      var bstyle = getComputedStyle(body);
+      availH = Math.max(1, body.clientHeight - (parseFloat(bstyle.paddingTop) || 0) - (parseFloat(bstyle.paddingBottom) || 0));
+    } catch (e2) { /* 取不到样式就用原值 */ }
+    var fit = eyeFitCalc(colW, availH, 1, maxN, { headH: headH, gap: EYE_GAP, vgap: EYE_VGAP });
+    pools.style.setProperty("--eye-gap", EYE_GAP + "px");
     pools.style.setProperty("--eye-r", String(fit.r));
     pools.style.setProperty("--eye-card", fit.cardW.toFixed(1) + "px");
     pools.style.setProperty("--eye-fs", Math.max(7, Math.min(12, fit.cardW * 0.22)).toFixed(1) + "px");
@@ -850,8 +872,31 @@
         '<div class="rk-eye-note" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余部分可下滑查看</div>' +
       '</div>';
     document.body.appendChild(d);
+    document.documentElement.classList.add("rk-eye-on");
     bindEye(d);
     fillEye(d);
+    enterEyeFullscreen(d);     /* 真·全屏：占满电脑屏幕；不支持或被拒时自动退化为「占满视口」 */
+  }
+
+  /* ---- 天眼 · 真全屏（占满电脑屏幕）---- */
+  function eyeFsEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  }
+  function enterEyeFullscreen(d) {
+    if (eyeFsEl()) return;                      /* 已在全屏中就不再重复请求 */
+    try {
+      var fn = d.requestFullscreen || d.webkitRequestFullscreen || d.msRequestFullscreen;
+      if (!fn) return;
+      var p = fn.call(d);
+      if (p && p.catch) p.catch(function () { /* 忽略：未获授权时按「占满视口」显示，不影响使用 */ });
+    } catch (e) { /* 忽略 */ }
+  }
+  function exitEyeFullscreen() {
+    if (!eyeFsEl()) return;
+    try {
+      var fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+      if (fn) { var p = fn.call(document); if (p && p.catch) p.catch(function () {}); }
+    } catch (e) { /* 忽略 */ }
   }
 
   function bindEye(d) {
@@ -865,6 +910,9 @@
     document.addEventListener("keydown", eyeEsc);
     eyeFitBound = function () { fitEye(d); };
     window.addEventListener("resize", eyeFitBound);      /* 窗口变化重新铺满 */
+    eyeFsBound = function () { fitEye(d); };             /* 进出全屏后视口尺寸变了，重新铺排一次 */
+    document.addEventListener("fullscreenchange", eyeFsBound);
+    document.addEventListener("webkitfullscreenchange", eyeFsBound);
   }
 
   async function fillEye(d) {
@@ -889,8 +937,12 @@
     if (sub) {
       var colsN = (MODE === "v") ? sc.periods.length : sc.sites.length;
       var scopeTxt = (MODE === "v") ? (R.sites.join("、") || "—") : (R.periods.join("、") || "—");
-      sub.innerHTML = esc(CAT) + ' · ' + esc(scopeTxt) + ' · <b>' + colsN + '</b> 列 · 共 <b>' + n + '</b> 张' +
+      var colsTxt = (MODE === "v") ? "周" : "国";
+      /* 顶栏只留一行关键信息（类目 / 列数 / 张数）；范围明细收进悬浮提示，
+         避免顶栏文字又长又大把图挤掉、甚至盖住图。 */
+      sub.innerHTML = esc(CAT) + ' · ' + colsN + ' ' + colsTxt + ' · 共 <b>' + n + '</b> 张' +
         (eager ? '' : ' · <span class="rk-eye-warn">图数过多，已改为随滚动加载</span>');
+      sub.title = (MODE === "v" ? "国家：" : "期次：") + scopeTxt;
     }
     if (n) fitEye(d);
   }
@@ -904,8 +956,15 @@
   function closeEye() {
     var d = $("#rk-eye");
     if (d && d.parentNode) d.parentNode.removeChild(d);
+    document.documentElement.classList.remove("rk-eye-on");
     document.removeEventListener("keydown", eyeEsc);
     if (eyeFitBound) { window.removeEventListener("resize", eyeFitBound); eyeFitBound = null; }
+    if (eyeFsBound) {
+      document.removeEventListener("fullscreenchange", eyeFsBound);
+      document.removeEventListener("webkitfullscreenchange", eyeFsBound);
+      eyeFsBound = null;
+    }
+    exitEyeFullscreen();       /* 关天眼时一并退出全屏（若本次是由天眼进入的） */
   }
 
   /* ---------------- 灯箱（仅看图 + 归属信息，不显示任何环比数值） ---------------- */

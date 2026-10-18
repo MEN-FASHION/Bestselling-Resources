@@ -2591,58 +2591,68 @@ body.front .tf-trigger { padding: 7px 14px; }
 .rk-eye-btn:active { transform: translateY(1px); }
 
 .rk-eye { position: fixed; inset: 0; z-index: 9000; }
+/* 天眼打开期间锁住页面滚动，避免背景跟着动、误以为图在跑 */
+html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
 .rk-eye-mask { position: absolute; inset: 0; background: rgba(26,24,21,.74); }
+/* 全屏：占满整个可视区域（= 电脑屏幕的可见范围），四周不再留白；
+   打开时还会再请求一次浏览器全屏，支持的环境下直接铺满物理屏幕。 */
 .rk-eye-panel {
-  position: absolute; inset: 3vh 3vw;
+  position: absolute; inset: 0;
   display: flex; flex-direction: column; overflow: hidden;
-  background: var(--bg); border-radius: 16px;
+  background: var(--bg); border-radius: 0;
   box-shadow: 0 26px 64px rgba(0,0,0,.38);
 }
+/* 顶栏压成一条细线：字号小、强制单行（超出省略），不占图区高度、不遮挡图片 */
 .rk-eye-head {
-  display: flex; align-items: baseline; gap: 12px;
-  padding: 13px 18px; background: var(--card); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto; flex-wrap: nowrap;
+  padding: 3px 10px; min-height: 28px;
+  background: var(--card); border-bottom: 1px solid var(--line);
 }
-.rk-eye-title { flex: 0 0 auto; font-size: 16px; font-weight: 700; color: var(--txt); }
-.rk-eye-sub { flex: 1 1 auto; font-size: 12.5px; color: var(--sub); line-height: 1.5; }
+.rk-eye-title { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; }
+.rk-eye-sub {
+  flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--sub); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .rk-eye-close {
-  flex: 0 0 auto; width: 32px; height: 32px; font-size: 18px; line-height: 1;
+  flex: 0 0 auto; width: 22px; height: 22px; font-size: 14px; line-height: 1;
   color: var(--sub); background: transparent; border: 1px solid var(--line);
-  border-radius: 8px; cursor: pointer;
+  border-radius: 6px; cursor: pointer;
 }
 .rk-eye-close:hover { color: var(--gold); border-color: var(--gold); }
-.rk-eye-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px 40px; }
+.rk-eye-body { flex: 1 1 auto; overflow: auto; padding: 4px 6px 6px; }
 /* 天眼里没有「每列最多几张」的限制，也不弹「加载更多」：整块交给外层滚动 */
 .rk-eye-body .rk-pools { max-height: none; overflow: visible; padding-bottom: 0; }
 
 /* ---- 天眼 · 一屏铺满：列等宽并排，每列的全部图一次排完 ----
-   每行几张（--eye-r）、卡片多宽（--eye-card）、小字号（--eye-fs）由脚本按可用宽高反推后写在 .rk-pools 上；
-   图数不多时一屏放得下（body 不出滚动条），一眼看全、不用下滑。 */
+   每行几张（--eye-r）、卡片多宽（--eye-card）、小字号（--eye-fs）、图与图的缝（--eye-gap）
+   由脚本按可用宽高反推后写在 .rk-pools 上；图数不多时一屏放得下（body 不出滚动条），一眼看全、不用下滑。
+   列与列（周与周 / 国与国）之间的缝已压到最小，不再留大片空白。 */
 .rk-eye-body { display: flex; }
-.rk-eye-body .rk-pools { flex: 1 1 auto; min-width: 0; align-items: flex-start; }
-.rk-eye-body .rk-pool { flex: 1 1 0; min-width: 0; max-width: none; padding: 8px; }
-.rk-eye-body .rk-pool-head { position: static; padding-bottom: 5px; margin-bottom: 5px; }
-.rk-eye-body .rk-pool-name { font-size: 12px; }
-.rk-eye-body .rk-pool-name .rk-n { font-size: 10.5px; }
-.rk-eye-body .rk-pool-meta { margin-top: 2px; font-size: 10px; line-height: 1.4; }
+.rk-eye-body .rk-pools { flex: 1 1 auto; min-width: 0; align-items: flex-start; gap: 4px; }
+.rk-eye-body .rk-pool { flex: 1 1 0; min-width: 0; max-width: none; padding: 3px; border-radius: 6px; }
+.rk-eye-body .rk-pool-head { position: static; padding-bottom: 2px; margin-bottom: 2px; }
+.rk-eye-body .rk-pool-name { font-size: 11px; }
+.rk-eye-body .rk-pool-name .rk-n { font-size: 9.5px; }
+.rk-eye-body .rk-pool-meta { margin-top: 1px; font-size: 9.5px; line-height: 1.3; }
 .rk-eye-body .rk-pool-grid,
 .rk-eye-body .rk-pool-grid.sz-s,
-.rk-eye-body .rk-pool-grid.sz-l { grid-template-columns: repeat(var(--eye-r, 6), minmax(0, 1fr)); gap: 4px; }
-.rk-eye-body .rk-card { border-radius: 5px; }
+.rk-eye-body .rk-pool-grid.sz-l { grid-template-columns: repeat(var(--eye-r, 6), minmax(0, 1fr)); gap: var(--eye-gap, 2px); }
+.rk-eye-body .rk-card { border-radius: 4px; }
 .rk-eye-body .rk-card:hover { transform: none; box-shadow: none; }
 .rk-eye-body .rk-badge,
 .rk-eye-body .rk-move,
 .rk-eye-body .rk-share { font-size: var(--eye-fs, 10px); padding: 0 3px; line-height: 1.4; }
 .rk-eye-scope {
-  flex: 0 0 auto; padding: 5px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+  flex: 0 0 auto; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer;
   color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px;
-  transition: border-color .15s, color .15s;
+  transition: border-color .15s, color .15s; white-space: nowrap;
 }
 .rk-eye-scope:hover { border-color: var(--gold); color: var(--gold); }
-.rk-eye-note { flex: 0 0 auto; padding: 7px 16px 10px; font-size: 11.5px; color: var(--sub); text-align: center; }
+.rk-eye-note { flex: 0 0 auto; padding: 2px 12px 4px; font-size: 10.5px; color: var(--sub); text-align: center; }
 .rk-eye-warn { color: #a8760a; }
 @media (max-width: 900px) {
-  .rk-eye-panel { inset: 0; border-radius: 0; }
-  .rk-eye-body { padding: 10px 10px 28px; }
+  .rk-eye-body { padding: 3px 3px 4px; }
+  .rk-eye-title { display: none; }
 }
 
 /* ============================================================
