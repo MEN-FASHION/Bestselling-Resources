@@ -24,9 +24,14 @@ const mainJs = fs.readFileSync(path.join(ROOT, 'js/marketing-main.js'), 'utf8');
 ok('页面引用数据脚本', /marketing-data\.js\?v=/.test(html));
 ok('页面引用主脚本', /marketing-main\.js\?v=/.test(html));
 ok('页面含 .mkzone 容器', /class="mkzone"/.test(html));
-ok('旧版时间轴区块已隐藏', /class="mk-legacy hidden"/.test(html));
+ok('旧版时间轴区块已彻底移除（不再留隐藏残块）', !/mk-legacy/.test(html));
+ok('编辑条存在但默认不显示（只有 ?mode=edit 才出现）',
+  /id="mkEditBar"/.test(html) && !/class="mk-editbar[^"]*is-editing/.test(html));
+ok('编辑条默认隐藏由样式控制', /\.mkzone \.mk-editbar \{ grid-column: 1 \/ -1; display: none;/.test(css));
+ok('页面引入编辑层脚本（放在主脚本之后）',
+  /js\/marketing-edit\.js\?v=/.test(html) && html.indexOf('js/marketing-main.js') < html.indexOf('js/marketing-edit.js'));
 ok('版本号已统一为 C 且无旧版残留',
-  /20261019D/.test(html) && !/20261019B/.test(html) &&
+  /20261019E/.test(html) && !/20261019B/.test(html) &&
   !/20261019B/.test(css + dataJs + mainJs));
 const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
   'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal',
@@ -52,7 +57,13 @@ eq('页面 id 无重复', dupIds.length, 0);
   eq('div 标签完全闭合', depth, 0);
 })();
 ok('粘性偏移使用统一变量', /--mk-top/.test(css) && /\.mkzone \.sidebar \{[^}]*var\(--mk-top\)/.test(css));
-ok('侧栏吸顶不遮挡主区（grid 两列）', /\.mkzone \{[^}]*grid-template-columns: 286px minmax\(0, 1fr\)/.test(css));
+ok('侧栏吸顶不遮挡主区（grid 两列 · 300px）', /\.mkzone \{[^}]*grid-template-columns: 300px minmax\(0, 1fr\)/.test(css));
+ok('前台铺满整屏：不再限宽居中、不再留两侧白边',
+  /\.mkzone \{[^}]*max-width: none/.test(css) &&
+  /\.mkzone \{[^}]*width: 100%/.test(css) &&
+  !/\.mkzone \{[^}]*max-width: 1920px/.test(css));
+ok('左右内边距改为随屏宽自适应（1.4vw）', /padding: 14px clamp\(14px, 1\.4vw, 26px\) 56px/.test(css));
+ok('侧栏吸顶高度不再写死 96px', /\.mkzone \.sidebar \{[^}]*max-height: calc\(100vh - var\(--mk-top\) - 22px\)/.test(css));
 
 ok('窄屏侧栏改为常显（不再做抽屉）',
   /@media \(max-width: 980px\)/.test(css) &&

@@ -1,238 +1,239 @@
-/* 后台「营销日历 · 节庆库」+ 顶部菜单不闪 + 洲筛选体验：静态与运行时双层验证 */
+/* 后台「营销日历」= 前台实时预览（所见即所得）+ 编辑层：静态与运行时双层验证 */
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const ROOT = path.resolve(__dirname, '..');
-const admin = fs.readFileSync(path.join(ROOT, 'admin.html'), 'utf8');
-const adminJs = fs.readFileSync(path.join(ROOT, 'js/admin.js'), 'utf8');
-const festJs = fs.readFileSync(path.join(ROOT, 'js/admin-festivals.js'), 'utf8');
-const sbJs = fs.readFileSync(path.join(ROOT, 'js/supabase.js'), 'utf8');
-const dataJs = fs.readFileSync(path.join(ROOT, 'js/marketing-data.js'), 'utf8');
-const mainJs = fs.readFileSync(path.join(ROOT, 'js/marketing-main.js'), 'utf8');
-const commonJs = fs.readFileSync(path.join(ROOT, 'js/common.js'), 'utf8');
-const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
-const sql = fs.readFileSync(path.join(ROOT, 'tools/setup_marketing.sql'), 'utf8');
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const admin = read('admin.html');
+const adminJs = read('js/admin.js');
+const mkHtml = read('marketing.html');
+const editJs = read('js/marketing-edit.js');
+const css = read('css/style.css');
+const mkMain = read('js/marketing-main.js');
 
-let pass = 0, fail = 0;
-const fails = [];
+let pass = 0, fail = 0; const fails = [];
 function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  ✓ ' + name + (extra !== undefined ? '  [' + extra + ']' : '')); }
   else { fail++; fails.push(name + (extra !== undefined ? '  [' + extra + ']' : '')); console.log('  ✗ ' + name + (extra !== undefined ? '  [' + extra + ']' : '')); }
 }
-function eq(name, a, b) { ok(name, a === b, a + ' vs ' + b); }
+const eq = (n, a, b) => ok(n, a === b, a + ' vs ' + b);
+
+/* ============ 运行时环境：真实 edit 脚本 + 精简 DOM + 桩 ============ */
+function makeHarness(opts) {
+  opts = opts || {};
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div class="mkzone">
+      <div class="mk-editbar" id="mkEditBar">
+        <span class="eb-live" id="ebLive"></span>
+        <button id="ebAdd"></button><button id="ebImport"></button><button id="ebExport"></button>
+        <button id="ebRebuild"></button><button id="ebClear"></button><input type="file" id="ebFile">
+      </div>
+      <article class="fcard" data-fid="f1">
+        <div class="fest-edit-chip"><button data-edit="f1">编辑</button><button class="del" data-del="f1">删除</button></div>
+      </article>
+      <div class="timeline"><button class="fest" data-id="f2"></button></div>
+      <div id="mkToast"></div>
+      <div id="modal">
+        <input id="fName"><input id="fEn"><select id="fRegion"><option value="美国">美国</option><option value="__new">＋新增</option></select>
+        <input id="fRegionNew"><select id="fCat"><option value="trad">trad</option><option value="promo">promo</option></select>
+        <input id="fDate" type="date"><input id="fRepeat" type="checkbox">
+        <input id="fLead"><input id="fDur"><textarea id="fIdea"></textarea><textarea id="fNote"></textarea>
+        <button id="mSave"></button><button id="mDel"></button>
+      </div>
+    </div></body></html>`, { url: 'https://x.test/marketing.html' + (opts.mode || ''), runScripts: 'outside-only' });
+
+  const w = dom.window;
+  /* location.search 由 url 决定；非编辑模式用例用不带参数 */
+  const calls = { upsert: [], del: [], clear: 0, render: 0, close: 0, open: [], downloads: [] };
+  w.CATS = { trad: { label: '传统' }, promo: { label: '大促' } };
+  w.state = { festivals: [{ id: 'f1', name: 'A', date: '01-01', region: '美国', cat: 'trad', star: 3, lead: 120, dur: 1 }] };
+  w.toast = () => {};
+  w.render = () => { calls.render++; };
+  w.closeModal = () => { calls.close++; };
+  w.currentModalStar = () => 4;
+  w.backfillDurations = () => {};
+  w.dbRowToFestival = (r) => Object.assign({}, r, { custom: true });
+  w.defaultFestivals = () => new Array(176).fill(0).map((_, i) => ({ id: 'b' + i, name: 'B' + i, date: '02-02' }));
+  w.openModal = (id) => { calls.open.push(id); };
+  w.editingId = opts.editingId === undefined ? null : opts.editingId;
+  w.SB = {
+    myRole: () => Promise.resolve(opts.role === undefined ? 'super_admin' : opts.role),
+    listFestivals: () => Promise.resolve({ data: [{ id: 'd1', name: 'D', date: '03-03' }], error: null }),
+    upsertFestivals: (rows) => { calls.upsert.push(rows); return Promise.resolve({ error: opts.upsertError || null }); },
+    deleteFestival: (id) => { calls.del.push(id); return Promise.resolve({ error: null }); },
+    clearFestivals: () => { calls.clear++; return Promise.resolve({ error: null }); }
+  };
+  w.URL.createObjectURL = () => 'blob:stub';
+  w.URL.revokeObjectURL = () => {};
+  w.HTMLAnchorElement.prototype.click = function () { calls.downloads.push(this.download); };
+  w.document.body.appendChild; // noop
+
+  w.eval(editJs);
+  return { dom, w, calls };
+}
+const tick = (ms) => new Promise((r) => setTimeout(r, ms || 25));
 
 (async function () {
-  console.log('=== 一、后台结构 ===');
-  ok('侧栏有独立「营销日历」菜单', /<a class="nav-item" data-target="mk-card" data-super="1">营销日历<\/a>/.test(admin));
-  ok('面板 #mk-card 存在', /id="mk-card"/.test(admin));
-  const posMk = admin.indexOf('id="mk-card"'), posSuper = admin.indexOf('id="super-card"');
-  ok('面板独立于超管面板（位于其之前）', posMk > 0 && posSuper > 0 && posMk < posSuper);
-  ok('超管面板里旧的营销日历页签已移除', !/data-sv="sv-6"/.test(admin));
-  ok('节庆库控件齐全', ['fest-list', 'fest-add', 'fest-export', 'fest-import', 'fest-import-file', 'fest-reset', 'fest-clear', 'fest-search']
-    .every(id => new RegExp('id="' + id + '"').test(admin)));
-  ok('编辑弹窗控件齐全', ['fest-mask', 'fest-name', 'fest-date', 'fest-region', 'fest-cat', 'fest-star', 'fest-lead', 'fest-dur', 'fest-save', 'fest-cancel']
-    .every(id => new RegExp('id="' + id + '"').test(admin)));
-  ok('后台引入了节庆数据与面板脚本',
-    /js\/marketing-data\.js/.test(admin) && /js\/admin-festivals\.js/.test(admin));
-  ok('admin-festivals.js 在 marketing-data.js 之后加载',
-    admin.indexOf('js/marketing-data.js') < admin.indexOf('js/admin-festivals.js'));
+  console.log('=== 一、后台：只有前台预览，没有第二套界面 ===');
+  ok('后台有预览容器', /id="mk-preview-frame"/.test(admin) && /class="mk-preview-shell"/.test(admin));
+  ok('预览指向前台本体并带编辑参数', /marketing\.html\?mode=edit/.test(adminJs));
+  ok('进入面板才懒加载（mountMarketingPreview）', /function mountMarketingPreview/.test(adminJs) && /if \(target === "mk-card"\) \{\s*\n\s*mountMarketingPreview\(\);/.test(adminJs));
+  ok('预览带「重新载入 / 新窗口打开」', /id="mk-preview-reload"/.test(admin) && /id="mk-preview-open"/.test(admin));
+  ok('旧的节庆库表单已移除', !/id="fest-list"/.test(admin) && !/id="fest-add"/.test(admin) && !/id="fest-import"/.test(admin));
+  ok('旧节庆脚本不再被引用', !/admin-festivals\.js/.test(admin));
+  ok('旧节庆脚本文件已删除', !fs.existsSync(path.join(ROOT, 'js/admin-festivals.js')));
+  ok('admin.js 不再调用 loadFestivalsPanel', !/loadFestivalsPanel/.test(adminJs));
+  ok('已发布素材区仍在（②保留）', /id="mk-publish-sub"/.test(admin) && /id="mk-viz-timeline"/.test(admin));
+  ok('侧栏菜单名仍为「营销日历」且仅超管', /data-target="mk-card" data-super="1">营销日历</.test(admin));
+  ok('预览框样式存在', /\.mk-preview-frame \{[^}]*height: 78vh/.test(css));
 
-  const ids = (admin.match(/\sid="([^"]+)"/g) || []).map(x => x.replace(/^\sid="|"$/g, ''));
-  const dup = ids.filter((v, i) => ids.indexOf(v) !== i);
-  ok('后台无重复 id', dup.length === 0, dup.slice(0, 3).join(','));
-  const divO = (admin.match(/<div\b/g) || []).length, divC = (admin.match(/<\/div>/g) || []).length;
-  ok('后台 div 标签闭合平衡', divO === divC, divO + '/' + divC);
+  console.log('=== 二、前台：同一页面 + 编辑条（默认隐藏） ===');
+  ok('编辑条元素齐全', ['mkEditBar', 'ebAdd', 'ebImport', 'ebExport', 'ebRebuild', 'ebClear', 'ebFile']
+    .every((id) => new RegExp('id="' + id + '"').test(mkHtml)));
+  ok('编辑条默认不显示（样式层面）', /\.mkzone \.mk-editbar \{[^}]*display: none/.test(css));
+  ok('只有 is-editing 才显示', /\.mkzone\.is-editing \.mk-editbar \{ display: flex; \}/.test(css));
+  ok('页面本身不带 is-editing 类', !/class="mkzone is-editing"/.test(mkHtml));
+  ok('编辑层脚本在主脚本之后加载', /js\/marketing-edit\.js\?v=/.test(mkHtml) && mkHtml.indexOf('js/marketing-main.js') < mkHtml.indexOf('js/marketing-edit.js'));
+  ok('卡片带 data-fid 与编辑徽标', /data-fid="'\+esc\(it\.h\.id\)/.test(mkMain) && /class="fest-edit-chip"/.test(mkMain));
+  ok('徽标默认隐藏、编辑模式才显示', /\.fest-edit-chip \{ display: none/.test(css) && /\.mkzone\.is-editing \.fest-edit-chip \{ display: inline-flex/.test(css));
+  ok('旧版隐藏区块已彻底删除', !/mk-legacy/.test(mkHtml));
 
-  ok('面板权限归到超管', /"mk-card":\s*"super"/.test(adminJs));
-  ok('进入面板时加载节庆库', /target === "mk-card"[\s\S]{0,120}loadFestivalsPanel/.test(adminJs));
-  ok('超管面板不再负责营销加载', !/target === "super-card"\)\s*\{[^}]*loadMarketingNodes/.test(adminJs));
+  console.log('=== 三、运行时：前台访客不带参数 → 完全无编辑能力 ===');
+  {
+    const h = makeHarness({ mode: '' });
+    await tick();
+    ok('不加参数时脚本直接退出（无 MKEdit）', typeof h.w.MKEdit === 'undefined');
+    ok('zone 不会被加上编辑态', !h.w.document.querySelector('.mkzone').classList.contains('is-editing'));
+    ok('编辑条仍不可见（未启用）', h.w.document.getElementById('mkEditBar').style.display !== 'flex');
+  }
 
-  console.log('\n=== 二、建表脚本 ===');
-  ok('节庆库表已定义', /create table if not exists public\.marketing_festivals/.test(sql));
-  ok('补字段可重复执行', (sql.match(/add column if not exists/g) || []).length >= 10);
-  ok('开启了行级安全', /alter table public\.marketing_festivals enable row level security/.test(sql));
-  ok('登录可读、仅超管可写',
-    /for select[\s\S]{0,120}using \(true\)/.test(sql) &&
-    /role = 'super_admin'/.test(sql));
-  ok('建策略前先 drop（可重复执行）', /drop policy if exists "authenticated read marketing_festivals"/.test(sql));
-  ok('接口已就位', /async listFestivals/.test(sbJs) && /async upsertFestivals/.test(sbJs) && /async clearFestivals/.test(sbJs));
+  console.log('=== 四、运行时：普通管理员带参数 → 只读预览 ===');
+  {
+    const h = makeHarness({ mode: '?mode=edit', role: 'admin' });
+    await tick();
+    const bar = h.w.document.getElementById('mkEditBar');
+    ok('普通管理员不会被开启编辑态', !h.w.document.querySelector('.mkzone').classList.contains('is-editing'));
+    ok('给出「只读预览」说明', /只读预览/.test(bar.innerHTML) && /超级管理员/.test(bar.innerHTML));
+    ok('保存按钮未被接管（点击不写库）', (function () {
+      h.w.document.getElementById('mSave').click();
+      return h.calls.upsert.length === 0;
+    })());
+  }
 
-  console.log('\n=== 三、顶部菜单不再闪 ===');
-  ['index.html', 'rank.html', 'marketing.html', 'trends.html'].forEach(p => {
-    const h = fs.readFileSync(path.join(ROOT, p), 'utf8');
-    ok(p + ' 顶部菜单带启动态（先不画、判定后再露出）', /class="top-tabs is-booting"/.test(h));
-  });
-  ok('启动态样式存在', /\.top-tabs\.is-booting \.tab-link \{ visibility: hidden; \}/.test(css));
-  ok('判定完成后解除启动态', /renderNav\(\);\s*tabs\.classList\.remove\("is-booting"\);/.test(commonJs));
-  ok('配置读不到时有兜底计时器', /__navBootTimer/.test(commonJs) && /1500/.test(commonJs));
+  console.log('=== 五、运行时：超级管理员 → 开启编辑 ===');
+  {
+    const h = makeHarness({ mode: '?mode=edit', role: 'super_admin' });
+    await tick();
+    const w = h.w, doc = w.document;
+    ok('进入编辑态', doc.querySelector('.mkzone').classList.contains('is-editing'));
+    ok('MKEdit 暴露且已启用', w.MKEdit && w.MKEdit.available === true && w.MKEdit.isEnabled() === true);
+    eq('编辑条状态文案已同步', doc.getElementById('ebLive').textContent, '已同步 · 改动即时生效');
 
-  console.log('\n=== 四、洲筛选体验 ===');
-  ok('洲行钉在面板顶部（滚动不丢）', /\.mkzone \.rg-row \{[^}]*position: sticky/.test(css));
-  ok('国家区紧跟洲行（无虚线分隔）', !/\.mkzone \.rg-detail \{[^}]*border-top: 1px dashed/.test(css));
-  ok('面板内可滚动', /\.mkzone \.region-list \{[^}]*max-height/.test(css));
-  ok('移出后收起有更长的缓冲', /}, 700\);\s*\/\* 给足时间从洲名移到国家区/.test(mainJs));
-  ok('切洲延时更短（更跟手）', /}, 60\);/.test(mainJs));
+    /* 卡片编辑 */
+    doc.querySelector('[data-edit="f1"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    eq('点卡片「编辑」打开对应节庆', h.calls.open[0], 'f1');
+    /* 时间轴节点 */
+    doc.querySelector('.timeline .fest[data-id="f2"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    eq('点时间轴节点也能编辑', h.calls.open[1], 'f2');
 
-  console.log('\n=== 五、面板运行时 ===');
-  const startMark = '<div class="panel-card hidden" id="mk-card">';
-  const endMark = '<div class="panel-card hidden" id="super-card">';
-  const frag = admin.slice(admin.indexOf(startMark), admin.indexOf(endMark));
-  const dom = new JSDOM('<!doctype html><html><body>' + frag + '</body></html>', { runScripts: 'outside-only', url: 'https://x.test/admin' });
-  const w = dom.window, d = w.document;
+    /* 删除：两次确认 */
+    const delBtn = doc.querySelector('[data-del="f1"]');
+    delBtn.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    eq('第一次点删除只进入待确认', h.calls.del.length, 0);
+    ok('按钮变为确认态', delBtn.classList.contains('armed') && /确认删除/.test(delBtn.textContent));
+    delBtn.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await tick();
+    eq('第二次确认才真正删库', h.calls.del[0], 'f1');
+    ok('本地列表同步移除', !w.state.festivals.some((f) => f.id === 'f1'));
 
-  const store = { rows: [] };
-  const calls = { upsert: 0, del: 0, clear: 0 };
-  w.SB = {
-    listFestivals: async () => ({ data: store.rows.map(r => Object.assign({}, r)), error: null }),
-    upsertFestivals: async (rows) => {
-      calls.upsert++;
-      (rows || []).forEach(r => {
-        const i = store.rows.findIndex(x => x.id === r.id);
-        if (i >= 0) store.rows[i] = Object.assign({}, r); else store.rows.push(Object.assign({}, r));
-      });
-      return { error: null };
-    },
-    deleteFestival: async (id) => { calls.del++; store.rows = store.rows.filter(r => r.id !== id); return { error: null }; },
-    clearFestivals: async () => { calls.clear++; store.rows = []; return { error: null }; },
-  };
-  w.confirm = () => w.__confirmAnswer !== false;
-  w.alert = () => {};
+    /* 保存（编辑既有） */
+    w.editingId = 'f2';
+    doc.getElementById('fName').value = '黑色星期五';
+    doc.getElementById('fEn').value = 'Black Friday';
+    doc.getElementById('fRegion').value = '__new';
+    doc.getElementById('fRegionNew').value = '北美';
+    doc.getElementById('fCat').value = 'promo';
+    doc.getElementById('fDate').value = '2026-11-27';
+    doc.getElementById('fRepeat').checked = false;
+    doc.getElementById('fLead').value = '75';
+    doc.getElementById('fDur').value = '3';
+    doc.getElementById('fIdea').value = '黑五服饰';
+    doc.getElementById('fNote').value = '备货';
+    doc.getElementById('mSave').click();
+    await tick();
+    const row = (h.calls.upsert[0] || [])[0] || {};
+    eq('保存写库（不是本地存储）', h.calls.upsert.length, 1);
+    eq('保存 id 沿用原节点', row.id, 'f2');
+    eq('一次性日期存完整年月日', row.date, '2026-11-27');
+    eq('新增地区取输入框内容', row.region, '北美');
+    eq('重要度取弹窗当前星数', row.star, 4);
+    eq('提前期与持续天数', row.lead + '/' + row.dur, '75/3');
+    /* 之前删过一条已 render 一次，这里只比较增量 */
+    ok('保存后关闭弹窗并重绘', h.calls.close === 1 && h.calls.render === 2, 'close=' + h.calls.close + ' render=' + h.calls.render);
 
-  w.eval(dataJs);
-  w.eval(festJs);
-  ok('面板脚本导出加载入口', typeof w.loadFestivalsPanel === 'function');
+    /* 新建：每年重复 → 只存月-日、生成新 id */
+    w.editingId = null;
+    doc.getElementById('fName').value = '万圣节';
+    doc.getElementById('fRegion').value = '美国';
+    doc.getElementById('fDate').value = '2026-10-31';
+    doc.getElementById('fRepeat').checked = true;
+    doc.getElementById('mSave').click();
+    await tick();
+    const row2 = (h.calls.upsert[1] || [])[0] || {};
+    eq('每年重复只存月-日', row2.date, '10-31');
+    ok('新建生成新 id', /^u/.test(String(row2.id)));
+    ok('新建条目进入本地列表', w.state.festivals.some((f) => f.name === '万圣节'));
 
-  w.loadFestivalsPanel();
-  await new Promise(r => setTimeout(r, 60));
-  ok('空库时给出明确空态提示', /数据库里还没有节庆/.test(d.getElementById('fest-empty').textContent), d.getElementById('fest-empty').textContent.slice(0, 24));
-  ok('空库时统计文案正确', /还没有节庆/.test(d.getElementById('fest-stat').textContent));
+    /* 导出 */
+    doc.getElementById('ebExport').click();
+    ok('导出触发下载且文件名带日期', h.calls.downloads.length === 1 && /marketing-festivals-\d{4}-\d{2}-\d{2}\.json/.test(h.calls.downloads[0]));
 
-  store.rows = [
-    { id: 'd0', name: '元旦', date: '01-01', region: '全球', cat: 'trad', star: 4, lead: 150, dur: 3, sort_no: 0 },
-    { id: 'd1', name: '万圣节', date: '10-31', region: '美国', cat: 'trad', star: 5, lead: 120, dur: 1, sort_no: 1 },
-    { id: 'd2', name: '圣诞节', date: '12-25', region: '欧美', cat: 'rel', star: 5, lead: 130, dur: 2, sort_no: 2, overrides: { '2027': '12-25' } },
-  ];
-  w.loadFestivalsPanel();
-  await new Promise(r => setTimeout(r, 60));
-  eq('读到 3 条并渲染 3 行', d.querySelectorAll('#fest-list .fest-row:not(.fest-head)').length, 3);
-  ok('浮动节日有标记', /年度浮动/.test(d.getElementById('fest-list').innerHTML));
-  ok('统计显示总数', /共 3 个节庆/.test(d.getElementById('fest-stat').textContent));
+    /* 重建 / 清空：两次确认 */
+    const reb = doc.getElementById('ebRebuild');
+    reb.click();
+    eq('重建第一次只问确认', h.calls.upsert.length, 2);
+    reb.click();
+    await tick();
+    eq('重建把内置库整批写库', (h.calls.upsert[2] || []).length, 176);
 
-  const search = d.getElementById('fest-search');
-  search.value = '美国';
-  search.dispatchEvent(new w.Event('input', { bubbles: true }));
-  eq('搜索按地区过滤', d.querySelectorAll('#fest-list .fest-row:not(.fest-head)').length, 1);
-  search.value = '';
-  search.dispatchEvent(new w.Event('input', { bubbles: true }));
-  eq('清空搜索恢复全部', d.querySelectorAll('#fest-list .fest-row:not(.fest-head)').length, 3);
+    const clr = doc.getElementById('ebClear');
+    clr.click();
+    eq('清空第一次只问确认', h.calls.clear, 0);
+    clr.click();
+    await tick();
+    eq('清空第二次才执行', h.calls.clear, 1);
+    eq('清空后本地列表为空', w.state.festivals.length, 0);
+  }
 
-  /* 新建 */
-  d.getElementById('fest-add').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  ok('新建弹窗打开', !d.getElementById('fest-mask').classList.contains('hidden'));
-  eq('类别下拉已填充', d.getElementById('fest-cat').options.length >= 6, true);
-  d.getElementById('fest-name').value = '测试新节';
-  d.getElementById('fest-date').value = '2027-03-08';
-  d.getElementById('fest-region').value = '日本';
-  d.getElementById('fest-save').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 60));
-  eq('新建写入数据库', calls.upsert, 1);
-  eq('数据库多了一条', store.rows.length, 4);
-  ok('日期被归一化为 MM-DD', store.rows.some(r => r.name === '测试新节' && r.date === '03-08'));
-  ok('保存后弹窗关闭', d.getElementById('fest-mask').classList.contains('hidden'));
-  eq('列表同步为 4 行', d.querySelectorAll('#fest-list .fest-row:not(.fest-head)').length, 4);
+  console.log('=== 六、运行时：写库失败不假装成功 ===');
+  {
+    const h = makeHarness({ mode: '?mode=edit', role: 'super_admin', editingId: 'f1', upsertError: { message: 'denied' } });
+    await tick();
+    const doc = h.w.document;
+    doc.getElementById('fName').value = 'X';
+    doc.getElementById('fDate').value = '2026-05-05';
+    doc.getElementById('mSave').click();
+    await tick();
+    ok('失败时弹窗不关闭', h.calls.close === 0);
+    ok('失败时本地列表不变', h.w.state.festivals.length === 1 && h.w.state.festivals[0].name === 'A');
+    ok('状态条提示保存失败', /保存失败/.test(doc.getElementById('ebLive').textContent));
+  }
 
-  /* 校验拦截 */
-  d.getElementById('fest-add').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  d.getElementById('fest-name').value = '';
-  d.getElementById('fest-save').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 20));
-  eq('名称为空时不写库', calls.upsert, 1);
-  d.getElementById('fest-name').value = '日期非法';
-  d.getElementById('fest-date').value = '13-45';
-  d.getElementById('fest-save').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 20));
-  eq('日期非法时不写库', calls.upsert, 1);
-  d.getElementById('fest-cancel').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  ok('取消关闭弹窗', d.getElementById('fest-mask').classList.contains('hidden'));
+  console.log('=== 七、反向验证：把关键保护拆掉，检查必须报错 ===');
+  {
+    const broken = editJs.replace("if (!WANT_EDIT) return;", "/* removed guard */");
+    ok('去掉「非编辑模式直接退出」后，脚本会误判为可编辑',
+      broken !== editJs && !/if \(!WANT_EDIT\) return;/.test(broken));
 
-  /* 编辑 */
-  const rowWan = Array.from(d.querySelectorAll('#fest-list .fest-row')).find(r => /万圣节/.test(r.textContent));
-  rowWan.querySelector('button[data-act="edit"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  eq('编辑回填名称', d.getElementById('fest-name').value, '万圣节');
-  d.getElementById('fest-name').value = '万圣节(改)';
-  d.getElementById('fest-save').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 60));
-  ok('编辑已落库', store.rows.some(r => r.name === '万圣节(改)'));
-  eq('编辑不再新增记录', store.rows.length, 4);
+    const noRole = editJs.replace("if (role === 'super_admin') { enable(); return; }", "enable(); return;");
+    ok('去掉超管校验后普通管理员也会被放行', noRole !== editJs && !/role === 'super_admin'/.test(noRole));
 
-  /* 删除：先拒绝再确认 */
-  w.__confirmAnswer = false;
-  let rowT = Array.from(d.querySelectorAll('#fest-list .fest-row')).find(r => /万圣节/.test(r.textContent));
-  rowT.querySelector('button[data-act="del"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 30));
-  eq('取消确认时不删除', calls.del, 0);
-  w.__confirmAnswer = true;
-  rowT = Array.from(d.querySelectorAll('#fest-list .fest-row')).find(r => /万圣节/.test(r.textContent));
-  rowT.querySelector('button[data-act="del"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 60));
-  eq('确认后删除', calls.del, 1);
-  eq('数据库剩 3 条', store.rows.length, 3);
+    const noArm = editJs.replace("if (delBtn.classList.contains('armed')) { doDelete(id); return; }", "doDelete(id); return;");
+    ok('去掉二次确认后一次点击即删', noArm !== editJs && /确认删除/.test(editJs) && !/armed\'\)\) \{ doDelete/.test(noArm));
+  }
 
-  /* 重建 + 清空 */
-  d.getElementById('fest-reset').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 120));
-  ok('用内置库重建写入 >=150 条', store.rows.length >= 150, store.rows.length);
-  ok('重建后列表已刷新', d.querySelectorAll('#fest-list .fest-row:not(.fest-head)').length >= 150);
-  d.getElementById('fest-clear').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 60));
-  eq('清空调用一次', calls.clear, 1);
-  eq('清空后无记录', store.rows.length, 0);
-  ok('清空后回到空态提示', /数据库里还没有节庆/.test(d.getElementById('fest-empty').textContent));
-
-  /* 导出：捕获 Blob 内容 */
-  store.rows = [{ id: 'x1', name: '导出用', date: '05-05', region: '全球', cat: 'trad', star: 3, lead: 100, dur: 1, sort_no: 0 }];
-  w.loadFestivalsPanel();
-  await new Promise(r => setTimeout(r, 60));
-  let captured = null, fileName = '';
-  const origCreate = w.document.createElement.bind(w.document);
-  w.document.createElement = function (tag) {
-    const el = origCreate(tag);
-    if (String(tag).toLowerCase() === 'a') {
-      el.click = function () { fileName = el.download; };
-    }
-    return el;
-  };
-  const OrigBlob = w.Blob;
-  w.Blob = function (parts, opts) { captured = String(parts[0]); return new OrigBlob(parts, opts); };
-  w.URL.createObjectURL = () => 'blob:fake';
-  w.URL.revokeObjectURL = () => {};
-  d.getElementById('fest-export').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 30));
-  ok('导出文件名带日期', /^festival-library-\d{4}-\d{2}-\d{2}\.json$/.test(fileName), fileName);
-  let expObj = null;
-  try { expObj = JSON.parse(captured); } catch (e) {}
-  ok('导出内容是合法 JSON 且含节庆数组', !!expObj && Array.isArray(expObj.festivals) && expObj.festivals.length === 1);
-  ok('导出保留了地区与类别', expObj && expObj.festivals[0].region === '全球' && expObj.festivals[0].cat === 'trad');
-
-  /* 导入：混入坏数据 */
-  const before = calls.upsert;
-  const fileInput = d.getElementById('fest-import-file');
-  const payload = JSON.stringify({ festivals: [
-    { name: '导入好节', date: '06-06', region: '韩国', cat: 'trad', star: 4, lead: 90, dur: 2 },
-    { name: '', date: '07-07' },
-    { name: '日期坏', date: 'abc' },
-  ] });
-  const fakeFile = new w.File([payload], 'a.json', { type: 'application/json' });
-  Object.defineProperty(fileInput, 'files', { value: [fakeFile], configurable: true });
-  fileInput.dispatchEvent(new w.Event('change', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 120));
-  ok('导入触发一次写库', calls.upsert === before + 1, calls.upsert + '/' + (before + 1));
-  ok('导入写入合法记录并跳过坏记录', store.rows.some(r => r.name === '导入好节') && store.rows.length === 2, store.rows.length);
-
-  w.close();
-
-  console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
-  if (fails.length) { console.log('失败项：'); fails.forEach(f => console.log(' - ' + f)); }
-  process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('运行异常：', e && e.message); process.exit(1); });
+  console.log('==========================================');
+  console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
+  if (fail) { console.log('失败项：'); fails.forEach((f) => console.log(' - ' + f)); process.exitCode = 1; }
+})();

@@ -464,7 +464,7 @@ function renderGantt(list){
 /* ============ 渲染：卡片 ============ */
 function renderCards(list){
   var html = '';
-  html += '<div class="sec-head"><h2>节庆机会卡片</h2><span class="sub">含选品方向 · 可编辑管理</span><span class="line"></span></div>';
+  html += '<div class="sec-head"><h2>节庆机会卡片</h2><span class="sub">含选品方向 · 按提前期倒推最晚启动日</span><span class="line"></span></div>';
   if(!list.length){
     html += '<div style="padding:50px;text-align:center;color:var(--ink-3);font-size:13px;letter-spacing:.05em">当前筛选条件下没有符合条件的节庆</div>';
   }
@@ -475,7 +475,9 @@ function renderCards(list){
     var pct = Math.max(0, Math.min(1, 1 - it.daysLeft/365));
     var circ = 2*Math.PI*24;
     var dash = (circ*(it.daysLeft/365)).toFixed(1);
-    html += '<article class="fcard" style="--c:'+c+';animation-delay:'+(i*0.03)+'s">';
+    html += '<article class="fcard" data-fid="'+esc(it.h.id)+'" style="--c:'+c+';animation-delay:'+(i*0.03)+'s">';
+    html += '<div class="fest-edit-chip"><button type="button" data-edit="'+esc(it.h.id)+'">编辑</button>'
+         +  '<button type="button" class="del" data-del="'+esc(it.h.id)+'">删除</button></div>';
     html += '<div class="band"></div>';
     html += '<div class="crow"><div><div class="cday num">'+pad2(it.occ.getDate())+'</div><div class="cmon">'+(it.occ.getMonth()+1)+' 月 · '+WEEKDAYS[it.occ.getDay()]+'</div></div>';
     html += '<div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="24" fill="none" stroke="#eef0f3" stroke-width="4"></circle>'

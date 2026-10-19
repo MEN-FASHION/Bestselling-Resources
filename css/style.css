@@ -2943,9 +2943,11 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  max-width: 1920px; margin: 0 auto; padding: 22px 3vw 56px;
-  display: grid; grid-template-columns: 286px minmax(0, 1fr);
-  gap: 24px; align-items: start;
+  /* 20261019E：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  max-width: none; width: 100%; margin: 0; box-sizing: border-box;
+  padding: 14px clamp(14px, 1.4vw, 26px) 56px;
+  display: grid; grid-template-columns: 300px minmax(0, 1fr);
+  gap: 20px; align-items: start;
   --mk-top: 58px;   /* 站点顶栏高度：粘性元素的偏移基准 */
 }
 .mkzone .num { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -2972,7 +2974,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .menu-btn { display: none; }
 
 /* ---------- 侧栏 ---------- */
-.mkzone .sidebar { position: sticky; top: calc(var(--mk-top) + 12px); max-height: calc(100vh - 96px); overflow-y: auto; padding: 18px 16px 26px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+.mkzone .sidebar { position: sticky; top: calc(var(--mk-top) + 10px); max-height: calc(100vh - var(--mk-top) - 22px); overflow-y: auto; overscroll-behavior: contain; align-self: start; padding: 18px 16px 26px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
 .mkzone .side-sec { margin-bottom: 22px; }
 .mkzone .side-sec:last-child { margin-bottom: 0; }
 .mkzone .side-sec h3 { display: flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--mk-ink3); font-weight: 700; margin-bottom: 10px; }
@@ -3215,7 +3217,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 /* 响应式 */
 @media (max-width: 1280px) {
-  .mkzone { grid-template-columns: 250px minmax(0, 1fr); gap: 18px; }
+  .mkzone { grid-template-columns: 262px minmax(0, 1fr); gap: 16px; }
   .mkzone .stats { grid-template-columns: repeat(2, 1fr); }
   .mkzone .gantt-head, .mkzone .grow { grid-template-columns: 190px 1fr; }
 }
@@ -3284,3 +3286,46 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 @media (max-width: 560px) {
   .vis-tab { padding: 8px 12px; font-size: 13px; }
 }
+
+/* ============================================================
+   20261019E · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
+   ============================================================ */
+.mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 14px; background: var(--card); border: 1px solid var(--mk-line2); border-radius: 14px;
+  box-shadow: 0 12px 28px -26px rgba(60,52,42,.9); margin-bottom: 2px; }
+.mkzone.is-editing .mk-editbar { display: flex; }
+.mk-editbar .eb-tag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .16em; font-weight: 700;
+  color: #fff; background: linear-gradient(135deg, var(--gold), #c19434); padding: 5px 11px; border-radius: 999px; }
+.mk-editbar .eb-tag i { width: 6px; height: 6px; border-radius: 50%; background: #fff; display: block; animation: ebPulse 1.8s infinite; }
+@keyframes ebPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+.mk-editbar .eb-hint { font-size: 12px; color: var(--mk-ink3); flex: 1; min-width: 180px; }
+.mk-editbar .eb-btn { height: 30px; padding: 0 13px; border-radius: 9px; border: 1px solid var(--mk-line2); background: var(--card);
+  color: var(--mk-ink); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: .18s; white-space: nowrap; }
+.mk-editbar .eb-btn:hover { border-color: var(--mk-accent); color: var(--mk-accent); transform: translateY(-1px); }
+.mk-editbar .eb-btn.primary { background: linear-gradient(135deg, var(--gold), #c19434); border-color: transparent; color: #fff; }
+.mk-editbar .eb-btn.primary:hover { box-shadow: 0 8px 18px -10px rgba(160,124,52,.95); color: #fff; }
+
+/* 卡片 / 时间轴上的编辑徽标 —— 只在编辑模式出现 */
+.fest-edit-chip { display: none; position: absolute; top: 10px; right: 10px; z-index: 4; gap: 6px; }
+.mkzone.is-editing .fcard { position: relative; }
+.mkzone.is-editing .fest-edit-chip { display: inline-flex; }
+.fest-edit-chip button { height: 26px; padding: 0 10px; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  border: 1px solid rgba(0,0,0,.08); background: rgba(255,255,255,.94); color: var(--mk-ink); box-shadow: 0 4px 12px -8px rgba(0,0,0,.5); transition: .16s; }
+.fest-edit-chip button:hover { background: #fff; transform: translateY(-1px); }
+.fest-edit-chip button.del { color: var(--danger); }
+.fest-edit-chip button.del.armed { background: var(--danger); color: #fff; border-color: transparent; }
+
+/* 时间轴节点：编辑模式下加可点击态 */
+.mkzone.is-editing .timeline .fest { cursor: pointer; }
+.mkzone.is-editing .timeline .fest:hover { border-color: var(--mk-accent); box-shadow: 0 12px 24px -20px rgba(160,124,52,.95); }
+
+/* 编辑模式提示条：数据改动即时生效，前台无需刷新 */
+.mk-editbar .eb-live { font-size: 11.5px; color: var(--mk-accent); font-weight: 700; letter-spacing: .04em; }
+
+/* 后台「营销日历」实时预览（同源 iframe，等同前台） */
+.mk-preview-shell { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; }
+.mk-preview-bar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--bg2); flex-wrap: wrap; }
+.mk-preview-bar .mpb-title { font-size: 12px; font-weight: 800; letter-spacing: .1em; color: var(--txt); }
+.mk-preview-bar .mpb-sub { font-size: 11.5px; color: var(--sub); flex: 1; min-width: 160px; }
+.mk-preview-frame { width: 100%; height: 78vh; min-height: 560px; border: 0; display: block; background: #fff; }

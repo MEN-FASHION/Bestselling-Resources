@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20261019D">
+<link rel="stylesheet" href="css/style.css?v=20261019E">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
 
@@ -84,31 +84,6 @@
   </header>
 
   <section id="marketing-view" class="gallery-view hidden">
-    <div class="mk-legacy hidden">
-      <div class="mk-wrap">
-      <!-- ===== 设计稿标题区 ===== -->
-      <div class="mk-hero">
-        <h1 class="mk-hero-title">节点营销攻略<span class="mk-hero-sep">——</span><span id="mk-hero-year" class="mk-hero-year">2026</span>年美国节点营销日历</h1>
-        <p class="mk-hero-sub">沿着时间轴，提前掌握全年美国节点营销节奏</p>
-      </div>
-
-      <!-- ===== 顶部时间线 ===== -->
-      <div class="mk-timeline-head"><span class="mk-timeline-title">营销时间线</span><span class="mk-hint">← 可左右拖动滑动查看 →</span></div>
-      <div id="mk-timeline" class="mk-timeline"><div class="mk-empty">加载中…</div></div>
-
-      <!-- ===== 设计稿底部图例 ===== -->
-      <div class="mk-legend">
-        <span class="mk-legend-item mk-leg-festival">节日庆祝</span>
-        <span class="mk-legend-item mk-leg-event">重大活动</span>
-        <span class="mk-legend-item mk-leg-promo">促销旺季</span>
-      </div>
-
-      <!-- ===== 营销日历卡片区（3:4 展示图） ===== -->
-      <div class="mk-grid-title">营销日历</div>
-      <div id="mk-grid" class="mk-grid"><div class="mk-empty">加载中…</div></div>
-    </div>
-    </div>
-
     <div class="mkzone">
       <div class="mk-head">
         <div class="mk-head-l"><h1>营销日历</h1><p>全球节庆时间轴 · 服装开发周期推演 · 按提前期倒推最晚启动日</p></div>
@@ -120,6 +95,19 @@
           </div>
           <div class="today-pill"><span class="dot"></span><span id="todayText">—</span></div>
         </div>
+      </div>
+
+      <!-- 编辑条：只有 ?mode=edit（后台实时预览）时才出现；前台访客看不到任何编辑入口 -->
+      <div class="mk-editbar" id="mkEditBar">
+        <span class="eb-tag"><i></i>编辑模式</span>
+        <span class="eb-hint">这里就是前台本身：改完即时生效。点任意节庆卡片 / 时间轴节点即可改；下方按钮做导入导出与整体维护。</span>
+        <span class="eb-live" id="ebLive">已同步</span>
+        <button type="button" class="eb-btn primary" id="ebAdd">＋ 新建节日</button>
+        <button type="button" class="eb-btn" id="ebImport">导入 JSON</button>
+        <button type="button" class="eb-btn" id="ebExport">导出 JSON</button>
+        <button type="button" class="eb-btn" id="ebRebuild">用内置库重建</button>
+        <button type="button" class="eb-btn" id="ebClear">清空库</button>
+        <input type="file" id="ebFile" accept=".json,application/json" style="display:none">
       </div>
 
       <aside class="sidebar" id="sidebar">
@@ -252,14 +240,15 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261019D"></script>
-  <script src="vendor/qrcode.min.js?v=20261019D"></script>
-  <script src="js/config.js?v=20261019D"></script>
-  <script src="js/supabase.js?v=20261019D"></script>
-  <script src="js/track-menu.js?v=20261019D"></script>
-  <script src="js/common.js?v=20261019D"></script>
-  <script src="js/marketing.js?v=20261019D"></script>
-  <script src="js/marketing-data.js?v=20261019D"></script>
-  <script src="js/marketing-main.js?v=20261019D"></script>
+  <script src="vendor/supabase.js?v=20261019E"></script>
+  <script src="vendor/qrcode.min.js?v=20261019E"></script>
+  <script src="js/config.js?v=20261019E"></script>
+  <script src="js/supabase.js?v=20261019E"></script>
+  <script src="js/track-menu.js?v=20261019E"></script>
+  <script src="js/common.js?v=20261019E"></script>
+  <script src="js/marketing.js?v=20261019E"></script>
+  <script src="js/marketing-data.js?v=20261019E"></script>
+  <script src="js/marketing-main.js?v=20261019E"></script>
+  <script src="js/marketing-edit.js?v=20261019E"></script>
 </body>
 </html>

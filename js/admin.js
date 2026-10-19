@@ -193,9 +193,9 @@ function switchPanel(target) {
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
-    // 营销日历：节庆库（前台只读的那一份）+ 已发布素材，独立菜单
+    // 营销日历：① 前台实时预览（同源 iframe，编辑入口只在预览里出现）② 已发布素材
     if (target === "mk-card") {
-      if (typeof loadFestivalsPanel === "function") loadFestivalsPanel();
+      mountMarketingPreview();
       loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles();
     }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
@@ -205,6 +205,34 @@ function switchPanel(target) {
     if (target === "backup-card" && typeof loadBackupList === "function") { loadBackupList(); loadBackupPolicy(); }
   }
 
+
+/* ============================================================
+ * 营销日历 · 前台实时预览（20261019E）
+ * 后台不再维护另一套界面：直接嵌入前台 marketing.html?mode=edit，
+ * 所见即所得 —— 后台看到的就是前台，改动即时写库。
+ * 首次进入面板时才载入（懒加载），避免一进后台就多一次整页请求。
+ * ============================================================ */
+let mkPreviewMounted = false;
+function mountMarketingPreview(force) {
+  const frame = document.getElementById("mk-preview-frame");
+  if (!frame) return;
+  const src = "marketing.html?mode=edit&v=20261019E";
+  if (force || !mkPreviewMounted || !frame.getAttribute("src")) {
+    frame.setAttribute("src", src);
+    mkPreviewMounted = true;
+  }
+  const stat = document.getElementById("mk-preview-stat");
+  if (stat) stat.textContent = "与前台完全一致 · 编辑入口只在预览中出现";
+}
+document.addEventListener("click", function (e) {
+  if (e.target && e.target.id === "mk-preview-reload") {
+    const frame = document.getElementById("mk-preview-frame");
+    if (frame) frame.setAttribute("src", "marketing.html?mode=edit&v=" + Date.now());
+  }
+  if (e.target && e.target.id === "mk-preview-open") {
+    window.open("marketing.html?mode=edit", "_blank", "noopener");
+  }
+});
 function setPreviewTab(url) {
     document.querySelectorAll("#preview-mask .preview-tab").forEach(t => {
       t.classList.toggle("active", t.dataset.pview === url);
