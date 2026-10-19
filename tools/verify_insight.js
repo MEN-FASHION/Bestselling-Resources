@@ -246,6 +246,90 @@ function mutate(file, re, to) {
     ok("还原：拿掉跳页输入后，跳页检查会失败（证明检查有效）", permOld.indexOf('id="perm-page-jump"') < 0);
   }
 
+  /* ---------- ⑤ 本轮线上报错的根因：脚本执行顺序 ---------- */
+  console.log("\n[10] 统计脚本：自检不得早于对象创建（本轮 SQL 报错的根因）");
+  {
+    const sql = read("tools/setup_analytics.sql");
+    const lines = sql.split("\n");
+    const sc = lines.findIndex((l) => l.indexOf("自检 ①") >= 0);
+    ok("脚本里存在自检区", sc >= 0);
+    const late = [];
+    ["is_super_admin", "record_visit", "visit_ping", "track_event", "log_admin_action",
+      "insight_front", "insight_admin", "log_admin_tbl", "log_admin_profile"].forEach((n) => {
+      const defs = lines.map((l, i) => [l, i]).filter((x) => /^create (or replace )?function public\./.test(x[0]) && x[0].indexOf("public." + n + "(") >= 0).map((x) => x[1]);
+      if (defs.length && Math.min.apply(null, defs) > sc) late.push(n);
+    });
+    ok("自检区排在所有被检查对象创建之后", late.length === 0, late.join(","));
+    ok("自检区靠近文件末尾（后面基本只剩它自己）", sql.length - sql.indexOf("自检 ①") < 3000);
+    ok("权限检查带存在性保护（对象缺失也不会中断整段脚本）",
+      /to_regprocedure\('public\.insight_front\(integer\)'\) is not null/.test(sql));
+    ok("保护覆盖了全部三项动向/上报接口",
+      ["insight_front(integer)", "insight_admin(integer)", "track_event(text, text, text, text)", "log_admin_action(text, text, jsonb)"]
+        .every((sig) => sql.indexOf("to_regprocedure('public." + sig + "')") >= 0));
+
+    /* 签名一致性：grant/revoke 引用的签名必须能对应到真实创建的函数（否则同样报 42883） */
+    const creates = {};
+    sql.replace(/^create (?:or replace )?function public\.([a-z_]+)\(([^)]*)\)/gm, (m, name, args) => {
+      const parts = args.split(",").map((x) => x.trim()).filter(Boolean);
+      (creates[name] = creates[name] || []).push(parts);
+      return m;
+    });
+    const bad = [];
+    sql.replace(/^(?:grant|revoke)[^;]*?function public\.([a-z_]+)\(([^)]*)\)/gm, (m, name, args) => {
+      const n = args.split(",").map((x) => x.trim()).filter(Boolean).length;
+      const cands = creates[name] || [];
+      const hit = cands.some((ps) => ps.length === n || (ps.length > n && ps.slice(n).every((x) => /default/i.test(x))));
+      if (!hit) bad.push(name + "(" + args.trim() + ")");
+      return m;
+    });
+    ok("授权语句引用的函数签名都能对上（否则执行时同样会报函数不存在）", bad.length === 0, bad.join(" | "));
+  }
+
+  console.log("\n[11] 访问来源（从哪来）真正接通");
+  {
+    const sup = read("js/supabase.js");
+    const sql = read("tools/setup_analytics.sql");
+    ok("前台登记访问时上报了来源字段", /p_referrer:\s*ref/.test(sup));
+    ok("来源取不到浏览器值时回落到空（后台显示直接进入）", /document\.referrer/.test(sup));
+    ok("来源归一化为域名（同一来源只留一条，便于聚合）", /new URL\(ref\)\.host/.test(sup));
+    ok("来源做过长度截断（不会写进超长地址）", /ref\.length > 120/.test(sup));
+    ok("数据库侧新版登记函数确实收来源参数", /p_referrer text default ''/.test(sql));
+    ok("旧的 6 参数重载被显式清理（否则调用会落到旧版、来源永远记不到）",
+      /drop function if exists public\.record_visit\(text, text, text, text, text, text\)/.test(sql));
+    ok("清理旧重载发生在「新版就位」之后（否则调用仍会落到旧签名、来源永远记不到）",
+      sql.lastIndexOf("drop function if exists public.record_visit(text, text, text, text, text, text);") >
+      sql.indexOf("create or replace function public.record_visit("));
+  }
+
+  console.log("\n[12] 反向验证（本轮修复）");
+  {
+    const sql = read("tools/setup_analytics.sql");
+    // (a) 自检挪回创建之前 → 顺序检查必须失败
+    const i = sql.indexOf("-- 自检 ①");
+    const j = sql.indexOf('as "全部账号与角色";') + 'as "全部账号与角色";'.length;
+    const block = sql.slice(i, j);
+    const without = sql.slice(0, i) + sql.slice(i + block.length);
+    const at = without.indexOf("notify pgrst");
+    const movedBack = without.slice(0, at) + block + "\n" + without.slice(at);
+    const early = movedBack.indexOf("-- 自检 ①");
+    const defPos = movedBack.indexOf("create function public.insight_front(");
+    ok("还原：自检又排在 insight_front 创建之前（顺序检查会失败）", early < defPos, early + " vs " + defPos);
+
+    // (b) 去掉存在性保护
+    ok("还原：去掉 to_regprocedure 保护后，保护检查会失败",
+      !/to_regprocedure\('public\.insight_front\(integer\)'\) is not null/.test(
+        sql.replace(/to_regprocedure\('public\.insight_front\(integer\)'\) is not null\n?\s*and /g, "")));
+
+    // (c) 去掉旧重载清理
+    ok("还原：拿掉旧重载清理后，重载检查会失败",
+      !/drop function if exists public\.record_visit\(text, text, text, text, text, text\)/.test(
+        sql.split("drop function if exists public.record_visit(text, text, text, text, text, text);").join("")));
+
+    // (d) 去掉来源上报
+    ok("还原：拿掉 p_referrer 后，来源检查会失败",
+      !/p_referrer:\s*ref/.test(read("js/supabase.js").replace(/p_referrer:\s*ref,/, "")));
+  }
+
   console.log("\n== 结果：" + pass + " 项通过，" + fail + " 项失败 ==");
   if (fail) { console.log("失败项：\n - " + failures.join("\n - ")); process.exit(1); }
   process.exit(0);

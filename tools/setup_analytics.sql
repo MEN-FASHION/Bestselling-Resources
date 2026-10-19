@@ -1,6 +1,6 @@
 -- ============================================================
 -- TREND BANK · 用户动向（前台访客 + 后台管理员的行为统计）
--- 版本：20261016P
+-- 版本：20261016Q
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「他们从哪来、干了什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 页面 / 来源 referrer / 停留时长 / IP / 国家地区），
@@ -139,53 +139,11 @@ $$;
 revoke all on function public.visit_ping(bigint, integer) from public, anon;
 grant execute on function public.visit_ping(bigint, integer) to authenticated;
 
--- ---------- 5. 让新函数立刻对接口生效 + 自检 ----------
+-- ---------- 5. 让新函数立刻对接口生效 ----------
 -- 新建或修改函数后，接口层的结构缓存可能还要一会儿才认识这些函数；
 -- 这里主动通知它重载，避免出现「数据库里明明有函数、接口却报找不到」的情况。
 notify pgrst, 'reload schema';
 
--- 自检 ①：对象是否都建好了（期望「已就绪」全是 true）
-select '访问记录表 visit_logs' as "检查项", (to_regclass('public.visit_logs') is not null) as "已就绪"
-union all
-select '登记访问 record_visit',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'record_visit')
-union all
-select '停留时长 visit_ping',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'visit_ping')
-union all
-select '动向统计 insight_front',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'insight_front')
-union all
-select '管理员动向 insight_admin',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'insight_admin')
-union all
-select '行为上报 track_event',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'track_event')
-union all
-select '操作留痕 log_admin_action',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'log_admin_action')
-union all
-select '超管判定 is_super_admin',
-  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'is_super_admin');
-
--- 自检 ②：接口授权 / 超管账号 / 现有数据量（期望：登录用户可调用 = true，匿名可调用 = false）
--- 说明：SQL Editor 里没有浏览器登录态，所以 auth.uid() 为空属正常，不影响下面这些检查。
-select
-  has_function_privilege('authenticated', 'public.insight_front(integer)', 'EXECUTE') as "登录用户可调用前台动向",
-  has_function_privilege('anon', 'public.insight_front(integer)', 'EXECUTE') as "匿名可调用前台动向_应为false",
-  has_function_privilege('authenticated', 'public.insight_admin(integer)', 'EXECUTE') as "登录用户可调用管理员动向",
-  has_function_privilege('authenticated', 'public.track_event(text, text, text, text)', 'EXECUTE') as "登录用户可上报行为",
-  has_function_privilege('authenticated', 'public.log_admin_action(text, text, jsonb)', 'EXECUTE') as "登录用户可写操作留痕",
-  (select count(*) from public.visit_logs) as "已有访问记录数",
-  (select count(*) from public.profiles where lower(btrim(coalesce(role, ''))) = 'super_admin') as "超管账号数",
-  (select string_agg(coalesce(email, '(无邮箱)') || ' → ' || coalesce(role, '(空)'), '  |  ' order by email) from public.profiles) as "全部账号与角色";
 
 -- ============================================================
 -- 执行完成后：前台各页面打开时会自动登记访问（仅登录用户），点击菜单会上报菜单事件，
@@ -370,7 +328,7 @@ begin
     where started_at >= v_from and coalesce(event, '') = ''
   )
   select jsonb_build_object(
-    'script', '20261016P',
+    'script', '20261016Q',
     'days', v_days,
     'from', v_from,
     'totals', (
@@ -695,3 +653,57 @@ begin
     end;
   end if;
 end $$;
+
+
+-- ============================================================
+-- 6. 自检（务必放在文件最末：这里会检查前面刚建好的表/函数/授权，
+--    若提前放在创建语句之前，数据库会判定「函数不存在」并中断整段脚本）
+-- ============================================================
+
+-- 自检 ①：对象是否都建好了（期望「已就绪」全是 true）
+select '访问记录表 visit_logs' as "检查项", (to_regclass('public.visit_logs') is not null) as "已就绪"
+union all
+select '登记访问 record_visit',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'record_visit')
+union all
+select '停留时长 visit_ping',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'visit_ping')
+union all
+select '动向统计 insight_front',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'insight_front')
+union all
+select '管理员动向 insight_admin',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'insight_admin')
+union all
+select '行为上报 track_event',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'track_event')
+union all
+select '操作留痕 log_admin_action',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'log_admin_action')
+union all
+select '超管判定 is_super_admin',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'is_super_admin');
+
+-- 自检 ②：接口授权 / 超管账号 / 现有数据量（期望：登录用户可调用 = true，匿名可调用 = false）
+-- 说明：SQL Editor 里没有浏览器登录态，所以 auth.uid() 为空属正常，不影响下面这些检查。
+select
+  (to_regprocedure('public.insight_front(integer)') is not null
+   and has_function_privilege('authenticated', 'public.insight_front(integer)', 'EXECUTE')) as "登录用户可调用前台动向",
+  (to_regprocedure('public.insight_front(integer)') is not null
+   and has_function_privilege('anon', 'public.insight_front(integer)', 'EXECUTE')) as "匿名可调用前台动向_应为false",
+  (to_regprocedure('public.insight_admin(integer)') is not null
+   and has_function_privilege('authenticated', 'public.insight_admin(integer)', 'EXECUTE')) as "登录用户可调用管理员动向",
+  (to_regprocedure('public.track_event(text, text, text, text)') is not null
+   and has_function_privilege('authenticated', 'public.track_event(text, text, text, text)', 'EXECUTE')) as "登录用户可上报行为",
+  (to_regprocedure('public.log_admin_action(text, text, jsonb)') is not null
+   and has_function_privilege('authenticated', 'public.log_admin_action(text, text, jsonb)', 'EXECUTE')) as "登录用户可写操作留痕",
+  (select count(*) from public.visit_logs) as "已有访问记录数",
+  (select count(*) from public.profiles where lower(btrim(coalesce(role, ''))) = 'super_admin') as "超管账号数",
+  (select string_agg(coalesce(email, '(无邮箱)') || ' → ' || coalesce(role, '(空)'), '  |  ' order by email) from public.profiles) as "全部账号与角色";

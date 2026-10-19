@@ -1557,13 +1557,23 @@ async removeTrendRecord(id) {
     // 页面打开时登记一次访问，返回该条记录 id；随后用心跳累加停留时长。
     async recordVisit(o) {
       const d = o || {};
-      const { data, error } = await client.rpc("record_visit", {
+/* 「从哪来」：优先用调用方传入，否则取浏览器来源地址。
+        归一化成域名（同一来源只留一条），便于后台按来源聚合；取不到就留空，后台显示"直接进入"。 */
+        var ref = d.referrer;
+        if (!ref && typeof document !== "undefined") ref = document.referrer || "";
+        ref = String(ref || "").trim();
+        if (ref) {
+          try { ref = new URL(ref).host || ref; } catch (e) { /* 不是标准地址就原样保留 */ }
+          if (ref.length > 120) ref = ref.slice(0, 120);
+        }
+        const { data, error } = await client.rpc("record_visit", {
         p_zone: d.zone || "",
         p_path: d.path || "",
         p_ip: d.ip || "",
         p_country: d.country || "",
         p_region: d.region || "",
         p_city: d.city || "",
+        p_referrer: ref,
       });
       if (error) throw new Error(error.message || "登记访问失败");
       return data;
