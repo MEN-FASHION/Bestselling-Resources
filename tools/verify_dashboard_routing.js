@@ -84,8 +84,22 @@ check("权限管理面板未遗留对已删元素的引用", !/\$\(["']#(perm-da
 
 console.log("【D】左侧「数据看板」入口调用的是哪一套");
 check("admin.js 未自行定义 loadDashboard（会用到全局，即图片管理那套）", !/function\s+loadDashboard\s*\(/.test(sources["admin.js"]));
-check("admin.js 的数据看板分支调用了 loadDashboard", /target\s*===\s*["']dash-card["'][^\n]*loadDashboard\(\)/.test(sources["admin.js"]));
+check("视觉专区子页签「数据看板」调用了 loadDashboard", /visualTab\s*===\s*["']dash["'][^\n]*loadDashboard\(\)|setVisualTab[\s\S]{0,400}?loadDashboard\(\)/.test(sources["admin.js"]));
+check("视觉专区已合并：侧边菜单不再单独有「数据看板」入口", !/data-target="dash-card"/.test(adminHtml));
+check("视觉专区已合并：菜单名为「视觉专区」", /data-target="manage-card">视觉专区</.test(adminHtml));
+check("数据看板统计口径走全站函数（管理员也能看到全员数据）", /dashboard_images/.test(sources["supabase.js"] || "") || /listDashboardImages/.test(sources["admin-images.js"]));
 check("面板初始化调用 bindDashboard（现为图片管理那套）", /bindDashboard/.test(sources["admin.js"]));
+
+console.log("【D2】视觉专区合并后的结构");
+check("两个子页容器都在（图片管理 / 数据看板）", adminHtml.indexOf('id="vis-manage"') >= 0 && adminHtml.indexOf('id="vis-dash"') >= 0);
+check("数据看板子页默认隐藏（进入后台不加载图片）", /id="vis-dash"[^>]*class="vis-pane hidden"|class="vis-pane hidden" id="vis-dash"/.test(adminHtml));
+check("两个子页签按钮齐备", (adminHtml.match(/class="vis-tab[^"]*" data-vtab="/g) || []).length === 2);
+check("数据看板内容已并入视觉专区（旧的 dash-card 面板已移除）", adminHtml.indexOf('id="dash-card"') < 0 && adminHtml.indexOf('id="dash-meta"') >= 0);
+check("图片管理与数据看板在同一面板内（不再各自一个面板）", (adminHtml.match(/class="panel-card[^"]*" id="(manage|dash)-card"/g) || []).length === 1);
+check("图片管理页说明「只改自己上传的图」", /只看到并只能编辑、删除自己上传的图片/.test(adminHtml));
+check("数据看板页说明「全站所有管理员」", /全站所有管理员/.test(adminHtml));
+const cssSrc = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
+check("子页签样式已定义（.vis-subtabs / .vis-tab.is-active）", /\.vis-subtabs/.test(cssSrc) && /\.vis-tab\.is-active/.test(cssSrc));
 
 console.log("【E】新增两个超管面板（用户动向 / 版本恢复）");
 const insFn = sources["admin-insight.js"] || "";

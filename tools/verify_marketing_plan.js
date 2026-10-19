@@ -26,7 +26,7 @@ ok('页面引用主脚本', /marketing-main\.js\?v=/.test(html));
 ok('页面含 .mkzone 容器', /class="mkzone"/.test(html));
 ok('旧版时间轴区块已隐藏', /class="mk-legacy hidden"/.test(html));
 ok('版本号已统一为 C 且无旧版残留',
-  /20261019C/.test(html) && !/20261019B/.test(html) &&
+  /20261019D/.test(html) && !/20261019B/.test(html) &&
   !/20261019B/.test(css + dataJs + mainJs));
 const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
   'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal',

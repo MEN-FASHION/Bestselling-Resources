@@ -3252,3 +3252,35 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .fest-row > span:nth-child(4), .fest-row > span:nth-child(5),
   .fest-row > span:nth-child(6), .fest-row > span:nth-child(7) { display: none; }
 }
+
+/* ===== 视觉专区：图片管理 / 数据看板 子页签 ===== */
+.vis-subtabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 14px;
+  border-bottom: 1px solid var(--line, rgba(0,0,0,.08));
+  padding-bottom: 0;
+}
+.vis-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted, #77716a);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.vis-tab:hover { color: var(--ink, #2f2a26); background: rgba(0,0,0,.03); }
+.vis-tab.is-active {
+  color: var(--accent, #8a6a45);
+  border-bottom-color: var(--accent, #8a6a45);
+  background: rgba(138,106,69,.06);
+}
+.vis-pane > h2:first-child { margin-top: 0; }
+@media (max-width: 560px) {
+  .vis-tab { padding: 8px 12px; font-size: 13px; }
+}

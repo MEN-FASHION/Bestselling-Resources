@@ -1098,8 +1098,12 @@ async function loadDashboard() {
     const meta = $("#dash-meta");
     meta.textContent = "统计中…";
     let imgs = [], defs = [];
+    // 看板口径 = 全站（含其他管理员上传）；图片管理列表仍是「只能改自己上传的」
+    const imgsP = (typeof SB.listDashboardImages === "function")
+      ? SB.listDashboardImages().catch(() => SB.listImages(null))
+      : SB.listImages(null);
     try {
-      [imgs, defs] = await Promise.all([SB.listImages(null), SB.listTagDefs()]);
+      [imgs, defs] = await Promise.all([imgsP, SB.listTagDefs()]);
     } catch (e) { meta.textContent = "统计失败，请点击刷新重试"; return; }
     buildDashCatFilter(imgs);
     const sel = document.getElementById("dash-cat-filter");
@@ -1116,6 +1120,7 @@ async function loadDashboard() {
     ov.innerHTML = "";
     [
       { label: "图片总数", value: imgs.length },
+      { label: "上传人数", value: new Set(imgs.map(i => i.uploaded_by).filter(Boolean)).size },
       { label: "类目数", value: cats.size },
       { label: "已打标图片", value: tagged },
       { label: "未打标图片", value: imgs.length - tagged }

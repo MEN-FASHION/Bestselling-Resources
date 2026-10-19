@@ -40,7 +40,6 @@ let selectedImages = new Set();
 const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
-  "dash-card": "",          // 任一授权专区即可
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
@@ -104,7 +103,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "dash-card" || target === "rank-card" || target === "insight-card") return true;
+    if (target === "rank-card" || target === "insight-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -143,10 +142,35 @@ let zoneVisCfg = {};
 
 // ================= 后台侧边菜单 =================
   function bindAdminNav() {
+    bindVisualTabs();
     document.querySelectorAll("#admin-panel .nav-item").forEach(item => {
       item.addEventListener("click", () => switchPanel(item.dataset.target));
     });
   }
+
+// 视觉专区内的两个子页签：图片管理 / 数据看板
+let visualTab = "manage";
+
+function setVisualTab(name) {
+    visualTab = name === "dash" ? "dash" : "manage";
+    const paneM = document.getElementById("vis-manage");
+    const paneD = document.getElementById("vis-dash");
+    if (paneM) paneM.classList.toggle("hidden", visualTab !== "manage");
+    if (paneD) paneD.classList.toggle("hidden", visualTab !== "dash");
+    document.querySelectorAll("#admin-panel .vis-tab").forEach(b => {
+      const on = b.dataset.vtab === visualTab;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    // 数据看板：切到子页时才拉数据，避免进后台就多一次请求
+    if (visualTab === "dash") { buildDashCatFilter(); loadDashboard(); }
+}
+
+function bindVisualTabs() {
+    document.querySelectorAll("#admin-panel .vis-tab").forEach(b => {
+      b.addEventListener("click", () => setVisualTab(b.dataset.vtab));
+    });
+}
 
 function switchPanel(target) {
     // 权限守卫：当前角色无权访问该面板时拦截（防菜单隐藏后仍被 JS 调用/手动切换）
@@ -162,8 +186,8 @@ function switchPanel(target) {
     document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
       n.classList.toggle("active", n.dataset.target === target);
     });
-    // 进入看板/标签管理时动态加载数据
-    if (target === "dash-card") { buildDashCatFilter(); loadDashboard(); }
+    // 视觉专区：合并了「图片管理 + 数据看板」，进入时回到上次的子页签
+    if (target === "manage-card") { setVisualTab(visualTab); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); }

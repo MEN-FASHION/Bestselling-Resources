@@ -1075,6 +1075,29 @@ as $$
 $$;
 grant execute on function public.frontend_list_images() to authenticated;
 
+-- ---------- 后台数据看板专用：管理员可统计全站图片（含其他管理员上传） ----------
+-- 说明：images 的 select 策略只让超管读全部、普通管理员只读自己上传的（编辑边界必须保留）。
+--       但「数据看板」要看的是全站上传量与打标覆盖率，故用 security definer 函数放开统计口径，
+--       并在函数内校验角色：仅 admin / super_admin 可调用，访客调用直接报错。
+--       仅后台数据看板（js/supabase.js 的 listDashboardImages）调用，只读不写。
+drop function if exists public.dashboard_images();
+create or replace function public.dashboard_images()
+returns setof public.images
+language plpgsql security definer stable
+as $$
+begin
+  if not exists (
+    select 1 from public.profiles p
+     where p.user_id = auth.uid()
+       and p.role in ('admin', 'super_admin')
+  ) then
+    raise exception '仅管理员可查看数据看板';
+  end if;
+  return query select * from public.images order by created_at desc;
+end;
+$$;
+grant execute on function public.dashboard_images() to authenticated;
+
 -- ---------- 前台类目菜单专用：所有登录用户可读取图片实际用到的全部类目 ----------
 -- 说明：前台类目菜单的 listUsedCats 若直接查 images 表会受 RLS 限制（普通管理员/访客
 --       只看到自己上传图的类目），故同样用 security definer 函数绕过，返回全量图片类目。

@@ -355,6 +355,13 @@ const SB = (() => {
       if (error) throw new Error(error.message || "读取失败");
       return data || [];
     },
+    // 数据看板专用：统计全站图片（含其他管理员上传），仅 admin / super_admin 可调用
+    // 图片管理列表仍走 listImages（受 RLS 限制，管理员只看到并只能改自己上传的）
+    async listDashboardImages() {
+      const { data, error } = await client.rpc("dashboard_images");
+      if (error) throw new Error(error.message || "读取失败");
+      return data || [];
+    },
     // 图片总数（后台分页判断；RLS 生效时仅统计当前用户可见数）
     async countImages(category) {
       let q = client.from("images").select("id", { count: "exact", head: true });
