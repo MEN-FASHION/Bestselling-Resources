@@ -937,11 +937,149 @@
     return true;
   }
 
+  /* ============ 导出图片（带标签 · 高清） ============
+     把当前屏幕上这批图（含位次标签）按原图分辨率逐张导出成 PNG，
+     底部加一条标签栏（站点 · 期次 · 类目 + 位次标签），连同清单一起打进一个压缩包。
+     权限口径与「导出 PPT」一致：只有超级管理员可导出（按钮不可见 + 调用时再校验一次）。 */
+  var IMG_EXP = { maxW: 2000, maxN: 300, labelPct: 0.026, minFont: 18 };
+
+  function isSuperNow() {
+    return Promise.resolve()
+      .then(function () {
+        if (CFG.super) return true;
+        if (typeof CFG.isSuper === "function") return CFG.isSuper();
+        return false;
+      })
+      .then(function (v) { return !!v; }, function () { return false; });
+  }
+
+  function ensureZip() {
+    if (window.JSZip) return Promise.resolve(true);
+    var v = assetV();
+    return loadScript("vendor/jszip.min.js" + (v ? ("?v=" + v) : "")).then(function () {
+      return !!window.JSZip;
+    }, function () { return false; });
+  }
+
+  function loadImg(url) {
+    return new Promise(function (res) {
+      var im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = function () { res(im); };
+      im.onerror = function () { res(null); };
+      im.src = url;
+    });
+  }
+
+  /* 单张：原图分辨率（超过上限才等比缩小）→ 底部标签栏 → PNG。
+     取不到像素（站外图 / 跨域被拒 / 未实现 canvas）返回 null，由调用方如实计数。 */
+  function labelPng(item) {
+    return loadImg(item.url).then(function (im) {
+      if (!im) return null;
+      var iw = im.naturalWidth || 0, ih = im.naturalHeight || 0;
+      if (!iw || !ih) return null;
+      var sc = Math.min(1, IMG_EXP.maxW / iw);
+      var w = Math.max(1, Math.round(iw * sc)), h = Math.max(1, Math.round(ih * sc));
+      var font = Math.max(IMG_EXP.minFont, Math.round(w * IMG_EXP.labelPct));
+      var barH = Math.round(font * 2.3);
+      var cv = document.createElement("canvas");
+      cv.width = w; cv.height = h + barH;
+      var ctx = cv.getContext && cv.getContext("2d");
+      if (!ctx) return null;
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, cv.height);
+      try { ctx.drawImage(im, 0, 0, w, h); } catch (e) { return null; }
+      ctx.fillStyle = "rgba(17,17,17,.88)";
+      ctx.fillRect(0, h, w, barH);
+      var pad = Math.round(font * 0.55);
+      ctx.textBaseline = "middle";
+      ctx.font = Math.round(font * 0.72) + "px " + FONT;
+      ctx.fillStyle = "#f2f2f2";
+      var base = [item.site, item.period, item.cat].filter(Boolean).join(" · ");
+      try { ctx.fillText(base, pad, h + barH / 2); } catch (e) { }
+      if (item.label) {
+        ctx.font = "bold " + font + "px " + FONT;
+        var tw = 0;
+        try { tw = ctx.measureText(item.label).width; } catch (e2) { tw = font * 4; }
+        var bw = Math.round(tw + font * 1.1), bh = Math.round(font * 1.66);
+        var bx = Math.max(pad, w - pad - bw), by = h + Math.round((barH - bh) / 2);
+        ctx.fillStyle = "#d4a017"; ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = "#1a1a1a";
+        try { ctx.fillText(item.label, bx + Math.round(font * 0.55), h + barH / 2); } catch (e3) { }
+      }
+      return new Promise(function (res) {
+        if (typeof cv.toBlob === "function") {
+          try { cv.toBlob(function (b) { res(b ? { blob: b } : null); }, "image/png"); return; } catch (e) { }
+        }
+        try { res({ dataUrl: cv.toDataURL("image/png") }); } catch (e) { res(null); }
+      });
+    });
+  }
+
+  /* payload: { items:[{url,label,site,period,cat}], scope:"范围文字" } */
+  function exportImages(payload) {
+    var items = ((payload && payload.items) || []).filter(function (x) { return x && /^https?:\/\//i.test(x.url || ""); });
+    var warn = "";
+    return isSuperNow().then(function (ok) {
+      if (!ok) { hud(true, "只有超级管理员可以导出图片。", 100, true); setTimeout(function () { hud(false); }, 2800); return false; }
+      if (!items.length) { hud(true, "当前筛选下没有可导出的图片。", 100, true); setTimeout(function () { hud(false); }, 2800); return false; }
+      if (items.length > IMG_EXP.maxN) {
+        warn = "共 " + items.length + " 张，只导了前 " + IMG_EXP.maxN + " 张（可缩小范围后再导）";
+        items = items.slice(0, IMG_EXP.maxN);
+      }
+      return ensureZip().then(function (hasZip) {
+        if (!hasZip) { hud(true, "导出组件不可用，请刷新页面后重试。", 100, true); setTimeout(function () { hud(false); }, 3200); return false; }
+        var zip = new window.JSZip(), missed = 0, done = 0, i = 0;
+        var rows = [["序号", "站点", "期次", "类目", "位次标签", "文件名", "原图地址"]];
+        function step() {
+          if (i >= items.length) return Promise.resolve();
+          var it = items[i], n = i;
+          hud(true, "正在导出第 " + (n + 1) + " / " + items.length + " 张…", Math.round(n / items.length * 100));
+          return labelPng(it).then(function (out) {
+            var nm = safeName([pad2(n + 1), it.site || "", it.period || "", it.cat || "", it.label || "无标签"].filter(Boolean).join("_")) + ".png";
+            if (!out) {
+              missed++;
+              rows.push([n + 1, it.site || "", it.period || "", it.cat || "", it.label || "", "（未导出：取不到图片像素）", it.url]);
+            } else {
+              if (out.blob) zip.file(nm, out.blob);
+              else zip.file(nm, String(out.dataUrl || "").split(",")[1] || "", { base64: true });
+              rows.push([n + 1, it.site || "", it.period || "", it.cat || "", it.label || "", nm, it.url]);
+              done++;
+            }
+            i++;
+            return step();
+          });
+        }
+        return step().then(function () {
+          zip.file("清单.csv", "\ufeff" + rows.map(function (r) {
+            return r.map(function (c) { return '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"'; }).join(",");
+          }).join("\r\n"));
+          return zip.generateAsync({ type: "blob" });
+        }).then(function (blob) {
+          var name = safeName("趋势上升榜_" + ((payload && payload.scope) || "") + "_" + fmtDate(new Date())) + ".zip";
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url; a.download = name;
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (e) { } }, 2000);
+          var msg = ["已导出 " + done + " 张"];
+          if (missed) msg.push(missed + " 张取不到像素（站外图 / 加载失败），未放进压缩包");
+          if (warn) msg.push(warn);
+          hud(true, name + "：" + msg.join("；"), 100);
+          setTimeout(function () { hud(false); }, 6000);
+          return true;
+        });
+      });
+    }).then(function (r) { return r; }, function () {
+      hud(true, "导出失败，请重试。", 100, true); setTimeout(function () { hud(false); }, 2800); return false;
+    });
+  }
+
   window.ReportKit = {
     init: init,
     open: openModal,
     close: closeModal,
     exportEye: exportEye,
+    exportImages: exportImages,
     _: {
       PDF_SPECS: PDF_SPECS, PPT_SPECS: PPT_SPECS,
       readPools: readPools, buildSheet: buildSheet, injectPageStyle: injectPageStyle,
@@ -953,6 +1091,7 @@
       makePDF: makePDF, makePPT: makePPT,
       makeEyePPT: makeEyePPT, assembleEye: assembleEye, eyeSlice: eyeSlice,
       readPoolsFrom: readPoolsFrom, imgDataUrl: imgDataUrl, hud: hud, exportEye: exportEye,
+      exportImages: exportImages, labelPng: labelPng, IMG_EXP: IMG_EXP, isSuperNow: isSuperNow,
       EYE_PPT: EYE_PPT, EYE_GRID: EYE_GRID,
       cfg: CFG, getFmt: function () { return FMT; }, getScope: function () { return SCOPE; },
       ROW_PER_SLIDE: ROW_PER_SLIDE, TABLE_MAX_ROWS: TABLE_MAX_ROWS

@@ -47,7 +47,44 @@
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
-  var MOVE_SCOPE = "all";    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
+  var MOVE_SCOPE = "all";
+  var ONLY = "off";          /* 只看标签：off | up（位次上升）| new（新上榜）——仅纵向·时间对比有效 */
+  var EXPORT_ITEMS = [];     /* 当前屏幕上这批图（含位次标签），供「导出图片（带标签·高清）」使用 */
+
+  /* 某期某张图的位次标签（与卡片上「上升 N 位 / 下降 N 位 / 新上榜」同源）：
+     排序、卡片标签、「只看标签」筛选三处共用同一套计算，
+     保证"筛出来的东西"和"图上显示的东西"永远一致，不会各算各的。 */
+  function moveOf(it, p, prev, hasOf, rankOf) {
+    if (!prev) return { move: "", isNew: false, diff: 0 };
+    if (!hasOf[prev] || !hasOf[prev][it.image_url]) return { move: "新上榜", isNew: true, diff: 0 };
+    var pr = (rankOf[prev] || {})[it.image_url];
+    var cr = (rankOf[p] || {})[it.image_url];
+    if (pr != null && cr != null) {
+      var d = pr - cr;
+      if (d > 0) return { move: "上升 " + d + " 位", isNew: false, diff: d };
+      if (d < 0) return { move: "下降 " + (-d) + " 位", isNew: false, diff: d };
+    }
+    return { move: "", isNew: false, diff: 0 };
+  }
+  function onlyLabel() {
+    return ONLY === "up" ? "只看位次上升" : (ONLY === "new" ? "只看新上榜" : "");
+  }
+  /* 「只看标签」命中判定：与卡片标签文案同源 */
+  function hitOnly(mv) {
+    if (ONLY === "off") return true;
+    var s = (mv && mv.move) || "";
+    if (ONLY === "new") return s === "新上榜";
+    return s.indexOf("上升") === 0;                 /* 位次上升（含「上升 N 位」） */
+  }
+  /* 导出图片 / PPT 时写进文件名与封面的范围文字 */
+  function exportScope() {
+    var parts = [CAT || "全部类目"];
+    var _g = activeGroup();
+    parts.push(_g ? ("地区 " + _g.name) : (sitesForQuery().join("/") || "未选国家"));
+    parts.push(activePeriods().join("、") || "未选周次");
+    if (MODE === "v" && ONLY !== "off") parts.push(onlyLabel());
+    return parts.join(" · ");
+  }    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
   var CAP = CAP_STEP;
   var CACHE = null;          // { key, items }
@@ -268,6 +305,9 @@
       if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
     } else {
       if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
+      /* 位次标签只存在于「纵向·时间对比」（与上一周比），横向没有可比基线 →
+         切到横向时自动回到「全部」，避免出现"界面高亮只看上升、实际没筛"的错位 */
+      ONLY = "off";
     }
   }
 
@@ -373,6 +413,15 @@
       scopeHtml = chip("all", "全部期次", MOVE_SCOPE === "all", "data-scope") +
         sortPeriods(SEL_PERIODS).map(function (p) { return chip(p, "仅 " + p, MOVE_SCOPE === p, "data-scope"); }).join("");
     }
+    /* 只看标签：点了就只显示带该标签的图，再点一次可取消（仅纵向·时间对比有效） */
+    var onlyGroup = (MODE === "v")
+      ? '<div class="tag-group"><span class="tag-group-name">只看标签（单选，点已选中的可取消）</span><div class="tag-chips" id="rk-g-only">' +
+          chip("off", "全部", ONLY === "off", "data-only") +
+          chip("up", "只看位次上升", ONLY === "up", "data-only") +
+          chip("new", "只看新上榜", ONLY === "new", "data-only") +
+        '</div></div>'
+      : "";
+
     /* 趋势标签 + 排序 / 图幅 / 位次排序 全部并列在同一排直接展示，无需再点开 */
     var mergedRow =
       '<div class="tag-group"><span class="tag-group-name">趋势标签 / 排序（均为单选）</span><div class="tag-chips" id="rk-g-merge">' +
@@ -395,7 +444,7 @@
       groupHtml +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
-      mergedRow;
+      mergedRow + onlyGroup;
 
     bindPanel();
   }
@@ -501,6 +550,15 @@
       };
     });
 
+    var onlyBox = $("#rk-g-only");
+    if (onlyBox) Array.prototype.forEach.call(onlyBox.querySelectorAll("[data-only]"), function (b) {
+      b.onclick = function () {
+        var v = b.getAttribute("data-only");
+        ONLY = (v === ONLY) ? "off" : v;             /* 点已选中的 → 取消，回到全部 */
+        renderPanel(); renderSummary(); renderBody();
+      };
+    });
+
     var sortBox = $("#rk-g-sort");
     if (sortBox) Array.prototype.forEach.call(sortBox.querySelectorAll("[data-sort]"), function (b) {
       b.onclick = function () {
@@ -537,6 +595,7 @@
     parts.push(_g ? ("地区 " + _g.name) : (sites.length ? sites.join(" / ") : "未选国家"));
     parts.push(tagLabel());
     if (MODE === "v" && MOVE !== "off") parts.push(moveLabel());
+    if (MODE === "v" && ONLY !== "off") parts.push(onlyLabel());
     el.textContent = parts.join(" · ");
   }
 
@@ -559,11 +618,25 @@
       '</div>';
     var cols = (MODE === "v" ? periods.length : sites.length);
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
+    h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这批图（含位次标签）按高清原图导出，方便分享">导出图片（带标签 · 高清）</button>';
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
     h += '</div>';
     el.innerHTML = h;
+    /* 导出图片（带标签 · 高清）：与「导出 PPT」同一套权限口径 —— 只允许超级管理员
+       （按钮默认不可见，确认身份后才出现；调用时还会再校验一次） */
+    var exb = $("#rk-exp-img");
+    if (exb) {
+      exb.onclick = function () {
+        var items = EXPORT_ITEMS.slice();
+        if (!items.length) { toast("当前筛选下没有可导出的图片"); return; }
+        if (!window.ReportKit || !window.ReportKit.exportImages) { toast("导出组件不可用，请刷新页面后重试"); return; }
+        window.ReportKit.exportImages({ items: items, scope: exportScope() });
+      };
+      eyeIsSuper().then(function (ok) { if (ok) exb.className = "rk-exp-img on"; });
+    }
+
     var eye = $("#rk-eye-btn");
     if (eye) eye.onclick = openEye;
     Array.prototype.forEach.call(el.querySelectorAll("[data-mode]"), function (b) {
@@ -635,7 +708,8 @@
     var periods = opts.periods || activePeriods();
     var src = opts.items || (CACHE && CACHE.items) || [];
     var all = src.filter(hitTags);
-    var html = "", maxLen = 0;
+    EXPORT_ITEMS = [];                                   /* 每次重排都重新累计，避免残留上一次的范围 */
+    var html = "", maxLen = 0, kept = 0;
 
     /* ===== 横向 · 国家对比：每国一列 ===== */
     if (MODE === "h") {
@@ -670,6 +744,15 @@
         if (list.length > maxLen) maxLen = list.length;
         var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager, eye: opts.eye }); }).join("");
         html += poolHtml(s, meta, total, cards, opts.noFoot ? null : Math.min(limit, total));
+        kept += list.length;
+        /* 导出用清单：整列（不按「每列最多展示」截断）；横向按国家比，没有位次标签 */
+        list.forEach(function (it) {
+          EXPORT_ITEMS.push({
+            url: it.image_url, label: "", site: s,
+            period: it.period_label || "",
+            cat: it.leaf_category || it.category || CAT || ""
+          });
+        });
       });
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
@@ -695,13 +778,9 @@
            排序用的位次与卡片上「上升 N 位」标签同源（同一套 rankOf），保证显示与顺序一致。 */
         if (MOVE !== "off" && (MOVE_SCOPE === "all" || MOVE_SCOPE === p) && prev) {
           var keyed = list.map(function (it, i) {
-            var isNew = !hasOf[prev][it.image_url];
-            var d = 0;
-            if (!isNew) {
-              var pr = rankOf[prev][it.image_url];
-              var cr = rankOf[p][it.image_url];
-              if (pr != null && cr != null) d = pr - cr;
-            }
+            var mv0 = moveOf(it, p, prev, hasOf, rankOf);
+            var isNew = mv0.isNew;
+            var d = mv0.diff;
             /* 「新上榜优先」：新上榜的排最前；
                「位次上升最多」：只按上升位次排（新上榜无位次可比，沉到末尾），
                两种模式结果明显区分。 */
@@ -711,30 +790,34 @@
           keyed.sort(function (a, b) { return (b.key - a.key) || (a.i - b.i); });
           list = keyed.map(function (o) { return o.it; });
         }
-        if (list.length > maxLen) maxLen = list.length;
         var newCnt = 0;
-        if (prev) list.forEach(function (i) { if (!hasOf[prev][i.image_url]) newCnt++; });
+        if (prev) list.forEach(function (i) { if (moveOf(i, p, prev, hasOf, rankOf).isNew) newCnt++; });
+        var full = list.length;
+        /* 只看标签：位次上升 / 新上榜 —— 命中判定与卡片标签同源（同一套 moveOf），
+           筛出来的和图上的标签永远一致；在排序之后筛，顺序仍是同一套口径 */
+        if (ONLY !== "off" && prev) {
+          list = list.filter(function (it) { return hitOnly(moveOf(it, p, prev, hasOf, rankOf)); });
+        }
+        if (list.length > maxLen) maxLen = list.length;
         var meta = site + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
+        if (ONLY !== "off") meta += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
         var cards = list.slice(0, limit).map(function (it) {
-          var move = "", isNew = false;
-          if (prev) {
-            if (!hasOf[prev][it.image_url]) { move = "新上榜"; isNew = true; }
-            else {
-              var pr = rankOf[prev][it.image_url];
-              var cr = rankOf[p][it.image_url];
-              if (pr != null && cr != null) {
-                var diff = pr - cr;
-                if (diff > 0) move = "上升 " + diff + " 位";
-                else if (diff < 0) move = "下降 " + (-diff) + " 位";
-              }
-            }
-          }
-          return cardHtml(it, { move: move, isNew: isNew, eager: opts.eager, eye: opts.eye });
+          var mv = moveOf(it, p, prev, hasOf, rankOf);
+          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
         html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
+        kept += list.length;
+        /* 导出用清单：整列（不按「每列最多展示」截断），带站点 / 期次 / 类目 / 位次标签 */
+        list.forEach(function (it) {
+          EXPORT_ITEMS.push({
+            url: it.image_url, label: moveOf(it, p, prev, hasOf, rankOf).move,
+            site: it.site || site, period: p,
+            cat: it.leaf_category || it.category || CAT || ""
+          });
+        });
       });
     }
-    return { html: html, maxLen: maxLen };
+    return { html: html, maxLen: maxLen, kept: kept };
   }
 
   function renderBody() {
@@ -758,6 +841,10 @@
     if (!all.length) { box.innerHTML = '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>'; return; }
 
     var R = buildPools(CAP);
+    if (ONLY !== "off" && !R.kept) {
+      box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
+      return;
+    }
     var html = '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
     var maxLen = R.maxLen;
 
