@@ -1,6 +1,6 @@
 -- ============================================================
 -- TREND BANK · 用户动向（前台访客 + 后台管理员的行为统计）
--- 版本：20261016Q
+-- 版本：20261016T
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「他们从哪来、干了什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 页面 / 来源 referrer / 停留时长 / IP / 国家地区），
@@ -328,7 +328,7 @@ begin
     where started_at >= v_from and coalesce(event, '') = ''
   )
   select jsonb_build_object(
-    'script', '20261016Q',
+    'script', '20261016T',
     'days', v_days,
     'from', v_from,
     'totals', (
@@ -656,6 +656,92 @@ end $$;
 
 
 -- ============================================================
+-- 5.5 字段对齐（幂等 · 只补不删 · 不动数据）
+-- ============================================================
+-- 为什么必须有这一段：
+--   `create table if not exists` 只保证「表存在」，**不会给已存在的旧表补字段**。
+--   如果某张表是早期版本建出来的，而统计函数用到了后来新增的字段，
+--   那么在「函数被调用的那一刻」数据库才会报 42703（column ... does not exist），
+--   而建表、建函数、授权、前面的自检全都显示正常 —— 极难定位。
+--   这里把统计/备份模块依赖到的字段全部幂等补齐：
+--     表不存在 → 跳过；字段已存在 → 跳过；缺字段 → 补上（带安全默认值）。
+do $$
+declare
+  r record;
+begin
+  for r in
+    select * from (values
+      -- ⚠️ 这份清单必须是「统计模块真正用到的字段」的全集，少一个就会出现 42703。
+      --    2026-10-19 真实故障：`visit_logs.started_at` 被 insight_front 的每一段查询使用，
+      --    却漏在这份清单里 → 旧表永远补不上 → 后台「用户动向」一直报 42703。
+      --    下面的清单已补全（含各表主键与 created_at/started_at 等时间戳），并由
+      --    tools/verify_sql_columns.js 自动交叉核对，防止再次漏项。
+      -- 用户表
+      ('profiles','user_id','uuid'),
+      ('profiles','email','text'),
+      ('profiles','role','text'),
+      ('profiles','created_at','timestamptz not null default now()'),
+      ('profiles','user_tag','text not null default '''' '),
+      ('profiles','user_note','text not null default '''' '),
+      ('profiles','manage_zones','jsonb not null default ''[]''::jsonb'),
+      ('profiles','frontend_zones','jsonb not null default ''[]''::jsonb'),
+      -- 访问记录表（id 供 record_visit 返回、visit_ping 心跳定位；started_at 是统计的时间轴）
+      ('visit_logs','id','bigserial'),
+      ('visit_logs','started_at','timestamptz not null default now()'),
+      ('visit_logs','user_id','uuid'),
+      ('visit_logs','email','text'),
+      ('visit_logs','zone','text'),
+      ('visit_logs','path','text'),
+      ('visit_logs','ip','text'),
+      ('visit_logs','country','text'),
+      ('visit_logs','region','text'),
+      ('visit_logs','city','text'),
+      ('visit_logs','referrer','text'),
+      ('visit_logs','event','text'),
+      ('visit_logs','menu','text'),
+      ('visit_logs','duration_sec','integer not null default 0'),
+      -- 图片表（上传数统计依赖 uploaded_by + created_at；path/category 等供记录引用）
+      ('images','id','uuid default gen_random_uuid()'),
+      ('images','created_at','timestamptz not null default now()'),
+      ('images','uploaded_by','uuid'),
+      ('images','category','text'),
+      ('images','name','text'),
+      ('images','path','text'),
+      ('images','tags','text[] not null default ''{}'''),
+      -- 后台操作日志（id 主键；created_at 是动向趋势的时间轴）
+      ('admin_actions','id','bigserial'),
+      ('admin_actions','created_at','timestamptz not null default now()'),
+      ('admin_actions','user_id','uuid'),
+      ('admin_actions','email','text'),
+      ('admin_actions','action','text'),
+      ('admin_actions','target','text'),
+      ('admin_actions','detail','jsonb not null default ''{}''::jsonb'),
+      -- 备份表（由 tools/setup_backup.sql 建立；未建则整表跳过）
+      ('data_backups','id','bigserial'),
+      ('data_backups','created_at','timestamptz not null default now()'),
+      ('data_backups','kind','text'),
+      ('data_backups','note','text'),
+      ('data_backups','created_by','uuid'),
+      ('data_backups','email','text'),
+      ('data_backups','bytes','bigint'),
+      ('data_backups','table_counts','jsonb'),
+      ('data_backups','payload','jsonb')
+    ) as t(tbl, col, coltype)
+  loop
+    if to_regclass('public.' || r.tbl) is null then
+      continue;                                   -- 表还不存在，跳过
+    end if;
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = r.tbl and column_name = r.col
+    ) then
+      continue;                                   -- 字段已存在，跳过
+    end if;
+    execute format('alter table public.%I add column %I %s', r.tbl, r.col, r.coltype);
+  end loop;
+end $$;
+
+-- ============================================================
 -- 6. 自检（务必放在文件最末：这里会检查前面刚建好的表/函数/授权，
 --    若提前放在创建语句之前，数据库会判定「函数不存在」并中断整段脚本）
 -- ============================================================
@@ -707,3 +793,35 @@ select
   (select count(*) from public.visit_logs) as "已有访问记录数",
   (select count(*) from public.profiles where lower(btrim(coalesce(role, ''))) = 'super_admin') as "超管账号数",
   (select string_agg(coalesce(email, '(无邮箱)') || ' → ' || coalesce(role, '(空)'), '  |  ' order by email) from public.profiles) as "全部账号与角色";
+-- 自检 ③：关键字段是否齐备（期望「缺失字段」全为「（无，已齐备）」）
+-- 说明：create table if not exists 不会给旧表补字段；缺字段时函数不会在创建时报错，
+--       而是在「被调用那一刻」报 42703（column ... does not exist）—— 这是最难定位的一类。
+--       上面第 5.5 段已自动补齐，正常应全为「（无，已齐备）」；若仍有缺失，这一行会点名是什么。
+with need(tbl, col) as (
+  values
+    ('profiles','user_id'), ('profiles','email'), ('profiles','role'), ('profiles','created_at'),
+    ('profiles','user_tag'), ('profiles','user_note'),
+    ('profiles','manage_zones'), ('profiles','frontend_zones'),
+    ('visit_logs','id'), ('visit_logs','started_at'),
+    ('visit_logs','user_id'), ('visit_logs','email'), ('visit_logs','zone'), ('visit_logs','path'),
+    ('visit_logs','ip'), ('visit_logs','country'), ('visit_logs','region'), ('visit_logs','city'),
+    ('visit_logs','referrer'), ('visit_logs','event'), ('visit_logs','menu'), ('visit_logs','duration_sec'),
+    ('images','id'), ('images','created_at'), ('images','uploaded_by'),
+    ('images','category'), ('images','name'), ('images','path'), ('images','tags'),
+    ('admin_actions','id'), ('admin_actions','created_at'), ('admin_actions','user_id'),
+    ('admin_actions','email'), ('admin_actions','action'),
+    ('admin_actions','target'), ('admin_actions','detail'),
+    ('data_backups','id'), ('data_backups','created_at'),
+    ('data_backups','kind'), ('data_backups','note'), ('data_backups','created_by'), ('data_backups','email'),
+    ('data_backups','bytes'), ('data_backups','table_counts'), ('data_backups','payload')
+)
+select need.tbl as "表",
+       count(*) as "应备字段数",
+       count(*) filter (where c.column_name is null) as "缺失字段数",
+       coalesce(string_agg(need.col, '、' order by need.col) filter (where c.column_name is null), '（无，已齐备）') as "缺失字段"
+from need
+left join information_schema.columns c
+  on c.table_schema = 'public' and c.table_name = need.tbl and c.column_name = need.col
+where to_regclass('public.' || need.tbl) is not null
+group by need.tbl
+order by need.tbl;

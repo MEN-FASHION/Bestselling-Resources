@@ -1,4 +1,59 @@
-# 本次调整说明（统计脚本语法错误修复 + SQL 语法体检；版本号 20261016S）
+# 2026-10-19 · 版本 20261016T
+
+## 修的是什么：42703（字段不存在）——「用户动向」一直读不出来
+
+**报错原文（浏览器控制台）**：`[动向诊断] insight_admin 失败: diag=sql_exec code=42703 http=400`
+
+42703 = `column ... does not exist`（字段不存在）。**与账号权限无关，也不是脚本语法问题。**
+
+### 根因
+
+`tools/setup_analytics.sql` 里有一段「5.5 字段对齐」，负责给**已存在的旧表**幂等补字段
+（`create table if not exists` 只保证表存在，**不会给旧表补字段**）。
+
+问题在于：这份补充清单**漏了 `admin_actions.created_at`** —— 而 `insight_admin` 的
+**每一段子查询**都要用它（`where a.created_at >= v_from`、`max(a.created_at)`、`order by a.created_at desc`）。
+旧表补不上这个字段 → 函数被调用的那一刻报 42703 → 后台「用户动向」整块显示「读取失败」。
+
+同时漏掉的还有：`visit_logs.started_at`（`insight_front` 的时间轴）、`profiles.user_id`/`created_at`、
+以及各表的 `id`。**这次一并补全。**
+
+### 修复内容
+
+1. **字段对齐清单补全**（`tools/setup_analytics.sql` 第 5.5 段）：
+   `profiles.user_id/created_at`、`visit_logs.id/started_at`、`images.id/category/name/path/tags`、
+   `admin_actions.id/created_at`、`data_backups.id/created_at`。
+   幂等：表不存在跳过、字段已存在跳过；`not null` 一律带默认值，不会因存量数据而失败。
+2. **自检③ 同步扩容**：逐表列出 `应备字段数 / 缺失字段数 / 缺失字段`，
+   跑完直接看「缺失字段」列是否全为「（无，已齐备）」。
+3. **报错能自我说明**（前端）：
+   - 控制台把**数据库原文**打出来；42703 单独给出中文解释（线上表比脚本旧、缺字段）；
+   - 面板提示区分 42703 与其它 42xxx：写明「线上表比脚本旧、缺字段」，
+     并**从数据库原文里提取缺失的字段名**一起显示，指名重跑统计脚本、看自检③；
+   - 数据库原文进提示前做转义（不引入注入）。
+4. **检查器加固**（不依赖数据库，防同类漏项再发生）：
+   - `tools/verify_sql_columns.js` 新增「字段对齐覆盖度」交叉核对：
+     凡是被统计模块函数引用到的依赖表字段，必须在 5.5 对齐段里出现，否则判定缺口（含反向验证）；
+   - `tools/verify_insight.js` 修正 3 处**作用域过宽**的判定（原来扫全文，会被 5.5 段里的
+     `'visit_logs'`/`'admin_actions'` 字面量误伤），改为只在「逐个挂触发器」段内判定；
+     并把「自检区靠近文件末尾」的长度阈值判定改成语义判定（自检区之后不得再有建表/建函数/挂触发器）。
+
+### 部署
+
+1. 覆盖推送 `main` → 后台 `Ctrl+F5` 强刷（版本 **20261016T**）。
+2. **把 `tools/setup_analytics.sql` 整段再跑一次**（必须重跑：这次才会补上缺的字段）。
+3. 跑完看自检③：五张表的「缺失字段」列应全为「（无，已齐备）」。
+4. 回后台「用户动向」点刷新，数据应正常显示。
+5. `setup_backup.sql` 不用重跑（此前已成功）。
+
+### 验证
+
+- `verify_sql_columns.js`：**163 项通过**（新增 4 项含反向验证）
+- `verify_insight.js`：**96 项通过**（新增对齐覆盖度相关 + 报错定位能力 11 项 + 修正 3 处作用域判定）
+- `verify_sql_syntax.js` 24 项、`verify_backup_sql.js` 56 项，其余回归套件全过
+
+---
+# 本次调整说明（统计脚本语法错误修复 + SQL 语法体检；版本号 20261016T）
 
 ## 出错原因：自检语句少了一个右括号（42601 语法错误）
 
@@ -58,7 +113,7 @@
 用法：`node tools/verify_backup_sql.js tools/setup_backup.sql`
 
 
-## 版本 20261016S（修复 P 版执行 SQL 报「函数不存在」）
+## 版本 20261016T（修复 P 版执行 SQL 报「函数不存在」）
 
 症状：把 `tools/setup_analytics.sql` 整段丢进 SQL 编辑器执行，报
 `42883: function "public.insight_front(integer)" does not exist`，跑完之后什么都没建成。

@@ -88,7 +88,18 @@
     var d = (e && e.diag) || "other";
     if (d === "missing_function") return "数据库里还没有动向统计接口：请把仓库里 tools/setup_analytics.sql 整段执行一次。";
     if (d === "forbidden") return "当前账号没有动向统计接口的执行授权：请重跑 tools/setup_analytics.sql（含授权语句），并确认当前账号是超级管理员。";
-    if (d === "sql_exec") return "统计接口内部那段查询报错（与账号权限无关）：请把 tools/setup_analytics.sql 整段重新执行一次。";
+    if (d === "sql_exec") {
+      var ecode = String((e && e.code) || "");
+      var eraw = String((e && e.detail) || "").trim();
+      var tail = eraw ? "　数据库原文：" + safe(eraw.slice(0, 200)) : "";
+      if (ecode === "42703") {
+        var mc = eraw.match(/column\s+([\w."]+)\s+does not exist/i);
+        return "统计接口用到的字段在线上表里不存在" + (mc ? "（缺的字段是 " + safe(mc[1]) + "）" : "") +
+          "。线上表比脚本旧，缺字段 —— 请把 tools/setup_analytics.sql 整段重跑一次：" +
+          "第 5.5 段会自动补齐缺失字段（幂等、不动数据），跑完看自检③的「缺失字段」列应为「（无，已齐备）」。与账号权限无关。" + tail;
+      }
+      return "统计接口内部那段查询报错（与账号权限无关）：请把 tools/setup_analytics.sql 整段重新执行一次。" + tail;
+    }
     if (d === "not_authenticated") return "登录状态已失效：请重新登录后再打开。";
     if (d === "blocked") return "请求没能抵达数据库（浏览器/网络层被拦）：请强刷页面（Ctrl+F5）后重试。";
     return "读取失败：" + ((e && e.diag) || "未知原因") + "。请把这一行反馈给维护人员。";

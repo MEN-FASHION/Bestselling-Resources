@@ -1638,7 +1638,17 @@ async removeTrendRecord(id) {
         else if (/not authenticated|invalid token|PGRST301|\b401\b/i.test(raw)) diag = "not_authenticated";
         const e = new Error((label || "接口") + "读取失败");
         e.diag = diag; e.code = code; e.http = status || 0; e.detail = raw;
-        try { console.warn("[动向诊断] " + name + " 失败：diag=" + diag + " code=" + (code || "(无)") + " http=" + (status || "?")); } catch (x) {}
+        // 关键：把数据库返回的原文一起打出来。42703（字段不存在）这类错误，
+        // 只有原文才指出是哪个字段，否则只能看到「读取失败」，无法定位。
+        try {
+          console.warn("[动向诊断] " + name + " 失败：diag=" + diag + " code=" + (code || "(无)") + " http=" + (status || "?"));
+          if (raw) console.warn("[动向诊断] 数据库原文：" + String(raw).slice(0, 400));
+          if (code === "42703") {
+            console.warn("[动向诊断] 这是「字段不存在」：线上某张表缺少脚本需要的字段（早期建的旧表不会自动补字段）。" +
+              "请把 tools/setup_analytics.sql 整段重跑一次 —— 其中第 5.5 段会自动补齐缺失字段（幂等、不动数据）；" +
+              "跑完看自检③的「缺失字段」列是否全为「（无，已齐备）」。");
+          }
+        } catch (x) {}
         throw e;
       }
       return data;
@@ -1708,7 +1718,8 @@ async removeTrendRecord(id) {
       else if (m.ok === false) out.verdict = "数据库网关拒绝了请求（密钥或授权问题），返回码 " + (m.code || "无") + "。";
       else if (d.ok) out.verdict = d.empty ? "接口连通，但还没有动向记录：让用户登录前台打开一次专区、后台做一次操作，再回来看。" : "接口连通且有数据，用户动向应能正常显示。";
       // 函数内部 SQL 自身报错（42xxx）：与账号权限无关，必须重跑统计脚本
-      else if (d.diag === "sql_exec") out.verdict = "数据库执行统计接口时报错（错误码 " + (d.code || "无") + "）：统计脚本内部那段查询写错了，请把仓库里 tools/setup_analytics.sql 整段重新执行一次（与账号权限无关）。";
+      else if (d.diag === "sql_exec" && String(d.code) === "42703") out.verdict = "统计接口引用的字段在线上表里不存在（错误码 42703，与账号权限无关）：线上表比脚本旧，缺字段。请把 tools/setup_analytics.sql 整段重跑一次（第 5.5 段会自动补齐缺失字段、幂等、不动数据），跑完看自检③的「缺失字段」列应为「（无，已齐备）」。数据库原文：" + String(d.detail || "").slice(0, 200);
+      else if (d.diag === "sql_exec") out.verdict = "数据库执行统计接口时报错（错误码 " + (d.code || "无") + "）：统计脚本内部那段查询写错了，请把仓库里 tools/setup_analytics.sql 整段重新执行一次（与账号权限无关）。数据库原文：" + String(d.detail || "").slice(0, 200);
       else if (d.diag === "forbidden") out.verdict = "登录用户没有统计接口的执行授权：请重跑 tools/setup_analytics.sql（其中含授权语句）。";
       else if (d.diag === "missing_function") out.verdict = "数据库里还没有统计接口（或接口缓存未刷新）：请先执行 tools/setup_analytics.sql。";
       else if (d.diag === "blocked") out.verdict = "仅动向接口这一层失败：请求被浏览器/网络层拦下（与账号权限无关），请强刷页面、关闭代理或拦截插件后再试。";

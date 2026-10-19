@@ -113,22 +113,32 @@ function mutate(file, re, to) {
   console.log("\n[4] 管理员操作留痕（数据库侧自动记录）");
   {
     const sql = read("tools/setup_analytics.sql");
+    // ⚠️ 触发器「覆盖面 / 排除项」的判定必须限定在「逐个挂触发器」那一段内。
+    //    2026-10-19 真实踩坑：5.5 字段对齐段里也出现了 'visit_logs' / 'admin_actions' 字面量
+    //    （补字段用的），全文件扫描会把这些误判成「把访问日志表也挂上了留痕」。
+    //    判定要按段落取，不能扫全文。
+    const trig = (function () {
+      const i = sql.indexOf("逐个挂触发器");
+      const j = sql.indexOf("5.5 字段对齐");
+      return (i >= 0 && j > i) ? sql.slice(i, j) : "";
+    })();
+    ok("能定位到「逐个挂触发器」段落", trig.length > 0, "段落标记可能被改动");
     ok("存在留痕触发器函数", /create or replace function public\.log_admin_tbl/.test(sql));
     ok("存在账号资料专用留痕函数", /create or replace function public\.log_admin_profile/.test(sql));
     ok("触发器是语句级（批量上传不会刷爆日志）", /for each statement execute function public\.log_admin_tbl/.test(sql));
     ok("使用新旧行过渡表统计影响行数", /referencing old table as oldtab new table as newtab/i.test(sql));
     ok("只记录管理员/超管的写入", /v_role not in \('admin', 'super_admin'\)/.test(sql));
-    ok("管理员上传图片会被记到（images）", /'images',\s*'图片'/.test(sql), "");
+    ok("管理员上传图片会被记到（images）", /'images',\s*'图片'/.test(trig), "");
     ok("账号权限调整单独处理（避免改常用类目也刷日志）", /manage_zones is distinct from|frontend_zones is distinct from/.test(sql));
-    ok("访问日志自身不被记录（防自我放大）", !/'visit_logs'/.test(sql));
-    ok("操作日志表自身不被记录", !/'admin_actions'/.test(sql));
+    ok("访问日志自身不被记录（防自我放大）", !/'visit_logs'/.test(trig), "触发器段落里出现了 visit_logs");
+    ok("操作日志表自身不被记录", !/'admin_actions'/.test(trig), "触发器段落里出现了 admin_actions");
     ok("表不存在时自动跳过（未启用模块不报错）", /to_regclass\('public\.'\s*\|\|\s*t\.tbl\) is null/.test(sql));
     ok("单个触发器失败不中断整段脚本", /exception when others then\s*\n\s*raise notice '操作留痕/.test(sql));
     const tables = ["images", "categories", "tag_defs", "site_settings", "trends", "announcements",
       "recruit_tasks", "recruit_submissions", "recruit_categories", "bestseller_tasks",
       "bestseller_submissions", "bestseller_categories", "zone_permissions",
       "marketing_nodes", "marketing_articles", "rank_sites", "rank_batches", "rank_items"];
-    const missing = tables.filter((t) => sql.indexOf("('" + t + "',") < 0);
+    const missing = tables.filter((t) => trig.indexOf("('" + t + "'") < 0);
     ok("业务表覆盖面完整（" + tables.length + " 张）", missing.length === 0, missing.join(","));
   }
 
@@ -229,9 +239,13 @@ function mutate(file, re, to) {
     ok("还原：不引入上报模块时，点菜单不会上报（检查项抓到差异）", calls.length === 0, JSON.stringify(calls));
 
     // (c) 留痕触发器少挂一张表 → 覆盖面检查必须失败
-    const sql = read("tools/setup_analytics.sql").replace("('images', '图片'),", "");
+    const sqlFull = read("tools/setup_analytics.sql");
+    const ti = sqlFull.indexOf("逐个挂触发器"), tj = sqlFull.indexOf("5.5 字段对齐");
+    const sqlCut = sqlFull.slice(0, ti) +
+      sqlFull.slice(ti, tj).replace("('images', '图片'),", "") + sqlFull.slice(tj);
+    const trigCut = sqlCut.slice(ti, tj);
     const tables = ["images", "categories", "tag_defs", "site_settings"];
-    const missing = tables.filter((t) => sql.indexOf("('" + t + "',") < 0);
+    const missing = tables.filter((t) => trigCut.indexOf("('" + t + "'") < 0);
     ok("还原：拿掉 images 一行后，覆盖面检查会失败（证明检查有效）", missing.indexOf("images") >= 0, missing.join(","));
 
     // (d) 对比池改回横向滚动 + 写死高度 → 溢出检查必须失败
@@ -260,7 +274,11 @@ function mutate(file, re, to) {
       if (defs.length && Math.min.apply(null, defs) > sc) late.push(n);
     });
     ok("自检区排在所有被检查对象创建之后", late.length === 0, late.join(","));
-    ok("自检区靠近文件末尾（后面基本只剩它自己）", sql.length - sql.indexOf("自检 ①") < 3000);
+    // 语义判定：自检区之后不允许再出现建表/建函数/挂触发器这类「被检查对象」的创建语句。
+    // （原实现用「自检区之后字符数 < 3000」这种长度阈值，往自检清单里补几行就会误报，属于脆弱判定）
+    const afterSc = sql.slice(sql.indexOf("自检 ①"));
+    const ddlAfter = afterSc.match(/^create (or replace )?(function|table|trigger)/gim) || [];
+    ok("自检区之后不再有建表/建函数/挂触发器语句", ddlAfter.length === 0, ddlAfter.join(","));
     ok("权限检查带存在性保护（对象缺失也不会中断整段脚本）",
       /to_regprocedure\('public\.insight_front\(integer\)'\) is not null/.test(sql));
     ok("保护覆盖了全部三项动向/上报接口",
@@ -328,6 +346,31 @@ function mutate(file, re, to) {
     // (d) 去掉来源上报
     ok("还原：拿掉 p_referrer 后，来源检查会失败",
       !/p_referrer:\s*ref/.test(read("js/supabase.js").replace(/p_referrer:\s*ref,/, "")));
+  }
+console.log("\n[13] 报错定位能力：42703（字段不存在）必须能说清原因与下一步");
+  {
+    const ins = read("js/admin-insight.js");
+    const sup = read("js/supabase.js");
+    // 界面提示：42703 单独成句，且必须指向「重跑统计脚本 + 第 5.5 段自动补齐 + 看自检③」
+    ok("界面区分了「字段不存在(42703)」这一类",
+      /ecode\s*===\s*"42703"|code\s*===\s*"42703"/.test(ins));
+    ok("42703 的提示说明了「线上表比脚本旧、缺字段」",
+      /线上表比脚本旧|字段在线上表里不存在/.test(ins));
+    ok("42703 的提示指名了自动补齐段（5.5）", /5\.5/.test(ins));
+    ok("42703 的提示指名了自检③", /自检③/.test(ins));
+    ok("42703 的提示点出了缺失字段名（从数据库原文里提取）",
+      /column\\s\+\(\[\\w\."\]\+\)\\s\+does not exist/i.test(ins));
+    ok("提示里附带了数据库原文（便于反馈定位）", /数据库原文/.test(ins));
+    ok("数据库原文进提示前做了转义（不引入注入）", /safe\(eraw\.slice/.test(ins));
+    // 控制台诊断：必须把数据库原文打出来，并给出这一类的中文解释
+    ok("控制台会把数据库原文打出来", /数据库原文："\s*\+\s*String\(raw\)/.test(sup));
+    ok("控制台对 42703 给出中文解释", /这是「字段不存在」/.test(sup));
+    ok("自检结论里 42703 与其它 42xxx 分开表述",
+      /d\.code\) === "42703"/.test(sup) && /sql_exec"\) out\.verdict/.test(sup));
+    // 反向验证：把 42703 的分支拿掉，上面这些判定必须失败
+    const insCut = ins.replace(/if \(ecode === "42703"\) \{[\s\S]*?\n      \}/, "");
+    ok("还原：拿掉 42703 分支后，判定会失败（证明检查有效）",
+      !/线上表比脚本旧/.test(insCut));
   }
 
   console.log("\n== 结果：" + pass + " 项通过，" + fail + " 项失败 ==");
