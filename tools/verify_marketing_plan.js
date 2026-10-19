@@ -30,9 +30,13 @@ ok('编辑条存在但默认不显示（只有 ?mode=edit 才出现）',
 ok('编辑条默认隐藏由样式控制', /\.mkzone \.mk-editbar \{ grid-column: 1 \/ -1; display: none;/.test(css));
 ok('页面引入编辑层脚本（放在主脚本之后）',
   /js\/marketing-edit\.js\?v=/.test(html) && html.indexOf('js/marketing-main.js') < html.indexOf('js/marketing-edit.js'));
-ok('版本号已统一为 C 且无旧版残留',
-  /20261019E/.test(html) && !/20261019B/.test(html) &&
-  !/20261019B/.test(css + dataJs + mainJs));
+/* 版本号不做硬编码（硬编码会在每次发版后腐烂）：改为要求全站只有同一个版本号，且不早于本轮 */
+{
+  const vers = new Set((html + css + dataJs + mainJs + (typeof editJs !== "undefined" ? editJs : "")).match(/2026\d{4}[A-Z]/g) || []);
+  ok('版本号全站唯一（不混版）', vers.size === 1, [...vers].join(","));
+  const v = [...vers][0] || "";
+  ok('版本号未回退（不早于 20261019A）', v >= "20261019A" && !/^20261019B$/.test(v), v);
+}
 const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
   'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal',
   'stats', 'view-timeline', 'view-gantt', 'view-cards', 'backdrop', 'modal', 'mkToast'];

@@ -1479,8 +1479,9 @@ async function loadZoneCatList() {
         SB.renameZoneCat(zoneCatModalZone, c.id, nn, c.name).then(() => { sbToast("已改名"); loadZoneCatList(); fillZoneCatSelect(zoneCatModalZone); })
           .catch(e => sbToast("改名失败：" + (e.message || ""), false));
       };
-      row.querySelector(".zc-del").onclick = () => {
-        if (!confirm("删除类目「" + c.name + "」？该分类下所有任务将清空类目（图片保留）。")) return;
+      row.querySelector(".zc-del").onclick = async () => {
+        const _ok = await sbConfirm({ title: "删除类目「" + c.name + "」", desc: "该分类下所有任务将清空类目（图片保留）。", okText: "删除", danger: true });
+        if (!_ok) return;
         SB.removeZoneCat(zoneCatModalZone, c.id, c.name).then(() => { sbToast("已删除"); loadZoneCatList(); fillZoneCatSelect(zoneCatModalZone); })
           .catch(e => sbToast("删除失败：" + (e.message || ""), false));
       };

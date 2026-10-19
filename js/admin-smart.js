@@ -541,9 +541,9 @@ function makeSmartCard(img, isDone, smartToken) {
     lnk.type = "button";
     lnk.title = img.url ? ("外链：" + img.url) : "为这张图添加外链";
     lnk.textContent = img.url ? "🔗" : "＋链";
-    lnk.addEventListener("click", (e) => {
+    lnk.addEventListener("click", async (e) => {
       e.stopPropagation();
-      const v = prompt("输入外链地址（留空则清除）：", img.url || "");
+      const v = await sbAsk({ title: "图片外链", desc: "输入外链地址（留空则清除）：", value: img.url || "", placeholder: "https://" });
       if (v === null) return;
       const nv = v.trim();
       SB.setImageSingleField(img.id, "url", nv).then(() => {

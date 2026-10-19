@@ -340,7 +340,8 @@ async function loadCatMgmt() {
       // 删除按钮：从 categories 表移除，并清空图片上的该类目字段
       label.querySelector(".check-del").onclick = async (e) => {
         e.preventDefault(); e.stopPropagation();
-        if (!confirm("确定删除类目「" + name + "」吗？\n删除后会同步清空所有归属该类目的图片的类目字段（图片本身保留）。")) return;
+        const _okDel = await sbConfirm({ title: "删除类目「" + name + "」", desc: "删除后会同步清空所有归属该类目的图片的类目字段（图片本身保留）。", okText: "删除", danger: true });
+        if (!_okDel) return;
         try {
           await SB.removeCategory(name);
           /* 一次性清空图片上的该类目（数据库函数；未建库时自动分批清理，单条失败不中断） */
@@ -496,13 +497,22 @@ async function ensureManageLoaded() {
 
 async function loadManage() {
     manageLoadedOnce = true;
+    _mgrAllCache = null;
     const menu = $("#manage-menu");
     // 轻量取「图片中有图」的类目列表（仅取 category 列，服务端排序）
     let usedCats = [];
-    try {
-      const q = await SB.manageCategories();
-      usedCats = q || [];
-    } catch (e) { usedCats = []; }
+    let _allForCount = null;
+    if (mgrSeeAll()) {
+      try { _allForCount = await mgrAllData(); } catch (e) { _allForCount = null; }
+    }
+    if (_allForCount) {
+      usedCats = [...new Set(_allForCount.map(i => i.category).filter(Boolean))];
+    } else {
+      try {
+        const q = await SB.manageCategories();
+        usedCats = q || [];
+      } catch (e) { usedCats = []; }
+    }
 
     // 渲染左侧类目菜单
     menu.innerHTML = "";
@@ -514,10 +524,15 @@ async function loadManage() {
 
     // 各类目图片数（后台 RLS 生效口径）
     const catCounts = {};
-    try {
-      catCounts["全部"] = await SB.countImages(null);
-      for (const c of usedCats) { try { catCounts[c] = await SB.countImages(c); } catch (e) { catCounts[c] = 0; } }
-    } catch (e) { catCounts["全部"] = 0; }
+    if (_allForCount) {
+      catCounts["全部"] = _allForCount.length;
+      for (const c of usedCats) catCounts[c] = _allForCount.filter(i => i.category === c).length;
+    } else {
+      try {
+        catCounts["全部"] = await SB.countImages(null);
+        for (const c of usedCats) { try { catCounts[c] = await SB.countImages(c); } catch (e) { catCounts[c] = 0; } }
+      } catch (e) { catCounts["全部"] = 0; }
+    }
 
     const CATS = window.CAT_SEARCH;
     const favSet = new Set((currentFavCats || []).map(x => String(x == null ? "" : x).trim()));
@@ -646,9 +661,9 @@ async function buildManageCell(img) {
     linkBtn.className = "btn-ghost small mgr-link";
     linkBtn.textContent = img.url ? "🔗" : "🔗链接";
     linkBtn.title = img.url ? ("当前外链：" + img.url) : "为这张图添加外链";
-    linkBtn.onclick = (e) => {
+    linkBtn.onclick = async (e) => {
       e.stopPropagation();
-      const v = prompt("输入外链地址（留空则清除）：", img.url || "");
+      const v = await sbAsk({ title: "图片外链", desc: "输入外链地址（留空则清除）：", value: img.url || "", placeholder: "https://" });
       if (v === null) return;
       const nv = v.trim();
       SB.setImageSingleField(img.id, "url", nv).then(() => {
@@ -692,12 +707,29 @@ function setupMgrSentinel() {
     }
   }
 
+// 超管：图片管理也按「全站」取数（并可管理全部）；普通管理员：仍只看自己上传的
+let _mgrAllCache = null;
+async function mgrAllData() {
+  if (_mgrAllCache) return _mgrAllCache;
+  _mgrAllCache = await SB.listAllImagesPaged();
+  return _mgrAllCache;
+}
+function mgrSeeAll() { return typeof isSuper === "function" && isSuper(); }
+async function mgrChunk(cat, from, to) {
+  if (mgrSeeAll()) {
+    const all = await mgrAllData();
+    const f = (cat && cat !== "全部") ? all.filter(i => i.category === cat) : all;
+    return f.slice(from, to + 1);
+  }
+  return SB.listImages(cat, { from, to });
+}
+
 async function loadMgrNextPage() {
     if (!mgrHasMore || mgrLoading) return;
     mgrLoading = true;
     try {
       const grid = $("#manage-grid");
-      const chunk = await SB.listImages(currentManageCat, { from: mgrOffset, to: mgrOffset + MGMT_PAGE - 1 });
+      const chunk = await mgrChunk(currentManageCat, mgrOffset, mgrOffset + MGMT_PAGE - 1);
       const validIds = new Set(chunk.map(i => i.id));
       selectedImages = new Set([...selectedImages].filter(id => validIds.has(id)));
       updateBatchBtn();
@@ -1195,42 +1227,9 @@ async function loadDashboard() {
     const donut = $("#dash-donut");
     donut.innerHTML = `<div class="donut" style="background:conic-gradient(var(--gold) 0 ${deg}deg, rgba(255,255,255,.08) ${deg}deg 360deg)"><div class="donut-hole"><b>${(rate * 100).toFixed(1)}%</b><span>打标覆盖率</span></div></div>`;
 
-    // 招品回品专区统计
-    let rtasks = [], rsubs = [];
-    try { [rtasks, rsubs] = await Promise.all([SB.listRecruitTasks(), SB.listAllRecruitSubmissions().catch(() => [])]); } catch (e) {}
-    const rstat = (t) => {
-      const hasSubs = rsubs.some(s => s.recruit_task_id === t.id);
-      if (t.bound) return "bound";
-      if (t.status === "published" && hasSubs) return "submitted";
-      if (t.status === "published") return "published";
-      return "draft";
-    };
-    const rc = { draft: 0, published: 0, submitted: 0, bound: 0 };
-    rtasks.forEach(t => { rc[rstat(t)]++; });
-    const ro = $("#dash-recruit-overview");
-    if (ro) {
-      ro.innerHTML = "";
-      [
-        { label: "招品任务", value: rtasks.length },
-        { label: "已发布", value: rc.published + rc.submitted + rc.bound },
-        { label: "用户已上传SPU", value: rc.submitted },
-        { label: "已绑定(处理)", value: rc.bound },
-        { label: "商家提交记录", value: rsubs.length }
-      ].forEach(x => {
-        const c = document.createElement("div");
-        c.className = "dash-ov-card";
-        c.innerHTML = `<div class="dash-ov-num">${x.value}</div><div class="dash-ov-label">${x.label}</div>`;
-        ro.appendChild(c);
-      });
-    }
-    const rrows = [
-      { name: "已绑定", count: rc.bound },
-      { name: "已上传SPU", count: rc.submitted },
-      { name: "已发布", count: rc.published },
-      { name: "未发布(草稿)", count: rc.draft }
-    ];
-    renderHBars(document.getElementById("dash-recruit-status"), rrows, rtasks.length, "#d9a849", "招品状态");
+    // 招品回品统计已迁移到「招品回品」面板（进入该面板时刷新）
   }
+
 
 function renderHBars(el, rows, total, color, label) {
     if (!el) return;
@@ -1326,9 +1325,48 @@ function escAttr(s) { return escHtml(s); }
     t._timer = setTimeout(() => t.classList.remove("show"), 2600);
   }
 
+// 招品回品数据统计（原在数据看板，现置于「招品回品」面板顶部；进入该面板时刷新）
+  async function loadRecruitDashStats() {
+    let rtasks = [], rsubs = [];
+  try { [rtasks, rsubs] = await Promise.all([SB.listRecruitTasks(), SB.listAllRecruitSubmissions().catch(() => [])]); } catch (e) {}
+    const rstat = (t) => {
+    const hasSubs = rsubs.some(s => s.recruit_task_id === t.id);
+    if (t.bound) return "bound";
+    if (t.status === "published" && hasSubs) return "submitted";
+    if (t.status === "published") return "published";
+    return "draft";
+  };
+    const rc = { draft: 0, published: 0, submitted: 0, bound: 0 };
+    rtasks.forEach(t => { rc[rstat(t)]++; });
+    const ro = $("#dash-recruit-overview");
+    if (ro) {
+    ro.innerHTML = "";
+    [
+      { label: "招品任务", value: rtasks.length },
+      { label: "已发布", value: rc.published + rc.submitted + rc.bound },
+      { label: "用户已上传SPU", value: rc.submitted },
+      { label: "已绑定(处理)", value: rc.bound },
+      { label: "商家提交记录", value: rsubs.length }
+    ].forEach(x => {
+      const c = document.createElement("div");
+      c.className = "dash-ov-card";
+      c.innerHTML = `<div class="dash-ov-num">${x.value}</div><div class="dash-ov-label">${x.label}</div>`;
+      ro.appendChild(c);
+    });
+  }
+    const rrows = [
+    { name: "已绑定", count: rc.bound },
+    { name: "已上传SPU", count: rc.submitted },
+    { name: "已发布", count: rc.published },
+    { name: "未发布(草稿)", count: rc.draft }
+  ];
+    renderHBars(document.getElementById("dash-recruit-status"), rrows, rtasks.length, "#d9a849", "招品状态");
+  }
+  window.loadRecruitDashStats = loadRecruitDashStats;
+
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    bindUpload, addFiles, removePending, stripExt, handleUrlMatch, renderPending, fmtSize, doUpload, loadCats, bindFavCats, loadFavCats, saveFavCats, bindCatMgmt, loadCatMgmt, addOptionToCatMgmt, renderCatOrder, moveCatOrder, saveCatMgmt, bindManage, loadManage, removeMgrSentinel, buildManageCell, setupMgrSentinel, loadMgrNextPage, mgrPageAllConcat, ensureManageLoaded, renderManageGrid, updateBatchBtn, getTagGroups, openTagModal, closeTagModal, checkedTags, applyTags, clearTags, loadFrontendDims, renderFrontendDims, loadTagDefs, renderTagDefs, makeTagdefChip, renameTagDef, bindTagDefs, addTagDef, deleteTagDef, refreshTagConsumers, bindDashboard, buildDashCatFilter, loadDashboard, renderHBars, toggleSelectAll, batchDelete, refreshAfterImageChange, removeImage, escHtml, escAttr, sbToast
+    bindUpload, addFiles, removePending, stripExt, handleUrlMatch, renderPending, fmtSize, doUpload, loadCats, bindFavCats, loadFavCats, saveFavCats, bindCatMgmt, loadCatMgmt, addOptionToCatMgmt, renderCatOrder, moveCatOrder, saveCatMgmt, bindManage, loadManage, removeMgrSentinel, buildManageCell, setupMgrSentinel, loadMgrNextPage, mgrPageAllConcat, ensureManageLoaded, renderManageGrid, updateBatchBtn, getTagGroups, openTagModal, closeTagModal, checkedTags, applyTags, clearTags, loadFrontendDims, renderFrontendDims, loadTagDefs, renderTagDefs, makeTagdefChip, renameTagDef, bindTagDefs, addTagDef, deleteTagDef, refreshTagConsumers, bindDashboard, buildDashCatFilter, loadDashboard, loadRecruitDashStats, renderHBars, toggleSelectAll, batchDelete, refreshAfterImageChange, removeImage, escHtml, escAttr, sbToast
   });
 
 })();

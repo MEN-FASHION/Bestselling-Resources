@@ -358,9 +358,29 @@ const SB = (() => {
     // 数据看板专用：统计全站图片（含其他管理员上传），仅 admin / super_admin 可调用
     // 图片管理列表仍走 listImages（受 RLS 限制，管理员只看到并只能改自己上传的）
     async listDashboardImages() {
-      const { data, error } = await client.rpc("dashboard_images");
-      if (error) throw new Error(error.message || "读取失败");
-      return data || [];
+      // 首选专用统计函数（一次取全站）；函数还没建进库里时不能让看板退化成「只有自己上传的」
+      try {
+        const { data, error } = await client.rpc("dashboard_images");
+        if (!error && Array.isArray(data)) return data;
+      } catch (e) { /* 继续兜底 */ }
+      try {
+        const all = await this.listAllImagesPaged();
+        if (all.length) return all;
+      } catch (e) { /* 继续兜底 */ }
+      return this.listImages(null);
+    },
+    // 全站图片（逐页拉全）：看板统计、超管的图片管理都用它
+    // 走库里已有的前台分页函数（security definer，登录即可读全站），无需另建函数
+    async listAllImagesPaged(maxPages) {
+      const pageSize = 500, pages = maxPages || 20, out = [];
+      for (let p = 0; p < pages; p++) {
+        const { data, error } = await client.rpc("frontend_list_images_page", { p_limit: pageSize, p_offset: p * pageSize });
+        if (error) throw new Error(error.message || "读取失败");
+        const rows = data || [];
+        for (const r of rows) out.push(r);
+        if (rows.length < pageSize) break;
+      }
+      return out;
     },
     // 图片总数（后台分页判断；RLS 生效时仅统计当前用户可见数）
     async countImages(category) {
