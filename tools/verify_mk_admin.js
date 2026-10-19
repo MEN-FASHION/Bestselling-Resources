@@ -76,17 +76,22 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 25));
 
 (async function () {
   console.log('=== 一、后台：只有前台预览，没有第二套界面 ===');
-  ok('后台有预览容器', /id="mk-preview-frame"/.test(admin) && /class="mk-preview-shell"/.test(admin));
-  ok('预览指向前台本体并带编辑参数', /marketing\.html\?mode=edit/.test(adminJs));
-  ok('进入面板才懒加载（mountMarketingPreview）', /function mountMarketingPreview/.test(adminJs) && /if \(target === "mk-card"\) \{\s*\n\s*mountMarketingPreview\(\);/.test(adminJs));
-  ok('预览带「重新载入 / 新窗口打开」', /id="mk-preview-reload"/.test(admin) && /id="mk-preview-open"/.test(admin));
+  /* 20261019G：后台不再嵌 iframe，节庆库画在面板里（原生编辑） */
+  ok('后台不再嵌 iframe（没有预览框）', !/id="mk-preview-frame"/.test(admin) && !/mk-preview-shell/.test(admin));
+  ok('后台不再是"另一套页面"（不再指向 marketing.html?mode=edit）', !/marketing\.html\?mode=edit/.test(adminJs));
+  ok('面板内有原生节庆库容器', /id="mkFestZone"/.test(admin) && /class="mkzone mk-adm"/.test(admin));
+  ok('节庆库脚本已引入且在主脚本之后', /js\/admin-festival\.js\?v=/.test(admin)
+    && admin.indexOf('js/admin.js') < admin.indexOf('js/admin-festival.js'));
+  ok('进入面板才懒加载（FEST.mount）', /if \(target === "mk-card"\) \{\s*\n\s*if \(window\.FEST/.test(adminJs)
+    && /function mountMarketingFestival/.test(adminJs));
+  ok('面板标题写明"直接在这里编辑"', /直接在这里编辑/.test(admin));
   ok('旧的节庆库表单已移除', !/id="fest-list"/.test(admin) && !/id="fest-add"/.test(admin) && !/id="fest-import"/.test(admin));
   ok('旧节庆脚本不再被引用', !/admin-festivals\.js/.test(admin));
   ok('旧节庆脚本文件已删除', !fs.existsSync(path.join(ROOT, 'js/admin-festivals.js')));
   ok('admin.js 不再调用 loadFestivalsPanel', !/loadFestivalsPanel/.test(adminJs));
   ok('已发布素材区仍在（②保留）', /id="mk-publish-sub"/.test(admin) && /id="mk-viz-timeline"/.test(admin));
   ok('侧栏菜单名仍为「营销日历」且仅超管', /data-target="mk-card" data-super="1">营销日历</.test(admin));
-  ok('预览框样式存在', /\.mk-preview-frame \{[^}]*height: 78vh/.test(css));
+  ok('后台内嵌版样式存在（单列、无侧栏）', /\.mkzone\.mk-adm \{[^}]*grid-template-columns: minmax\(0, 1fr\)/.test(css));
 
   console.log('=== 二、前台：同一页面 + 编辑条（默认隐藏） ===');
   ok('编辑条元素齐全', ['mkEditBar', 'ebAdd', 'ebImport', 'ebExport', 'ebRebuild', 'ebClear', 'ebFile']

@@ -2955,7 +2955,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  /* 20261019F：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  /* 20261019G：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
   max-width: none; width: 100%; margin: 0; box-sizing: border-box;
   padding: 14px clamp(14px, 1.4vw, 26px) 56px;
   display: grid; grid-template-columns: 300px minmax(0, 1fr);
@@ -2963,6 +2963,31 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-top: 58px;   /* 站点顶栏高度：粘性元素的偏移基准 */
 }
 .mkzone .num { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* 后台内嵌版（.mk-adm）：单列、无侧栏、无内边距，直接长在后台面板里 */
+.mkzone.mk-adm { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0; --mk-top: 0px; }
+.mkzone.mk-adm .mk-head { padding-bottom: 12px; }
+.mkzone.mk-adm .mk-head-l h1 { font-size: 19px; }
+.mkzone.mk-adm .mk-head-l p { font-size: 12px; margin-top: 6px; }
+.mkzone.mk-adm .mk-adm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 12px; }
+.mkzone.mk-adm .mk-adm-tools .btn { padding: 7px 13px; font-size: 12.5px; }
+.mkzone.mk-adm .mk-adm-grow { flex: 1; }
+.mkzone.mk-adm .mk-adm-search { width: 240px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--mk-line);
+  background: var(--card); font-size: 12.5px; font-family: inherit; color: var(--mk-ink); outline: none; transition: .16s; }
+.mkzone.mk-adm .mk-adm-search:focus { border-color: var(--gold2); }
+.mkzone.mk-adm .mk-adm-sel { padding: 8px 10px; border-radius: 9px; border: 1px solid var(--mk-line);
+  background: var(--card); font-size: 12.5px; color: var(--mk-ink); font-family: inherit; }
+.mkzone.mk-adm .mk-adm-filters { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 16px; }
+.mkzone.mk-adm .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }
+.mkzone.mk-adm .stat .v { font-size: 26px; }
+.mkzone.mk-adm .mk-adm-empty { padding: 40px 20px; text-align: center; font-size: 13px; color: var(--mk-ink3); }
+.mkzone.mk-adm .fest-edit-chip { display: inline-flex; }
+.mkzone.mk-adm .fcard { cursor: pointer; }
+.mkzone.mk-adm .backdrop { z-index: 1200; }
+@media (max-width: 900px) {
+  .mkzone.mk-adm .stats { grid-template-columns: 1fr 1fr; }
+  .mkzone.mk-adm .mk-adm-search { width: 100%; }
+}
 
 /* ---------- 页头 ---------- */
 .mkzone .mk-head { grid-column: 1 / -1; display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--mk-line); }
@@ -3300,7 +3325,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================
-   20261019F · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   20261019G · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
    前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
    ============================================================ */
 .mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;

@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261019F">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261019F">
+<link rel="stylesheet" href="css/style.css?v=20261019G">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261019G">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -393,16 +393,10 @@
         <h2>营销日历 <span class="hint-inline">（就是前台本身 · 点图即改 · 保存即时生效）</span></h2>
 
         <div class="tag-sub">
-          <h3>① 营销日历（所见即所得）</h3>
-          <p class="hint">下面这一屏就是前台「营销日历」页面本身（同一份代码、同一份数据），不是另做一套界面。在预览里点任意节庆卡片或时间轴节点即可修改；金色编辑条可新建节日、导入 / 导出 JSON、用内置库重建、清空。保存后前台刷新即可见。</p>
-          <div class="mk-preview-shell">
-            <div class="mk-preview-bar">
-              <span class="mpb-title">前台实时预览</span>
-              <span class="mpb-sub" id="mk-preview-stat">与前台完全一致 · 编辑入口只在预览中出现</span>
-              <button type="button" class="btn-ghost" id="mk-preview-reload">重新载入</button>
-              <button type="button" class="btn-ghost" id="mk-preview-open">新窗口打开</button>
-            </div>
-            <iframe class="mk-preview-frame" id="mk-preview-frame" title="营销日历前台预览" loading="lazy"></iframe>
+          <h3>① 节庆库（直接在这里编辑）</h3>
+          <p class="hint">这一块用的就是前台「营销日历」的版式与数据（节庆卡片 / 年度时间轴 / 开发倒推三视图）。点任意卡片或节点即可就地修改，新建、导入、导出、重建、清空都在这里；保存直接写库，前台刷新立刻同步，不需要另开窗口。</p>
+          <div class="mkzone mk-adm" id="mkFestZone">
+            <div class="mk-adm-empty">正在载入节庆库…</div>
           </div>
         </div>
 
@@ -1421,29 +1415,30 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261019F"></script>
-  <script src="vendor/quill.js?v=20261019F"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261019F"></script>
-  <script src="vendor/qrcode.min.js?v=20261019F"></script>
-  <script src="js/config.js?v=20261019F"></script>
-  <script src="js/supabase.js?v=20261019F"></script>
-  <script src="js/track-menu.js?v=20261019F"></script>
+  <script src="vendor/supabase.js?v=20261019G"></script>
+  <script src="vendor/quill.js?v=20261019G"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261019G"></script>
+  <script src="vendor/qrcode.min.js?v=20261019G"></script>
+  <script src="js/config.js?v=20261019G"></script>
+  <script src="js/supabase.js?v=20261019G"></script>
+  <script src="js/track-menu.js?v=20261019G"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261019F"></script>
-  <script src="js/admin.js?v=20261019F"></script>
-  <script src="js/admin-images.js?v=20261019F"></script>
-  <script src="js/admin-smart.js?v=20261019F"></script>
-  <script src="js/admin-trend.js?v=20261019F"></script>
-  <script src="js/admin-notice.js?v=20261019F"></script>
-  <script src="js/marketing-data.js?v=20261019F"></script>
-  <script src="js/admin-marketing.js?v=20261019F"></script>
-  <script src="js/admin-tasks.js?v=20261019F"></script>
-  <script src="js/admin-bestseller.js?v=20261019F"></script>
-  <script src="js/admin-perm.js?v=20261019F"></script>
-  <script src="js/admin-pool.js?v=20261019F"></script>
-  <script src="js/admin-rank.js?v=20261019F"></script>
-  <script src="js/admin-insight.js?v=20261019F"></script>
-  <script src="js/admin-backup.js?v=20261019F"></script>
+  <script src="js/admin-dialog.js?v=20261019G"></script>
+  <script src="js/admin.js?v=20261019G"></script>
+  <script src="js/admin-images.js?v=20261019G"></script>
+  <script src="js/admin-smart.js?v=20261019G"></script>
+  <script src="js/admin-trend.js?v=20261019G"></script>
+  <script src="js/admin-notice.js?v=20261019G"></script>
+  <script src="js/marketing-data.js?v=20261019G"></script>
+  <script src="js/admin-marketing.js?v=20261019G"></script>
+  <script src="js/admin-festival.js?v=20261019G"></script>
+  <script src="js/admin-tasks.js?v=20261019G"></script>
+  <script src="js/admin-bestseller.js?v=20261019G"></script>
+  <script src="js/admin-perm.js?v=20261019G"></script>
+  <script src="js/admin-pool.js?v=20261019G"></script>
+  <script src="js/admin-rank.js?v=20261019G"></script>
+  <script src="js/admin-insight.js?v=20261019G"></script>
+  <script src="js/admin-backup.js?v=20261019G"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
