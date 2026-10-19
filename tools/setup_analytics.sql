@@ -1,6 +1,6 @@
 -- ============================================================
 -- TREND BANK · 用户动向（前台访客 + 后台管理员的行为统计）
--- 版本：20261016U
+-- 版本：20261016X
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「他们从哪来、干了什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 页面 / 来源 referrer / 停留时长 / IP / 国家地区），
@@ -328,7 +328,7 @@ begin
     where started_at >= v_from and coalesce(event, '') = ''
   )
   select jsonb_build_object(
-    'script', '20261016U',
+    'script', '20261016X',
     'days', v_days,
     'from', v_from,
     'totals', (

@@ -273,6 +273,102 @@ function functionBodies(sqlText) {
     }
   }
 }
+// ---------- 2.6 补丁脚本的「补列清单 / 自检清单」同源核对（2026-10-19 新增）----------
+// 教训：tools/patch_*.sql 里曾存在「两份手写清单」——补列清单（真正执行）与自检清单（报结果）。
+//      自检清单里多了 visit_logs.device / visit_logs.last_seen_at 两个「全项目无人使用」的幽灵字段，
+//      又漏了 zone / ip / country / region / city 等真实字段，于是自检长期报「还缺字段」，
+//      让人误以为修复没生效。现要求：自检清单必须与补列清单严格同源（同一集合），
+//      补列清单必须与统计脚本 5.5 段完全一致，且清单格式（逗号）不得出错。
+{
+  const patchPath = files.find((f) => /patch_\d+[A-Z]\.sql$/.test(f));
+  const anPath2 = files.find((f) => /setup_analytics\.sql$/.test(f));
+  if (!patchPath) {
+    bad('补丁脚本清单核对：未传入 patch_*.sql', '请把补丁脚本一并传给本检查器');
+  } else if (!anPath2) {
+    bad('补丁脚本清单核对：未传入 setup_analytics.sql', '');
+  } else {
+    const pSql = fs.readFileSync(patchPath, 'utf8');
+    const aligned2 = alignmentSet(fs.readFileSync(anPath2, 'utf8'));
+
+    function ddlSet(sqlText) {
+      // 直接扫全文：三元组 ('表','字段','类型') 只出现在补列清单里
+      // （自检清单是二元组 ('表','字段')，末尾没有第三个引号，不会被这条正则命中）
+      const set = new Set();
+      const re = /\(\s*'(\w+)'\s*,\s*'(\w+)'\s*,\s*'/g;
+      let m;
+      while ((m = re.exec(sqlText))) {
+        // 只认「真实表」的三元组：自检里的函数名清单（如 ('insight_front','insight_admin','track_event')）
+        // 形状与三元组相同，必须靠表名白名单排除，否则会误判成多出字段。
+        if (!cols.has(m[1])) continue;
+        set.add(m[1] + '.' + m[2]);
+      }
+      return set;
+    }
+    function needSet(sqlText) {
+      const set = new Set();
+      const i = sqlText.indexOf('with need(tbl, col) as (');
+      if (i < 0) return set;
+      const j = sqlText.indexOf('\n)', i);
+      const seg = sqlText.slice(i, j < 0 ? sqlText.length : j);
+      const re = /\(\s*'(\w+)'\s*,\s*'(\w+)'\s*\)/g;
+      let m;
+      while ((m = re.exec(seg))) set.add(m[1] + '.' + m[2]);
+      return set;
+    }
+    const pDDL = ddlSet(pSql);
+    const pNeed = needSet(pSql);
+    check(pDDL.size >= 40, '补丁脚本补列清单可解析（' + pDDL.size + ' 个字段）', '只解析到 ' + pDDL.size + ' 个');
+    check(pNeed.size >= 40, '补丁脚本自检清单可解析（' + pNeed.size + ' 个字段）', '只解析到 ' + pNeed.size + ' 个');
+
+    const d1 = [...aligned2].filter((x) => !pDDL.has(x));
+    const d2 = [...pDDL].filter((x) => !aligned2.has(x));
+    check(d1.length === 0 && d2.length === 0,
+      '补丁脚本补列清单与统计脚本 5.5 段完全一致（' + pDDL.size + ' 个字段）',
+      '统计脚本有而补丁没有：' + d1.join('、') + '；补丁有而统计脚本没有：' + d2.join('、'));
+
+    const n1 = [...pDDL].filter((x) => !pNeed.has(x));
+    const n2 = [...pNeed].filter((x) => !pDDL.has(x));
+    check(n1.length === 0 && n2.length === 0,
+      '自检清单与补列清单同源（无漏项、无幽灵字段）',
+      '自检漏了：' + n1.join('、') + '；自检多出（幽灵字段）：' + n2.join('、'));
+
+    for (const ghost of ['visit_logs.device', 'visit_logs.last_seen_at']) {
+      check(!pNeed.has(ghost), '自检清单不含幽灵字段 ' + ghost,
+        '该字段全项目无人使用，留在自检清单里会误报「还缺字段」');
+    }
+
+    {
+      const i = pSql.indexOf('with need(tbl, col) as (');
+      const j = pSql.indexOf('\n)', i);
+      const lines = pSql.slice(i, j).split('\n').filter((l) => /\('/.test(l));
+      const badLines = lines.slice(0, -1).filter((l) => !/,\s*$/.test(l));
+      check(badLines.length === 0, '自检清单每行以逗号分隔（末行除外）',
+        '这些行缺逗号（会报 42601 语法错误）：' + badLines.map((l) => l.trim()).join(' | '));
+    }
+
+    {
+      // 反向验证用「合成样本」判定，避免依赖被检文件内容而互相干扰
+      const fixture = new Set(['images.id', 'images.path', 'visit_logs.zone']);
+      const t1 = new Set(fixture); t1.delete('images.path');
+      const miss = [...fixture].filter((x) => !t1.has(x));
+      check(miss.length === 1 && miss[0] === 'images.path', '反向验证：自检清单漏一项必须被判定为缺口');
+      const t2 = new Set(fixture); t2.add('visit_logs.__ghost');
+      const extra = [...t2].filter((x) => !fixture.has(x));
+      check(extra.length === 1 && extra[0] === 'visit_logs.__ghost', '反向验证：自检清单多一个幽灵字段必须被判定');
+    }
+
+    // 统计脚本自身的两个清单（5.5 补列段 vs 自检③）也必须一致，否则自检③同样会误报
+    {
+      const aNeed = needSet(fs.readFileSync(anPath2, 'utf8'));
+      const a1 = [...aligned2].filter((x) => !aNeed.has(x));
+      const a2 = [...aNeed].filter((x) => !aligned2.has(x));
+      check(aNeed.size >= 40 && a1.length === 0 && a2.length === 0,
+        '统计脚本 5.5 段与自检③清单一致（' + aligned2.size + ' 个字段）',
+        '自检③清单解析到 ' + aNeed.size + ' 个；5.5 段有而自检没有：' + a1.join('、') + '；自检有而 5.5 段没有：' + a2.join('、'));
+    }
+  }
+}
+
 // ---------- 3. 反向验证 ----------
 {
   const fake = ensure('__selfcheck_table');

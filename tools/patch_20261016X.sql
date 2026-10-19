@@ -1,5 +1,5 @@
 -- ============================================================
--- 【一键修复脚本】2026-10-19 · 版本 20261016V
+-- 【一键修复脚本】2026-10-19 · 版本 20261016X
 -- ============================================================
 -- 用途：修复线上库里两处「脚本跑不到、所以一直缺」的东西。可重复执行、只补不删、不动任何数据。
 --
@@ -12,6 +12,8 @@
 --
 -- 用法：整段复制到 SQL 编辑器，执行一次。执行完成后会输出一张自检表，对照「应为」列即可。
 --       本脚本与 tools/setup_analytics.sql 内容一致（片段完全取自脚本原文），不会产生两套定义。
+--       自检清单由补列清单程序化生成，同源核对（不会再出现「清单写错、误报缺字段」）。
+--       自检清单由补列清单程序化生成，同源核对（不会再出现「清单写错、误报缺字段」）。
 -- ============================================================
 
 
@@ -192,15 +194,37 @@ select
       ('get_my_favorite_categories','set_my_favorite_categories','remove_category_from_profiles')) as "常用类目函数数_应为3";
 
 -- 逐表列出仍然缺的字段（期望结果：0 行 = 字段已齐备）
+-- 自检清单：**由上面「缺口 A」的补列清单程序化生成**，两者严格同源（同表、同字段、同数量）。
+-- 历史缺陷：这份清单之前是手写的第二份，结果多了两个「全项目无人使用」的幽灵字段
+--   （visit_logs.device / visit_logs.last_seen_at），又漏了 zone/ip/country/region/city 等真实字段，
+--   于是自检长期报「还缺字段」，让人以为修复没生效。现改为同源生成，
+--   并由 tools/verify_sql_columns.js 自动核对「补列清单 / 自检清单 / 统计脚本 5.5 段」三者一致。
+-- 期望结果：0 行（下面这条查询不返回任何行 = 字段已齐备）。
+-- 自检清单：**由上面「缺口 A」的补列清单程序化生成**，两者严格同源（同表、同字段、同数量）。
+-- 历史缺陷：这份清单之前是手写的第二份，结果多了两个「全项目无人使用」的幽灵字段
+--   （visit_logs.device / visit_logs.last_seen_at），又漏了 zone/ip/country/region/city 等真实字段，
+--   于是自检长期报「还缺字段」，让人以为修复没生效。现改为同源生成，
+--   并由 tools/verify_sql_columns.js 自动核对「补列清单 / 自检清单 / 统计脚本 5.5 段」三者一致。
+-- 期望结果：0 行（下面这条查询不返回任何行 = 字段已齐备）。
 with need(tbl, col) as (values
-  ('visit_logs','id'), ('visit_logs','user_id'), ('visit_logs','email'), ('visit_logs','path'),
-  ('visit_logs','started_at'), ('visit_logs','last_seen_at'), ('visit_logs','duration_sec'),
-  ('visit_logs','referrer'), ('visit_logs','device'), ('visit_logs','event'), ('visit_logs','menu'),
+  -- 用户表 profiles（8 个）
+  ('profiles','user_id'), ('profiles','email'), ('profiles','role'), ('profiles','created_at'),
+  ('profiles','user_tag'), ('profiles','user_note'), ('profiles','manage_zones'), ('profiles','frontend_zones'),
+  -- 访问记录表 visit_logs（14 个）
+  ('visit_logs','id'), ('visit_logs','started_at'), ('visit_logs','user_id'), ('visit_logs','email'),
+  ('visit_logs','zone'), ('visit_logs','path'), ('visit_logs','ip'), ('visit_logs','country'),
+  ('visit_logs','region'), ('visit_logs','city'), ('visit_logs','referrer'), ('visit_logs','event'),
+  ('visit_logs','menu'), ('visit_logs','duration_sec'),
+  -- 图片表 images（7 个）
   ('images','id'), ('images','created_at'), ('images','uploaded_by'), ('images','category'),
   ('images','name'), ('images','path'), ('images','tags'),
-  ('admin_actions','id'), ('admin_actions','created_at'), ('admin_actions','user_id'),
-  ('admin_actions','email'), ('admin_actions','action'), ('admin_actions','target'), ('admin_actions','detail'),
-  ('profiles','user_id'), ('profiles','created_at'), ('profiles','favorite_categories')
+  -- 后台操作日志表 admin_actions（7 个）
+  ('admin_actions','id'), ('admin_actions','created_at'), ('admin_actions','user_id'), ('admin_actions','email'),
+  ('admin_actions','action'), ('admin_actions','target'), ('admin_actions','detail'),
+  -- 备份表 data_backups（9 个）
+  ('data_backups','id'), ('data_backups','created_at'), ('data_backups','kind'), ('data_backups','note'),
+  ('data_backups','created_by'), ('data_backups','email'), ('data_backups','bytes'), ('data_backups','table_counts'),
+  ('data_backups','payload')
 )
 select n.tbl as "表", n.col as "缺失字段"
 from need n
