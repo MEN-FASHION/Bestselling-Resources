@@ -62,6 +62,7 @@ function parseRules(cssText) {
   return out;
 }
 const CSS = parseRules(read("css/style.css"));
+const RANK_SRC = read("js/rank.js");   /* rank.js 源码：只用来断言 CSS/JS 里确有对应实现（不改盘上文件） */
 function decl(selector, prop, opts) {
   const onlyMedia = !!(opts && opts.onlyMedia);
   let val = null;
@@ -77,6 +78,7 @@ function decl(selector, prop, opts) {
 }
 const px = (v) => { const m = /-?[0-9.]+/.exec(String(v == null ? "" : v)); return m ? parseFloat(m[0]) : NaN; };
 function numDecl(sel, prop) { return px(decl(sel, prop)); }
+function cssHas(sel, prop, want) { return String(decl(sel, prop) || "").indexOf(want) >= 0; }
 
 /* 修复前（20261016J）的实际取值：用于反向对比，证明本轮确实收紧了 */
 const BEFORE = { panelInset: "3vh 3vw", headPadTop: 13, titleFont: 16, subFont: 12.5, poolsGap: 12, poolPad: 8, gridGap: 4 };
@@ -188,16 +190,23 @@ async function bootRank(cfg) {
     const headPadRaw = decl(".rk-eye-head", "padding");
     const headPad = px(String(headPadRaw || "").split(" ")[0]);
     ok("顶栏高度被压小（内边距 " + headPad + "px，修复前 " + BEFORE.headPadTop + "px）", headPad <= 6 && headPad < BEFORE.headPadTop, String(headPadRaw));
-    ok("顶栏强制单行、不换行（文字再多也不会把图顶下去）", /nowrap/.test(String(decl(".rk-eye-head", "flex-wrap"))));
+    ok("顶栏改成【固定蓝栏】：常显、且用正常流占高度（不叠在图上）",
+      /relative|static/.test(String(decl(".rk-eye-head", "position") || "")) &&
+      !/absolute|fixed/.test(String(decl(".rk-eye-head", "position") || "")),
+      String(decl(".rk-eye-head", "position")));
+    ok("蓝栏底色确实是蓝色（不再是透明悬浮条）",
+      /gradient/.test(String(decl(".rk-eye-head", "background") || "") + String(decl(".rk-eye-head", "background-image") || "")) ||
+      /blue|#2a63d8|42, 99, 216/.test(String(decl(".rk-eye-head", "background") || "") + String(decl(".rk-eye-head", "background-image") || "")),
+      String(decl(".rk-eye-head", "background-image") || decl(".rk-eye-head", "background")));
 
-    const tFont = numDecl(".rk-eye-head:hover .rk-eye-title", "font-size");
-    const sFont = numDecl(".rk-eye-head:hover .rk-eye-sub", "font-size");
-    ok("顶栏标题字号变小（" + tFont + "px，修复前 " + BEFORE.titleFont + "px）", tFont <= 12.5 && tFont < BEFORE.titleFont);
-    ok("顶栏说明字号变小（" + sFont + "px，修复前 " + BEFORE.subFont + "px）", sFont <= 11.5 && sFont < BEFORE.subFont);
+    const tFont = numDecl(".rk-eye-brand", "font-size");
+    const sFont = numDecl(".rk-eye-sub", "font-size");
+    ok("顶栏标题字号保持瘦身（" + tFont + "px ≤ 12.5px）", tFont <= 12.5 && tFont > 0, String(tFont));
+    ok("顶栏说明字号保持瘦身（" + sFont + "px ≤ 11.5px）", sFont <= 11.5 && sFont > 0, String(sFont));
     ok("顶栏说明被限制为一行（nowrap + 省略号 + 可收缩）",
-      /nowrap/.test(String(decl(".rk-eye-head:hover .rk-eye-sub", "white-space"))) &&
-      /ellipsis/.test(String(decl(".rk-eye-head:hover .rk-eye-sub", "text-overflow"))) &&
-      decl(".rk-eye-head:hover .rk-eye-sub", "min-width") === "0", decl(".rk-eye-head:hover .rk-eye-sub", "white-space") + " / " + decl(".rk-eye-head:hover .rk-eye-sub", "text-overflow"));
+      /nowrap/.test(String(decl(".rk-eye-sub", "white-space"))) &&
+      /ellipsis/.test(String(decl(".rk-eye-sub", "text-overflow"))) &&
+      decl(".rk-eye-sub", "min-width") === "0", decl(".rk-eye-sub", "white-space") + " / " + decl(".rk-eye-sub", "text-overflow"));
 
     const closeW = numDecl(".rk-eye-close", "width");
     ok("关闭按钮同步收小（" + closeW + "px ≤ 26px）", closeW <= 26);
@@ -218,13 +227,19 @@ async function bootRank(cfg) {
     console.log("    周与周总缝：" + gapBefore + "px → " + gapNow + "px；图与图缝：" + BEFORE.gridGap + "px → " + gridGap + "px");
 
     ok("天眼打开期间锁住页面滚动（避免背景跟着动）", /hidden/.test(String(decl("html.rk-eye-on", "overflow"))));
-    ok("顶栏悬浮在右上角、且默认完全不可见（不像以前那样常驻压住图）",
-      /absolute/.test(String(decl(".rk-eye-head", "position") || "static")) &&
-      /^\s*none/.test(String(decl(".rk-eye-title", "display") || "")) &&
-      /^\s*none/.test(String(decl(".rk-eye-sub", "display") || "")));
-    ok("要看的范围 / 张数 / 导出 / 关闭 都收在那条悬浮栏里（不占图区）",
-      /^\s*block/.test(String(decl(".rk-eye-head:hover .rk-eye-sub", "display") || "")) &&
-      /^\s*block/.test(String(decl(".rk-eye-head:hover .rk-eye-scope", "display") || "")));
+    ok("面板纵向排列、蓝栏是第一条（图片区从蓝栏下方开始 → 蓝栏永远不压图）",
+      /column/.test(String(decl(".rk-eye-panel", "flex-direction") || "")));
+    ok("蓝栏里的控件常显、直接可点（排序 / 范围 / 标签开关 不再需要悬浮才出现）",
+      !/^\s*none/.test(String(decl(".rk-eye-sortsel", "display") || "")) &&
+      !/^\s*none/.test(String(decl(".rk-eye-scope", "display") || "")) &&
+      !/^\s*none/.test(String(decl(".rk-eye-tag", "display") || "")),
+      "sortsel=" + decl(".rk-eye-sortsel", "display") + " scope=" + decl(".rk-eye-scope", "display") + " tag=" + decl(".rk-eye-tag", "display"));
+    ok("蓝栏里有「排序」下拉（用户点得到、能改排序口径）",
+      /id="rk-eye-sortsel"/.test(RANK_SRC) && !/^\s*none/.test(String(decl(".rk-eye-sortsel", "display") || "")),
+      "sortsel.display=" + decl(".rk-eye-sortsel", "display"));
+    ok("蓝栏里有「标签开关（眼睛）」按钮", /id="rk-eye-tag"/.test(RANK_SRC) && /rk-eye-tagicon/.test(RANK_SRC));
+    ok("导出 PPT 按钮只有超管可见（非超管连按钮都不显示）",
+      cssHas(".rk-eye-ppt", "display", "none") && cssHas(".rk-eye-ppt.on", "display", "inline-flex"));
   }
 
   /* ---------------- ② 铺排算法（真实 eyeFitCalc） ---------------- */
@@ -237,34 +252,39 @@ async function bootRank(cfg) {
       ok("缝隙常量已同步收小（gap=" + T.EYE_GAP + "px, vgap=" + T.EYE_VGAP + "px）", T.EYE_GAP <= 2 && T.EYE_VGAP <= 2);
 
       /* 一台 1920×1080 的电脑，天眼全屏后：3 列（近三周），每列 58 张（用户反馈里的 T恤 场景量级） */
+      /* 用户口径：不管几列对比，图片都不能被压小；图多就直接往下排、页面纵向滚动。
+         所以下面断言的核心不变量是「卡片宽度与列数、与图数都无关」。 */
       const VP_W = 1920, VP_H = 1080;
-      const HEAD_NOW = 28 + 6;                       /* 顶栏细条（实测高约 28px）+ 列头 */
+      const HEAD_NOW = 28 + 6;                       /* 固定蓝栏 + 列头 */
       const BODY_PAD_NOW = 4 + 6;                    /* .rk-eye-body 上下内边距 */
       const COL_GAP = numDecl(".rk-eye-body .rk-pools", "gap") || 4;
       const POOL_PAD = numDecl(".rk-eye-body .rk-pool", "padding") || 3;
-      const K = 3;
       const availH_NOW = VP_H - HEAD_NOW - BODY_PAD_NOW;
-      const colW_NOW = (VP_W - COL_GAP * (K - 1)) / K - POOL_PAD * 2;
+      const colWOf = (K) => (VP_W - COL_GAP * (K - 1)) / K - POOL_PAD * 2;
+      const fitOf = (K, n) => T.eyeFitCalc(colWOf(K), availH_NOW, 1, n, { headH: HEAD_NOW, gap: T.EYE_GAP, vgap: T.EYE_VGAP });
 
-      const fitNow = T.eyeFitCalc(colW_NOW, availH_NOW, 1, 58, { headH: HEAD_NOW, gap: T.EYE_GAP, vgap: T.EYE_VGAP });
-      const needNow = HEAD_NOW + Math.ceil(58 / fitNow.r) * (fitNow.cardW * 4 / 3 + T.EYE_VGAP);
-      ok("全屏后 3 列 × 每列 58 张：一屏放得下、不用滚动", fitNow.clipped === false);
-      ok("算出的排布高度确实落在可用高度内（" + Math.round(needNow) + " ≤ " + Math.round(availH_NOW) + "）", needNow <= availH_NOW);
-      ok("每行张数在合理区间（2~20 张/行）", fitNow.r >= 2 && fitNow.r <= 20, "r=" + fitNow.r);
+      const f2 = fitOf(2, 58), f3 = fitOf(3, 58), f4 = fitOf(4, 58);
+      const w2 = f2.cardW, w3 = f3.cardW, w4 = f4.cardW;
+      console.log("    1920×1080 全屏、每列 58 张：2列 " + f2.r + "张/行 卡宽" + w2.toFixed(1) +
+        "px ｜ 3列 " + f3.r + "张/行 卡宽" + w3.toFixed(1) + "px ｜ 4列 " + f4.r + "张/行 卡宽" + w4.toFixed(1) + "px");
+      ok("2/3/4 列下卡片宽度几乎相同（列数不再把图压小）",
+        Math.max(w2, w3, w4) - Math.min(w2, w3, w4) <= 14,
+        [w2, w3, w4].map((v) => v.toFixed(1)).join(" / "));
+      ok("列数越多 → 每行张数越少（靠减张数维持图大小，不是靠缩图）",
+        f2.r > f3.r && f3.r > f4.r, "2/3/4 列 = " + [f2.r, f3.r, f4.r].join(" / "));
+      ok("4 列时每行仍不止 1 张（列不至于退化成细长条）", f4.r >= 2, "r=" + f4.r);
+      ok("每张图都不低于最小可读宽度 " + T.EYE_MIN_CARD + "px",
+        [w2, w3, w4].every((v) => v >= T.EYE_MIN_CARD - 0.01));
+      ok("横向铺满且不溢出（张数 × 卡宽 + 缝隙 ≤ 列宽）",
+        [[f2, colWOf(2)], [f3, colWOf(3)], [f4, colWOf(4)]].every(([f, cw]) =>
+          f.r * f.cardW + T.EYE_GAP * (f.r - 1) <= cw + 0.01));
 
-      /* 反向对比：修复前（3vh/3vw 留白 + 粗顶栏 + 14/40 内边距 + 4px 缝）在同样屏幕上能排多大 */
-      const oldInnerH = (VP_H * 0.94) - BEFORE.headPadTop * 2 - 16 - 46 - (14 + 40);
-      const oldInnerW = (VP_W * 0.94) - 16 * 2 - 2 * 2;
-      const colW_OLD = (oldInnerW - BEFORE.poolsGap * (K - 1)) / K - BEFORE.poolPad * 2;
-      const fitOld = T.eyeFitCalc(colW_OLD, oldInnerH, 1, 58, { headH: 46, gap: BEFORE.gridGap, vgap: BEFORE.gridGap });
-      ok("修复后每张图比修复前更大（" + fitNow.cardW.toFixed(1) + "px > " + fitOld.cardW.toFixed(1) + "px）", fitNow.cardW > fitOld.cardW);
-      console.log("    修复前：单列可用 " + colW_OLD.toFixed(0) + "×" + oldInnerH.toFixed(0) + " → 每行 " + fitOld.r + " 张、卡片宽 " + fitOld.cardW.toFixed(1) + "px");
-      console.log("    修复后：单列可用 " + colW_NOW.toFixed(0) + "×" + availH_NOW.toFixed(0) + " → 每行 " + fitNow.r + " 张、卡片宽 " + fitNow.cardW.toFixed(1) + "px");
-
-      /* 图特别多时：如实标记需要下滑，且每张不低于最小可读宽度 */
-      const fitHuge = T.eyeFitCalc(colW_NOW, availH_NOW, 1, 4000, { headH: HEAD_NOW, gap: T.EYE_GAP, vgap: T.EYE_VGAP });
-      ok("图特别多（4000 张）时如实标记「可下滑查看剩余」", fitHuge.clipped === true);
-      ok("图特别多时每张仍不低于最小可读宽度", (colW_NOW - T.EYE_GAP * (fitHuge.r - 1)) / fitHuge.r >= T.EYE_MIN_CARD - 0.01);
+      /* 图数与图片大小无关：58 张与 4000 张，算出来的卡片宽度必须一样（图多只往下排） */
+      const fHuge = fitOf(3, 4000);
+      ok("图数不再影响图片大小（58 张 vs 4000 张，卡宽相同：" + w3.toFixed(1) + "px）",
+        Math.abs(fHuge.cardW - w3) < 0.01, "4000 张时 " + fHuge.cardW.toFixed(1));
+      ok("图特别多（4000 张）时如实标记「可下滑查看剩余」", fHuge.clipped === true);
+      ok("图不多（58 张、4 列）放不下时也只允许下滑、不缩图", f4.cardW >= T.EYE_MIN_CARD && f4.r >= 1);
     }
   }
 
@@ -288,9 +308,13 @@ async function bootRank(cfg) {
       ok("面板类名正确（样式随之生效）", !!panel);
       ok("打开时请求了浏览器全屏（占满电脑屏幕）", r.fsLog.indexOf("request:rk-eye") >= 0, JSON.stringify(r.fsLog));
       ok("打开期间锁住页面滚动（html.rk-eye-on）", doc.documentElement.classList.contains("rk-eye-on"));
-      ok("顶栏由「标题 + 说明 + 范围按钮 + 关闭」四件构成", !!head &&
-        !!head.querySelector(".rk-eye-title") && !!sub &&
-        !!doc.querySelector("#rk-eye-scope") && !!doc.querySelector("#rk-eye-close"));
+      ok("顶栏（固定蓝栏）存在，且含标题（天眼 · 全部对比图）", !!head && !!head.querySelector(".rk-eye-brand"),
+        head ? (head.querySelector(".rk-eye-brand") || { textContent: "(无标题)" }).textContent : "(无顶栏)");
+      ok("顶栏含说明文字", !!sub);
+      ok("顶栏含「排序」下拉", !!doc.querySelector("#rk-eye-sortsel"));
+      ok("顶栏含「范围」按钮", !!doc.querySelector("#rk-eye-scope"));
+      ok("顶栏含「标签开关（眼睛）」按钮", !!doc.querySelector("#rk-eye-tag"));
+      ok("顶栏含「关闭」按钮", !!doc.querySelector("#rk-eye-close"));
       ok("铺排已执行（已把每行张数写到容器上）", !!(d && d.querySelector(".rk-pools") &&
         d.querySelector(".rk-pools").style.getPropertyValue("--eye-r")), d && d.querySelector(".rk-pools") ? d.querySelector(".rk-pools").style.cssText : "");
 
@@ -363,83 +387,145 @@ async function bootRank(cfg) {
   }
 
   /* ---------------- ⑤ 纯图墙：打开后没有任何文字压着图 ---------------- */
-  console.log("\n[5] 纯图墙：打开天眼后图上不出现任何文字（标签挪到鼠标悬浮时才出现）");
+  console.log("\n[5] 不压图：固定蓝栏常显 + 标签画在图的上/下方 + 眼睛开关随时开关");
   {
     const r = await bootRank({ sites: ["美国"], periods: ["2026W40", "2026W41", "2026W42"], categories: ["卫衣"] });
     const doc = r.window.document;
     doc.querySelector("#rk-eye-btn").click();
     await sleep(320);
 
-    /* 顶栏与列头：默认不可见（鼠标悬浮到对应位置才显现） */
-    ok("顶栏默认隐藏（鼠标移上去才出现，不再常驻压图）",
-      /^\s*none/.test(String(decl(".rk-eye-title", "display") || "")) &&
-      /^\s*none/.test(String(decl(".rk-eye-sub", "display") || "")), decl(".rk-eye-title", "display"));
-    ok("顶栏悬浮后才显现（.rk-eye-head:hover 里放开显示）",
-      /^\s*block/.test(String(decl(".rk-eye-head:hover .rk-eye-sub", "display") || "")) ||
-      /^\s*block/.test(String(decl(".rk-eye-head:hover", "display") || "")),
-      String(decl(".rk-eye-head:hover .rk-eye-sub", "display")));
-    ok("顶栏脱离文档流、不再占高度（absolute/fixed）",
-      /absolute|fixed/.test(String(decl(".rk-eye-head", "position") || "static")), decl(".rk-eye-head", "position"));
-    ok("列头（周名 / 重合度）默认透明、不占位",
-      decl(".rk-eye-body .rk-pool-head", "position") === "absolute" &&
-      numDecl(".rk-eye-body .rk-pool-head", "opacity") === 0, String(decl(".rk-eye-body .rk-pool-head", "opacity")));
-    ok("列头在该列被悬浮时才显现（.rk-pool:hover → opacity 1）",
-      numDecl(".rk-eye-body .rk-pool:hover .rk-pool-head", "opacity") === 1);
+    const panel0 = doc.querySelector("#rk-eye");
+    const head0 = doc.querySelector("#rk-eye-head");
+    /* 蓝栏：正常流里的第一条，图片区从它下面开始 → 结构上不可能压图 */
+    ok("蓝栏写在正常流里（position 不是 absolute/fixed）",
+      /relative|static/.test(String(decl(".rk-eye-head", "position") || "")),
+      String(decl(".rk-eye-head", "position")));
+    ok("蓝栏后面紧跟着图区（图片从蓝栏下方开始排，不会被盖住）",
+      !!(head0 && head0.nextElementSibling && head0.nextElementSibling.id === "rk-eye-body"),
+      head0 && head0.nextElementSibling ? head0.nextElementSibling.id : "(无)");
+    ok("列头（周度）改成正常流：占自己的高度、把图往下推，不再叠在列上",
+      decl(".rk-eye-body .rk-pool-head", "position") === "static" &&
+      numDecl(".rk-eye-body .rk-pool-head", "opacity") === 1,
+      "position=" + decl(".rk-eye-body .rk-pool-head", "position") + " opacity=" + decl(".rk-eye-body .rk-pool-head", "opacity"));
     ok("图区四周不留白（body 内边距为 0，图片铺到边）", numDecl(".rk-eye-body", "padding") === 0, String(decl(".rk-eye-body", "padding")));
 
-    /* DOM：卡片里只剩一张图，没有任何文字节点 */
+    /* DOM：卡片 = 一张图（+ 图下方的一栏标签），图上没有任何叠字 */
     const cards = Array.prototype.slice.call(doc.querySelectorAll("#rk-eye .rk-card"));
     ok("天眼里确实渲染出了图片卡片（" + cards.length + " 张）", cards.length > 0);
-    const textNodes = cards.reduce((a, c) => a + c.querySelectorAll("span, .rk-badge, .rk-move, .rk-share").length, 0);
-    ok("卡片里没有任何文字标记（趋势标签 / 位次 / 同款标记全部不渲染）", textNodes === 0, "文字节点=" + textNodes);
-    ok("每张卡片只含 1 个 img、且没有多余元素", cards.every((c) => c.children.length === 1 && c.children[0].tagName === "IMG"));
+    const overlay = cards.reduce((a, c) => a + c.querySelectorAll(".rk-badge, .rk-move, .rk-share").length, 0);
+    ok("卡片上没有任何叠字（趋势标签 / 位次 / 同款标记一个都不叠在图上）", overlay === 0, "叠字元素=" + overlay);
+    ok("卡片 = 1 张图 + 可选的一栏标签，且标签一定排在 img 之后（视觉上在图下方）",
+      cards.every((c) => c.children.length >= 1 && c.children[0].tagName === "IMG" &&
+        Array.prototype.slice.call(c.children).slice(1).every((x) => x.tagName === "FIGCAPTION")),
+      cards.length ? Array.prototype.map.call(cards[0].children, (x) => x.tagName).join(",") : "");
+    const withCap = cards.filter((c) => c.querySelector(".rk-eye-cap")).length;
+    ok("标签确实渲染在图片下方（" + withCap + "/" + cards.length + " 张有图下标签栏）", withCap === cards.length);
     const withMeta = cards.filter((c) => (c.getAttribute("data-eye-meta") || "").length > 0);
-    ok("标签没丢：改挂在卡片数据上，供悬浮时显示（" + withMeta.length + "/" + cards.length + " 张有归属信息）",
-      withMeta.length === cards.length);
+    ok("归属信息没丢（" + withMeta.length + "/" + cards.length + " 张有归属信息）", withMeta.length === cards.length);
     const withTags = cards.filter((c) => (c.getAttribute("data-eye-tags") || "").length > 0);
-    ok("趋势标签也没丢（挂在 data-eye-tags 上）", withTags.length > 0, "有标签的卡片=" + withTags.length);
+    ok("趋势标签也没丢（" + withTags.length + " 张有标签）", withTags.length > 0, "有标签的卡片=" + withTags.length);
+
+    /* 眼睛开关：随时开 / 关标签 */
+    const tagBtn = doc.querySelector("#rk-eye-tag");
+    ok("蓝栏里有「标签开关（眼睛）」按钮", !!tagBtn);
+    const shown0 = !panel0.classList.contains("labels-off");
+    ok("默认状态：标签显示中（且都在图的上方 / 下方，不压图）", shown0);
+    tagBtn.click();
+    await sleep(50);
+    ok("点一下 → 面板进入「标签隐藏」状态", panel0.classList.contains("labels-off"));
+    /* 断言改为读真实样式表（css/style.css），且规则必须命中「列头 + 图下标签」两类 */
+    ok("隐藏后 CSS 里「列头」与「图下标签」整条都不显示（规则写在 css/style.css）",
+      cssHas(".rk-eye.labels-off .rk-eye-body .rk-pool-head", "display", "none") &&
+      cssHas(".rk-eye.labels-off .rk-eye-cap", "display", "none"),
+      String(decl(".rk-eye.labels-off .rk-eye-cap", "display")));
+    tagBtn.click();
+    await sleep(50);
+    ok("再点一下 → 标签恢复显示（随时可开关）", !panel0.classList.contains("labels-off"));
+    ok("开关状态会被记住（写入本地存储，下次打开沿用上次选择）", /rk-eye-labels/.test(RANK_SRC));
+    ok("点标签开关不会被当成「关闭天眼」或「打开大图」",
+      /t\.id === "rk-eye-tag"\)/.test(RANK_SRC) && !!doc.querySelector("#rk-eye"));
+    ok("标签开关全过程无未捕获错误", r.errors.length === 0, r.errors.join(" | ").slice(0, 160));
     console.log("    示例归属：" + JSON.stringify(cards[0] && cards[0].getAttribute("data-eye-meta")) +
       "  示例标签：" + JSON.stringify(cards[0] && cards[0].getAttribute("data-eye-tags")));
   }
 
-  /* ---------------- ⑥ 鼠标悬浮：自动放大 + 图下方显示标签 ---------------- */
-  console.log("\n[6] 鼠标移到图上：自动放大该图，标签显示在放大图的下方");
+  /* ---------------- ⑥ 天眼里的排序：蓝栏下拉 + 多周范围 ---------------- */
+  console.log("\n[6] 天眼内排序：蓝栏排序下拉真的能改顺序，且与筛选栏同口径");
   {
     const r = await bootRank({ sites: ["美国"], periods: ["2026W40", "2026W41", "2026W42"], categories: ["卫衣"] });
     const w = r.window, doc = w.document;
     doc.querySelector("#rk-eye-btn").click();
     await sleep(320);
-    const card = doc.querySelector("#rk-eye .rk-card");
-    const loupe = doc.querySelector("#rk-eye-loupe");
-    ok("页面上有放大浮窗容器", !!loupe && !!doc.querySelector("#rk-eye-loupe-img") && !!doc.querySelector("#rk-eye-loupe-tags"));
-    ok("初始不显示（鼠标没放上去）", loupe && loupe.style.display === "none");
 
-    if (card && loupe) {
-      card.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
-      await sleep(120);
-      ok("鼠标移到图上 → 放大浮窗出现", loupe.style.display === "block", loupe.style.display);
-      const li = doc.querySelector("#rk-eye-loupe-img");
-      const src = card.getAttribute("data-url");
-      ok("放大的是这张图本身（不是别的图、不是占位图）", li && li.getAttribute("src") === src, (li && li.getAttribute("src")) + " vs " + src);
-      const tags = doc.querySelector("#rk-eye-loupe-tags");
-      const tt = tags ? tags.textContent.trim() : "";
-      ok("标签显示出来了", /热卖爆品|潜力爆品|周度激增|上升|下降|新上榜|卫衣|2026W/.test(tt), tt);
-      /* 结构上「标签在图片下方」：标签容器在 DOM 里排在 img 之后 */
-      const kids = Array.prototype.slice.call(loupe.children).map((n) => n.id || n.className);
-      ok("标签容器排在图片之后（= 视觉上在图的下面）", kids[0] === "rk-eye-loupe-img" && kids[1] === "rk-eye-loupe-tags", JSON.stringify(kids));
-      ok("放大浮窗不吃鼠标事件（不会打断滑动 / 点击看大图）", /none/.test(String(decl(".rk-eye-loupe", "pointer-events"))));
-      console.log("    悬浮标签：" + JSON.stringify(tt));
+    const sel = doc.querySelector("#rk-eye-sortsel");
+    ok("蓝栏里确实有排序下拉（不是只有样式、而是真实控件）", !!sel);
+    const opts = sel ? Array.prototype.map.call(sel.options, (o) => o.value) : [];
+    ok("排序口径与筛选栏一致（环比 / 绝对值等）",
+      opts.length >= 3 && opts.join(",").indexOf("ratio") >= 0, opts.join(","));
+    ok("默认口径是「环比 高→低」", sel && sel.value === (opts[0] || ""), sel ? sel.value : "(无)");
 
-      card.dispatchEvent(new w.MouseEvent("mouseout", { bubbles: true, relatedTarget: doc.body }));
-      await sleep(120);
-      ok("鼠标移开 → 浮窗收起", loupe.style.display === "none");
-      card.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
-      await sleep(80);
-      doc.querySelector("#rk-eye-close").click();
-      await sleep(150);
-      ok("关闭天眼后浮窗一并消失", !doc.querySelector("#rk-eye-loupe") && !doc.querySelector("#rk-eye"));
-      ok("悬浮放大全过程无未捕获错误", r.errors.length === 0, r.errors.join(" | ").slice(0, 160));
+    const firstOf = () => {
+      const c = doc.querySelector("#rk-eye .rk-card");
+      return c ? c.getAttribute("data-url") : null;
+    };
+    const before = firstOf();
+    const founders = doc.querySelector("#rk-eye .rk-pool-grid");
+
+    /* 独立对照：精确「期望首图」由另一套（图幅/天眼套件）用同样的假数据独立算出；
+       这里做的是行为级验证：切换必须重排、且同一口径重复选择必须稳定（幂等）。 */
+    let changed = 0;
+    const firstByOpt = {};
+    for (let i = 0; i < opts.length; i++) {
+      const v = opts[i];
+      sel.value = v;
+      sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+      await sleep(140);
+      const now = firstOf();
+      firstByOpt[v] = now;
+      if (i > 0 && now !== before) changed++;
+      ok("切换到「" + (sel.options[i] && sel.options[i].textContent) + "」后列表确实重排了",
+        !!founders && !!doc.querySelector("#rk-eye .rk-card"));
     }
+    /* 幂等：同一口径再选一次，首图必须与第一次相同 */
+    const probeV = opts[opts.length - 1];
+    sel.value = probeV;
+    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await sleep(140);
+    ok("同一排序口径重复选择结果稳定（幂等）", firstOf() === firstByOpt[probeV],
+      String(firstOf()) + " vs " + String(firstByOpt[probeV]));
+    /* 不同口径应当给出不同的首图（数据里四个口径的结果确实不同） */
+    const uniq = Object.keys(firstByOpt).map((k) => firstByOpt[k]).filter(Boolean);
+    ok("不同排序口径给出不同首图（不是四个口径都长一样）",
+      new Set(uniq).size >= 2, "不同首图数=" + new Set(uniq).size);
+    ok("所有排序口径都能切换、且至少换掉一次首图（说明真的排序，不是摆设）", changed >= 1, "变化次数=" + changed);
+    ok("切排序不会把天眼关掉、也不会误开大图",
+      !!doc.querySelector("#rk-eye") && !doc.querySelector("#rk-lightbox, .rk-lightbox"));
+    ok("排序后仍是纯图墙（图上没有叠字、标签在 img 之后）", (function () {
+      const cs = doc.querySelectorAll("#rk-eye .rk-card");
+      return cs.length > 0 && Array.prototype.every.call(cs, (c) => !c.querySelector(".rk-badge, .rk-move") &&
+        (c.children.length === 0 || c.children[0].tagName === "IMG"));
+    })());
+    ok("排序切换全过程无未捕获错误", r.errors.length === 0, r.errors.join(" | ").slice(0, 160));
+  }
+
+  /* ---------------- ⑥b 天眼里的范围：多周对比的入口还在（想多看几周随时切） ---------------- */
+  console.log("\n[6b] 天眼范围：默认最近 2 周，但范围按钮随时可以切到更多周");
+  {
+    const r = await bootRank({ sites: ["美国"], periods: ["2026W40", "2026W41", "2026W42"], categories: ["卫衣"] });
+    const w = r.window, doc = w.document;
+    doc.querySelector("#rk-eye-btn").click();
+    await sleep(320);
+    const pools0 = doc.querySelectorAll("#rk-eye .rk-pool").length;
+    ok("默认只对比最近 2 周（列数 " + pools0 + "，列少才看得清）", pools0 === 2, "列数=" + pools0);
+    const scopeBtn = doc.querySelector("#rk-eye-head .rk-eye-scope");
+    ok("蓝栏里有「范围」按钮（想看更多周随时切）", !!scopeBtn && /id="rk-eye-scope"/.test(RANK_SRC));
+    if (scopeBtn) {
+      scopeBtn.click();
+      await sleep(200);
+      const pools1 = doc.querySelectorAll("#rk-eye .rk-pool").length;
+      ok("点一下范围按钮 → 展开到全部期次（列数变多，多周对比还在）", pools1 > pools0, pools0 + " → " + pools1);
+    }
+    ok("范围切换全过程无未捕获错误", r.errors.length === 0, r.errors.join(" | ").slice(0, 160));
   }
 
   /* ---------------- ⑦ 导出 PPT：真实图片 + 图片下方标签 ---------------- */

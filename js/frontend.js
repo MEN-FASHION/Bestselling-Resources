@@ -377,6 +377,8 @@
 
   // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏
   function applyZoneNav() {
+    // 统一走公共专区模块（与榜单页/趋势页/营销日历同一套逻辑），避免各页显隐不一致
+    if (window.Common && Common.zones && Common.zones.applyNav) { Common.zones.applyNav(); return; }
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
       const vt = a.getAttribute("data-viewtab") || "";
@@ -389,7 +391,6 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
-    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
   // 后台新增的专区（静态菜单里没有的）也要出现在顶部菜单

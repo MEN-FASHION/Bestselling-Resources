@@ -602,6 +602,14 @@
       if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
       if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
     }
+    /* 天眼标签（可开关）：文字一律放在【图片下方】的独立栏里，绝不叠在图上、不盖图。
+       顶栏固定蓝栏里的「眼睛」按钮随时开关；关掉后整条隐藏，图片区自然变大。 */
+    if (opt.eye) {
+      h += '<figcaption class="rk-eye-cap">' +
+        (eyeMeta ? '<span class="rk-eye-cap-m">' + esc(eyeMeta) + '</span>' : '') +
+        (eyeTags.length ? '<span class="rk-eye-cap-t">' + esc(eyeTags.join(" · ")) + '</span>' : '') +
+        '</figcaption>';
+    }
     h += '</figure>';
     return h;
   }
@@ -772,84 +780,64 @@
     fitPoolsSoon();
   }
 
-  /* ---------------- 对比池自适应铺满 ---------------- */
-  /* 需求口径：不管用户选了几列对比，对比池都要把下方区域铺满，
-     且**不能溢出到右侧**（不需要横向滚动）、一眼就能看全。
-     做法：列宽由 CSS 按列数均分（flex:1 1 0 + min-width:0，因此几列都不会撑破），
-     图片每行排几张则按「该列实际宽度 + 可用高度」反推——行数正好填满高度，不多不少。 */
+  /* ---------------- 对比池：横向铺满 + 纵向自然向下排 ----------------
+     需求口径（用户明确）：不管选了几列对比，横向都要铺满、不溢出到右侧、不需要横向滚动；
+     而且**不要为了塞进一屏把图片缩小** —— 图多就往下排，页面自己纵向滚动。
+     所以这里只按「列宽 + 图幅档位目标卡宽」反推每行几张：卡片大小与列数、屏幕高度都无关。 */
   var POOL_GAP = 10;          /* 列与列之间的缝（px）—— 必须与 CSS 的 .rk-pools gap 一致 */
   var POOL_VGAP = 6;          /* 图与图之间的缝（px）—— 必须与 CSS 的 .rk-pool-grid gap 一致 */
-  var POOL_MIN_CARD = 34;     /* 卡片最小可读宽度（px） */
-  var POOL_R_MAX = 12;        /* 每行最多排几张（防止细长列排出几十张的小图） */
+  var POOL_MIN_CARD = 34;     /* 卡片最小可读宽度（px）：硬下限 */
+  /* 每行张数上限：这里曾经是 12 —— 那正是「小档和中档一样大」的根因：
+     单列时两档的目标宽度都算到 12 以上，被这个上限一起截到 12，于是三档看不出区别；
+     同时列数一多（3/4 列），列宽变小、每行张数却没跟着变小，图片就被压小了。
+     现在上限放宽到 40，真正决定张数的是「列宽 ÷ 档位目标卡宽」。 */
+  var POOL_R_MAX = 40;
+  /* 图幅档位 → 目标卡片宽度（px）。三档目标宽度拉得足够开，保证四舍五入后仍不撞档。 */
+  var SIZE_TARGET = { s: 70, m: 130, l: 220 };
+  function sizeTargetW() { return SIZE_TARGET[SIZE] || SIZE_TARGET.m; }
   var poolFitTimer = null;
 
-  /* 对比池铺满到视口底部：
-     原先把可用高度写死成 calc(100vh - 244px)，筛选栏高度一变就会在池底留白或把页面撑出滚动条。
-     这里按「池体顶部到视口底部」的实测距离写入 --rk-fill，几列对比都正好铺满一屏。 */
-  function fillPoolsHeight() {
-    try {
-      var body = document.querySelector("#rank-view .rk-body");
-      if (!body || !body.getBoundingClientRect) return 0;
-      var top = body.getBoundingClientRect().top + (window.pageYOffset || 0);
-      var avail = Math.round((window.innerHeight || 0) - (top - (window.pageYOffset || 0)) - 8);
-      if (!isFinite(avail) || avail <= 0) return 0;
-      var h = Math.max(420, avail); /* 与 CSS 的下限保持一致：太矮时不再压缩，保证图还看得清 */
-      body.style.setProperty("--rk-fill", h + "px");
-      return h;
-    } catch (e) { return 0; }
-  }
-
-  /* 图幅档位 → 实际列数。
-     在「自动铺满一屏」算出的列数基础上按档位增减：小=每行更多（图更小）、中=自动铺满、大=每行更少（图更大）。
-     必须在这里参与计算，否则会被自动列数的行内样式盖掉 —— 那样三个档位点起来就完全没反应。 */
-  function sizeAdjustedR(rAuto, n, colW) {
-    var r = Math.max(1, Math.round(rAuto || 1));
-    if (SIZE === "s") r = Math.max(r, Math.round(r * 1.35));
-    else if (SIZE === "l") r = Math.max(1, Math.round(r / 1.35));
-    r = Math.min(r, POOL_R_MAX, Math.max(1, n));
-    /* 兜底：卡片宽度不得低于 POOL_MIN_CARD（小到看不清就没意义了） */
-    var maxCols = Math.max(1, Math.floor((colW || 0) / Math.max(1, POOL_MIN_CARD)));
-    if (r > maxCols) r = maxCols;
+  /* 每行排几张：只由「该列实际宽度 + 图幅档位目标卡宽」决定 ——
+     卡片的绝对大小 ≈ 档位目标宽度，与**选了几列对比**、屏幕高度都无关。
+     这一条是用户明确要求：3 列、4 列时图片不能被压小，图多就继续往下排。
+     做法：先各自按目标宽度算出张数，再强制保证档位顺序（小 > 中 > 大）——
+     否则窄列时四舍五入会把两档撞成同一个张数，又变成「点了没反应」。
+     最后由 grid 的 1fr 把整行拉满（横向铺满、不溢出、不出现横向滚动条）。 */
+  function poolColsFromWidth(colW, n) {
+    var gap = POOL_VGAP;
+    var avail = colW + gap;
+    var rS = Math.max(1, Math.round(avail / (SIZE_TARGET.s + gap)));
+    var rM = Math.max(1, Math.round(avail / (SIZE_TARGET.m + gap)));
+    var rL = Math.max(1, Math.round(avail / (SIZE_TARGET.l + gap)));
+    if (rM <= rL) rM = rL + 1;                 /* 档位顺序硬保证：中 > 大 */
+    if (rS <= rM) rS = rM + 1;                 /* 档位顺序硬保证：小 > 中 */
+    var r = SIZE === "s" ? rS : (SIZE === "l" ? rL : rM);
+    var maxCols = Math.floor(avail / (POOL_MIN_CARD + gap));   /* 硬下限：不低于最小可读宽度 */
+    r = Math.min(r, POOL_R_MAX, Math.max(1, maxCols), Math.max(1, n));
     return Math.max(1, r);
   }
 
   function fitPools() {
-    fillPoolsHeight();
     var pools = document.querySelector("#rank-view .rk-pools") || document.querySelector(".rk-pools");
     if (!pools) return;
     var cols = pools.querySelectorAll(".rk-pool");
     if (!cols.length) return;
     var K = cols.length;
 
-    /* 可用高度 = 对比池容器高度 − 上下内边距（列头 / 脚注高度单独再扣） */
-    var availH = pools.clientHeight || 0;
-    try {
-      var ps = getComputedStyle(pools);
-      availH = Math.max(1, (pools.clientHeight || 0) - (parseFloat(ps.paddingTop) || 0) - (parseFloat(ps.paddingBottom) || 0));
-    } catch (e) { /* 取不到样式就用原值 */ }
-
-    var clipped = false;
     Array.prototype.forEach.call(cols, function (col) {
       var grid = col.querySelector(".rk-pool-grid");
       if (!grid) return;
       var n = grid.querySelectorAll(".rk-card").length;
       if (!n) return;
-      var head = col.querySelector(".rk-pool-head");
-      var foot = col.querySelector(".rk-pool-foot");
-      var headH = head ? (head.offsetHeight || 0) : 0;
-      var footH = foot ? (foot.offsetHeight || 0) : 0;
       var colW = grid.clientWidth || 0;
       if (!colW) {
         /* 刚写入 DOM 还没排版出来时按容器宽度估一个（下一帧 resize 会再校正） */
         colW = Math.max(1, ((pools.clientWidth || 0) - (K - 1) * POOL_GAP) / K);
       }
-      var fit = eyeFitCalc(colW, Math.max(1, availH - headH - footH), 1, n, {
-        headH: 0, gap: POOL_VGAP, vgap: POOL_VGAP, minW: POOL_MIN_CARD, rMax: POOL_R_MAX
-      });
-      grid.style.setProperty("--rk-r", String(sizeAdjustedR(fit.r, n, colW)));
-      if (fit.clipped) clipped = true;
+      grid.style.setProperty("--rk-r", String(poolColsFromWidth(colW, n)));
     });
-    pools.setAttribute("data-pool-clip", clipped ? "1" : "0");
+    /* 不再有「一屏塞不下就裁掉」的概念：图多就往下排、页面纵向滚动，图片尺寸保持不变 */
+    pools.setAttribute("data-pool-clip", "0");
   }
 
   function fitPoolsSoon() {
@@ -868,8 +856,26 @@
   var EYE_EAGER_MAX = 1500;   /* 图数超过此上限才退回懒加载，避免一次拉爆（默认全加载） */
   var EYE_R_MAX = 60;         /* 每行最多排几张（真正的下限由「最小卡片宽度」兜住） */
   var EYE_MIN_CARD = 20;      /* 卡片最小宽度（px）：低于这个就看不清了 */
+  var EYE_TARGET_CARD = 150;  /* 天眼里卡片的自然宽度（px）：每行几张只按列宽算，不按屏幕高度缩图 */
   var EYE_GAP = 2;            /* 同列里图与图的横向缝（px）——必须与 CSS 的 --eye-gap 保持一致 */
   var EYE_VGAP = 2;           /* 同列里图与图的纵向缝（px）——必须与 CSS 的 gap 保持一致 */
+  /* 天眼标签开关（固定蓝栏里的眼睛按钮）：默认显示，但标签一律画在【图片上方/下方】的正常流里，
+     不会叠在图上；关掉后整条隐藏、图片区自然变大。选择会记住，下次打开保持上次状态。 */
+  var EYE_LABELS = true;
+  try { if (localStorage.getItem("rk-eye-labels") === "0") EYE_LABELS = false; } catch (eL) { /* 取不到就用默认值 */ }
+  function saveEyeLabels() {
+    try { localStorage.setItem("rk-eye-labels", EYE_LABELS ? "1" : "0"); } catch (eL2) { /* 忽略 */ }
+  }
+  function applyEyeLabels(panel) {
+    if (!panel) return;
+    panel.classList.toggle("labels-off", !EYE_LABELS);
+    var btn = panel.querySelector("#rk-eye-tag");
+    if (btn) {
+      btn.classList.toggle("on", EYE_LABELS);
+      btn.setAttribute("aria-pressed", EYE_LABELS ? "true" : "false");
+      btn.title = EYE_LABELS ? "标签：显示中（点击隐藏）" : "标签：已隐藏（点击显示）";
+    }
+  }
   var eyeFitBound = null, eyeFsBound = null;
 
   /* 天眼要铺开的列范围 */
@@ -910,36 +916,33 @@
     return { items: items, sites: sites, periods: periods };
   }
 
-  /* 纯计算：按可用宽高反推「每行几张 + 卡片多宽」，让每列全部图都落在首屏内
-     （图实在太多、压到最小尺寸仍放不下时，clipped=true 表示允许下滑看剩余部分） */
+  /* 纯计算（天眼）：每行排几张 = 只由「列宽」决定。
+     用户口径（明确）：不管几列对比都要横向铺满；**不要再为了塞进一屏把图片缩小** ——
+     列数越多、屏幕越矮，都不允许把图压小，图多就直接往下排、页面自己纵向滚动。
+     所以这里不再从「最小张数」往回试高度，而是按自然卡宽（EYE_TARGET_CARD）算张数；
+     高度只用来判断「要不要允许下滑」（clipped）。 */
   function eyeFitCalc(availW, availH, K, maxN, opt) {
     opt = opt || {};
     var gap = opt.gap == null ? EYE_GAP : opt.gap;
     var vgap = opt.vgap == null ? EYE_VGAP : opt.vgap;
     var headH = opt.headH == null ? 46 : opt.headH;
+    var capH = opt.capH == null ? 0 : opt.capH;   /* 每张图【上方/下方】标签栏的高度（天眼开着标签时才 > 0） */
     var minW = opt.minW == null ? EYE_MIN_CARD : opt.minW;
-    var rMax = opt.rMax == null ? EYE_R_MAX : opt.rMax;
+    var target = opt.target == null ? EYE_TARGET_CARD : opt.target;
     K = Math.max(1, K || 1);
     var colW = (availW - gap * (K - 1)) / K;
-    if (!(colW > 0) || !(availH > 0) || !(maxN > 0)) {
-      return { r: 1, cardW: Math.max(minW, colW > 0 ? colW : minW), clipped: true };
+    if (!(colW > 0) || !(maxN > 0)) {
+      return { r: 1, cardW: Math.max(minW, colW > 0 ? colW : minW), clipped: false };
     }
-    /* 从「每行最少的张数」开始试：第一个能把该列全部图塞进可用高度的方案，
-       就是卡片最大的方案 —— 一屏放得下，且图尽量大、看得清。 */
-    var best = 0, bestW = 0;
-    for (var r = 1; r <= rMax; r++) {
-      var cardW = (colW - gap * (r - 1)) / r;
-      if (cardW < minW) break;                       /* 再密就低于最小可读宽度了 */
-      var rows = Math.ceil(maxN / r);
-      var needH = headH + rows * (cardW * 4 / 3 + vgap);
-      if (needH <= availH) { best = r; bestW = cardW; break; }
-    }
-    if (best) return { r: best, cardW: bestW, clipped: false };
-    for (var r2 = rMax; r2 >= 1; r2--) {
-      var cw = (colW - gap * (r2 - 1)) / r2;
-      if (cw >= minW) return { r: r2, cardW: cw, clipped: true };
-    }
-    return { r: 1, cardW: colW > 0 ? colW : minW, clipped: true };
+    var r = Math.round((colW + gap) / (target + gap));              /* 四舍五入 → 实际卡宽最接近自然卡宽 */
+    var maxCols = Math.floor((colW + gap) / (minW + gap));          /* 硬下限：不低于最小可读宽度 */
+    r = Math.max(1, Math.min(r, EYE_R_MAX, maxCols, Math.max(1, maxN)));
+    var cardW = (colW - gap * (r - 1)) / r;
+    var rows = Math.ceil(maxN / r);
+    var needH = headH + rows * (cardW * 4 / 3 + vgap + capH);
+    /* 一屏放得下 → 不用下滑；图多放不下 → 允许下滑（此时也不缩图，图片尺寸与列数无关） */
+    var clipped = !(availH > 0) || needH > availH;
+    return { r: r, cardW: cardW, clipped: clipped };
   }
 
   /* 把算出来的「每行几张 / 卡片宽 / 字号」落到样式变量上，并决定是否还需要下滑 */
@@ -968,15 +971,22 @@
       var poolsW = pools.clientWidth || body.clientWidth;
       colW = Math.max(1, (poolsW - (K - 1) * 4) / Math.max(1, K) - poolPad);
     }
-    /* 天眼里列头改成「悬浮在列上、鼠标移到该列才显现」，不占列高；高度全部让给图片 */
-    var headH = 0;
+    /* 天眼列头（周度）与卡片标签：开启时都画在【正常流内】的独立栏里（图片上方 / 下方），
+       绝不叠在图上；这里把它们的实测高度扣掉，保证「一屏看全」的口径仍然成立。 */
+    var headH = 0, capH = 0;
+    if (EYE_LABELS) {
+      var hz = cols[0] ? cols[0].querySelector(".rk-pool-head") : null;
+      var cz = cols[0] ? cols[0].querySelector(".rk-eye-cap") : null;
+      headH = hz ? (hz.offsetHeight || 0) : 0;
+      capH = cz ? (cz.offsetHeight || 0) : 0;
+    }
     /* 可用高度要扣掉外层内边距（clientHeight 含 padding），否则会把图算高一点、挤出行外 */
     var availH = body.clientHeight;
     try {
       var bstyle = getComputedStyle(body);
       availH = Math.max(1, body.clientHeight - (parseFloat(bstyle.paddingTop) || 0) - (parseFloat(bstyle.paddingBottom) || 0));
     } catch (e2) { /* 取不到样式就用原值 */ }
-    var fit = eyeFitCalc(colW, availH, 1, maxN, { headH: headH, gap: EYE_GAP, vgap: EYE_VGAP });
+    var fit = eyeFitCalc(colW, availH, 1, maxN, { headH: headH, gap: EYE_GAP, vgap: EYE_VGAP, capH: capH });
     pools.style.setProperty("--eye-gap", EYE_GAP + "px");
     pools.style.setProperty("--eye-r", String(fit.r));
     pools.style.setProperty("--eye-card", fit.cardW.toFixed(1) + "px");
@@ -995,19 +1005,23 @@
     d.className = "rk-eye";
     d.innerHTML = '<div class="rk-eye-mask" id="rk-eye-mask"></div>' +
       '<div class="rk-eye-panel">' +
-        /* 顶栏整体改为「悬浮 + 鼠标悬浮才显现」：打开天眼后屏幕上没有任何文字压着图，
-           只有右上角一个关闭按钮常显（图标，不是文字）；需要看范围/张数/导出时把鼠标移到那儿即可。 */
+        /* 顶部固定蓝栏（正常流第一条，永不压图）：范围 / 排序 / 标签开关（眼睛）/ 导出 PPT / 关闭
+           全部常显，点开就能用，不需要鼠标悬浮才出现。 */
         '<div class="rk-eye-head" id="rk-eye-head">' +
-          '<div class="rk-eye-title">天眼 · 全部对比图</div>' +
-          '<div class="rk-eye-sub" id="rk-eye-sub">加载中…</div>' +
-          '<div class="rk-eye-clip" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余可下滑查看</div>' +
-          '<select class="rk-eye-sortsel" id="rk-eye-sortsel" title="排序方式">' +
-            '<option value="ratio_desc">环比比例 高→低</option>' +
-            '<option value="ratio_asc">环比比例 低→高</option>' +
-            '<option value="abs_desc">环比绝对值 高→低</option>' +
-            '<option value="abs_asc">环比绝对值 低→高</option>' +
-          '</select>' +
+          '<span class="rk-eye-brand">天眼 · 全部对比图</span>' +
+          '<span class="rk-eye-sub" id="rk-eye-sub">加载中…</span>' +
+          '<span class="rk-eye-clip" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余可下滑查看</span>' +
+          '<span class="rk-eye-sp"></span>' +
+          '<label class="rk-eye-sortwrap"><span class="rk-eye-sortlab">排序</span>' +
+            '<select class="rk-eye-sortsel" id="rk-eye-sortsel" title="排序方式">' +
+              '<option value="ratio_desc">环比比例 高→低</option>' +
+              '<option value="ratio_asc">环比比例 低→高</option>' +
+              '<option value="abs_desc">环比绝对值 高→低</option>' +
+              '<option value="abs_asc">环比绝对值 低→高</option>' +
+            '</select>' +
+          '</label>' +
           '<button type="button" class="rk-eye-scope" id="rk-eye-scope"></button>' +
+          '<button type="button" class="rk-eye-tag" id="rk-eye-tag" title="标签：显示中（点击隐藏）" aria-pressed="true"><span class="rk-eye-tagicon">👁</span><span class="rk-eye-tagtxt">标签</span></button>' +
           '<button type="button" class="rk-eye-ppt" id="rk-eye-ppt">导出 PPT</button>' +
           '<button type="button" class="rk-eye-close" id="rk-eye-close" title="关闭（Esc）">×</button>' +
         '</div>' +
@@ -1021,6 +1035,7 @@
     document.body.appendChild(d);
     document.documentElement.classList.add("rk-eye-on");
     bindEye(d);
+    applyEyeLabels(d);
     wireEyePpt(d);
     fillEye(d);
     enterEyeFullscreen(d);     /* 真·全屏：占满电脑屏幕；不支持或被拒时自动退化为「占满视口」 */
@@ -1052,6 +1067,11 @@
       var t = e.target;
       if (t && (t.id === "rk-eye-close" || t.id === "rk-eye-mask")) { closeEye(); return; }
       if (t && t.id === "rk-eye-scope") { EYE_ALL = !EYE_ALL; openEye(); return; }   /* 切换列范围 */
+      if (t && t.id === "rk-eye-tag") {                       /* 标签开关：图片上方/下方的标签整条显隐 */
+        EYE_LABELS = !EYE_LABELS; saveEyeLabels(); applyEyeLabels(d);
+        try { fitEye(d); } catch (e) { /* 重排失败不影响看图 */ }
+        return;
+      }
       if (t && t.id === "rk-eye-sortsel") return;             /* 排序下拉由自己的 change 处理 */
       if (t && t.id === "rk-eye-ppt") return;                  /* 导出 PPT 由按钮自己的 onclick 处理 */
       if (t && t.closest && t.closest("#rk-eye-loupe")) return; /* 放大镜不参与点击 */
@@ -1326,7 +1346,7 @@
     if (window.Common && Common.zones) {
       Common.zones.setVis(vis || {});
       Common.zones.setMine(Array.isArray(myz) ? myz : null);
-      Common.zones.renderNav();
+      if (Common.zones.applyNav) Common.zones.applyNav(); else Common.zones.renderNav();
     }
     var gateWhy = "";
     if (vis && vis.rank === false) {

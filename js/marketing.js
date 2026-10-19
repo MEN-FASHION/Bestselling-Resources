@@ -56,6 +56,8 @@
 
   // 顶部菜单：每个菜单项都可单独被隐藏；营销日历(本页)= marketing
   function applyZoneNav() {
+    // 统一走公共专区模块（与榜单页/视觉专区/趋势专区同一套逻辑）
+    if (window.Common && Common.zones && Common.zones.applyNav) { Common.zones.applyNav(); return; }
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
       const vt = a.getAttribute("data-viewtab") || "";
@@ -68,13 +70,12 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
-    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
   async function ensureZoneVis() {
     if (zoneVisLoaded) return;
     try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
-    try { myZones = await SB.myManageZones(); } catch (e) { myZones = null; }
+    try { myZones = await SB.myFrontendZones(); } catch (e) { myZones = null; }
     zoneVisLoaded = true;
     if (window.Common && Common.zones) { Common.zones.setVis(zoneVis); Common.zones.setMine(myZones); Common.zones.loadDefs(); }
     applyZoneNav();

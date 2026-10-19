@@ -179,6 +179,8 @@ files.forEach((f) => {
   ok("每个建策略语句都有紧邻的 drop policy 守卫（否则重复执行报「策略已存在」）", noPol.length === 0, noPol.slice(0, 4).join("；"));
 
   console.log("[6] 反向验证（还原成坏写法，检查必须失败）");
+  // 本组实验依赖文件中存在对应结构；纯数据类脚本（没有函数/授权/括号）不适用 → 明确跳过而不是误判为失败
+  const skip = (desc, why) => console.log("  ⊘ " + desc + " —— 本文件不适用（" + why + "），跳过");
   // 通用做法：删掉脚本里任意一个右括号，配平检查必须报出来
   const cut = chars.indexOf(")");
   const mutated = cut < 0 ? chars : chars.slice(0, cut) + chars.slice(cut + 1);
@@ -187,7 +189,8 @@ files.forEach((f) => {
   for (let i = 0; i < mutated.length; i++) if (mutated[i] === ";") { mParts.push(mutated.slice(mStart, i)); mStart = i + 1; }
   if (mStart < mutated.length && mutated.slice(mStart).trim()) mParts.push(mutated.slice(mStart));
   const stillBalanced = mParts.every((p) => (p.match(/\(/g) || []).length === (p.match(/\)/g) || []).length);
-  ok("还原：删掉一个右括号后，配平检查会失败", cut >= 0 && !stillBalanced);
+  if (cut < 0) skip("还原：删掉一个右括号后，配平检查会失败", "文件里没有括号");
+  else ok("还原：删掉一个右括号后，配平检查会失败", !stillBalanced);
 
   const wrongSig = raw.replace(/grant execute on function public\.([a-z_]+)\(([^)]*)\)/, "grant execute on function public.$1(text, text, text, text, text, text, text)");
   const real2 = realFns(wrongSig);
@@ -197,7 +200,8 @@ files.forEach((f) => {
     const n = m3[2].split(",").filter(Boolean).length;
     caught = !(real2[m3[1]] || []).some((c) => c === n);
   }
-  ok("还原：把授权签名写错后，签名一致性检查会失败", caught);
+  if (!m3) skip("还原：把授权签名写错后，签名一致性检查会失败", "文件里没有 grant execute 授权语句");
+  else ok("还原：把授权签名写错后，签名一致性检查会失败", caught);
 
   // 反向：挑一个「前几行没有 drop 守卫」的函数，把它改回裸 create，覆盖保护检查必须报出来
   let bareCaught = false, bareName = "";
@@ -212,7 +216,8 @@ files.forEach((f) => {
     bareCaught = findNoGuard(mut).length > 0;
     break;
   }
-  ok("还原：把函数 " + (bareName || "?") + " 改回裸 create 后，覆盖保护检查会失败", bareCaught);
+  if (!bareName) skip("还原：把函数改回裸 create 后，覆盖保护检查会失败", "文件里没有可改造的建函数语句");
+  else ok("还原：把函数 " + bareName + " 改回裸 create 后，覆盖保护检查会失败", bareCaught);
 
   // 反向：凭空加一条没有 drop 守卫的策略，策略保护检查必须报出来
   const synth = raw + '\ncreate policy "zz_should_be_flagged" on public.zz_t for select to authenticated using (true);\n';

@@ -437,8 +437,41 @@ window.Common = (function () {
       });
     }
 
+    /* 顶部菜单显隐的唯一实现（四个前台页面共用）：
+       - 认领 data-zone（按 href 匹配专区定义；data-viewtab 直接作为专区 key；公告按钮特判）
+       - 按可见性显示/隐藏：用户级白名单 > 全局开关
+       各页面不再各写一份，避免「榜单页常显、其它页被藏」这类不一致。 */
+    function applyNav() {
+      const tabs = document.querySelector(".top-tabs");
+      if (!tabs) return;
+      Array.prototype.slice.call(tabs.querySelectorAll(".tab-link")).forEach((a) => {
+        let z = a.getAttribute("data-zone");
+        if (!z) {
+          if (a.id === "notice-tab") z = "notice";
+          else {
+            const vt = a.getAttribute("data-viewtab") || "";
+            const href = a.getAttribute("href") || "";
+            if (vt) z = vt;
+            else {
+              const hit = list().find((d) => d.href && d.href === href);
+              if (hit) z = hit.key;
+              else if (href === "marketing.html") z = "marketing";
+              else if (href === "index.html") z = "visual";
+              else if (href === "trends.html") z = "trend";
+              else if (href === "trends.html#recruit") z = "recruit";
+              else if (href === "trends.html#bestseller") z = "bestseller";
+            }
+          }
+          if (z) a.setAttribute("data-zone", z);
+        }
+        if (!z) { a.style.display = ""; return; }
+        a.style.display = visible(z) ? "" : "none";
+      });
+      renderNav();
+    }
+
     return {
-      visible, setVis, setMine, setDefs, loadDefs, renderNav,
+      visible, setVis, setMine, setDefs, loadDefs, renderNav, applyNav,
       get defs() { return list(); }
     };
   })();

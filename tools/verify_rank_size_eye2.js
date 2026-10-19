@@ -69,6 +69,7 @@ function decl(selector, prop) {
   });
   return val;
 }
+function numDecl(sel, prop) { var m = /-?[0-9.]+/.exec(String(decl(sel, prop) == null ? "" : decl(sel, prop))); return m ? parseFloat(m[0]) : NaN; }
 
 /* ---------------- 假数据层（只覆盖本页真正会调用的方法） ---------------- */
 const PERIODS = ["2026W39", "2026W40", "2026W41", "2026W42"];
@@ -112,9 +113,9 @@ function makeSB(items, cfg) {
 }
 
 const EXPORTS =
-  "window.__t={fitPools:fitPools,fitPoolsSoon:fitPoolsSoon,sizeAdjustedR:sizeAdjustedR,eyeScope:eyeScope," +
+  "window.__t={fitPools:fitPools,fitPoolsSoon:fitPoolsSoon,poolColsFromWidth:poolColsFromWidth,eyeFitCalc:eyeFitCalc,eyeScope:eyeScope," +
   "openEye:openEye,closeEye:closeEye,fillEye:fillEye,POOL_MIN_CARD:POOL_MIN_CARD,POOL_R_MAX:POOL_R_MAX," +
-  "EYE_PERIODS_MAX:EYE_PERIODS_MAX," +
+  "EYE_PERIODS_MAX:EYE_PERIODS_MAX,EYE_MIN_CARD:EYE_MIN_CARD,EYE_TARGET_CARD:EYE_TARGET_CARD,EYE_GAP:EYE_GAP,EYE_VGAP:EYE_VGAP," +
   "setSize:function(v){SIZE=v;},getSize:function(){return SIZE;}," +
   "setState:function(o){if(o.periods)SEL_PERIODS=o.periods.slice();if(o.sites)SEL_SITES=o.sites.slice();" +
   "if(o.size)SIZE=o.size;" +
@@ -179,10 +180,12 @@ function readR(window) {
 
   /* ---------------- [1] 图幅档位必须真正参与列数计算 ---------------- */
   console.log("\n[1] 图幅 小/中/大：必须真正生效");
-  ok("存在档位换算函数 sizeAdjustedR", /function sizeAdjustedR\s*\(/.test(src));
-  ok("铺排时确实调用了档位换算（不是只算自动列数）", /setProperty\(\s*"--rk-r"\s*,\s*String\(\s*sizeAdjustedR\(/.test(src),
-    "旧写法 String(fit.r) 会让三个档位完全没反应");
-  ok("不再存在「直接用自动列数」的旧写法", !/setProperty\(\s*"--rk-r"\s*,\s*String\(\s*fit\.r\s*\)\s*\)/.test(src));
+  ok("存在「列宽 → 每行张数」的档位换算函数 poolColsFromWidth", /function poolColsFromWidth\s*\(/.test(src));
+  ok("铺排时确实用档位换算（张数由列宽 + 档位目标卡宽算出）",
+    /setProperty\(\s*"--rk-r"\s*,\s*String\(\s*poolColsFromWidth\(/.test(src));
+  ok("每行张数上限已放宽到 ≥ 40（旧的 12 会把单列的「小/中」一起截成同一档）",
+    /var POOL_R_MAX\s*=\s*(4[0-9]|[5-9][0-9])\s*;/.test(src),
+    (src.match(/POOL_R_MAX\s*=\s*\d+\s*;/) || [""])[0]);
   ok("档位换算受「卡片最小宽度」兜底", /POOL_MIN_CARD/.test(src) && /maxCols/.test(src));
 
   {
@@ -217,6 +220,42 @@ function readR(window) {
       });
     });
     ok("列数不超过每行上限 " + rMax, [rv(rS), rv(rM), rv(rL)].every((v) => v <= rMax));
+
+    /* 用户口径的核心不变量：图片大小与「选了几列对比」无关 ——
+       1 / 2 / 3 / 4 列时，卡片宽度都必须 ≈ 档位目标宽度（116px），
+       列数变多只能让每行张数变少，绝不能把图片压小。 */
+    const probe = (size, cw) => {
+      b.T.setSize(size);
+      stubLayout(b.window, undefined, undefined, cw);
+      b.T.fitPools();
+      const rr = readR(b.window);
+      return rr.map((x) => ({ r: x.r, w: (cw - 6 * (x.r - 1)) / x.r }));
+    };
+    const widths = [];
+    [["1 列对比", 1900], ["2 列对比", 945], ["3 列对比", 620], ["4 列对比", 455]].forEach(([lab, cw]) => {
+      const ws = probe("m", cw);
+      const w0 = ws.length ? ws[0].w : NaN;
+      widths.push(w0);
+      ok("[" + lab + "] 中档卡片宽度 " + w0.toFixed(0) + "px ≈ 目标 130px（没有被列数压小）",
+        isFinite(w0) && w0 >= 108 && w0 <= 165, "w=" + w0.toFixed(2));
+    });
+    ok("1/2/3/4 列下卡片宽度彼此接近（同一档位、不同列数不能改变图的量级）",
+      widths.length === 4 && Math.max.apply(null, widths) / Math.min.apply(null, widths) <= 1.32,
+      widths.map((v) => v.toFixed(0)).join(" / "));
+    ok("任何列数下都不会把中档图压到目标宽度的 8 成以下（只允许不缩小）",
+      widths.length === 4 && widths.every((v) => v >= 130 * 0.82), widths.map((v) => v.toFixed(0)).join(" / "));
+    ok("横向永不溢出：每行张数按列宽整除（grid 用 1fr 拉满，不出现横向滚动条）",
+      (function () {
+        const ws = probe("m", 620);
+        return ws.length > 0 && ws.every((x) => x.r >= 1 && x.r * x.w <= 620 + 6);
+      })());
+    const single = ["s", "m", "l"].map((sz) => {
+      const ws = probe(sz, 1900);
+      return ws.length ? ws[0].w : NaN;
+    });
+    ok("单列（1 列对比）时三档仍然互不相同 —— 小 " + single[0].toFixed(0) + " / 中 " + single[1].toFixed(0) + " / 大 " + single[2].toFixed(0) + "px",
+      single.every((v) => isFinite(v) && v > 0) && single[0] < single[1] - 12 && single[1] < single[2] - 12,
+      single.map((v) => v.toFixed(1)).join("/"));
 
     /* 真实点击筛选栏里的图幅芯片（走真实事件绑定） */
     const doc = b.window.document;
@@ -318,8 +357,19 @@ function readR(window) {
   ok("天眼顶栏含排序下拉", /id="rk-eye-sortsel"/.test(src));
   ok("排序选项与筛选栏一致（四个口径）",
     ["ratio_desc", "ratio_asc", "abs_desc", "abs_asc"].every((v) => src.indexOf('value="' + v + '"') >= 0));
-  ok("排序下拉默认不显示、鼠标悬浮顶栏才显现（不压图）", decl(".rk-eye-sortsel", "display") === "none" &&
-    decl(".rk-eye-head:hover .rk-eye-sortsel", "display") === "block");
+  ok("排序下拉常显在固定蓝栏里（点开就能用，不需要鼠标悬浮）",
+    !/^\s*none/.test(String(decl(".rk-eye-sortsel", "display") || "")) &&
+    /relative|static/.test(String(decl(".rk-eye-head", "position") || "")),
+    "sortsel.display=" + decl(".rk-eye-sortsel", "display") + " head.position=" + decl(".rk-eye-head", "position"));
+  ok("蓝栏是固定蓝栏（蓝色底 + 正常流，不叠图）",
+    /linear-gradient/.test(String(decl(".rk-eye-head", "background") || "")) &&
+    !/absolute|fixed/.test(String(decl(".rk-eye-head", "position") || "")),
+    String(decl(".rk-eye-head", "position")));
+  ok("蓝栏里有「标签开关（眼睛）」按钮（随时开关标签）", /id="rk-eye-tag"/.test(src));
+  ok("列头（周度）不再叠在图上（改成正常流，占自己的高度）",
+    decl(".rk-eye-body .rk-pool-head", "position") === "static" &&
+    numDecl(".rk-eye-body .rk-pool-head", "opacity") === 1,
+    decl(".rk-eye-body .rk-pool-head", "position"));
   ok("点击排序下拉不会被当作「关闭天眼」或「打开大图」", /t\.id === "rk-eye-sortsel"\) return;/.test(src));
   ok("排序下拉带 change 绑定并会重新填充", /addEventListener\("change"[\s\S]{0,120}SORT = ssel\.value/.test(src));
 
@@ -369,19 +419,25 @@ function readR(window) {
     const tmp = path.join(ROOT, ".tmp_rev");
     fs.mkdirSync(tmp, { recursive: true });
     const undo = (rel, pairs) => {
+      /* 兼容：把 JS 正则也当普通替换处理 */
       const dst = path.join(tmp, rel);
       fs.mkdirSync(path.dirname(dst), { recursive: true });
       let s = fs.readFileSync(path.join(ROOT, rel), "utf8");
       pairs.forEach(([a, b]) => { s = s.split(a).join(b); });
       fs.writeFileSync(dst, s);
     };
-    /* ① 图幅：还原成「直接用自动列数」 */
-    undo("js/rank.js", [['setProperty("--rk-r", String(sizeAdjustedR(fit.r, n, colW)))', 'setProperty("--rk-r", String(fit.r))']]);
+    /* ① 图幅：还原成「忽略档位、只看带宽」（旧行为：点哪一档都一样） */
+    const OLD_WRITE = 'grid.style.setProperty("--rk-r", String(Math.max(1, Math.min(POOL_R_MAX, Math.round((colW + POOL_VGAP) / (SIZE_TARGET.m + POOL_VGAP))))));';
+    undo("js/rank.js", [[
+      'grid.style.setProperty("--rk-r", String(poolColsFromWidth(colW, n)));',
+      OLD_WRITE,
+    ]]);
     const revJs = fs.readFileSync(path.join(tmp, "js/rank.js"), "utf8");
-    ok("反向①：还原旧写法后，「确实调用档位换算」这条检查会失败",
-      !/setProperty\(\s*"--rk-r"\s*,\s*String\(\s*sizeAdjustedR\(/.test(revJs));
-    ok("反向①：还原旧写法后，「不存在旧写法」这条检查会失败",
-      /setProperty\(\s*"--rk-r"\s*,\s*String\(\s*fit\.r\s*\)\s*\)/.test(revJs));
+    ok("反向①：还原旧写法后，「确实用档位换算」这条检查会失败",
+      !/setProperty\(\s*"--rk-r"\s*,\s*String\(\s*poolColsFromWidth\(/.test(revJs),
+      "还原后写入内容：" + (revJs.match(/setProperty\(\s*"--rk-r"[^;]{0,90}/) || [""])[0].replace(/\s+/g, " "));
+    ok("反向①：还原后的写法不再调用「看当前档位」的换算函数（运行时三档完全相同已在上一条证明）",
+      !/String\(\s*poolColsFromWidth\(colW,\s*n\)\s*\)/.test(revJs));
 
     /* ① 的运行时反向：用还原后的脚本重跑铺排，三档列数应当完全相同 */
     {
@@ -399,6 +455,27 @@ function readR(window) {
         st && a === b2 && b2 === c && isFinite(a), "小/中/大=" + [a, b2, c].join("/"));
     }
 
+    /* ①-b 图幅：把每行张数上限改回旧的 12（截图里「小和中一样大」的成因） */
+    fs.writeFileSync(path.join(tmp, "js/rank.js"),
+      read("js/rank.js").replace(/var POOL_R_MAX\s*=\s*\d+\s*;/, "var POOL_R_MAX = 12;"));
+    const revJs1b = fs.readFileSync(path.join(tmp, "js/rank.js"), "utf8");
+    ok("反向①-b：上限改回 12 后，「上限已放宽」这条检查会失败（旧写法被识别）",
+      !/var POOL_R_MAX\s*=\s*(4[0-9]|[5-9][0-9])\s*;/.test(revJs1b));
+    {
+      const html = read("rank.html").replace(/<script src="[^"]*"><\/script>/g, "");
+      const dom = new JSDOM(html, { url: "https://newtrend.top/rank.html", runScripts: "dangerously", pretendToBeVisual: true });
+      const w = dom.window;
+      w.eval(read("js/config.js"));
+      w.SB = makeSB(makeItems(), {});
+      w.eval(revJs1b.replace(/\}\)\(\);\s*$/, EXPORTS + "})();"));
+      for (let i = 0; i < 80; i++) await sleep(20);
+      stubLayout(w, undefined, undefined, 1880);          /* 单列对比：列宽很宽 */
+      const meas = (size) => { w.__t.setSize(size); w.__t.fitPools(); return readR(w).length ? readR(w)[0].r : NaN; };
+      const a1 = meas("s"), b1 = meas("m"), c1 = meas("l");
+      ok("反向①-b（运行时）：上限 12 时，单列下「小」与「中」被一起截成同一档（复现截图问题）",
+        isFinite(a1) && a1 === b1, "小/中/大=" + [a1, b1, c1].join("/"));
+    }
+
     /* ② 天眼两周：去掉收紧逻辑 */
     undo("js/rank.js", [
       ['EYE_PERIOD_CLAMPED = ps.length > EYE_PERIODS_MAX;\n      if (EYE_PERIOD_CLAMPED) ps = ps.slice(ps.length - EYE_PERIODS_MAX);\n      ', ''],
@@ -410,18 +487,20 @@ function readR(window) {
     ok("反向②：去掉收紧逻辑后，4 周会被原样带进天眼（旧行为）",
       !/EYE_PERIODS_MAX[\s\S]{0,160}slice\(ps\.length - EYE_PERIODS_MAX\)/.test(revJs2));
 
-    /* ③ 天眼排序：移除下拉 */
-    undo("js/rank.js", [
-      [`'<select class="rk-eye-sortsel" id="rk-eye-sortsel" title="排序方式">' +
-            '<option value="ratio_desc">环比比例 高→低</option>' +
-            '<option value="ratio_asc">环比比例 低→高</option>' +
-            '<option value="abs_desc">环比绝对值 高→低</option>' +
-            '<option value="abs_asc">环比绝对值 低→高</option>' +
-          '</select>' +
-          `, ""],
-    ]);
+    /* ③ 天眼排序：移除下拉（按当前源码里的真实片段） */
+    undo("js/rank.js", [[
+      `'<select class="rk-eye-sortsel" id="rk-eye-sortsel" title="排序方式">' +
+              '<option value="ratio_desc">环比比例 高→低</option>' +
+              '<option value="ratio_asc">环比比例 低→高</option>' +
+              '<option value="abs_desc">环比绝对值 高→低</option>' +
+              '<option value="abs_asc">环比绝对值 低→高</option>' +
+            '</select>' +
+          `,
+      "",
+    ]]);
     const revJs3 = fs.readFileSync(path.join(tmp, "js/rank.js"), "utf8");
-    ok("反向③：移除排序下拉后，「天眼含排序下拉」这条检查会失败", !/id="rk-eye-sortsel"/.test(revJs3));
+    ok("反向③：移除排序下拉后，「天眼含排序下拉」这条检查会失败（旧写法被识别）",
+      !/id="rk-eye-sortsel"/.test(revJs3));
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 

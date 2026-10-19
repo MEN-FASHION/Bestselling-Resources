@@ -206,17 +206,30 @@ function mutate(file, re, to) {
   {
     const css = read("css/style.css");
     const js = read("js/rank.js");
-    ok("池体高度优先用实测值 --rk-fill（不再只靠写死估算）",
-      /#rank-view \.rk-body \{[^}]*height:\s*var\(--rk-fill/.test(css));
-    ok("保留写死值仅作兜底（取不到尺寸时仍可用）", /var\(--rk-fill,\s*max\(420px/.test(css));
-    ok("脚本按「池顶到视口底」实测写入高度", /function fillPoolsHeight/.test(js) && /--rk-fill/.test(js));
-    ok("实测高度在排布计算前生效", /function fitPools\(\) \{\s*\n\s*fillPoolsHeight\(\);/.test(js));
-    ok("太矮时有下限（不会把图压到看不清）", /Math\.max\(420,\s*avail\)/.test(js));
-    ok("对比池横向不出现滚动条", /\.rk-pools \{[^}]*overflow-x:\s*hidden/.test(css));
+    ok("主页面池体改为「自然向下排」（不再按视口高度压缩 —— 图不再为了塞进一屏而缩小）",
+      /#rank-view \.rk-body \{[^}]*height:\s*auto/.test(css) &&
+      !/#rank-view \.rk-body \{[^}]*height:\s*var\(--rk-fill/.test(css));
+    ok("池体说明里明确写了「--rk-fill 已废弃、卡片大小只由图幅档位决定」",
+      /--rk-fill 已废弃/.test(css) && /卡片大小只由「图幅档位」决定/.test(css));
+    ok("卡片大小只由图幅档位 + 列宽决定（不再掺屏幕高度）",
+      /function poolColsFromWidth\(colW, n\)/.test(js) &&
+      /POOL_MIN_CARD/.test(js));
     ok("列宽按列数均分（flex:1 1 0 + min-width:0，几列都不溢出）",
       /\.rk-pool \{[^}]*flex:\s*1 1 0;[^}]*min-width:\s*0/.test(css));
     ok("列数上限受控（不会排出几十张的小图）", /POOL_R_MAX\s*=\s*\d+/.test(js));
     ok("窗口变化会重排（旋转/缩放后仍一眼看全）", /fitPoolsSoon/.test(js) && /resize/.test(js));
+    /* 横向不溢出 / 卡片不被列数压小 的数值证明：由专用套件跑真实铺排算法给出（这里直接调它并断言通过） */
+    let numOut = "", numOk = true;
+    try {
+      numOut = require("child_process").execFileSync(process.execPath,
+        [path.join(__dirname, "verify_rank_size_eye2.js"), ROOT], { encoding: "utf8" });
+    } catch (e) {
+      numOk = false;
+      numOut = String((e && (e.stdout || e.message)) || "");
+    }
+    ok("横向铺满且不溢出（数值证明：1/2/3/4 列下 张数×卡宽+缝 ≤ 列宽，且卡宽不被列数压小）",
+      numOk && numOut.indexOf("横向永不溢出") >= 0 && /通过 \d+ 项，失败 0 项/.test(numOut),
+      numOk ? (numOut.match(/\[1 列对比\][^\n]*/) || [""])[0].trim() : "数值套件未通过");
   }
 
   /* ---------- 反向验证 ---------- */
@@ -248,12 +261,13 @@ function mutate(file, re, to) {
     const missing = tables.filter((t) => trigCut.indexOf("('" + t + "'") < 0);
     ok("还原：拿掉 images 一行后，覆盖面检查会失败（证明检查有效）", missing.indexOf("images") >= 0, missing.join(","));
 
-    // (d) 对比池改回横向滚动 + 写死高度 → 溢出检查必须失败
+    // (d) 对比池改回「按视口高度压缩 + 允许横向滚动」→ 新检查必须失败
     const cssOld = read("css/style.css")
-      .replace(/height:\s*var\(--rk-fill,\s*max\(420px,\s*calc\(100vh - 244px\)\)\)/, "height: max(420px, calc(100vh - 244px))")
-      .replace(/overflow-x:\s*hidden;/, "overflow-x: auto;");
-    ok("还原：写死高度 + 允许横向滚动时，铺满/不溢出检查会失败（证明检查有效）",
-      !/height:\s*var\(--rk-fill/.test(cssOld) && /\.rk-pools \{[^}]*overflow-x:\s*auto/.test(cssOld));
+      .replace(/#rank-view \.rk-body \{[^}]*height:\s*auto[^}]*\}/g,
+        "#rank-view .rk-body { display: block; height: var(--rk-fill, max(420px, calc(100vh - 244px))); }");
+    ok("还原：按视口高度压缩后，「自然向下排」检查会失败（证明检查有效）",
+      !/#rank-view \.rk-body \{[^}]*height:\s*auto/.test(cssOld),
+      "还原后：" + (cssOld.match(/#rank-view \.rk-body \{[^}]*\}/) || [""])[0].slice(0, 90));
 
     // (e) 分页去掉跳页 → 跳页检查必须失败
     const permOld = read("js/admin-perm.js").replace(/html \+= '<label class="pp-jump">[\s\S]*?;/, "");

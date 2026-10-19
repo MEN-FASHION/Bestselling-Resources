@@ -404,7 +404,7 @@
     if (zoneVisLoaded) return;
     try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
     // 当前登录用户的用户级可见专区白名单（未登录/未配置 = null，回退全局）
-    try { myZones = await SB.myManageZones(); } catch (e) { myZones = null; }
+    try { myZones = await SB.myFrontendZones(); } catch (e) { myZones = null; }
     zoneVisLoaded = true;
     if (window.Common && Common.zones) { Common.zones.setVis(zoneVis); Common.zones.setMine(myZones); Common.zones.loadDefs(); }
     applyZoneNav();
@@ -446,6 +446,8 @@
   // 顶部菜单：每个菜单项（视觉/趋势/招品/BESTSELLER/公告）都可单独在前台被隐藏；
   // 被隐藏的菜单项导航不显示，直接访问/点击仍由 guardZone/showMain 守卫拦截。
   function applyZoneNav() {
+    // 统一走公共专区模块（与榜单页/视觉专区/营销日历同一套逻辑）
+    if (window.Common && Common.zones && Common.zones.applyNav) { Common.zones.applyNav(); return; }
     document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
       const href = a.getAttribute("href") || "";
       const vt = a.getAttribute("data-viewtab") || "";
@@ -458,7 +460,6 @@
       else if (a.id === "notice-tab") z = "notice";
       a.style.display = (z && !zoneVisible(z)) ? "none" : "";
     });
-    if (window.Common && Common.zones) Common.zones.renderNav();
   }
 
   function renderCatMenu() {
