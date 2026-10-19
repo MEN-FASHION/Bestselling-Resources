@@ -2185,6 +2185,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rk-pool-grid { display: grid; grid-template-columns: repeat(var(--rk-r, 4), minmax(0, 1fr)); gap: 6px; align-content: start; }
 .rk-pool-grid.sz-s { --rk-r: 5; }
 .rk-pool-grid.sz-l { --rk-r: 3; }
+/* 说明：上面两条只是「自动铺满尚未算出列数」时的首屏回退值。
+   真正的档位换算在 js 里（sizeAdjustedR）：小=每行更多、中=自动铺满、大=每行更少。 */
 .rk-pool-foot { margin-top: 9px; font-size: 11px; color: var(--sub); text-align: center; }
 
 /* ---- 「展开更多」按钮（长列表分批加载；必须有可见样式，否则点了像没反应） ---- */
@@ -2656,6 +2658,14 @@ html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
   color: #fff; background: var(--gold); border: 1px solid var(--gold); border-radius: 999px; white-space: nowrap;
 }
 .rk-eye-ppt:hover { filter: brightness(1.06); }
+/* 天眼顶栏的排序下拉：与其它顶栏元素一样「悬浮才显现」，平时不占图、不压图 */
+.rk-eye-sortsel { display: none; }
+.rk-eye-head:hover .rk-eye-sortsel {
+  display: block; padding: 2px 6px; font-size: 11px; font-family: inherit;
+  color: var(--txt); background: #fff; border: 1px solid var(--line);
+  border-radius: 7px; cursor: pointer; max-width: 34vw;
+}
+.rk-eye-dflt { color: #a8760a; }
 /* 常显的关闭按钮：只有图标、半透明，贴在右上角，不遮图 */
 .rk-eye-close {
   flex: 0 0 auto; width: 26px; height: 26px; font-size: 15px; line-height: 1;

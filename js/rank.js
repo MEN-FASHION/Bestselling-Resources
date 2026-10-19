@@ -799,6 +799,20 @@
     } catch (e) { return 0; }
   }
 
+  /* 图幅档位 → 实际列数。
+     在「自动铺满一屏」算出的列数基础上按档位增减：小=每行更多（图更小）、中=自动铺满、大=每行更少（图更大）。
+     必须在这里参与计算，否则会被自动列数的行内样式盖掉 —— 那样三个档位点起来就完全没反应。 */
+  function sizeAdjustedR(rAuto, n, colW) {
+    var r = Math.max(1, Math.round(rAuto || 1));
+    if (SIZE === "s") r = Math.max(r, Math.round(r * 1.35));
+    else if (SIZE === "l") r = Math.max(1, Math.round(r / 1.35));
+    r = Math.min(r, POOL_R_MAX, Math.max(1, n));
+    /* 兜底：卡片宽度不得低于 POOL_MIN_CARD（小到看不清就没意义了） */
+    var maxCols = Math.max(1, Math.floor((colW || 0) / Math.max(1, POOL_MIN_CARD)));
+    if (r > maxCols) r = maxCols;
+    return Math.max(1, r);
+  }
+
   function fitPools() {
     fillPoolsHeight();
     var pools = document.querySelector("#rank-view .rk-pools") || document.querySelector(".rk-pools");
@@ -832,7 +846,7 @@
       var fit = eyeFitCalc(colW, Math.max(1, availH - headH - footH), 1, n, {
         headH: 0, gap: POOL_VGAP, vgap: POOL_VGAP, minW: POOL_MIN_CARD, rMax: POOL_R_MAX
       });
-      grid.style.setProperty("--rk-r", String(fit.r));
+      grid.style.setProperty("--rk-r", String(sizeAdjustedR(fit.r, n, colW)));
       if (fit.clipped) clipped = true;
     });
     pools.setAttribute("data-pool-clip", clipped ? "1" : "0");
@@ -849,6 +863,8 @@
      比例自适应、尽量铺满一屏——一眼就能看全，不用下滑。
      列范围可切换：默认=当前对比列（2/3/4 列），另可切「全部站点 × 全部期次」。 */
   var EYE_ALL = false;        /* 列范围：false=当前对比列，true=全部站点×全部期次 */
+  var EYE_PERIODS_MAX = 2;    /* 天眼默认最多对比的周数：列少了每列更宽，图片能明显放大 */
+  var EYE_PERIOD_CLAMPED = false;  /* 本次是否真的发生了「按默认收紧到最近 N 周」 */
   var EYE_EAGER_MAX = 1500;   /* 图数超过此上限才退回懒加载，避免一次拉爆（默认全加载） */
   var EYE_R_MAX = 60;         /* 每行最多排几张（真正的下限由「最小卡片宽度」兜住） */
   var EYE_MIN_CARD = 20;      /* 卡片最小宽度（px）：低于这个就看不清了 */
@@ -858,7 +874,17 @@
 
   /* 天眼要铺开的列范围 */
   function eyeScope() {
-    if (!EYE_ALL) return { sites: poolSites(), periods: activePeriods() };
+    if (!EYE_ALL) {
+      /* 天眼默认只对比最近两周：列数少了，每列更宽，图自然更大。
+         需要看更多周时，点顶栏的「范围」切到「全部站点 × 全部期次」。 */
+      var ps = activePeriods();
+      EYE_PERIOD_CLAMPED = ps.length > EYE_PERIODS_MAX;
+      if (EYE_PERIOD_CLAMPED) ps = ps.slice(ps.length - EYE_PERIODS_MAX);
+      return { sites: poolSites(), periods: ps };
+    }
+    /* 「全部站点 × 全部期次」不受两周限制，顶栏的「默认两周」提示也必须随之消失
+       （否则切一次范围后提示会一直挂着，与屏幕上的实际列数对不上）。 */
+    EYE_PERIOD_CLAMPED = false;
     if (MODE === "h") return { sites: orderedSites(), periods: sortPeriods(FACETS.periods).slice(-1) };
     return { sites: sitesForQuery(), periods: sortPeriods(FACETS.periods) };
   }
@@ -975,6 +1001,12 @@
           '<div class="rk-eye-title">天眼 · 全部对比图</div>' +
           '<div class="rk-eye-sub" id="rk-eye-sub">加载中…</div>' +
           '<div class="rk-eye-clip" id="rk-eye-clip" style="display:none">图数较多，已按最小尺寸铺满；剩余可下滑查看</div>' +
+          '<select class="rk-eye-sortsel" id="rk-eye-sortsel" title="排序方式">' +
+            '<option value="ratio_desc">环比比例 高→低</option>' +
+            '<option value="ratio_asc">环比比例 低→高</option>' +
+            '<option value="abs_desc">环比绝对值 高→低</option>' +
+            '<option value="abs_asc">环比绝对值 低→高</option>' +
+          '</select>' +
           '<button type="button" class="rk-eye-scope" id="rk-eye-scope"></button>' +
           '<button type="button" class="rk-eye-ppt" id="rk-eye-ppt">导出 PPT</button>' +
           '<button type="button" class="rk-eye-close" id="rk-eye-close" title="关闭（Esc）">×</button>' +
@@ -1020,6 +1052,7 @@
       var t = e.target;
       if (t && (t.id === "rk-eye-close" || t.id === "rk-eye-mask")) { closeEye(); return; }
       if (t && t.id === "rk-eye-scope") { EYE_ALL = !EYE_ALL; openEye(); return; }   /* 切换列范围 */
+      if (t && t.id === "rk-eye-sortsel") return;             /* 排序下拉由自己的 change 处理 */
       if (t && t.id === "rk-eye-ppt") return;                  /* 导出 PPT 由按钮自己的 onclick 处理 */
       if (t && t.closest && t.closest("#rk-eye-loupe")) return; /* 放大镜不参与点击 */
       var card = (t && t.closest) ? t.closest(".rk-card") : null;
@@ -1043,6 +1076,14 @@
         hideEyeLoupe(d);
       });
       body.addEventListener("mouseleave", function () { eyeHoverCard = null; hideEyeLoupe(d); });
+    }
+    var ssel = d.querySelector("#rk-eye-sortsel");
+    if (ssel) {
+      ssel.value = SORT;
+      ssel.addEventListener("change", function () {
+        SORT = ssel.value;
+        try { fillEye(d); } catch (e) { /* 排序失败不影响看图 */ }
+      });
     }
     document.addEventListener("keydown", eyeEsc);
     eyeFitBound = function () { fitEye(d); };
@@ -1071,6 +1112,8 @@
     } else {
       body.innerHTML = '<div class="rk-empty">当前口径下没有可显示的图片</div>';
     }
+    var ss = d.querySelector("#rk-eye-sortsel");
+    if (ss && ss.value !== SORT) ss.value = SORT;
     if (sub) {
       var colsN = (MODE === "v") ? sc.periods.length : sc.sites.length;
       var scopeTxt = (MODE === "v") ? (R.sites.join("、") || "—") : (R.periods.join("、") || "—");
@@ -1078,6 +1121,7 @@
       /* 顶栏只留一行关键信息（类目 / 列数 / 张数）；范围明细收进悬浮提示，
          避免顶栏文字又长又大把图挤掉、甚至盖住图。 */
       sub.innerHTML = esc(CAT) + ' · ' + colsN + ' ' + colsTxt + ' · 共 <b>' + n + '</b> 张' +
+        (EYE_PERIOD_CLAMPED ? ' · <span class="rk-eye-dflt">默认只对比最近 ' + EYE_PERIODS_MAX + ' 周</span>' : '') +
         (eager ? '' : ' · <span class="rk-eye-warn">图数过多，已改为随滚动加载</span>');
       sub.title = (MODE === "v" ? "国家：" : "期次：") + scopeTxt;
     }
