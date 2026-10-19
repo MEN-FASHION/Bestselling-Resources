@@ -330,7 +330,8 @@ function mutate(file, re, to) {
     const at = without.indexOf("notify pgrst");
     const movedBack = without.slice(0, at) + block + "\n" + without.slice(at);
     const early = movedBack.indexOf("-- 自检 ①");
-    const defPos = movedBack.indexOf("create function public.insight_front(");
+    const defPos = movedBack.search(/create (?:or replace )?function public\.insight_front\(/);
+    // 自检①若是被挪回 insight_front 创建之前，同一套顺序判定必须报失败
     ok("还原：自检又排在 insight_front 创建之前（顺序检查会失败）", early < defPos, early + " vs " + defPos);
 
     // (b) 去掉存在性保护

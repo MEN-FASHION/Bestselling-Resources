@@ -113,7 +113,8 @@ check("版本恢复：恢复前先自动备份", /恢复前自动备份/.test(bk
     /backupRestore\(id\)\s*\{\s*return this\.rpcJson\("backup_restore"/.test(sbSrc));
   // 恢复必须「先校验、后落地」：校验用的 raise 必须出现在破坏性写入之前，
   // 且整个恢复在单个数据库函数内完成（不带手动 commit/rollback → 保持 Postgres 原子性，任一异常整体回滚）
-  const fnIdx = bkpSql.indexOf("create function public.backup_restore");
+  const fnMatch = bkpSql.match(/create (?:or replace )?function public\.backup_restore/);
+  const fnIdx = fnMatch ? fnMatch.index : -1;
   const fnBody = fnIdx >= 0 ? bkpSql.slice(fnIdx) : "";
   const firstRaise = fnBody.search(/raise\s+exception/i);
   const firstWrite = fnBody.search(/delete\s+from|insert\s+into|truncate/i);

@@ -1,6 +1,6 @@
 -- ============================================================
 -- TREND BANK · 用户动向（前台访客 + 后台管理员的行为统计）
--- 版本：20261016T
+-- 版本：20261016U
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
 -- 目的：回答「他们从哪来、干了什么、干了多久」
 --   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 页面 / 来源 referrer / 停留时长 / IP / 国家地区），
@@ -81,7 +81,7 @@ create policy "super read all visit_logs"
 
 -- ---------- 2. 登记一次访问 ----------
 drop function if exists public.record_visit(text, text, text, text, text, text);
-create function public.record_visit(
+create or replace function public.record_visit(
   p_zone text, p_path text, p_ip text, p_country text, p_region text, p_city text
 )
 returns bigint
@@ -119,7 +119,7 @@ grant execute on function public.record_visit(text, text, text, text, text, text
 -- p_add：本次要累加的秒数（前端每 20 秒调一次，离开页面时补最后一次）
 -- 单条记录上限 12 小时：防止标签页长期挂着把「在线时长」刷成不真实的天文数字
 drop function if exists public.visit_ping(bigint, integer);
-create function public.visit_ping(p_id bigint, p_add integer)
+create or replace function public.visit_ping(p_id bigint, p_add integer)
 returns void
 language plpgsql security definer volatile
 set search_path = public, pg_temp
@@ -208,7 +208,7 @@ revoke all on function public.record_visit(text, text, text, text, text, text, t
 grant execute on function public.record_visit(text, text, text, text, text, text, text) to authenticated;
 
 -- ---------- 5.3 菜单点击等事件上报 ----------
-create function public.track_event(
+create or replace function public.track_event(
   p_event text, p_zone text default '', p_menu text default '', p_path text default ''
 )
 returns bigint
@@ -307,7 +307,7 @@ revoke all on function public.log_admin_action(text, text, jsonb) from public, a
 grant execute on function public.log_admin_action(text, text, jsonb) to authenticated;
 
 -- ---------- 5.5 前台用户动向汇总（超管专用） ----------
-create function public.insight_front(p_days integer default 30)
+create or replace function public.insight_front(p_days integer default 30)
 returns jsonb
 language plpgsql security definer stable
 set search_path = public, pg_temp
@@ -328,7 +328,7 @@ begin
     where started_at >= v_from and coalesce(event, '') = ''
   )
   select jsonb_build_object(
-    'script', '20261016T',
+    'script', '20261016U',
     'days', v_days,
     'from', v_from,
     'totals', (
@@ -425,7 +425,7 @@ revoke all on function public.insight_front(integer) from public, anon;
 grant execute on function public.insight_front(integer) to authenticated;
 
 -- ---------- 5.6 后台管理员动向汇总（超管专用） ----------
-create function public.insight_admin(p_days integer default 30)
+create or replace function public.insight_admin(p_days integer default 30)
 returns jsonb
 language plpgsql security definer stable
 set search_path = public, pg_temp

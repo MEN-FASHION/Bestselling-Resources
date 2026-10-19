@@ -142,7 +142,43 @@ files.forEach((f) => {
   }
   ok("自检语句引用的签名与真实创建一致（对不上会静默显示 false）", refProblems.length === 0, refProblems.slice(0, 4).join("；"));
 
-  console.log("[5] 反向验证（还原成坏写法，检查必须失败）");
+  console.log("[5] 建函数语句的覆盖保护（本次 42723「函数已存在」的那类问题）");
+  // 裸 create function 只有在「库里还没有这个函数」时才成功；
+  // 脚本一旦被重复执行（前面失败中断过就是这样），就会报 42723 整段中断。
+  // 正确做法：用 create or replace，或在其前几行放 drop function if exists 守卫。
+  const findNoGuard = (txt) => {
+    const out = [];
+    const re = /^[ \t]*create[ \t]+(or[ \t]+replace[ \t]+)?function[ \t]+public\.([a-z_]+)[ \t]*\(/gim;
+    let m;
+    while ((m = re.exec(txt)) !== null) {
+      if (m[1]) continue;
+      const nm = m[2];
+      const tail = txt.slice(0, m.index).split("\n").slice(-6).join("\n");
+      if (!new RegExp("drop\\s+function\\s+if\\s+exists\\s+public\\." + nm + "\\s*\\(", "i").test(tail))
+        out.push("第 " + txt.slice(0, m.index).split("\n").length + " 行 " + nm);
+    }
+    return out;
+  };
+  const noGuard = findNoGuard(raw);
+  ok("每个建函数语句都带覆盖保护（可覆盖写法，或紧邻的 drop 守卫）", noGuard.length === 0, noGuard.slice(0, 4).join("；"));
+
+  // 同一类问题在「策略」上同样会发生：裸 create policy 重复执行会报「策略已存在」
+  const findNoPolGuard = (txt) => {
+    const out = [];
+    const re = /^[ \t]*create[ \t]+policy[ \t]+"([^"]+)"/gim;
+    let m;
+    while ((m = re.exec(txt)) !== null) {
+      const tail = txt.slice(0, m.index).split("\n").slice(-4).join("\n");
+      const esc = m[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!new RegExp('drop\\s+policy\\s+if\\s+exists\\s+"' + esc + '"', "i").test(tail))
+        out.push("第 " + txt.slice(0, m.index).split("\n").length + " 行 " + m[1]);
+    }
+    return out;
+  };
+  const noPol = findNoPolGuard(raw);
+  ok("每个建策略语句都有紧邻的 drop policy 守卫（否则重复执行报「策略已存在」）", noPol.length === 0, noPol.slice(0, 4).join("；"));
+
+  console.log("[6] 反向验证（还原成坏写法，检查必须失败）");
   // 通用做法：删掉脚本里任意一个右括号，配平检查必须报出来
   const cut = chars.indexOf(")");
   const mutated = cut < 0 ? chars : chars.slice(0, cut) + chars.slice(cut + 1);
@@ -162,6 +198,25 @@ files.forEach((f) => {
     caught = !(real2[m3[1]] || []).some((c) => c === n);
   }
   ok("还原：把授权签名写错后，签名一致性检查会失败", caught);
+
+  // 反向：挑一个「前几行没有 drop 守卫」的函数，把它改回裸 create，覆盖保护检查必须报出来
+  let bareCaught = false, bareName = "";
+  const reAny = /^[ \t]*create\s+or\s+replace\s+function\s+public\.([a-z_]+)[ \t]*\(/gim;
+  let m4;
+  while ((m4 = reAny.exec(raw)) !== null) {
+    const nm = m4[1];
+    const tail = raw.slice(0, m4.index).split("\n").slice(-6).join("\n");
+    if (new RegExp("drop\\s+function\\s+if\\s+exists\\s+public\\." + nm + "\\s*\\(", "i").test(tail)) continue;
+    bareName = nm;
+    const mut = raw.slice(0, m4.index) + "create function public." + nm + "(" + raw.slice(m4.index + m4[0].length);
+    bareCaught = findNoGuard(mut).length > 0;
+    break;
+  }
+  ok("还原：把函数 " + (bareName || "?") + " 改回裸 create 后，覆盖保护检查会失败", bareCaught);
+
+  // 反向：凭空加一条没有 drop 守卫的策略，策略保护检查必须报出来
+  const synth = raw + '\ncreate policy "zz_should_be_flagged" on public.zz_t for select to authenticated using (true);\n';
+  ok("还原：新增一条没有 drop 守卫的策略后，策略保护检查会失败", findNoPolGuard(synth).length > 0);
 });
 
 console.log("\n== 结果：" + pass + " 项通过，" + fails.length + " 项失败 ==");

@@ -1066,7 +1066,7 @@ on conflict (name) do nothing;
 --       前台浏览（视觉专区）需要让所有登录用户看到全部图，故用 security definer 函数绕过该 RLS。
 --       仅前台（frontend.js）调用，后台智能打标仍走受 RLS 限制的 listImages（管理员只看自己上传的）。
 drop function if exists public.frontend_list_images();
-create function public.frontend_list_images()
+create or replace function public.frontend_list_images()
 returns setof public.images
 language sql security definer stable
 as $$
@@ -1080,7 +1080,7 @@ grant execute on function public.frontend_list_images() to authenticated;
 --       只看到自己上传图的类目），故同样用 security definer 函数绕过，返回全量图片类目。
 --       仅前台（js/supabase.js 的 listUsedCats）调用。
 drop function if exists public.frontend_list_used_cats();
-create function public.frontend_list_used_cats()
+create or replace function public.frontend_list_used_cats()
 returns text[]
 language sql security definer stable
 as $$
@@ -1092,7 +1092,7 @@ grant execute on function public.frontend_list_used_cats() to authenticated;
 -- 供前台视觉专区默认「全部」视图分页加载：按 created_at 倒序取第 offset 页（每页 limit 条），
 -- 仅返回登录用户可见的全量图片（security definer 绕过后台 RLS，仅前台前端调用）。
 drop function if exists public.frontend_list_images_page(integer, integer);
-create function public.frontend_list_images_page(p_limit integer, p_offset integer)
+create or replace function public.frontend_list_images_page(p_limit integer, p_offset integer)
 returns setof public.images
 language sql security definer stable
 as $$
@@ -1104,7 +1104,7 @@ grant execute on function public.frontend_list_images_page(integer, integer) to 
 
 -- 前台图片总数（用于分页判断是否还有下一页）
 drop function if exists public.frontend_count_images();
-create function public.frontend_count_images()
+create or replace function public.frontend_count_images()
 returns bigint
 language sql security definer stable
 as $$
@@ -1114,7 +1114,7 @@ grant execute on function public.frontend_count_images() to authenticated;
 
 -- 前台标签/类目计数聚合（供分页网格下标签栏与类目菜单显示真实总数，避免仅按已加载页统计）
 drop function if exists public.frontend_tag_stats();
-create function public.frontend_tag_stats()
+create or replace function public.frontend_tag_stats()
 returns jsonb
 language sql security definer stable
 as $$
@@ -1190,7 +1190,7 @@ create policy "super read all login_logs"
 
 -- ---------- 记录一次登录（security definer，仅能写自己） ----------
 drop function if exists public.record_login(p_device text, p_ip text);
-create function public.record_login(p_device text default null, p_ip text default null)
+create or replace function public.record_login(p_device text default null, p_ip text default null)
 returns void
 language plpgsql security definer volatile
 as $$
@@ -1212,7 +1212,7 @@ grant execute on function public.record_login(text, text) to authenticated;
 -- 返回 user_id, email, device, ip, login_at，用于后台「用户权限分配表」两列展示。
 -- 函数内部校验调用者必须是超管，否则返回空集，防止普通用户调用泄露他人 IP。
 drop function if exists public.get_last_login_logs();
-create function public.get_last_login_logs()
+create or replace function public.get_last_login_logs()
 returns table (user_id uuid, email text, device text, ip text, login_at timestamptz)
 language plpgsql security definer stable
 as $$

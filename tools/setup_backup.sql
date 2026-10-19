@@ -54,7 +54,7 @@ as $$
 $$;
 
 -- ---------- 生成快照 ----------
-create function public.backup_create(p_note text, p_kind text default 'manual')
+create or replace function public.backup_create(p_note text, p_kind text default 'manual')
 returns jsonb
 language plpgsql security definer volatile
 set search_path = public, pg_temp
@@ -117,7 +117,7 @@ revoke all on function public.backup_create(text, text) from public, anon;
 grant execute on function public.backup_create(text, text) to authenticated;
 
 -- ---------- 快照列表（不含快照内容本身，避免把页面撑爆） ----------
-create function public.backup_list()
+create or replace function public.backup_list()
 returns jsonb
 language plpgsql security definer stable
 set search_path = public, pg_temp
@@ -139,7 +139,7 @@ revoke all on function public.backup_list() from public, anon;
 grant execute on function public.backup_list() to authenticated;
 
 -- ---------- 单份快照概要（各表条数；用于恢复前预览） ----------
-create function public.backup_get(p_id bigint)
+create or replace function public.backup_get(p_id bigint)
 returns jsonb
 language plpgsql security definer stable
 set search_path = public, pg_temp
@@ -162,7 +162,7 @@ revoke all on function public.backup_get(bigint) from public, anon;
 grant execute on function public.backup_get(bigint) to authenticated;
 
 -- ---------- 删除某份快照 ----------
-create function public.backup_delete(p_id bigint)
+create or replace function public.backup_delete(p_id bigint)
 returns boolean
 language plpgsql security definer volatile
 set search_path = public, pg_temp
@@ -180,7 +180,7 @@ grant execute on function public.backup_delete(bigint) to authenticated;
 
 -- ---------- 恢复到某份快照 ----------
 -- 恢复前会自动先存一份「恢复前自动备份」，万一恢复错了还能退回上一步。
-create function public.backup_restore(p_id bigint)
+create or replace function public.backup_restore(p_id bigint)
 returns jsonb
 language plpgsql security definer volatile
 set search_path = public, pg_temp
