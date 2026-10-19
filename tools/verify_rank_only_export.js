@@ -118,7 +118,39 @@ async function bootRank(cfg) {
   return { dom, window, errors, T: window.__F };
 }
 
-/* 每一列（对比池）当前的卡片：url + 位次标签文案（无标签则空串） */
+/* jsdom 不做真实排版（所有元素尺寸都是 0），这里按「3 列、每列卡片竖排」给出一套
+   确定的几何，用来验证「整页定格采集的位置 = 元素在页面上的位置」这一行为。 */
+function fakeLayout(w) {
+  const doc = w.document;
+  const poolsEl = doc.querySelector("#rk-pools");
+  if (!poolsEl) return;
+  const PW = 280, GAP = 10, HEAD = 46, CARD = 200, IMG = 170;
+  const pools = Array.prototype.slice.call(poolsEl.querySelectorAll(".rk-pool"));
+  const rect = (l, t, ww, hh) => ({ left: l, top: t, width: ww, height: hh, right: l + ww, bottom: t + hh, x: l, y: t });
+  pools.forEach((p, pi) => {
+    const left = pi * (PW + GAP);
+    const cards = Array.prototype.slice.call(p.querySelectorAll(".rk-card"));
+    p.getBoundingClientRect = () => rect(left, 0, PW, HEAD + cards.length * CARD);
+    const head = p.querySelector(".rk-pool-head");
+    if (head) head.getBoundingClientRect = () => rect(left, 6, PW, 30);
+    Array.prototype.forEach.call(p.querySelectorAll(".rk-pool-name span, .rk-pool-meta, .rk-n"), (t) => {
+      t.getBoundingClientRect = () => rect(left + 8, 10, 120, 20);
+    });
+    cards.forEach((c, ci) => {
+      const y = HEAD + 4 + ci * CARD;
+      c.getBoundingClientRect = () => rect(left + 6, y, PW - 12, CARD - 6);
+      const im = c.querySelector("img");
+      if (im) im.getBoundingClientRect = () => rect(left + 6, y, PW - 12, IMG);
+      const mv = c.querySelector(".rk-move");
+      if (mv) mv.getBoundingClientRect = () => rect(left + 12, y + 6, 80, 20);
+      const cap = c.querySelector(".rk-title, figcaption");
+      if (cap) cap.getBoundingClientRect = () => rect(left + 10, y + IMG + 2, PW - 20, 24);
+    });
+  });
+  poolsEl.getBoundingClientRect = () => rect(0, 0, Math.max(1, pools.length) * (PW + GAP), 1200);
+  Object.defineProperty(poolsEl, "scrollWidth", { configurable: true, get: () => Math.max(1, pools.length) * (PW + GAP) });
+  Object.defineProperty(poolsEl, "scrollHeight", { configurable: true, get: () => 1200 });
+}
 function colCards(w) {
   return Array.prototype.slice.call(w.document.querySelectorAll("#rk-pools .rk-pool")).map((p) =>
     Array.prototype.slice.call(p.querySelectorAll(".rk-card")).map((c) => ({
@@ -158,16 +190,25 @@ function makeExportEnv() {
     const mine = { w: cv.width, h: cv.height };
     rec.canvases.push(mine);
     const ctx = {
-      fillStyle: "", font: "", textBaseline: "", textAlign: "",
+      fillStyle: "", font: "", textBaseline: "", textAlign: "", lineWidth: 1, strokeStyle: "",
       fillRect(x, y, ww, hh) { rec.rects.push({ cvw: cv.width, cvh: cv.height, x, y, w: ww, h: hh, fill: ctx.fillStyle }); },
+      strokeRect() { },
       drawImage(im, dx, dy, dw, dh) { rec.imgs.push({ dx, dy, dw, dh, nw: im.naturalWidth, nh: im.naturalHeight }); },
       fillText(t, x, y) { rec.texts.push({ t: String(t), x, y, font: ctx.font, fill: ctx.fillStyle }); },
       measureText(t) { return { width: String(t).length * 12 }; },
+      beginPath() { }, closePath() { }, moveTo() { }, lineTo() { }, arcTo() { }, rect() { },
+      clip() { }, fill() { }, stroke() { }, arc() { },
       clearRect() { }, save() { }, restore() { }, translate() { }, scale() { }, setTransform() { },
     };
     return ctx;
   };
   w.HTMLCanvasElement.prototype.toBlob = function (cb) { cb(new w.Blob(["x"], { type: "image/png" })); };
+  w.HTMLCanvasElement.prototype.toDataURL = function () { return "data:image/png;base64,AAA"; };
+
+  /* 进度条文案：始终读实时 DOM（导出过程中会变），供断言直接使用 */
+  Object.defineProperty(rec, "hudTxt", {
+    get() { const h = w.document.querySelector("#rp-hud"); return h ? String(h.textContent || "") : ""; }
+  });
 
   /* 压缩包替身 */
   function FakeZip() { this.files = []; rec.zips.push(this); }
@@ -185,6 +226,26 @@ function makeExportEnv() {
 
 const pngCount = (zip) => zip.files.filter((f) => /\.png$/i.test(f.name)).length;
 const csvOf = (zip) => (zip.files.find((f) => /\.csv$/i.test(f.name)) || {}).data || "";
+
+/* 整页定格用的绘制指令（结构与 js/rank.js 的采集结果一致）：
+   3 列 × n 张 —— 每列一个池框 + 列标题，每张一个卡框 + 图片，首张带位次标签。 */
+function mkOps(n) {
+  const ops = [];
+  let bottom = 0;
+  for (let c = 0; c < 3; c++) {
+    const x = 10 + c * 300;
+    ops.push({ k: "box", x, y: 10, w: 280, h: 90 + n * 210, fill: "#ffffff", stroke: "#e6e0d6", lw: 1, radius: 10 });
+    ops.push({ k: "text", x: x + 10, y: 20, w: 200, h: 22, text: "2026W4" + c, size: 14, weight: "700", color: "#1a1a1a" });
+    for (let i = 0; i < n; i++) {
+      const y = 50 + i * 210;
+      ops.push({ k: "box", x: x + 6, y, w: 268, h: 200, fill: "#ffffff", stroke: "#eeeeee", lw: 1, radius: 8 });
+      ops.push({ k: "img", x: x + 6, y, w: 268, h: 170, url: U("P" + c + "_" + i), radius: 8 });
+      if (i === 0) ops.push({ k: "text", x: x + 14, y: y + 6, w: 90, h: 22, text: "上升 1 位", size: 12, weight: "700", color: "#8a5a00" });
+      bottom = Math.max(bottom, y + 200);
+    }
+  }
+  return { root: { w: 910, h: bottom + 20 }, ops };
+}
 
 (async function main() {
   console.log("== 趋势上升榜：只看标签 + 高清图片导出（含超管限制）：运行时验证 ==");
@@ -284,8 +345,8 @@ const csvOf = (zip) => (zip.files.find((f) => /\.csv$/i.test(f.name)) || {}).dat
     ok("点回「全部」后图片恢复显示", allCards(colCards(w)).length === 2, String(allCards(colCards(w)).length));
   }
 
-  /* ---------------- ② 导出按钮：默认不可见 / 非超管不可见 / 超管才出现 ---------------- */
-  console.log("\n[5] 「导出图片（带标签 · 高清）」按钮：只允许超级管理员");
+/* ---------------- ② 导出按钮：默认不可见 / 非超管不可见 / 超管才出现 ---------------- */
+  console.log("\n[5] 「导出图片（整页 · 高清）」按钮：只允许超级管理员");
   {
     const ctx = await bootRank({ query: "?mode=v&sites=%E7%BE%8E%E5%9B%BD&periods=2026W40,2026W41", sort: "ratio_desc", role: "member" });
     await sleep(120);
@@ -298,118 +359,212 @@ const csvOf = (zip) => (zip.files.find((f) => /\.csv$/i.test(f.name)) || {}).dat
     const w = ctx.window;
     const b = w.document.querySelector("#rk-exp-img");
     ok("超级管理员：按钮出现", !!b && (b.className || "").indexOf("on") >= 0, b ? b.className : "no-button");
-    ok("按钮文案写明「带标签 · 高清」", b && b.textContent.indexOf("导出图片") >= 0 && b.textContent.indexOf("高清") >= 0, b ? b.textContent : "");
+    ok("按钮文案写明「整页 · 高清」（导的是页面，不是单张原图）",
+      b && b.textContent.indexOf("导出图片") >= 0 && b.textContent.indexOf("整页") >= 0 && b.textContent.indexOf("高清") >= 0,
+      b ? b.textContent : "");
 
-    /* 点击 → 交给导出模块，且交付的是"整列"（不被每列展示上限截断） */
+    /* 点击 → 交给导出模块的是「整页定格」的绘制指令（位置 = 屏幕上看到的位置） */
     let got = null;
     w.ReportKit.exportImages = (p) => { got = p; return Promise.resolve(true); };
-    ctx.T().setCap(2);            /* 把每列展示上限压到 2，用于验证导出不受它影响 */
+    ctx.T().setCap(2);            /* 把每列展示上限压到 2：整页定格应当只定格屏幕上真正显示的 */
     ctx.T().renderBody();
+    fakeLayout(w);                /* jsdom 无排版：给出一套确定的几何 */
     const shown = w.document.querySelectorAll("#rk-pools .rk-card").length;
-    const click = (sel) => w.document.querySelector(sel).dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-    click("#rk-exp-img");
+    w.document.querySelector("#rk-exp-img").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
     await sleep(40);
-    ok("点击后确实把清单交给导出模块", !!got && Array.isArray(got.items));
-    ok("导出清单是整列（2 列 × 3 张 = 6），不受「每列最多展示 2 张」截断",
-      got && got.items.length === 6 && shown === 4, "导出 " + (got ? got.items.length : "-") + " 张 / 屏上 " + shown + " 张");
-    ok("每一条都带站点 / 期次 / 类目",
-      got && got.items.every((x) => x.site === "美国" && /^2026W4\d$/.test(x.period) && x.cat === "卫衣"),
-      got ? JSON.stringify(got.items[0]) : "");
-    ok("位次标签一起带出去（W41 的 B = 上升 1 位）",
-      got && got.items.some((x) => x.url === B_URL && x.label === "上升 1 位" && x.period === "2026W41"),
-      got ? JSON.stringify(got.items.filter((x) => x.label)) : "");
+
+    ok("点击后把整页定格的绘制指令交给导出模块",
+      !!got && Array.isArray(got.ops) && got.ops.length > 0 && got.root && got.root.w > 0 && got.root.h > 0,
+      got ? ("ops=" + got.ops.length + " root=" + JSON.stringify(got.root)) : "no-payload");
+
+    const imgOps = got ? got.ops.filter((o) => o.k === "img") : [];
+    ok("绘制指令里的图片数 = 屏幕上真正显示的卡片数",
+      imgOps.length === shown && shown > 0, "图片 " + imgOps.length + " / 卡片 " + shown);
+
+    const textOps = got ? got.ops.filter((o) => o.k === "text") : [];
+    ok("列标题（周次）也定格进去了",
+      textOps.some((t) => /2026W4\d/.test(t.text)), textOps.slice(0, 8).map((t) => t.text).join(" | "));
+    ok("位次标签文字也定格进去了（上升 1 位）",
+      textOps.some((t) => t.text.indexOf("上升 1 位") >= 0), textOps.map((t) => t.text).join(" | "));
+    ok("每张图都带着自己的地址（同一件商品跨周会出现多次，但不止一种地址）",
+      imgOps.length > 1 && new Set(imgOps.map((o) => o.url)).size > 1,
+      imgOps.map((o) => o.url).join(" | ").slice(0, 160));
+
+    /* 位置取自真实布局：同一列的图片 y 递增，不同列的 x 不同 */
+    const col0 = imgOps.filter((o) => Math.abs(o.x - imgOps[0].x) < 2).map((o) => o.y);
+    ok("同一列的图片按屏幕顺序自上而下排列（y 递增）",
+      col0.length > 1 && col0.every((y, i) => i === 0 || y >= col0[i - 1]), JSON.stringify(col0));
+    ok("不同列落在不同的横向位置（x 不都一样）",
+      new Set(imgOps.map((o) => o.x)).size > 1, JSON.stringify(Array.from(new Set(imgOps.map((o) => o.x)))));
 
     /* 开了「只看标签」时，导出范围文字也要写清楚 */
     w.document.querySelector('#rk-g-only [data-only="up"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
     await sleep(40);
+    fakeLayout(w);                /* 筛选后重新渲染，几何要重设 */
     got = null;
     w.document.querySelector("#rk-exp-img").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
     await sleep(40);
     ok("只看位次上升时，导出的范围文字带上了这个筛选",
       got && String(got.scope).indexOf("只看位次上升") >= 0, got ? String(got.scope) : "");
-    ok("并且导出清单只剩命中的图（3 首期 + 1 上升）", got && got.items.length === 4, got ? String(got.items.length) : "");
+    const imgOps2 = got ? got.ops.filter((o) => o.k === "img") : [];
+    ok("并且定格的图片只剩命中项（比筛选前少）", imgOps2.length > 0 && imgOps2.length < imgOps.length,
+      imgOps2.length + " / " + imgOps.length);
   }
 
-  /* ---------------- ③ 导出实现本身 ---------------- */
+  /* ---------------- ③ 导出实现：整页一张高清长图 ---------------- */
   console.log("\n[6] 导出实现：非超管调用被拒绝，且不产出任何文件");
   {
     const { rec, RK } = makeExportEnv();
     RK._.cfg.isSuper = () => false;
-    const r = await RK.exportImages({ items: [{ url: U("A"), label: "上升 1 位", site: "美国", period: "2026W41", cat: "卫衣" }], scope: "x" });
+    const r = await RK.exportImages(mkOps(2));
     ok("返回 false（明确拒绝）", r === false, String(r));
-    ok("没有产出压缩包", rec.zips.length === 0, String(rec.zips.length));
     ok("没有触发下载", rec.clicks.length === 0, String(rec.clicks.length));
-    ok("没有画任何图", rec.canvases.length === 0, String(rec.canvases.length));
+    ok("没有画任何东西", rec.canvases.length === 0, String(rec.canvases.length));
+    ok("给出「只有超级管理员」的提示",
+      /超级管理员/.test((rec.hudTxt || "").slice(-400)), (rec.hudTxt || "").slice(-80));
   }
 
-  console.log("\n[7] 导出实现：超管调用 → 逐张高清 PNG + 标签栏 + 清单");
+  console.log("\n[7] 导出实现：超管 → 一张整页长图（2 倍尺寸，可放大）");
   {
     const { rec, RK } = makeExportEnv();
     RK._.cfg.isSuper = () => true;
-    const r = await RK.exportImages({
-      items: [
-        { url: U("A"), label: "上升 1 位", site: "美国", period: "2026W41", cat: "卫衣" },
-        { url: U("B"), label: "下降 1 位", site: "美国", period: "2026W41", cat: "卫衣" },
-        { url: "https://img.newtrend.top/bad_x.jpg", label: "新上榜", site: "美国", period: "2026W41", cat: "卫衣" },
-      ],
-      scope: "卫衣 · 美国 · 2026W40、2026W41",
-    });
+    const payload = mkOps(3);
+    const r = await RK.exportImages(payload);
     ok("返回 true（导出完成）", r === true, String(r));
-    ok("产出 1 个压缩包", rec.zips.length === 1, String(rec.zips.length));
-    const zip = rec.zips[0];
-    ok("压缩包里 2 张 PNG（取不到像素的那张不假装有图）+ 1 份清单 CSV",
-      pngCount(zip) === 2 && zip.files.some((f) => /\.csv$/i.test(f.name)),
-      zip.files.map((f) => f.name).join(" | "));
-    ok("文件名带序号 / 站点 / 期次 / 类目 / 位次标签",
-      zip.files.some((f) => /^01_美国_2026W41_卫衣_上升 1 位\.png$/.test(f.name)),
-      zip.files.map((f) => f.name).join(" | "));
-    const csv = csvOf(zip);
-    ok("清单里如实写下「未导出：取不到图片像素」那一行", /未导出/.test(csv), csv.slice(0, 200));
-    ok("清单里保留了原图地址", csv.indexOf(U("A")) >= 0, csv.slice(0, 200));
-    ok("触发了下载，文件名带范围与日期",
-      rec.clicks.length === 1 && /趋势上升榜_.*\.zip$/.test(rec.clicks[0].download), rec.clicks.length ? rec.clicks[0].download : "no-click");
 
-    /* 画布：原图分辨率（1000×1500，未超上限）→ 高度要多出一条标签栏 */
-    const cvs = rec.canvases.filter((c) => c.h > 1500);
-    ok("画布高度 = 原图 1500 + 底部标签栏", cvs.length === 2 && cvs.every((c) => c.h > 1500 && c.w === 1000), JSON.stringify(rec.canvases));
-    ok("图片按原图分辨率贴进画布（1000×1500，没有缩小）",
-      rec.imgs.length === 2 && rec.imgs.every((d) => d.dw === 1000 && d.dh === 1500), JSON.stringify(rec.imgs));
-    ok("标签栏是深色横条（先铺白底，再铺深色条）",
-      rec.rects.some((x) => x.fill === "#ffffff") && rec.rects.some((x) => String(x.fill).indexOf("17,17,17") >= 0),
-      rec.rects.map((x) => x.fill).join(" / "));
-    ok("标签栏里写了「站点 · 期次 · 类目」", rec.texts.some((t) => t.t === "美国 · 2026W41 · 卫衣"),
-      rec.texts.map((t) => t.t).join(" | "));
-    ok("标签栏里也写了位次标签（上升 1 位 / 下降 1 位）",
-      rec.texts.some((t) => t.t === "上升 1 位") && rec.texts.some((t) => t.t === "下降 1 位"),
-      rec.texts.map((t) => t.t).join(" | "));
-    ok("位次标签带金色徽章底（不是裸文字）",
-      rec.rects.some((x) => String(x.fill).toLowerCase() === "#d4a017"), rec.rects.map((x) => x.fill).join(" / "));
-    ok("位次标签用加粗字（与说明文字区分）",
-      rec.texts.filter((t) => t.t === "上升 1 位").every((t) => /bold/i.test(t.font)),
-      rec.texts.map((t) => t.font).join(" | "));
+    ok("只产出 1 个文件（整页一张，不是逐张图 + 压缩包）",
+      rec.clicks.length === 1 && rec.zips.length === 0,
+      "下载 " + rec.clicks.length + " / 压缩包 " + rec.zips.length);
+    ok("文件名是 PNG 且写明「整页」",
+      rec.clicks.length === 1 && /\.png$/i.test(rec.clicks[0].download) && rec.clicks[0].download.indexOf("整页") >= 0,
+      rec.clicks.length ? rec.clicks[0].download : "no-click");
+
+    const cvs = rec.canvases[0];
+    ok("画布尺寸 = 页面尺寸 × 2（高清，可放大看清细节）",
+      !!cvs && cvs.w === payload.root.w * 2 && cvs.h === payload.root.h * 2,
+      cvs ? (cvs.w + " × " + cvs.h + " / 期望 " + (payload.root.w * 2) + " × " + (payload.root.h * 2)) : "no-canvas");
+
+    const imgCount = payload.ops.filter((o) => o.k === "img").length;
+    ok("每一张图都贴进了它自己的位置（贴图次数 = 图片数）",
+      rec.imgs.length === imgCount, rec.imgs.length + " / " + imgCount);
+    ok("图片是铺满自己的框（等比裁切，和网页一致）",
+      rec.imgs.every((d) => d.dw >= 0 && d.dh >= 0 && (Math.abs(d.dw - 536) < 2 || Math.abs(d.dh - 340) < 2)),
+      JSON.stringify(rec.imgs.slice(0, 2)));
+    ok("列标题写进了图里", rec.texts.some((t) => t.t === "2026W40"), rec.texts.slice(0, 6).map((t) => t.t).join(" | "));
+    ok("位次标签写进了图里且是加粗", rec.texts.some((t) => t.t === "上升 1 位" && /bold/i.test(t.font)),
+      rec.texts.filter((t) => t.t === "上升 1 位").map((t) => t.font).join(" | "));
+    ok("提示里写明了成图尺寸与含图数量",
+      /整页 \d+ × \d+ 像素/.test(rec.hudTxt || "") && /含图 \d+ 张/.test(rec.hudTxt || ""),
+      (rec.hudTxt || "").slice(-120));
   }
 
-  console.log("\n[8] 导出实现：图片过多时只导前 N 张并如实说明");
+  console.log("\n[8] 整页图：取不到像素的图留白标注，并如实计数");
   {
     const { rec, RK } = makeExportEnv();
     RK._.cfg.isSuper = () => true;
-    RK._.IMG_EXP.maxN = 3;                    /* 把上限压到 3 便于验证 */
-    const items = [];
-    for (let i = 0; i < 7; i++) items.push({ url: "https://img.newtrend.top/n" + i + ".jpg", label: "", site: "美国", period: "2026W41", cat: "卫衣" });
-    const r = await RK.exportImages({ items: items, scope: "x" });
-    ok("仍然返回成功", r === true, String(r));
-    ok("只导出前 3 张（+1 份清单）", pngCount(rec.zips[0]) === 3, String(pngCount(rec.zips[0])));
-    RK._.IMG_EXP.maxN = 300;
+    const payload = mkOps(2);
+    const imgs = payload.ops.filter((o) => o.k === "img");
+    imgs[0].url = "https://img.newtrend.top/bad_one.jpg";     /* 替身里带 bad 的一律加载失败 */
+    const r = await RK.exportImages(payload);
+    ok("仍然返回成功（不会因为一张图失败就整张作废）", r === true, String(r));
+    ok("仍然只出 1 个文件", rec.clicks.length === 1, String(rec.clicks.length));
+    ok("坏图位置上写了「取不到图」", rec.texts.some((t) => t.t === "取不到图"),
+      rec.texts.map((t) => t.t).join(" | ").slice(0, 160));
+    ok("提示里如实写了「1 张取不到像素」", /1 张取不到像素/.test(rec.hudTxt || ""), (rec.hudTxt || "").slice(-120));
   }
 
-  console.log("\n[9] 导出实现：空清单 / 全站外地址 → 不产出空压缩包糊弄人");
+  console.log("\n[9] 进度与暂停 / 取消：导出中出现两个按钮，取消后不产出任何文件");
   {
-    const { rec, RK } = makeExportEnv();
+    const { rec, w, RK } = makeExportEnv();
     RK._.cfg.isSuper = () => true;
-    const r1 = await RK.exportImages({ items: [], scope: "x" });
-    ok("空清单 → 返回 false 且不产出压缩包", r1 === false && rec.zips.length === 0, String(r1) + "/" + rec.zips.length);
-    const r2 = await RK.exportImages({ items: [{ url: "data:image/png;base64,xxx" }], scope: "x" });
-    ok("非 http(s) 地址被过滤掉 → 同样不产出压缩包", r2 === false && rec.zips.length === 0, String(r2) + "/" + rec.zips.length);
+    const doc = w.document;
+    const p = RK.exportImages(mkOps(30));
+    await sleep(30);
+    let hud = doc.querySelector("#rp-hud");
+    ok("导出期间右下角有进度条", !!hud);
+    ok("进度条上有「暂停」和「取消」两个按钮",
+      !!(hud && hud.querySelector('[data-job="pause"]') && hud.querySelector('[data-job="cancel"]')),
+      hud ? hud.textContent.replace(/\s+/g, " ").slice(0, 80) : "no-hud");
+    ok("进度里写清了在做哪一步（铺版面 / 贴图 / 写文字）",
+      !!(hud && /铺版面|贴图|写文字|生成/.test(hud.textContent || "")), hud ? hud.textContent.replace(/\s+/g, " ").slice(0, 80) : "");
+
+    /* 暂停：进度停住，文案变成「已暂停」，按钮变成「继续」 */
+    hud.querySelector('[data-job="pause"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await sleep(30);
+    hud = doc.querySelector("#rp-hud");
+    ok("点「暂停」后按钮变成「继续」",
+      hud.querySelector('[data-job="pause"]').textContent === "继续",
+      hud.querySelector('[data-job="pause"]').textContent);
+    const tA = (hud.querySelector(".rp-hud-txt") || {}).textContent || "";
+    ok("暂停时提示「已暂停」", /已暂停/.test(tA), tA);
+    await sleep(260);
+    const tB = (doc.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || "";
+    ok("暂停期间进度确实不动", tA === tB, tA + " → " + tB);
+
+    /* 继续：能接着跑 */
+    doc.querySelector('#rp-hud [data-job="pause"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await sleep(120);
+    const tC = (doc.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || "";
+    ok("点「继续」后进度恢复推进", tC !== tB, tB + " → " + tC);
+
+    /* 取消：立刻停，且不产出文件 */
+    doc.querySelector('#rp-hud [data-job="cancel"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    const r = await p;
+    ok("取消后返回 false（未完成）", r === false, String(r));
+    ok("取消后没有触发任何下载", rec.clicks.length === 0, String(rec.clicks.length));
+    const end = (doc.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || "";
+    ok("并明确告知「已取消导出（未生成任何文件）」", /已取消/.test(end) && /未生成/.test(end), end);
+  }
+
+  console.log("\n[10] 导出 PPT：同样有进度条与取消按钮，取消后不生成文件");
+  {
+    const { rec, w, RK } = makeExportEnv();
+    RK._.cfg.isSuper = () => true;
+    /* 补齐 PPT 导出需要的三个依赖组件（替身） */
+    w.JSZip = function () { };
+    w.html2canvas = function () { };
+    w.PptxGenJS = function () { rec.pptxBuilt = (rec.pptxBuilt || 0) + 1; };
+
+    /* 造一个天眼容器：3 列 × 60 张（够多，确保点击时还在读图阶段） */
+    let html = "";
+    for (let c = 0; c < 3; c++) {
+      html += '<section class="rk-pool"><div class="rk-pool-head"><div class="rk-pool-name"><span>2026W4' + c + '</span>'
+        + '<span class="rk-n">60 张</span></div><div class="rk-pool-meta">美国</div></div><div class="rk-pool-grid">';
+      for (let i = 0; i < 60; i++) html += '<figure class="rk-card" data-url="' + U("K" + c + "_" + i) + '"><img src="' + U("K" + c + "_" + i) + '"></figure>';
+      html += "</div></section>";
+    }
+    w.document.body.insertAdjacentHTML("beforeend", '<div id="rk-eye-body"><div class="rk-pools" id="eye-pools">' + html + "</div></div>");
+    Array.prototype.forEach.call(w.document.querySelectorAll("#eye-pools img"), (im) => {
+      Object.defineProperty(im, "naturalWidth", { configurable: true, value: 1000 });
+      Object.defineProperty(im, "naturalHeight", { configurable: true, value: 1500 });
+    });
+
+    const p = w.ReportKit.exportEye();
+    await sleep(12);
+    let hud = w.document.querySelector("#rp-hud");
+    ok("PPT 导出期间出现进度条", !!hud);
+    ok("PPT 进度条上同样有「暂停」和「取消」",
+      !!(hud && hud.querySelector('[data-job="pause"]') && hud.querySelector('[data-job="cancel"]')),
+      hud ? hud.textContent.replace(/\s+/g, " ").slice(0, 80) : "no-hud");
+
+    /* 先暂停（确定性：暂停期间一定还没组装），再取消 —— 取消必须让它停在原地且不产出文件 */
+    if (hud && hud.querySelector('[data-job="pause"]')) {
+      hud.querySelector('[data-job="pause"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+      await sleep(40);
+      const tA = (w.document.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || "";
+      ok("PPT 导出也能暂停（提示「已暂停」）", /已暂停/.test(tA), tA);
+      hud = w.document.querySelector("#rp-hud");
+    }
+    if (hud && hud.querySelector('[data-job="cancel"]')) {
+      hud.querySelector('[data-job="cancel"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    }
+    await p;
+    await sleep(80);
+    ok("取消后没有生成 PPT（连文件对象都没造）", !rec.pptxBuilt, String(rec.pptxBuilt || 0));
+    ok("取消后没有触发下载", rec.clicks.length === 0, String(rec.clicks.length));
+    ok("并明确告知取消了",
+      /已取消/.test((w.document.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || ""),
+      (w.document.querySelector("#rp-hud .rp-hud-txt") || {}).textContent || "");
   }
 
   console.log("\n== 结果：" + pass + " 通过 / " + fail + " 失败 ==");

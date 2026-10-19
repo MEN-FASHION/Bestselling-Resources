@@ -4,57 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20261016Z">
+<link rel="stylesheet" href="css/style.css?v=20261019B">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<style>
-    /* ==== 营销日历时间轴 自包含兜底样式 ==== */
-    .mk-wrap{max-width:1920px;margin:0 auto;padding:26px 3vw 60px;}
-    .mk-timeline-title{font-size:20px;font-weight:700;letter-spacing:1px;color:#3a3226;margin:0 0 26px;position:relative;padding-left:16px;}
-    .mk-timeline-title::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:5px;border-radius:3px;background:linear-gradient(180deg,#d4a017,#8b7355);}
-    .mk-timeline-head{display:flex;align-items:baseline;gap:12px;}
-    .mk-timeline-head .mk-timeline-title{margin-bottom:0;}
-    .mk-timeline-head .mk-hint{color:#a89e8c;font-size:13px;}
-    .mk-timeline{position:relative;display:flex;gap:18px;overflow-x:auto;overflow-y:visible;padding:40px 26px 40px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
-    .mk-timeline::-webkit-scrollbar{height:8px;}
-    .mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
-    .mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
-    .mk-timeline::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#d9cfc0,#e0b84a,#d9cfc0);border-radius:3px;transform:translateY(-50%);}
-    .mk-axis-arrow{position:sticky;right:0;align-self:center;flex:0 0 auto;font-size:22px;color:#c9a13c;padding-left:10px;text-shadow:0 0 8px rgba(201,161,60,.4);}
-    .mk-node{position:relative;flex:0 0 218px;width:218px;height:500px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;scroll-snap-align:start;padding:0;}
-    .mk-dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:16px;height:16px;border-radius:50%;background:#d8382e;border:2px solid #fff;box-shadow:0 0 0 4px rgba(216,56,46,.18),0 0 12px rgba(216,56,46,.5);}
-    .mk-dot-inner{display:block;width:4px;height:4px;margin:3px auto 0;border-radius:50%;background:#fff;}
-    .mk-conn{position:absolute;left:50%;top:calc(50% - 172px);bottom:calc(50% + 132px);width:2px;transform:translateX(-50%);background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;z-index:1;}
-    .mk-tag-img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:204px;aspect-ratio:4/3;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.06);display:block;text-decoration:none;box-shadow:0 6px 16px rgba(60,52,42,.12);transition:transform .22s,box-shadow .22s;}
-    .mk-tag-img:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 12px 24px rgba(60,52,42,.18);}
-    .mk-tag-img.noimg{background:linear-gradient(150deg,rgba(143,111,216,.35),rgba(111,82,192,.35));}
-    .mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
-    .mk-tag{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:204px;border-radius:14px;padding:12px 13px;color:#fff;text-align:center;box-shadow:0 8px 20px rgba(60,52,42,.14);transition:transform .22s,box-shadow .22s;}
-    .mk-tag:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 14px 28px rgba(60,52,42,.22);}
-    .mk-tag-link{display:block;text-decoration:none;color:inherit;}
-    .mk-tag-date{font-size:12px;font-weight:800;letter-spacing:1.2px;opacity:.92;margin-bottom:5px;text-transform:uppercase;}
-    .mk-tag-title{font-size:17px;font-weight:800;line-height:1.3;letter-spacing:.5px;}
-    .mk-tag-desc{margin-top:7px;font-size:12px;line-height:1.55;opacity:.9;}
-    .mk-node.cat-festival .mk-tag{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
-    .mk-node.cat-event .mk-tag{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
-    .mk-node.cat-promo .mk-tag{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
-    .mk-empty{padding:40px;text-align:center;color:#b3ac9e;font-size:15px;background:#faf8f2;border-radius:14px;border:1px dashed #dcd4c4;}
-    .mk-hero{background:linear-gradient(150deg,#f8d46a,#eebf52 45%,#e58f3c);border-radius:18px;padding:28px 30px;margin-bottom:30px;box-shadow:0 12px 30px rgba(201,158,54,.28);position:relative;overflow:hidden;text-align:center;}
-    .mk-hero::after{content:"";position:absolute;right:-40px;bottom:-60px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.16);}
-    .mk-hero-title{font-size:30px;font-weight:900;color:#4a2f14;letter-spacing:1px;margin:0;line-height:1.3;}
-    .mk-hero-sep{font-weight:400;color:#7a5a2e;margin:0 4px;}
-    .mk-hero-year{color:#7a2f10;display:inline-block;background:#fff;border-radius:8px;padding:0 10px;}
-    .mk-hero-sub{margin:12px 0 0;font-size:14px;color:#6b4a24;letter-spacing:.5px;}
-    .mk-legend{display:flex;justify-content:center;gap:16px;margin-top:26px;flex-wrap:wrap;}
-    .mk-legend-item{border-radius:12px;padding:8px 18px;font-size:14px;font-weight:700;color:#fff;box-shadow:0 4px 12px rgba(60,52,42,.12);}
-    .mk-leg-festival{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
-    .mk-leg-event{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
-    .mk-leg-promo{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
-    .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
-    .mk-card{position:relative;display:flex;flex-direction:column;background:#fbfaf6;border:1px solid #e4dcca;border-radius:14px;overflow:hidden;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.06);transition:transform .22s,box-shadow .22s,border-color .22s;}
-    .mk-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(60,52,42,.14);border-color:#d4a017;}
-    .mk-card-img{position:relative;aspect-ratio:3/4;background:#f0eee6;overflow:hidden;}
-    .mk-card-img img{width:100%;height:100%;object-fit:cover;object-position:center top;}
-    </style>
 
 
 </head>
@@ -133,7 +84,8 @@
   </header>
 
   <section id="marketing-view" class="gallery-view hidden">
-    <div class="mk-wrap">
+    <div class="mk-legacy hidden">
+      <div class="mk-wrap">
       <!-- ===== 设计稿标题区 ===== -->
       <div class="mk-hero">
         <h1 class="mk-hero-title">节点营销攻略<span class="mk-hero-sep">——</span><span id="mk-hero-year" class="mk-hero-year">2026</span>年美国节点营销日历</h1>
@@ -154,6 +106,143 @@
       <!-- ===== 营销日历卡片区（3:4 展示图） ===== -->
       <div class="mk-grid-title">营销日历</div>
       <div id="mk-grid" class="mk-grid"><div class="mk-empty">加载中…</div></div>
+    </div>
+    </div>
+
+    <div class="mkzone">
+      <div class="mk-head">
+        <div class="mk-head-l"><h1>营销日历</h1><p>全球节庆时间轴 · 服装开发周期推演 · 按提前期倒推最晚启动日</p></div>
+        <div class="mk-head-r">
+          <div class="seg" id="viewTabs">
+            <button data-view="cards" class="active"><span class="seg-full">节庆卡片</span><span class="seg-mini">卡片</span></button>
+            <button data-view="timeline"><span class="seg-full">年度时间轴</span><span class="seg-mini">时间轴</span></button>
+            <button data-view="gantt"><span class="seg-full">开发倒推</span><span class="seg-mini">倒推</span></button>
+          </div>
+          <div class="today-pill"><span class="dot"></span><span id="todayText">—</span></div>
+          <button class="btn btn-primary" id="addBtn">＋ 新建节日</button>
+          <button class="menu-btn btn" id="menuBtn">筛选</button>
+        </div>
+      </div>
+
+      <aside class="sidebar" id="sidebar">
+  <div class="side-scroll">
+    <section class="side-sec">
+    <h3>节庆类别</h3>
+    <div class="chips" id="catChips"></div>
+    </section>
+
+    <section class="side-sec">
+    <h3>重要度</h3>
+    <div class="chips" id="starChips"></div>
+    </section>
+
+    <section class="side-sec">
+    <h3>开发周期参数</h3>
+    <div class="toggle-row">
+    <button class="toggle" id="modeRec">节日推荐值</button>
+    <button class="toggle active" id="modeCus">自定义周期</button>
+    </div>
+    <div class="custom-panel" id="customPanel">
+    <div class="slider-row">
+    <label>设计打样 <b id="vSample">45</b> 天</label>
+    <input type="range" id="sSample" min="0" max="150" step="5" value="45">
+    </div>
+    <div class="slider-row">
+    <label>大货生产 <b id="vProduce">30</b> 天</label>
+    <input type="range" id="sProduce" min="0" max="90" step="5" value="30">
+    </div>
+    <div class="slider-row">
+    <label>物流入仓 <b id="vShip">15</b> 天</label>
+    <input type="range" id="sShip" min="0" max="60" step="5" value="15">
+    </div>
+    <div class="lead-total"><span>合计提前期</span><b id="vTotal">90</b></div>
+    </div>
+    </section>
+
+    <section class="side-sec">
+    <h3>数据管理</h3>
+    <div class="data-btns">
+    <button class="btn btn-ghost" id="exportBtn">导出数据</button>
+    <button class="btn btn-ghost" id="importBtn">导入数据</button>
+    <button class="btn btn-ghost full" id="resetBtn">恢复默认节庆库</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+
+    <details class="spec">
+      <summary>导入字段说明</summary>
+      <div class="spec-body">
+        <p>文件为 <b>JSON</b> 格式，可以是一个<b>数组</b>，也可以直接用本页导出的文件（含 festivals 字段）原样回导。<br>
+           <b>注意：导入会整体替换当前节庆库</b>，不是追加。只想补充节日请用「＋ 新建节日」。</p>
+        <table class="spec-table">
+          <tr><th>字段</th><th></th><th>说明</th></tr>
+          <tr><td>name</td><td class="req">必填</td><td>节日名称。缺名称或日期的行会被跳过</td></tr>
+          <tr><td>date</td><td class="req">必填</td><td>日期，格式 <b>MM-DD</b>，如 <b>02-17</b></td></tr>
+          <tr><td>en</td><td class="opt">选填</td><td>英文名，卡片上会小字显示</td></tr>
+          <tr><td>region</td><td class="opt">选填</td><td>地区，默认「其他」</td></tr>
+          <tr><td>cat</td><td class="opt">选填</td><td>类别：trad 传统 / rel 宗教 / nat 国家纪念 / promo 电商大促 / sport 体育赛事 / season 季节档期，默认 trad</td></tr>
+          <tr><td>star</td><td class="opt">选填</td><td>重要度 1–5，默认 3</td></tr>
+          <tr><td>lead</td><td class="opt">选填</td><td>推荐提前期（天），默认 120</td></tr>
+          <tr><td>dur</td><td class="opt">选填</td><td>持续时间（天），默认 1。多日节庆填实际天数</td></tr>
+          <tr><td>idea</td><td class="opt">选填</td><td>选品方向，填文案</td></tr>
+          <tr><td>overrides</td><td class="opt">选填</td><td>指定年份日期，如 <b>{"2027":"02-06"}</b>，用于农历与浮动节日</td></tr>
+          <tr><td>note</td><td class="opt">选填</td><td>备注</td></tr>
+          <tr><td>id</td><td class="opt">选填</td><td>唯一标识，不填自动生成（重复会导致覆盖，建议留空）</td></tr>
+        </table>
+        <pre class="spec-code">[
+  {
+    "name": "巴西儿童节",
+    "date": "10-12",
+    "en": "Children's Day (BR)",
+    "region": "巴西",
+    "cat": "nat",
+    "star": 3,
+    "lead": 90,
+    "dur": 1,
+    "idea": "童装、亲子装、儿童配饰",
+    "overrides": null,
+    "note": "南半球春季档"
+  }
+]</pre>
+      </div>
+    </details>
+    </section>
+    </div>
+  </aside>
+
+      <main class="main"><div class="main-inner">
+        <section class="filterbar" id="filterbar">
+      <button class="fb-trigger" id="fbTrigger" aria-expanded="false" aria-controls="regionPanel">
+        <span class="fb-title">地区筛选</span>
+        <span class="fb-hint" id="regionHint">全部地区</span>
+        <span class="fb-tags" id="regionTags"></span>
+        <span class="fb-chev" aria-hidden="true"></span>
+      </button>
+      <span class="fb-hover-tip">鼠标移到此处自动展开</span>
+      <div class="fb-bridge" aria-hidden="true"></div>
+      <div class="fb-panel" id="regionPanel">
+        <div class="fb-panel-head">
+          <span class="fb-tip">鼠标移到某个洲即可展开它的国家；点洲名 = 一次选中整洲，点国家 = 单独挑选</span>
+          <button class="fb-clear" id="regionClear">清空筛选</button>
+        </div>
+        <div class="region-list" id="regionList"></div>
+      </div>
+    </section>
+        <section class="stats" id="stats"></section>
+        <div id="view-timeline" class="view hidden"></div>
+        <div id="view-gantt" class="view hidden"></div>
+        <div id="view-cards" class="view"></div>
+        <section class="mk-db hidden" id="mk-db">
+          <div class="sec-head"><h2>已发布营销素材</h2><span class="sub">后台「营销日历管理」中已发布的节点与文章</span><span class="line"></span></div>
+          <div class="db-grid" id="mk-db-grid"></div>
+        </section>
+        <footer class="footer">
+          <div class="cr"><span class="sq"></span><span>© 2026 TREND BANK · 营销日历 · 全球节庆与服装开发周期推演</span></div>
+          <div>提前期 = 设计打样 + 大货生产 + 物流入仓 · 农历与浮动日期按年度校准</div>
+        </footer>
+      </div></main>
+
+      <div class="backdrop" id="backdrop"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+      <div class="mktoast" id="mkToast"></div>
     </div>
   </section>
 
@@ -212,12 +301,14 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261016Z"></script>
-  <script src="vendor/qrcode.min.js?v=20261016Z"></script>
-  <script src="js/config.js?v=20261016Z"></script>
-  <script src="js/supabase.js?v=20261016Z"></script>
-  <script src="js/track-menu.js?v=20261016Z"></script>
-  <script src="js/common.js?v=20261016Z"></script>
-  <script src="js/marketing.js?v=20261016Z"></script>
+  <script src="vendor/supabase.js?v=20261019B"></script>
+  <script src="vendor/qrcode.min.js?v=20261019B"></script>
+  <script src="js/config.js?v=20261019B"></script>
+  <script src="js/supabase.js?v=20261019B"></script>
+  <script src="js/track-menu.js?v=20261019B"></script>
+  <script src="js/common.js?v=20261019B"></script>
+  <script src="js/marketing.js?v=20261019B"></script>
+  <script src="js/marketing-data.js?v=20261019B"></script>
+  <script src="js/marketing-main.js?v=20261019B"></script>
 </body>
 </html>

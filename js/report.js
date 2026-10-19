@@ -706,7 +706,13 @@
     }
     var kept = 0, missed = 0;
     var step = Math.max(1, EYE_PPT.conc | 0);
+    var job = jobStart("正在导出 PPT");
+    if (job) job.update(7, "正在准备图片…");
     for (var s = 0; s < plan.length; s += step) {
+      if (job && !(await job.gate())) {
+        job.done("已取消导出 PPT（未生成文件）", true);
+        return;
+      }
       await Promise.all(plan.slice(s, s + step).map(function (t) {
         return (t.im ? imgDataUrl(t.im) : Promise.resolve(null)).then(function (d) {
           if (!d) { missed++; return; }
@@ -714,12 +720,23 @@
           t.arr[t.idx] = d;
         });
       }));
-      hud(true, "正在读取图片 " + Math.min(plan.length, s + step) + " / " + plan.length + "…",
-        7 + Math.round(Math.min(1, (s + step) / Math.max(1, plan.length)) * 66));
+      if (job) {
+        job.update(7 + Math.round(Math.min(1, (s + step) / Math.max(1, plan.length)) * 66),
+          "正在读取图片 " + Math.min(plan.length, s + step) + " / " + plan.length + "…");
+      } else {
+        hud(true, "正在读取图片 " + Math.min(plan.length, s + step) + " / " + plan.length + "…",
+          7 + Math.round(Math.min(1, (s + step) / Math.max(1, plan.length)) * 66));
+      }
       await new Promise(function (r) { setTimeout(r, 0); });   /* 让出主线程，避免页面卡死 */
     }
 
-    hud(true, "正在组装 PPT…", 82);
+    /* 组装前最后一道闸：这之后再点「取消」就来不及了（文件已开始写） */
+    if (job && !(await job.gate())) {
+      job.done("已取消导出 PPT（未生成文件）", true);
+      return;
+    }
+    if (job) job.update(82, "正在组装 PPT…");
+    else hud(true, "正在组装 PPT…", 82);
     var st = eyeState();
     var scope = eyeScopeTxt();
     var pptx = new window.PptxGenJS();
@@ -730,8 +747,12 @@
     if (capped) extra.push("图片超过 " + EYE_PPT.maxImg + " 张，只放了前 " + EYE_PPT.maxImg + " 张（可缩小范围后再导）");
     if (missed) extra.push(missed + " 张未能取到像素（站外图片或加载失败），已在原位留白");
     if (scope) extra.push("范围：" + scope);
-    hud(true, "已生成：" + name + (extra.length ? "（" + extra.join("；") + "）" : ""), 100);
-    setTimeout(function () { hud(false); }, 5000);
+    if (job) {
+      job.done("已生成：" + name + (extra.length ? "（" + extra.join("；") + "）" : ""));
+    } else {
+      hud(true, "已生成：" + name + (extra.length ? "（" + extra.join("；") + "）" : ""), 100);
+      setTimeout(function () { hud(false); }, 5000);
+    }
   }
 
   /* 天眼里的「导出 PPT」入口（只有超级管理员看得到按钮） */
@@ -937,11 +958,73 @@
     return true;
   }
 
-  /* ============ 导出图片（带标签 · 高清） ============
-     把当前屏幕上这批图（含位次标签）按原图分辨率逐张导出成 PNG，
-     底部加一条标签栏（站点 · 期次 · 类目 + 位次标签），连同清单一起打进一个压缩包。
+/* ============ 导出任务：进度 + 暂停 / 取消 ============
+     统一用右下角那条浮动进度条承载（不弹窗、不遮图）。导出期间多出两个按钮：
+       「暂停 / 继续」—— 停在当前进度，点「继续」接着干；
+       「取消」      —— 立刻停下，**不产出任何文件**（不会给你一个半截的包）。 */
+  var JOB = null;
+
+  function jobStart(title) {
+    hud(true, (title || "正在导出") + " …", 0);
+    var h = $("#rp-hud");
+    if (!h) return null;
+    if (!h.querySelector(".rp-hud-ops")) {
+      var ops = document.createElement("div");
+      ops.className = "rp-hud-ops";
+      ops.innerHTML = '<button type="button" class="rp-hud-b" data-job="pause">暂停</button>'
+        + '<button type="button" class="rp-hud-b rp-hud-x" data-job="cancel">取消</button>';
+      h.appendChild(ops);
+    }
+    var pb = h.querySelector('[data-job="pause"]');
+    var cb = h.querySelector('[data-job="cancel"]');
+    var job = {
+      cancelled: false, paused: false, title: title || "", pct: 0, text: "",
+      update: function (pct, text) {
+        if (this.cancelled) return;
+        if (pct != null) this.pct = Math.max(0, Math.min(100, pct));
+        if (text != null) this.text = String(text);
+        /* 暂停期间不再刷新进度：否则正在飞的那一张图读完会把「已暂停」冲掉 */
+        if (this.paused) return;
+        hud(true, (this.title ? this.title + " · " : "") + this.text, this.pct);
+      },
+      /* 每个工作单元开工前调用：已取消 → false；暂停中 → 一直等（点「继续」才放行） */
+      gate: function () {
+        var self = this;
+        return new Promise(function (res) {
+          (function tick() {
+            if (self.cancelled) return res(false);
+            if (!self.paused) return res(true);
+            setTimeout(tick, 120);
+          })();
+        });
+      },
+      close: function () { JOB = null; hud(false); },
+      done: function (msg, bad) {
+        JOB = null;
+        if (msg) hud(true, msg, 100, !!bad);
+        setTimeout(function () { hud(false); }, bad ? 3000 : 5600);
+      }
+    };
+    if (pb) {
+      pb.onclick = function () {
+        job.paused = !job.paused;
+        pb.textContent = job.paused ? "继续" : "暂停";
+        hud(true, (job.title ? job.title + " · " : "")
+          + (job.paused ? "已暂停（点「继续」接着导出）" : job.text), job.pct);
+      };
+    }
+    if (cb) {
+      cb.onclick = function () { job.cancelled = true; job.paused = false; };
+    }
+    JOB = job;
+    return job;
+  }
+
+  /* ============ 导出图片（整页定格 · 高清可放大） ============
+     与「导出 PPT」不同：这里导出的是**当前这个页面此刻的样子** —— 一次成像的整页长图。
+     列、卡片、图片、位次标签都落在它们在屏幕上的位置，按 2 倍绘制（可放大看清细节）。
      权限口径与「导出 PPT」一致：只有超级管理员可导出（按钮不可见 + 调用时再校验一次）。 */
-  var IMG_EXP = { maxW: 2000, maxN: 300, labelPct: 0.026, minFont: 18 };
+  var IMG_EXP = { scale: 2, maxPixels: 48e6, maxW: 6000, maxN: 300 };
 
   function isSuperNow() {
     return Promise.resolve()
@@ -971,109 +1054,192 @@
     });
   }
 
-  /* 单张：原图分辨率（超过上限才等比缩小）→ 底部标签栏 → PNG。
-     取不到像素（站外图 / 跨域被拒 / 未实现 canvas）返回 null，由调用方如实计数。 */
-  function labelPng(item) {
-    return loadImg(item.url).then(function (im) {
-      if (!im) return null;
-      var iw = im.naturalWidth || 0, ih = im.naturalHeight || 0;
-      if (!iw || !ih) return null;
-      var sc = Math.min(1, IMG_EXP.maxW / iw);
-      var w = Math.max(1, Math.round(iw * sc)), h = Math.max(1, Math.round(ih * sc));
-      var font = Math.max(IMG_EXP.minFont, Math.round(w * IMG_EXP.labelPct));
-      var barH = Math.round(font * 2.3);
-      var cv = document.createElement("canvas");
-      cv.width = w; cv.height = h + barH;
-      var ctx = cv.getContext && cv.getContext("2d");
-      if (!ctx) return null;
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, cv.height);
-      try { ctx.drawImage(im, 0, 0, w, h); } catch (e) { return null; }
-      ctx.fillStyle = "rgba(17,17,17,.88)";
-      ctx.fillRect(0, h, w, barH);
-      var pad = Math.round(font * 0.55);
-      ctx.textBaseline = "middle";
-      ctx.font = Math.round(font * 0.72) + "px " + FONT;
-      ctx.fillStyle = "#f2f2f2";
-      var base = [item.site, item.period, item.cat].filter(Boolean).join(" · ");
-      try { ctx.fillText(base, pad, h + barH / 2); } catch (e) { }
-      if (item.label) {
-        ctx.font = "bold " + font + "px " + FONT;
-        var tw = 0;
-        try { tw = ctx.measureText(item.label).width; } catch (e2) { tw = font * 4; }
-        var bw = Math.round(tw + font * 1.1), bh = Math.round(font * 1.66);
-        var bx = Math.max(pad, w - pad - bw), by = h + Math.round((barH - bh) / 2);
-        ctx.fillStyle = "#d4a017"; ctx.fillRect(bx, by, bw, bh);
-        ctx.fillStyle = "#1a1a1a";
-        try { ctx.fillText(item.label, bx + Math.round(font * 0.55), h + barH / 2); } catch (e3) { }
-      }
-      return new Promise(function (res) {
-        if (typeof cv.toBlob === "function") {
-          try { cv.toBlob(function (b) { res(b ? { blob: b } : null); }, "image/png"); return; } catch (e) { }
-        }
-        try { res({ dataUrl: cv.toDataURL("image/png") }); } catch (e) { res(null); }
-      });
-    });
+  function roundRect(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r || 0, w / 2, h / 2));
+    if (!r) { ctx.rect(x, y, w, h); return; }
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
-  /* payload: { items:[{url,label,site,period,cat}], scope:"范围文字" } */
+  /* 一段文字：按元素宽度折行，最多排到元素高度（不会画到别人身上） */
+  function drawTextOp(ctx, op, S) {
+    var txt = String(op.text == null ? "" : op.text);
+    if (!txt) return;
+    var size = Math.max(1, (op.size || 12) * S);
+    var bold = op.weight && Number(op.weight) >= 600;
+    ctx.font = (bold ? "bold " : "") + size + "px " + FONT;
+    ctx.fillStyle = op.color || "#1a1a1a";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    var x = op.x * S, w = Math.max(1, op.w * S), h = Math.max(1, op.h * S);
+    var lines = [], cur = "";
+    for (var i = 0; i < txt.length; i++) {
+      var t = cur + txt.charAt(i);
+      if (cur && ctx.measureText(t).width > w) { lines.push(cur); cur = txt.charAt(i); }
+      else cur = t;
+    }
+    if (cur) lines.push(cur);
+    var lh = size * 1.34;
+    var maxLines = Math.max(1, Math.floor(h / lh));
+    if (lines.length > maxLines) lines = lines.slice(0, maxLines);
+    var top = op.y * S + Math.max(lh / 2, (h - lines.length * lh) / 2 + lh / 2);
+    for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], x, top + j * lh);
+  }
+
+  /* 把图铺满指定框（等比裁切，和网页里 object-fit: cover 一致） */
+  function drawCover(ctx, im, x, y, w, h) {
+    var iw = im.naturalWidth || im.width || 0, ih = im.naturalHeight || im.height || 0;
+    if (!iw || !ih) return false;
+    var s = Math.max(w / iw, h / ih);
+    var dw = iw * s, dh = ih * s;
+    ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    return true;
+  }
+
+  /* payload: { root:{w,h}, ops:[box|img|text], scope:"范围文字" }
+     box  : {k,x,y,w,h,fill,stroke,lw,radius}
+     img  : {k,x,y,w,h,url,radius}
+     text : {k,x,y,w,h,text,size,weight,color} */
   function exportImages(payload) {
-    var items = ((payload && payload.items) || []).filter(function (x) { return x && /^https?:\/\//i.test(x.url || ""); });
-    var warn = "";
+    var ops = (((payload || {}).ops) || []).filter(function (o) { return o && o.k; });
+    var root = (payload || {}).root || { w: 0, h: 0 };
     return isSuperNow().then(function (ok) {
-      if (!ok) { hud(true, "只有超级管理员可以导出图片。", 100, true); setTimeout(function () { hud(false); }, 2800); return false; }
-      if (!items.length) { hud(true, "当前筛选下没有可导出的图片。", 100, true); setTimeout(function () { hud(false); }, 2800); return false; }
-      if (items.length > IMG_EXP.maxN) {
-        warn = "共 " + items.length + " 张，只导了前 " + IMG_EXP.maxN + " 张（可缩小范围后再导）";
-        items = items.slice(0, IMG_EXP.maxN);
+      if (!ok) {
+        hud(true, "只有超级管理员可以导出图片。", 100, true);
+        setTimeout(function () { hud(false); }, 2800);
+        return false;
       }
-      return ensureZip().then(function (hasZip) {
-        if (!hasZip) { hud(true, "导出组件不可用，请刷新页面后重试。", 100, true); setTimeout(function () { hud(false); }, 3200); return false; }
-        var zip = new window.JSZip(), missed = 0, done = 0, i = 0;
-        var rows = [["序号", "站点", "期次", "类目", "位次标签", "文件名", "原图地址"]];
-        function step() {
-          if (i >= items.length) return Promise.resolve();
-          var it = items[i], n = i;
-          hud(true, "正在导出第 " + (n + 1) + " / " + items.length + " 张…", Math.round(n / items.length * 100));
-          return labelPng(it).then(function (out) {
-            var nm = safeName([pad2(n + 1), it.site || "", it.period || "", it.cat || "", it.label || "无标签"].filter(Boolean).join("_")) + ".png";
-            if (!out) {
-              missed++;
-              rows.push([n + 1, it.site || "", it.period || "", it.cat || "", it.label || "", "（未导出：取不到图片像素）", it.url]);
-            } else {
-              if (out.blob) zip.file(nm, out.blob);
-              else zip.file(nm, String(out.dataUrl || "").split(",")[1] || "", { base64: true });
-              rows.push([n + 1, it.site || "", it.period || "", it.cat || "", it.label || "", nm, it.url]);
-              done++;
-            }
-            i++;
-            return step();
-          });
+      if (!ops.length || !(root.w > 0) || !(root.h > 0)) {
+        hud(true, "当前页面没有可导出的内容。", 100, true);
+        setTimeout(function () { hud(false); }, 2800);
+        return false;
+      }
+      /* 倍数自适应：页面很长时自动降倍数，避免画布过大被浏览器拒绝 */
+      var S = IMG_EXP.scale;
+      while (S > 1 && ((root.w * S > IMG_EXP.maxW) || (root.w * root.h * S * S > IMG_EXP.maxPixels))) S -= 0.25;
+      var W = Math.max(1, Math.round(root.w * S)), H = Math.max(1, Math.round(root.h * S));
+      var cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      var ctx = cv.getContext && cv.getContext("2d");
+      if (!ctx) {
+        hud(true, "当前环境不支持画布导出，请换电脑浏览器再试。", 100, true);
+        setTimeout(function () { hud(false); }, 3000);
+        return false;
+      }
+      var job = jobStart("正在生成整页高清图");
+      if (!job) return false;
+
+      var boxes = ops.filter(function (o) { return o.k === "box"; });
+      var imgs = ops.filter(function (o) { return o.k === "img" && /^https?:\/\//i.test(o.url || ""); });
+      var texts = ops.filter(function (o) { return o.k === "text"; });
+      var miss = 0, drawn = 0;
+
+      return (async function () {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, W, H);
+
+        /* ① 底色与边框 */
+        for (var i = 0; i < boxes.length; i++) {
+          if (i % 12 === 0 && !(await job.gate())) return "cancel";
+          var b = boxes[i];
+          ctx.beginPath();
+          roundRect(ctx, b.x * S, b.y * S, b.w * S, b.h * S, (b.radius || 0) * S);
+          if (b.fill && b.fill !== "transparent" && b.fill !== "rgba(0, 0, 0, 0)") {
+            ctx.fillStyle = b.fill;
+            ctx.fill();
+          }
+          if (b.stroke && b.lw > 0) {
+            ctx.lineWidth = Math.max(1, b.lw * S);
+            ctx.strokeStyle = b.stroke;
+            ctx.stroke();
+          }
+          job.update(4 + Math.round((i + 1) / Math.max(1, boxes.length) * 24), "正在铺版面 " + (i + 1) + " / " + boxes.length);
         }
-        return step().then(function () {
-          zip.file("清单.csv", "\ufeff" + rows.map(function (r) {
-            return r.map(function (c) { return '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"'; }).join(",");
-          }).join("\r\n"));
-          return zip.generateAsync({ type: "blob" });
-        }).then(function (blob) {
-          var name = safeName("趋势上升榜_" + ((payload && payload.scope) || "") + "_" + fmtDate(new Date())) + ".zip";
-          var url = URL.createObjectURL(blob);
+
+        /* ② 图片（等比裁切铺满原位；取不到像素就留白标注，不假装有图） */
+        for (var j = 0; j < imgs.length; j++) {
+          if (!(await job.gate())) return "cancel";
+          var o = imgs[j], im = await loadImg(o.url);
+          ctx.save();
+          ctx.beginPath();
+          roundRect(ctx, o.x * S, o.y * S, o.w * S, o.h * S, (o.radius || 0) * S);
+          ctx.clip();
+          var ok2 = im ? drawCover(ctx, im, o.x * S, o.y * S, o.w * S, o.h * S) : false;
+          if (!ok2) {
+            miss++;
+            ctx.fillStyle = "#f0ece4";
+            ctx.fillRect(o.x * S, o.y * S, o.w * S, o.h * S);
+            ctx.font = Math.max(12, Math.min(o.w, o.h) * S * 0.12) + "px " + FONT;
+            ctx.fillStyle = "#9a938a";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "center";
+            try { ctx.fillText("取不到图", (o.x + o.w / 2) * S, (o.y + o.h / 2) * S); } catch (e) { }
+          } else drawn++;
+          ctx.restore();
+          if (j % 5 === 0 || j === imgs.length - 1) {
+            job.update(28 + Math.round((j + 1) / Math.max(1, imgs.length) * 56),
+              "正在贴图 " + (j + 1) + " / " + imgs.length);
+          }
+        }
+
+        /* ③ 文字（列标题、位次标签、标题…按原位重排） */
+        for (var k = 0; k < texts.length; k++) {
+          if (k % 16 === 0 && !(await job.gate())) return "cancel";
+          drawTextOp(ctx, texts[k], S);
+          if (k % 8 === 0 || k === texts.length - 1) {
+            job.update(84 + Math.round((k + 1) / Math.max(1, texts.length) * 12),
+              "正在写文字 " + (k + 1) + " / " + texts.length);
+          }
+        }
+
+        if (!(await job.gate())) return "cancel";
+        job.update(97, "正在生成图片文件…");
+        var name = safeName("趋势上升榜_整页_" + (((payload || {}).scope) || "") + "_" + fmtDate(new Date())) + ".png";
+        var out = await new Promise(function (res) {
+          if (typeof cv.toBlob === "function") {
+            try { cv.toBlob(function (b) { res(b || null); }, "image/png"); return; } catch (e) { }
+          }
+          try { res({ dataUrl: cv.toDataURL("image/png") }); } catch (e) { res(null); }
+        });
+        if (!out) {
+          job.done("生成图片失败，请重试（可缩小范围后再导）。", true);
+          return false;
+        }
+        if (out.dataUrl) {
+          var a0 = document.createElement("a");
+          a0.href = out.dataUrl; a0.download = name;
+          document.body.appendChild(a0); a0.click();
+          setTimeout(function () { try { document.body.removeChild(a0); } catch (e) { } }, 1500);
+        } else {
+          var url = URL.createObjectURL(out);
           var a = document.createElement("a");
           a.href = url; a.download = name;
           document.body.appendChild(a); a.click();
-          setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (e) { } }, 2000);
-          var msg = ["已导出 " + done + " 张"];
-          if (missed) msg.push(missed + " 张取不到像素（站外图 / 加载失败），未放进压缩包");
-          if (warn) msg.push(warn);
-          hud(true, name + "：" + msg.join("；"), 100);
-          setTimeout(function () { hud(false); }, 6000);
-          return true;
-        });
+          setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (e) { } }, 2500);
+        }
+        var extra = [];
+        extra.push("整页 " + W + " × " + H + " 像素（可放大查看）");
+        extra.push("含图 " + drawn + " 张");
+        if (miss) extra.push(miss + " 张取不到像素，已留白标注");
+        job.done(name + "：" + extra.join("；"));
+        return true;
+      })().then(function (r) {
+        if (r === "cancel") {
+          job.done("已取消导出（未生成任何文件）", true);
+          return false;
+        }
+        return r;
       });
     }).then(function (r) { return r; }, function () {
-      hud(true, "导出失败，请重试。", 100, true); setTimeout(function () { hud(false); }, 2800); return false;
+      hud(true, "导出失败，请重试。", 100, true);
+      setTimeout(function () { hud(false); }, 2800);
+      return false;
     });
   }
-
   window.ReportKit = {
     init: init,
     open: openModal,
@@ -1091,7 +1257,7 @@
       makePDF: makePDF, makePPT: makePPT,
       makeEyePPT: makeEyePPT, assembleEye: assembleEye, eyeSlice: eyeSlice,
       readPoolsFrom: readPoolsFrom, imgDataUrl: imgDataUrl, hud: hud, exportEye: exportEye,
-      exportImages: exportImages, labelPng: labelPng, IMG_EXP: IMG_EXP, isSuperNow: isSuperNow,
+      exportImages: exportImages, jobStart: jobStart, IMG_EXP: IMG_EXP, isSuperNow: isSuperNow,
       EYE_PPT: EYE_PPT, EYE_GRID: EYE_GRID,
       cfg: CFG, getFmt: function () { return FMT; }, getScope: function () { return SCOPE; },
       ROW_PER_SLIDE: ROW_PER_SLIDE, TABLE_MAX_ROWS: TABLE_MAX_ROWS

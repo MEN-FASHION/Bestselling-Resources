@@ -49,7 +49,7 @@
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
   var MOVE_SCOPE = "all";
   var ONLY = "off";          /* 只看标签：off | up（位次上升）| new（新上榜）——仅纵向·时间对比有效 */
-  var EXPORT_ITEMS = [];     /* 当前屏幕上这批图（含位次标签），供「导出图片（带标签·高清）」使用 */
+  var EXPORT_ITEMS = [];     /* 当前屏幕上这批图（含位次标签），供「导出 PPT」范围说明使用 */
 
   /* 某期某张图的位次标签（与卡片上「上升 N 位 / 下降 N 位 / 新上榜」同源）：
      排序、卡片标签、「只看标签」筛选三处共用同一套计算，
@@ -84,6 +84,60 @@
     parts.push(activePeriods().join("、") || "未选周次");
     if (MODE === "v" && ONLY !== "off") parts.push(onlyLabel());
     return parts.join(" · ");
+  }
+
+  /* 把当前屏幕上的对比池「定格」成一份绘制指令（供整页高清图使用）。
+     采集顺序 = 底色/边框 → 图片 → 文字，与网页的视觉层次一致；
+     位置取相对对比池容器的坐标，滚动到哪里都不影响结果。 */
+  function snapshotOps() {
+    var root = document.querySelector("#rk-pools");
+    if (!root) return null;
+    var r0 = root.getBoundingClientRect();
+    var baseX = r0.left - (root.scrollLeft || 0);
+    var baseY = r0.top - (root.scrollTop || 0);
+    var boxes = [], imgs = [], texts = [];
+
+    function rectOf(el) {
+      var r = el.getBoundingClientRect();
+      if (!(r.width >= 1) || !(r.height >= 1)) return null;
+      return { x: Math.round(r.left - baseX), y: Math.round(r.top - baseY), w: Math.round(r.width), h: Math.round(r.height) };
+    }
+    function shown(el) {
+      var cs = window.getComputedStyle(el);
+      return cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || 1) > 0.05;
+    }
+
+    Array.prototype.forEach.call(root.querySelectorAll("*"), function (el) {
+      if (!shown(el)) return;
+      var tag = (el.tagName || "").toLowerCase();
+      var rr = rectOf(el);
+      if (!rr) return;
+      if (tag === "img") {
+        var src = el.getAttribute("src");
+        if (src) imgs.push({ k: "img", x: rr.x, y: rr.y, w: rr.w, h: rr.h, url: src, radius: 8 });
+        return;
+      }
+      var cs = window.getComputedStyle(el);
+      var bg = cs.backgroundColor || "";
+      var lw = parseFloat(cs.borderTopWidth) || 0;
+      var hasBg = bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)";
+      if (hasBg || lw > 0) {
+        boxes.push({ k: "box", x: rr.x, y: rr.y, w: rr.w, h: rr.h,
+          fill: hasBg ? bg : "", stroke: lw > 0 ? cs.borderTopColor : "", lw: lw,
+          radius: parseFloat(cs.borderTopLeftRadius) || 0 });
+      }
+      /* 只画叶子节点的文字，避免父节点把同一句重复画一遍 */
+      var txt = (el.textContent || "").trim();
+      if (txt && (!el.children || !el.children.length)) {
+        texts.push({ k: "text", x: rr.x, y: rr.y, w: rr.w, h: rr.h, text: txt,
+          size: parseFloat(cs.fontSize) || 12, weight: cs.fontWeight, color: cs.color });
+      }
+    });
+
+    return {
+      root: { w: Math.round(root.scrollWidth || r0.width), h: Math.round(root.scrollHeight || r0.height) },
+      ops: boxes.concat(imgs, texts)
+    };
   }    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
   var CAP = CAP_STEP;
@@ -618,21 +672,21 @@
       '</div>';
     var cols = (MODE === "v" ? periods.length : sites.length);
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
-    h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这批图（含位次标签）按高清原图导出，方便分享">导出图片（带标签 · 高清）</button>';
+    h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
     h += '</div>';
     el.innerHTML = h;
-    /* 导出图片（带标签 · 高清）：与「导出 PPT」同一套权限口径 —— 只允许超级管理员
+    /* 导出图片（整页 · 高清）：与「导出 PPT」同一套权限口径 —— 只允许超级管理员
        （按钮默认不可见，确认身份后才出现；调用时还会再校验一次） */
     var exb = $("#rk-exp-img");
     if (exb) {
       exb.onclick = function () {
-        var items = EXPORT_ITEMS.slice();
-        if (!items.length) { toast("当前筛选下没有可导出的图片"); return; }
         if (!window.ReportKit || !window.ReportKit.exportImages) { toast("导出组件不可用，请刷新页面后重试"); return; }
-        window.ReportKit.exportImages({ items: items, scope: exportScope() });
+        var snap = snapshotOps();
+        if (!snap || !snap.ops.length) { toast("当前筛选下没有可导出的内容"); return; }
+        window.ReportKit.exportImages({ ops: snap.ops, root: snap.root, scope: exportScope() });
       };
       eyeIsSuper().then(function (ok) { if (ok) exb.className = "rk-exp-img on"; });
     }
