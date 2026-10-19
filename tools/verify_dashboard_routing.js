@@ -19,7 +19,8 @@ const path = require("path");
 
 const root = process.argv[2] || ".";
 const ORDER = ["admin.js", "admin-images.js", "admin-smart.js", "admin-trend.js", "admin-notice.js",
-  "admin-marketing.js", "admin-tasks.js", "admin-bestseller.js", "admin-perm.js", "admin-pool.js", "admin-rank.js"];
+  "admin-marketing.js", "admin-tasks.js", "admin-bestseller.js", "admin-perm.js", "admin-pool.js", "admin-rank.js",
+  "admin-insight.js", "admin-backup.js"];
 
 function read(f) { return fs.readFileSync(path.join(root, "js", f), "utf8"); }
 
@@ -70,28 +71,58 @@ console.log("【B】「图片管理 → 数据看板」的名字归属");
 check("loadDashboard 归图片管理模块所有", owner["loadDashboard"] === "admin-images.js", "实际 " + owner["loadDashboard"]);
 check("bindDashboard 归图片管理模块所有", owner["bindDashboard"] === "admin-images.js", "实际 " + owner["bindDashboard"]);
 
-console.log("【C】两套看板各自读自己的页面元素");
+console.log("【C】图片管理看板保留，权限管理里的数据看板已移除（需求：权限管理的数据看板不要了）");
 const imgDashFn = sources["admin-images.js"];
 const permDashFn = sources["admin-perm.js"];
+const adminHtml = fs.readFileSync(path.join(root, "admin.html"), "utf8");
 check("图片管理看板：读 #dash-meta", /#{0,1}\$\(["']#dash-meta["']\)/.test(imgDashFn));
-check("权限管理看板：读 #perm-dash", /\$\(["']#perm-dash["']\)/.test(permDashFn));
-check("权限管理看板已使用独立名字 loadAnalyticsDash", owner["loadAnalyticsDash"] === "admin-perm.js", "实际 " + owner["loadAnalyticsDash"]);
-check("权限管理看板已使用独立名字 bindAnalyticsDash", owner["bindAnalyticsDash"] === "admin-perm.js", "实际 " + owner["bindAnalyticsDash"]);
+check("权限管理面板已无数据看板 DOM（perm-dash 已移除）", adminHtml.indexOf("perm-dash") < 0);
+check("权限管理脚本已无看板读取函数 loadAnalyticsDash", permDashFn.indexOf("loadAnalyticsDash") < 0);
+check("权限管理脚本已无看板绑定函数 bindAnalyticsDash", permDashFn.indexOf("bindAnalyticsDash") < 0);
 check("权限管理模块不再占用公共名字", !exposed["admin-perm.js"].includes("loadDashboard") && !exposed["admin-perm.js"].includes("bindDashboard"));
+check("权限管理面板未遗留对已删元素的引用", !/\$\(["']#(perm-dash|dash-zones|dash-regions|dash-recent|dash-cards)["']\)/.test(permDashFn));
 
 console.log("【D】左侧「数据看板」入口调用的是哪一套");
 check("admin.js 未自行定义 loadDashboard（会用到全局，即图片管理那套）", !/function\s+loadDashboard\s*\(/.test(sources["admin.js"]));
 check("admin.js 的数据看板分支调用了 loadDashboard", /target\s*===\s*["']dash-card["'][^\n]*loadDashboard\(\)/.test(sources["admin.js"]));
 check("面板初始化调用 bindDashboard（现为图片管理那套）", /bindDashboard/.test(sources["admin.js"]));
-check("权限管理面板初始化调用 bindAnalyticsDash", /bindAnalyticsDash\(\);/.test(sources["admin-perm.js"]));
 
-console.log("【E】看板读取的登录态防护与错误码展示");
-check("读取看板前先确认登录态（避免以未登录身份请求而误报没权限）",
-  /async function loadAnalyticsDash[\s\S]{0,1200}?SB\.getSession\(\)/.test(permDashFn));
-check("未取到登录态时给出「请重新登录」而不是「没权限」",
-  /async function loadAnalyticsDash[\s\S]{0,2000}?DASH_ERR_TEXT\.not_authenticated/.test(permDashFn));
-check("看板失败时展示接口错误码（便于一眼定位）", /function dashDiagLine/.test(permDashFn) && /dashDiagLine\(e\)/.test(permDashFn));
-check("错误码展示已做净化（不含地址/原始报错）", /replace\(\/\[\^A-Za-z0-9_\]\/g, ""\)/.test(permDashFn) || /replace\(\/\[\^A-Za-z0-9_\]\/g,\s*""\)/.test(permDashFn));
+console.log("【E】新增两个超管面板（用户动向 / 版本恢复）");
+const insFn = sources["admin-insight.js"] || "";
+const bkpFn = sources["admin-backup.js"] || "";
+check("admin.html 含「用户动向」面板", adminHtml.indexOf('id="insight-card"') >= 0);
+check("admin.html 含「版本恢复」面板", adminHtml.indexOf('id="backup-card"') >= 0);
+check("侧边菜单含「用户动向」入口（超管专属）", /data-target="insight-card"[^>]*data-super="1"/.test(adminHtml));
+check("侧边菜单含「版本恢复」入口（超管专属）", /data-target="backup-card"[^>]*data-super="1"/.test(adminHtml));
+check("admin.html 已引入用户动向脚本", /admin-insight\.js\?v=/.test(adminHtml));
+check("admin.html 已引入版本恢复脚本", /admin-backup\.js\?v=/.test(adminHtml));
+check("面板分区：用户动向任一管理员专区可入", /"insight-card"\s*:/.test(sources["admin.js"]));
+check("面板分区：版本恢复仅超管", /"backup-card"\s*:\s*"super"/.test(sources["admin.js"]));
+check("用户动向：面板上定义了三个子页（前台用户 / 专区·菜单热度 / 后台管理员）",
+  /data-iv="iv-1"/.test(adminHtml) && /data-iv="iv-2"/.test(adminHtml) && /data-iv="iv-3"/.test(adminHtml));
+check("用户动向：脚本按 data-iv 通用切换子页（不写死子页清单）",
+  /getAttribute\("data-iv"\)/.test(insFn));
+check("用户动向：面板自带分层自检入口", /ins-probe/.test(adminHtml) && /connProbe/.test(insFn));
+check("版本恢复：脚本内含快照与恢复动作", /insight|bkp/i.test(bkpFn) && /restore/i.test(bkpFn));
+check("版本恢复：恢复前先自动备份", /恢复前自动备份/.test(bkpFn));
+{
+  const sbSrc = fs.readFileSync(path.join(root, "js", "supabase.js"), "utf8");
+  const bkpSql = fs.readFileSync(path.join(root, "tools", "setup_backup.sql"), "utf8");
+  check("版本恢复：恢复走数据层专用函数（不是直接写表）", /SB\.backupRestore\(/.test(bkpFn));
+  check("版本恢复：专用函数映射到服务端 backup_restore",
+    /backupRestore\(id\)\s*\{\s*return this\.rpcJson\("backup_restore"/.test(sbSrc));
+  // 恢复必须「先校验、后落地」：校验用的 raise 必须出现在破坏性写入之前，
+  // 且整个恢复在单个数据库函数内完成（不带手动 commit/rollback → 保持 Postgres 原子性，任一异常整体回滚）
+  const fnIdx = bkpSql.indexOf("create function public.backup_restore");
+  const fnBody = fnIdx >= 0 ? bkpSql.slice(fnIdx) : "";
+  const firstRaise = fnBody.search(/raise\s+exception/i);
+  const firstWrite = fnBody.search(/delete\s+from|insert\s+into|truncate/i);
+  check("版本恢复：先校验后落地（校验失败抛错发生在破坏性写入之前）",
+    fnIdx >= 0 && firstRaise >= 0 && firstWrite > firstRaise);
+  check("版本恢复：单函数内完成且无手动提交（原子性 → 任一步失败整体回滚）",
+    fnIdx >= 0 && !/\b(commit|rollback)\b(?!.*--)/i.test(fnBody));
+  check("版本恢复：恢复前自动备份 + 快照上限清理", /恢复前自动备份/.test(bkpFn) && /最多保留/.test(bkpFn));
+}
 
 console.log("\n结果：通过 " + pass + " 项，失败 " + fail + " 项");
 process.exit(fail ? 1 : 0);

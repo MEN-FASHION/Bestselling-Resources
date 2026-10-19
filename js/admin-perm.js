@@ -101,7 +101,6 @@ async function loadPermPanel() {
     refreshBatchZoneOptions();
     await loadDefaultPerms();
     await renderZoneDefsBox();
-    await loadAnalyticsDash();
   }
 
 // 新用户默认权限设置：加载当前默认角色 + 默认可见专区到配置区
@@ -151,18 +150,25 @@ function bindDefaultPerms() {
     if (!body) return;
     // 按「标签」筛选：all=全部，__none__=仅无标签，其它=仅该标签
     const shown = permTagFilter === "" ? users : (permTagFilter === NONE_TAG ? users.filter(u => !(u.user_tag && u.user_tag.trim())) : users.filter(u => u.user_tag === permTagFilter));
-    if (!users.length) { body.innerHTML = '<tr><td colspan="11" class="hint">暂无用户</td></tr>'; updateBatchCount(); return; }
-    if (!shown.length) { body.innerHTML = '<tr><td colspan="11" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; updateBatchCount(); return; }
+    permShownIds = shown.map(u => u.user_id);
+    if (!users.length) { body.innerHTML = '<tr><td colspan="11" class="hint">暂无用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
+    if (!shown.length) { body.innerHTML = '<tr><td colspan="11" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
     body.innerHTML = "";
-    // 预取每个用户的类目授权，用于总览摘要（仅筛选后的行）
+    // ── 分页：用户多了以后不再从表格顶部一路拉到底 ──
+    // 只渲染当前页；「全选」作用于当前筛选结果的全部用户（不受分页影响），批量维护语义不变。
+    const pageCount = Math.max(1, Math.ceil(shown.length / permPageSize));
+    if (permPage > pageCount) permPage = pageCount;
+    if (permPage < 1) permPage = 1;
+    const pageRows = shown.slice((permPage - 1) * permPageSize, permPage * permPageSize);
+    // 预取每个用户的类目授权，用于总览摘要（仅当前页的行，减少请求）
     const catCounts = {};
-    await Promise.all(shown.map(async (u) => {
+    await Promise.all(pageRows.map(async (u) => {
       try {
         const perms = await SB.listUserPermissions(u.user_id).catch(() => []);
         catCounts[u.user_id] = perms.length;
       } catch (e) { catCounts[u.user_id] = 0; }
     }));
-    shown.forEach(u => {
+    pageRows.forEach(u => {
       const tr = document.createElement("tr");
       tr.dataset.uid = u.user_id;          // 批量维护：按行定位该用户
       // 勾选框（批量维护入口）：勾中的用户可批量打标签 / 改角色 / 加减专区
@@ -269,6 +275,81 @@ function bindDefaultPerms() {
     // 同步批量维护工具条（已选人数 / 全选态 / 标签候选）
     refreshBatchTagOptions();
     updateBatchCount();
+    renderPermPager(shown.length);
+  }
+
+/* ---------------- 用户权限分配表：分页 ---------------- */
+  // 口径：筛选在前、分页在后；「全选」作用于当前筛选结果的全部用户，与当前页无关。
+  function renderPermPager(total) {
+    const box = $("#perm-pager");
+    if (!box) return;
+    const pageCount = Math.max(1, Math.ceil(total / permPageSize));
+    const from = total ? (permPage - 1) * permPageSize + 1 : 0;
+    const to = Math.min(permPage * permPageSize, total);
+    let html = '<div class="pp-left">共 <b>' + total + '</b> 个用户' + (total ? '，当前显示第 ' + from + '–' + to + ' 个' : '') + '</div>';
+    html += '<div class="pp-mid">';
+    html += '<button class="btn-ghost small" type="button" data-pp="first"' + (permPage <= 1 ? ' disabled' : '') + '>« 首页</button>';
+    html += '<button class="btn-ghost small" type="button" data-pp="prev"' + (permPage <= 1 ? ' disabled' : '') + '>‹ 上一页</button>';
+    html += '<span class="pp-page">第 <b>' + permPage + '</b> / ' + pageCount + ' 页</span>';
+  // 用户多、页数多时直接跳页，省得一路点「下一页」
+  html += '<label class="pp-jump">跳至 <input id="perm-page-jump" class="input pp-jump-input" type="number" min="1" max="' + pageCount + '" value="' + permPage + '" ' + (pageCount <= 1 ? 'disabled' : '') + '> 页</label>';
+    html += '<button class="btn-ghost small" type="button" data-pp="next"' + (permPage >= pageCount ? ' disabled' : '') + '>下一页 ›</button>';
+    html += '<button class="btn-ghost small" type="button" data-pp="last"' + (permPage >= pageCount ? ' disabled' : '') + '>末页 »</button>';
+    html += '</div>';
+    html += '<div class="pp-right"><label class="field" style="margin:0">每页</label>';
+    html += '<select id="perm-page-size" class="input" style="max-width:96px">';
+    [10, 20, 50, 100].forEach(n => { html += '<option value="' + n + '"' + (n === permPageSize ? ' selected' : '') + '>' + n + ' 条</option>'; });
+    html += '</select></div>';
+    box.innerHTML = html;
+  }
+
+  function bindPermPager() {
+    const box = $("#perm-pager");
+    if (!box || box.__bound) return;
+    box.__bound = true;
+    box.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest ? e.target.closest("button[data-pp]") : null;
+      if (!b || b.disabled) return;
+      const total = permShownIds.length;
+      const pageCount = Math.max(1, Math.ceil(total / permPageSize));
+      const act = b.getAttribute("data-pp");
+      if (act === "first") permPage = 1;
+      else if (act === "prev") permPage = Math.max(1, permPage - 1);
+      else if (act === "next") permPage = Math.min(pageCount, permPage + 1);
+      else if (act === "last") permPage = pageCount;
+      renderPermTable(permUsers);
+      const t = $(".perm-table-wrap") || $("#perm-table-body");
+      if (t && t.scrollIntoView) t.scrollIntoView({ block: "nearest" });
+    });
+    // 跳页：回车或失焦生效；非法值（越界/非数字）自动回落，不做无提示的静默跳转
+    const jump = (el) => {
+      if (!el) return;
+      const pageCount = Math.max(1, Math.ceil(permShownIds.length / permPageSize));
+      let v = parseInt(el.value, 10);
+      if (!isFinite(v)) v = permPage;
+      v = Math.max(1, Math.min(pageCount, v));
+      el.value = v;
+      if (v === permPage) return;
+      permPage = v;
+      renderPermTable(permUsers);
+    };
+    box.addEventListener("keydown", (e) => {
+      const inp = e.target && e.target.closest ? e.target.closest("#perm-page-jump") : null;
+      if (!inp) return;
+      if (e.key === "Enter") { e.preventDefault(); jump(inp); }
+    });
+    box.addEventListener("blur", (e) => {
+      const inp = e.target && e.target.closest ? e.target.closest("#perm-page-jump") : null;
+      if (inp) jump(inp);
+    }, true);
+
+    box.addEventListener("change", (e) => {
+      const sel = e.target && e.target.closest ? e.target.closest("#perm-page-size") : null;
+      if (!sel) return;
+      permPageSize = Math.max(1, parseInt(sel.value, 10) || 20);
+      permPage = 1;
+      renderPermTable(permUsers);
+    });
   }
 
 // 同步编辑区的标签下拉（与权限表标签一致）
@@ -671,7 +752,7 @@ function bindPermission() {
     bindPermEditModal();
     bindPermCreateUser();
     bindPermBatch();
-    bindAnalyticsDash();
+    bindPermPager();
   }
 
   /* 暴露给其它模块 / 事件绑定 */
@@ -717,226 +798,14 @@ function dashTable(heads, rows) {
     '</tbody></table>';
 }
 
-function renderAnalyticsDash(d) {
-  const cards = $("#dash-cards");
-  const u = (d && d.users) || {}, v = (d && d.visits) || {};
-  if (cards) {
-    cards.innerHTML =
-      dashCard("总用户数", Number(u.total) || 0, "今日新增 " + (Number(u.newToday) || 0) + " · 昨日 " + (Number(u.newYday) || 0), dashDelta(u.newToday, u.newYday)) +
-      dashCard("今日访问量", Number(v.pvToday) || 0, "较昨日 · 今日活跃 " + (Number(v.uvToday) || 0) + " 人 · 累计 " + (Number(v.pvTotal) || 0) + " 次", dashDelta(v.pvToday, v.pvYday)) +
-      dashCard("今日在线时长", fmtDur(v.durToday), "较昨日 · 人均 " + fmtDur(v.durAvg) + " · 累计 " + fmtDur(v.durTotal), dashDelta(v.durToday, v.durYday)) +
-      dashCard("本期新增用户", Number(u.newWeek) || 0, "本周 · 本月 " + (Number(u.newMonth) || 0) + " · 上月 " + (Number(u.newLastMonth) || 0), dashDelta(u.newMonth, u.newLastMonth));
-  }
-  const zones = $("#dash-zones");
-  if (zones) {
-    zones.innerHTML = dashTable(["专区", "今日访问", "累计访问", "今日人数", "累计时长"],
-      ((d && d.zones) || []).map(z => [
-        escHtml(zoneLabelOf(z.zone)),
-        String(z.pvToday || 0),
-        String(z.pvTotal || 0),
-        String(z.uvToday || 0),
-        escHtml(fmtDur(z.durTotal)),
-      ]));
-  }
-  const regions = $("#dash-regions");
-  if (regions) {
-    regions.innerHTML = dashTable(["国家 / 地区", "用户数", "今日访问", "累计访问", "累计时长"],
-      ((d && d.regions) || []).map(r => [
-        escHtml([r.country, r.region, r.city].filter(Boolean).join(" · ") || "未知"),
-        String(r.users || 0),
-        String(r.pvToday || 0),
-        String(r.pvTotal || 0),
-        escHtml(fmtDur(r.durTotal)),
-      ]));
-  }
-  const recent = $("#dash-recent");
-  if (recent) {
-    recent.innerHTML = dashTable(["用户", "专区", "地区", "停留", "时间"],
-      ((d && d.recent) || []).map(r => [
-        escHtml(r.email || ""),
-        escHtml(zoneLabelOf(r.zone) || "—"),
-        escHtml([r.country, r.region].filter(Boolean).join(" · ") || "未知"),
-        escHtml(fmtDur(r.duration)),
-        escHtml(r.startedAt ? new Date(r.startedAt).toLocaleString("zh-CN", { hour12: false }) : ""),
-      ]));
-  }
-}
-
-// 看板失败原因 → 人话提示（不展示任何接口原始报错）
-const DASH_ERR_TEXT = {
-  missing_function: "数据库里的统计接口还没被接口服务识别到（或函数还没建好）：请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行，末尾会自动刷新接口缓存），等约 10 秒后点「刷新」。",
-  not_authenticated: "登录状态已失效：请重新登录后再打开权限管理。",
-  no_api_key: "页面没有携带访问密钥（配置文件未生效或用错了密钥）：请求在数据库网关就被拒绝，与账号权限无关。请确认 js/config.js 里的数据库地址与访问密钥都已按当前项目填好，然后强刷页面（Ctrl+F5）。",
-  forbidden: "当前账号没有查看看板的权限（仅超级管理员可看）。",
-  // 函数内部那条 SQL 自己报错（错误码 42xxx）：与账号权限无关，必须重跑统计脚本。
-  // 典型实例：统计脚本里用 `group by 1,2,3` 引用输出列位置，而该输出列含聚合函数 →
-  // 数据库报 42803「aggregate functions are not allowed in GROUP BY」。
-  sql_exec: "数据库执行统计接口时内部报错（统计脚本里那段查询写错了）—— 与账号权限无关。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行、不会清数据），等约 10 秒后点「刷新」。",
-  blocked: "请求没能抵达数据库（浏览器层被拦：跨域预检被拒 / CORS / 网络中断）—— 这属于网络与站点配置问题，与账号权限无关。请先强刷页面（Ctrl+F5）重试；若仍失败，请点「看板自检」把结论反馈。",
-  other: "看板暂时读不到数据：请点「刷新」重试；若持续失败，请点「看板自检」查看结论，或确认 tools/setup_analytics.sql 已在数据库执行过。"
-};
-
-// 账号确实是超级管理员、却读到「无权限」时的专属提示：
-// 这种情况基本不是账号权限问题，而是数据库里的统计接口没建好 / 接口授权没生效，
-// 必须把话说清楚，否则会误导管理员去改权限（白折腾）。
-const DASH_ERR_TEXT_SUPER_FIX = "当前账号是超级管理员，但数据库里的数据看板接口拒绝了本次读取 —— 这属于统计接口本身的问题（接口没建好、授权未生效，或接口内部那条查询报错），不是账号权限问题。请到 Supabase 的 SQL Editor，把仓库里 tools/setup_analytics.sql 整段重新执行一次（可重复执行、不会清数据），等约 10 秒后点「刷新」。若仍失败，请点「看板自检」，它会直接告诉你断在哪一层。";
-
-function dashErrText(reason) { return DASH_ERR_TEXT[reason] || DASH_ERR_TEXT.other; }
-
-// 把接口返回的"错误码 + HTTP 状态"拼成一小段纯文本，便于管理员一眼截图定位。
-// 只保留错误码本身（字母/数字/下划线）与状态码，绝不展示任何接口地址或原始报错。
-function dashDiagLine(e) {
-  const code = String((e && e.code) || "").replace(/[^A-Za-z0-9_]/g, "").slice(0, 24);
-  const http = Number((e && e.http) || 0);
-  const parts = [];
-  if (code) parts.push(code);
-  if (http) parts.push("HTTP " + http);
-  return parts.length ? parts.join(" · ") : "未返回错误码";
-}
-
-// 零数据提示：接口通了但还没有访问记录时，明确告诉去哪里产生第一条记录，避免误以为"没反应"
-function dashNote(text) {
-  const n = $("#perm-dash-note");
-  if (n) n.textContent = text || "";
-}
-
-// 读取并渲染看板（非超管接口返回空 → 整块不显示，不给任何数据）
-async function loadAnalyticsDash() {
-  const box = $("#perm-dash");
-  if (!box) return;
-  // 【关键防护】必须先确认"登录态已就绪"再调接口。
-  // 否则在页面刚加载、登录态尚未恢复时发起请求，会以"未登录"身份打到数据库：
-  // 接口要么返回空（被误读成"没权限"），要么直接报错 —— 都会冤枉真正的超管。
-  let sess = null;
-  try { sess = await SB.getSession(); } catch (e) { sess = null; }
-  if (!sess) {
-    await new Promise(r => setTimeout(r, 800));   // 给登录态恢复留一点时间，再试一次
-    try { sess = await SB.getSession(); } catch (e) { sess = null; }
-  }
-  if (!sess) {
-    box.classList.remove("hidden");
-    const c0 = $("#dash-cards");
-    if (c0) c0.innerHTML = '<div class="hint">' + escHtml(DASH_ERR_TEXT.not_authenticated) + '</div>';
-    ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
-    dashNote("未取到登录态，已跳过读取，避免出现误报。请重新登录后再试。");
-    return;
-  }
-  try {
-    const d = await SB.adminDashboard();
-    if (!d) { box.classList.add("hidden"); dashNote("当前账号不是超级管理员，数据看板不显示（正常权限表现）。"); return; }
-    box.classList.remove("hidden");
-    renderAnalyticsDash(d);
-    const up = $("#perm-dash-updated");
-    if (up) up.textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    const pv = Number((d.visits && d.visits.pvTotal) || 0);
-    if (pv === 0) dashNote("统计接口已连通，目前还没有访问记录：用前台任意页面（保持登录）打开一次，回来点「刷新」即可看到数据。");
-    else dashNote("");
-  } catch (e) {
-    const reason = (e && e.diag) || "other";
-    let text = dashErrText(reason);
-    // 「无权限」时报错信息是笼统的，容易冤枉超管：这里用真实角色复核一次。
-    // 若账号确实是超管，说明问题出在数据库接口/授权，而不是账号权限。
-    if (reason === "forbidden") {
-      let role = null;
-      try { role = await SB.myRole(); } catch (err) { role = null; }
-      if (role === "super_admin") text = DASH_ERR_TEXT_SUPER_FIX;
-    }
-    box.classList.remove("hidden");
-    const c = $("#dash-cards");
-    if (c) c.innerHTML = '<div class="hint">' + text + '<br><span class="dash-diag">接口返回：' + escHtml(dashDiagLine(e)) + '</span></div>';
-    ["#dash-zones", "#dash-regions", "#dash-recent"].forEach(sel => { const el = $(sel); if (el) el.innerHTML = ""; });
-    dashNote("详细原因已输出到浏览器控制台（按 F12 → Console 查看「[看板诊断]」开头的记录）。");
-  }
-}
-
-// 看板自检：一次把「接口是否可用 / 是不是超管 / 有没有数据」查清楚，用一句话说明
-async function dashSelfCheck() {
-  dashNote("自检中…");
-  // 一键分层自检：按「配置 → 登录态 → 最小读写 → 看板接口」逐层判断，直接给出结论。
-  // 目的：不用翻开发者工具，页面自己说清是哪一层断了。
-  let pr = null;
-  try { pr = (typeof SB.connProbe === "function") ? await SB.connProbe() : null; } catch (e) { pr = null; }
-  let role = null;
-  try { role = await SB.myRole(); } catch (e) { role = null; }
-  const roleText = role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : role ? "访客" : "未取到角色";
-
-  if (pr) {
-    const c = pr.config || {}, m = pr.minimal || {}, d = pr.dashboard || {};
-    if (!c.ok) {
-      dashNote("自检结果：页面配置未生效 —— " + String((c.problems || []).join("；")) + "。请核对 js/config.js 里的数据库地址与访问密钥后强刷页面（Ctrl+F5）。此项与账号权限无关。");
-      return;
-    }
-    if (!pr.session) { dashNote("自检结果：登录状态已失效 —— 请重新登录后再点自检。"); return; }
-    if (m.ok === false && !m.http) {
-      dashNote("自检结果：请求没能抵达数据库（浏览器层被拦：跨域预检被拒 / CORS / 网络中断）—— 这与账号权限、数据库接口都无关。请先强刷页面（Ctrl+F5）重试；若本机开了代理/VPN 或浏览器拦截插件，请关闭后再试。");
-      return;
-    }
-    if (m.ok === false) {
-      dashNote("自检结果：数据库网关拒绝了请求（密钥或授权问题），返回码 " + (String(m.code || "") || "无") + " —— 请核对 js/config.js 里的地址与密钥是否成对来自同一个项目。此项与账号权限无关。");
-      return;
-    }
-    if (d.ok) {
-      dashNote("自检结果：接口连通（当前账号「" + roleText + "」）" + (d.empty
-        ? "，但还没有访问记录 —— 到前台页面登录后打开一次即可产生第一条。"
-        : "，看板应能正常显示，请点「刷新」。"));
-      return;
-    }
-    const r = d.diag || "other";
-    const head = r === "missing_function" ? "数据库还没建统计接口"
-      : r === "not_authenticated" ? "登录状态失效"
-      : r === "no_api_key" ? "数据库网关未收到访问密钥"
-      : r === "forbidden" ? "看板接口拒绝了本次读取"
-      : r === "blocked" ? "请求被浏览器层拦下"
-      : "看板接口读取失败";
-    const help = r === "missing_function" ? "请在 Supabase 的 SQL Editor 执行 tools/setup_analytics.sql，等约 10 秒后重试"
-      : r === "not_authenticated" ? "请重新登录后再试"
-      : r === "no_api_key" ? "请核对 js/config.js 里的地址与密钥是否成对来自同一个项目，然后强刷页面"
-      : r === "forbidden" ? "当前账号角色「" + roleText + "」：若确为超管，说明是数据库接口授权未生效 —— 请重新执行 tools/setup_analytics.sql（内含授权语句）"
-      : r === "blocked" ? "请强刷页面（Ctrl+F5）后重试；若本机开了代理/VPN 或浏览器拦截插件，请先关闭"
-      : "请稍后重试";
-    dashNote("自检结果：" + head + " —— " + help + "（接口返回：" + dashDiagLine({ code: d.code, http: d.http }) +
-      "）。其余读写均正常，说明账号权限与页面配置没有问题。详细记录见控制台「[看板诊断]」。");
-    return;
-  }
-
-  // 兜底：万一分层自检不可用，退回单一接口结论
-  try {
-    const cc = (typeof SB.configCheck === "function") ? SB.configCheck() : null;
-    if (cc && !cc.ok) {
-      dashNote("自检结果：页面配置未生效（" + cc.problems.join("；") + "）—— 请核对 js/config.js 里的数据库地址与访问密钥，然后强刷页面（Ctrl+F5）。此项与账号权限无关。");
-      return;
-    }
-  } catch (e) { /* 自检本身异常不阻断后续步骤 */ }
-  try {
-    const d = await SB.adminDashboard();
-    if (!d) { dashNote("自检结果：统计接口可用；当前账号角色为「" + roleText + "」，不是超级管理员，看板不显示（这是正常的权限表现）。"); return; }
-    const pv = Number((d.visits && d.visits.pvTotal) || 0);
-    const uv = Number((d.visits && d.visits.uvTotal) || 0);
-    const us = Number((d.users && d.users.total) || 0);
-    dashNote("自检结果：统计接口正常 · 当前账号角色「" + roleText + "」 · 已注册用户 " + us + " · 累计访问 " + pv + " 次 / " + uv +
-      " 人" + (pv === 0 ? "（还没有记录：用前台页面登录后打开一次即可产生第一条）" : ""));
-  } catch (e) {
-    dashNote("自检结果：" + dashErrText((e && e.diag) || "other") + "（接口返回：" + dashDiagLine(e) + "）。");
-  }
-}
-
-function bindAnalyticsDash() {
-  const b = $("#perm-dash-refresh");
-  if (!b || b.__bound) return;
-  b.__bound = true;
-  b.onclick = async () => {
-    const c = $("#dash-cards");
-    if (c) c.innerHTML = '<span class="hint">读取中…</span>';
-    await loadAnalyticsDash();
-  };
-  const ck = $("#perm-dash-check");
-  if (ck && !ck.__bound) { ck.__bound = true; ck.onclick = () => dashSelfCheck(); }
-}
-
 // ========================================================================
 // 批量维护用户：勾选多个用户后，批量打标签 / 改角色 / 加减专区
 // 口径：写库走 SB.bulkPatchUsers（各用户原有配置做并集/差集，不覆盖）；界面就地更新，不重建整表（避免页面跳动）
 // ========================================================================
+let permPage = 1;                 // 权限表当前页
+let permPageSize = 20;            // 每页条数
+let permShownIds = [];            // 当前筛选结果的全部用户（「全选」以此为准）
+
 let permBatchSel = new Set();
 
 function batchIds() { return [...permBatchSel]; }
@@ -1110,7 +979,7 @@ async function applyBatchZone() {
 
   Object.assign(window, {
     permRoleLabel, permTagChoices, permTagOptionsHtml, loadPermPanel,
-    loadAnalyticsDash, renderAnalyticsDash, bindAnalyticsDash, bindPermBatch, applyBatchTag, applyBatchRole, applyBatchZone, updateBatchCount, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs
+    bindPermBatch, applyBatchTag, applyBatchRole, applyBatchZone, updateBatchCount, loadDefaultPerms, renderDefaultZones, bindDefaultPerms, renderPermTable, syncPermTagEditor, syncPermTagFilter, loadPermForUser, openPermEditModal, closePermEditModal, renderPermEditCats, renderPermEditZones, updatePermEditCatCount, savePermEditModal, bindPermEditModal, openPermCreateModal, closePermCreateModal, savePermCreateModal, bindPermCreateUser, confirmDeletePermUser, renderPermZones, renderPermCats, updatePermCatCount, bindPermission, syncPermZones, renderZoneDefsBox, persistZoneDefs, renderPermPager, bindPermPager
   });
 
 })();

@@ -123,3 +123,100 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
   { key: "notice",        label: "公告",        href: "" }
 ];
+
+
+/* ============================================================
+ * 类目搜索（宽松模糊） + 常用类目置顶 —— 前后台共用
+ * ============================================================
+ * 1) 所有「需要选择类目」的入口都提供搜索框，搜索尽量宽松：
+ *    · 忽略大小写、空格与常见分隔符（- _ / \ | , ， . 。 : ： ( ) （ ） [ ] 【 】 · ・）
+ *    · 子串命中：关键词出现在候选里（输入 t 恤 能搜到 T恤）
+ *    · 反向包含：关键词比候选长时也算命中（多打了字不会突然搜不到）
+ *    · 逐字命中：关键词的每个字按顺序出现在候选里（连衣 → 连衣裙）
+ *    · 空格分词＝且：多段关键词要求每段都命中
+ * 2) 常用类目置顶：当前账号的常用类目排在最前并带 ★
+ * ============================================================ */
+window.CAT_SEARCH = (function () {
+  var kwMap = Object.create(null);
+  function kw(key, val) {
+    if (arguments.length > 1) kwMap[key] = String(val == null ? "" : val);
+    return kwMap[key] || "";
+  }
+  function norm(s) {
+    return String(s == null ? "" : s).toLowerCase()
+      .replace(/[\s\u00b7\u30fb\-_\\|,，.。;；:：()（）\[\]【】<>《》"'`+]+/g, "");
+  }
+  function seqHit(text, k) {
+    if (!k) return true;
+    var i = 0;
+    for (var p = 0; p < text.length && i < k.length; p++) {
+      if (text.charAt(p) === k.charAt(i)) i++;
+    }
+    return i >= k.length;
+  }
+  function hit(name, keyword) {
+    var raw = String(keyword == null ? "" : keyword).trim();
+    if (!raw) return true;
+    var t = norm(name);
+    if (!t) return false;
+    var segs = raw.split(/\s+/).filter(Boolean);
+    return segs.every(function (seg) {
+      var k = norm(seg);
+      if (!k) return true;
+      if (t.indexOf(k) >= 0) return true;   /* 子串命中 */
+      if (k.indexOf(t) >= 0) return true;   /* 反向包含 */
+      return seqHit(t, k);                  /* 逐字按顺序命中 */
+    });
+  }
+  function filter(list, keyword) {
+    return (list || []).filter(function (x) { return hit(x, keyword); });
+  }
+  /* 常用类目置顶：favs 顺序在前，其余保持原顺序；返回 [{name, fav}] */
+  function sortCats(list, favs) {
+    var fav = (favs || []).map(function (x) { return String(x == null ? "" : x).trim(); }).filter(Boolean);
+    var src = list || [], seen = Object.create(null), out = [];
+    fav.forEach(function (f) {
+      if (!seen[f] && src.indexOf(f) >= 0) { seen[f] = 1; out.push({ name: f, fav: true }); }
+    });
+    src.forEach(function (c) {
+      if (!seen[c]) { seen[c] = 1; out.push({ name: c, fav: false }); }
+    });
+    return out;
+  }
+  /* 过滤 <select> 的选项：保留占位项与当前选中项，避免过滤后丢值 */
+  function filterSelect(sel, keyword) {
+    if (!sel) return 0;
+    var shown = 0;
+    Array.prototype.forEach.call(sel.options, function (o) {
+      var keep = o.value === "" || (sel.value !== "" && o.value === sel.value);
+      var ok = !keyword || keep || hit(o.value, keyword);
+      try { o.hidden = !ok; } catch (e) { }
+      o.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    return shown;
+  }
+  /* 在 target 前插入搜索框（已存在则复用），返回该输入框 */
+  function mountBox(target, id, placeholder, onInput) {
+    if (!target || !target.parentNode) return null;
+    /* 用 target 自己所属的文档去查找：后台有「前台预览」iframe，
+       若用外层 document 查找会找不到已插入的框，从而重复插入一个搜索框 */
+    var doc = target.ownerDocument || document;
+    var el = doc.getElementById(id);
+    if (!el) {
+      el = document.createElement("input");
+      el.id = id; el.type = "search"; el.className = "cat-search";
+      el.autocomplete = "off";
+      el.title = "模糊搜索：忽略大小写与符号，可隔字匹配（如输入「连衣」可搜到「连衣裙」）";
+      target.parentNode.insertBefore(el, target);
+    }
+    el.placeholder = placeholder || "搜索类目…";
+    el.oninput = function () { try { onInput(el.value); } catch (e) { } };
+    return el;
+  }
+  function star(fav) { return fav ? "★" : ""; }
+  return {
+    kw: kw, norm: norm, hit: hit, filter: filter,
+    sortCats: sortCats, filterSelect: filterSelect, mountBox: mountBox, star: star
+  };
+})();

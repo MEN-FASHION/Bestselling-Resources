@@ -344,8 +344,18 @@
     const sel = $("#rank-cat");
     if (!sel) return;
     const keep = sel.value;
-    sel.innerHTML = '<option value="">请选择类目…</option>' + rankCats.map(c => '<option value="' + escAttr(c) + '">' + escHtml(c) + '</option>').join("");
+    const CATS = window.CAT_SEARCH;
+    let favs = [];
+    try { favs = await SB.myFavCats(); } catch (e) { favs = []; }
+    const ordered = CATS ? CATS.sortCats(rankCats, favs) : rankCats.map(n => ({ name: n, fav: false }));
+    sel.innerHTML = '<option value="">请选择类目…</option>' +
+      ordered.map(o => '<option value="' + escAttr(o.name) + '">' + (o.fav ? "★ " : "") + escHtml(o.name) + '</option>').join("");
     if (keep && rankCats.indexOf(keep) >= 0) sel.value = keep;
+    // 类目很多时先搜再选；搜索只隐藏不匹配项，不动已选中的值
+    if (CATS) {
+      CATS.mountBox(sel, "cat-search-rank", "搜索类目…", (v) => { CATS.kw("rank", v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("rank"));
+    }
   }
 
   // 读取文件为 ArrayBuffer：优先标准 API，旧内核回退 FileReader

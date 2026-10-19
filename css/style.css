@@ -2159,13 +2159,21 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 
 /* ---- 多列对比池：横向并排 / 纵向共用一条滚动 / 列头吸顶 ---- */
 .rk-body { min-height: 180px; }
+/* 对比池铺满：从筛选栏下方一直铺到视口底部，且横向永不溢出（列多时等比变窄，一眼看全）
+   --rk-fill 由脚本按「池顶到视口底」的实测距离写入；取不到时回落到下面的估算值，
+   这样筛选栏高度无论怎么变（比如以后又加减筛选项），池底都不会留白或溢出页面。 */
+#rank-view .rk-body { display: flex; flex-direction: column; height: var(--rk-fill, max(420px, calc(100vh - 244px))); min-height: 0; }
 .rk-pools {
-  display: flex; gap: 12px; align-items: stretch;
-  overflow: auto; max-height: 76vh; padding: 2px 2px 14px;
+  display: flex; gap: 10px; align-items: stretch;
+  /* 横向永不出现滚动条：列宽度由 JS/CSS 等比分配，几列都能一眼看全 */
+  overflow-x: hidden; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0; max-height: none; padding: 2px 2px 8px;
 }
 .rk-pool {
-  flex: 1 1 300px; min-width: 268px; max-width: 560px; background: var(--card);
+  /* flex:1 1 0 + min-width:0 —— 无论选了几列，都按列数均分宽度、把下方铺满，绝不溢出到右侧 */
+  flex: 1 1 0; min-width: 0; max-width: none; background: var(--card);
   border: 1px solid var(--line); border-radius: 12px; padding: 10px;
+  display: flex; flex-direction: column; min-height: 0;
 }
 .rk-pool-head {
   position: sticky; top: 0; z-index: 3; background: var(--card);
@@ -2174,9 +2182,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rk-pool-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--txt); }
 .rk-pool-name .rk-n { font-size: 11.5px; font-weight: 400; color: var(--sub); }
 .rk-pool-meta { margin-top: 3px; font-size: 11.5px; color: var(--sub); line-height: 1.55; }
-.rk-pool-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.rk-pool-grid.sz-s { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.rk-pool-grid.sz-l { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rk-pool-grid { display: grid; grid-template-columns: repeat(var(--rk-r, 4), minmax(0, 1fr)); gap: 6px; align-content: start; }
+.rk-pool-grid.sz-s { --rk-r: 5; }
+.rk-pool-grid.sz-l { --rk-r: 3; }
 .rk-pool-foot { margin-top: 9px; font-size: 11px; color: var(--sub); text-align: center; }
 
 /* ---- 「展开更多」按钮（长列表分批加载；必须有可见样式，否则点了像没反应） ---- */
@@ -2247,8 +2255,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* ---- 小屏：对比池改为纵向堆叠，一屏一列便于看 ---- */
 @media (max-width: 900px) {
   #rank-view .gallery-layout { padding: 10px 10px 50px; }
+  #rank-view .rk-body { height: auto; min-height: 0; }
   .rk-pools { flex-direction: column; max-height: none; overflow: visible; }
-  .rk-pool { width: 100%; }
+  .rk-pool { width: 100%; flex: 0 0 auto; }
   .rk-pool-head { position: static; }
 }
 
@@ -2744,3 +2753,100 @@ html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
   text-underline-offset: 3px;
 }
 .link-btn:hover { opacity: .8; }
+
+
+/* ============================================================
+ * 类目搜索框 与 常用类目星标（2026-10-18 新增）
+ * 所有「需要选择类目」的入口：候选多时先搜再选；常用类目排最前并带 ★
+ * ============================================================ */
+input.cat-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 6px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  color: var(--text, #e8e8ee);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input.cat-search::placeholder { color: var(--sub, #9aa0b4); }
+input.cat-search:focus { border-color: rgba(120, 160, 255, .62); background: rgba(120, 160, 255, .10); }
+input.cat-search::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+/* 常用类目的 ★ 标记 */
+.cat-fav {
+  color: #ffc94d;
+  margin-right: 3px;
+  font-size: 11px;
+  line-height: 1;
+  flex: none;
+  text-shadow: 0 0 6px rgba(255, 201, 77, .35);
+}
+.cat-menu-item.cat-menu-fav { font-weight: 600; }
+.cat-menu-tip { padding: 7px 9px; font-size: 12px; color: var(--sub, #9aa0b4); }
+.check-item.check-stale span { opacity: .72; }
+.check-item .stale-tip { font-style: normal; color: #ff8f6b; font-size: 11px; margin-left: 3px; }
+
+/* 轻提示（浅色主题下也不要看不清） */
+body.light input.cat-search { background: #fff; color: #222; border-color: #d7dae2; }
+body.light input.cat-search::placeholder { color: #8b90a0; }
+
+/* ============================================================
+   后台「用户动向」+「版本恢复」+「用户权限表分页」（2026-10-18 新增）
+   口径：沿用站点既有暖灰白 + 古铜金基调，不引入新的视觉体系
+   ============================================================ */
+.ins-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
+.ins-toolbar .field { font-size: 12.5px; opacity: .75; }
+.ins-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line, #e7e4de); margin-bottom: 14px; flex-wrap: wrap; }
+.ins-tab { appearance: none; border: 1px solid transparent; border-bottom: none; background: transparent; color: var(--sub, #8a857c); font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 9px 9px 0 0; cursor: pointer; position: relative; top: 1px; transition: background .18s, color .18s; }
+.ins-tab:hover { color: var(--txt, #1b1b1b); background: rgba(139, 115, 85, .07); }
+.ins-tab.active { color: var(--gold, #8b7355); font-weight: 700; background: var(--card, #fff); border-color: var(--line, #e7e4de); }
+.ins-tab.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--gold, #8b7355); border-radius: 2px; }
+.ins-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0 4px; }
+.ins-col { min-width: 0; }
+.ins-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ins-tbl th, .ins-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line, #e7e4de); text-align: left; }
+.ins-tbl th { opacity: .72; font-weight: 600; white-space: nowrap; }
+.ins-tbl tbody tr:hover { background: rgba(139, 115, 85, .05); }
+.ins-bars { display: flex; flex-direction: column; gap: 7px; padding: 2px 0; }
+.ins-bar-row { display: grid; grid-template-columns: minmax(88px, 34%) 1fr auto; align-items: center; gap: 9px; font-size: 12.5px; }
+.ins-bar-lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .86; }
+.ins-bar-track { height: 9px; border-radius: 6px; background: var(--shade, #f0eee9); overflow: hidden; }
+.ins-bar-track > i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--gold, #8b7355), var(--gold2, #a68d6d)); transition: width .5s cubic-bezier(.22, .61, .36, 1); }
+.ins-bar-val { white-space: nowrap; opacity: .8; }
+.ins-probe-out:empty { display: none; }
+.ins-probe-out { margin: 2px 0 12px; padding: 10px 12px; border: 1px solid var(--line, #e7e4de); border-radius: 10px; background: rgba(139, 115, 85, .04); }
+.ins-probe-verdict { font-size: 13px; line-height: 1.7; margin-bottom: 8px; color: var(--txt, #1b1b1b); }
+.ins-probe-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; font-size: 12.5px; border-top: 1px dashed rgba(139, 115, 85, .16); }
+.ins-probe-name { flex: 0 0 auto; opacity: .8; }
+.ins-probe-state { margin-left: auto; text-align: right; white-space: nowrap; }
+.ins-probe-state.ok { color: var(--ok, #4a9c6d); }
+.ins-probe-state.bad { color: #c0392b; }
+.bkp-note { font-size: 12.5px; line-height: 1.85; color: #6f6a61; background: rgba(139, 115, 85, .05); border: 1px solid var(--line, #e7e4de); border-radius: 10px; padding: 10px 12px; margin: 8px 0 12px; }
+.bkp-note b { color: var(--txt, #1b1b1b); }
+.bkp-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
+.bkp-tag { display: inline-block; font-size: 11.5px; padding: 2px 7px; border-radius: 999px; background: rgba(139, 115, 85, .12); color: var(--gold, #8b7355); white-space: nowrap; }
+.bkp-tag-auto { background: rgba(74, 156, 109, .14); color: var(--ok, #4a9c6d); }
+.bkp-note-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-primary.small, .btn-ghost.small { padding: 4px 10px; font-size: 12px; }
+@media (max-width: 1100px) { .ins-cols { grid-template-columns: 1fr; } }
+
+/* 用户权限表分页条：吸底常驻，翻页不必再滚到列表底部 */
+.perm-pager { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; padding: 9px 12px; border: 1px solid var(--line, #e7e4de); border-radius: 10px; background: var(--card, #fff); box-shadow: 0 6px 18px rgba(60, 52, 42, .06); position: sticky; bottom: 8px; z-index: 5; }
+.perm-pager:empty { display: none; }
+.perm-pager .pp-left { font-size: 12.5px; opacity: .8; }
+.perm-pager .pp-left b { color: var(--gold, #8b7355); font-size: 14px; }
+.perm-pager .pp-mid { display: flex; align-items: center; gap: 6px; margin: 0 auto; flex-wrap: wrap; }
+.perm-pager .pp-page { font-size: 12.5px; opacity: .8; padding: 0 4px; white-space: nowrap; }
+.perm-pager .pp-page b { color: var(--gold, #8b7355); }
+.perm-pager .pp-right { display: flex; align-items: center; gap: 6px; }
+.perm-pager .pp-right .field { font-size: 12.5px; opacity: .75; margin: 0; }
+.perm-pager button[disabled] { opacity: .42; cursor: not-allowed; }
+@media (max-width: 700px) {
+  .perm-pager { position: static; justify-content: center; }
+  .perm-pager .pp-mid { margin: 0; width: 100%; justify-content: center; }
+}

@@ -49,9 +49,9 @@ function buildCtx(opts) {
 
   // ---------- A. 错误分类 ----------
   const cases = [
-    { name: "权限不足（错误码 42501）", err: { code: "42501", message: "permission denied for function admin_dashboard" }, want: "forbidden" },
-    { name: "接口不存在（错误码 PGRST202）", err: { code: "PGRST202", message: "Could not find the function public.admin_dashboard in the schema cache" }, want: "missing_function" },
-    { name: "函数不存在（文本提示）", err: { code: "", message: "function public.admin_dashboard() does not exist" }, want: "missing_function" },
+    { name: "权限不足（错误码 42501）", err: { code: "42501", message: "permission denied for function insight_front" }, want: "forbidden" },
+    { name: "接口不存在（错误码 PGRST202）", err: { code: "PGRST202", message: "Could not find the function public.insight_front in the schema cache" }, want: "missing_function" },
+    { name: "函数不存在（文本提示）", err: { code: "", message: "function public.insight_front(integer) does not exist" }, want: "missing_function" },
     { name: "登录态失效（错误码 PGRST301）", err: { code: "PGRST301", message: "JWT expired" }, want: "not_authenticated" },
     { name: "403 文本", err: { code: "", message: "403 Forbidden" }, want: "forbidden" },
     { name: "网关未收到密钥", err: { code: "", message: "No API key found in request" }, want: "no_api_key" },
@@ -70,7 +70,7 @@ function buildCtx(opts) {
     // 这些分类场景都是"已登录用户"的调用失败，因此带上有效令牌（否则会在调用前就被拦下）
     const { ctx } = buildCtx({ session: { access_token: "GOOD", expires_at: future }, rpcError: c.err });
     let diag = null, code = null;
-    try { await ctx.SB.adminDashboard(); } catch (e) { diag = e.diag; code = e.code; }
+    try { await ctx.SB.insightFront(30); } catch (e) { diag = e.diag; code = e.code; }
     check("分类：" + c.name + " → " + c.want, diag === c.want, "实际 " + diag);
     check("      错误码透传（" + (c.err.code || "空") + "）", code === (c.err.code || ""), "实际 " + code);
   }
@@ -83,7 +83,7 @@ function buildCtx(opts) {
 
 
     let diag = null;
-    try { await ctx.SB.adminDashboard(); } catch (e) { diag = e.diag; }
+    try { await ctx.SB.insightFront(30); } catch (e) { diag = e.diag; }
     check("无登录态：调用前拦截，归类为「登录态失效」而不是「没有权限」", diag === "not_authenticated", "实际 " + diag);
   }
   // 配置自检：能判断"密钥是否可用"，并能在密钥缺失/错项目时给出人话原因
@@ -102,9 +102,9 @@ function buildCtx(opts) {
   }
   // 正常返回
   {
-    const { ctx } = buildCtx({ session: { access_token: "GOOD", expires_at: Math.floor(Date.now() / 1000) + 3600 }, rpcData: { visits: { pvTotal: 3 }, meta: { role: "super_admin" } } });
-    const d = await ctx.SB.adminDashboard();
-    check("正常返回：拿到数据", !!(d && d.visits && d.visits.pvTotal === 3));
+    const { ctx } = buildCtx({ session: { access_token: "GOOD", expires_at: Math.floor(Date.now() / 1000) + 3600 }, rpcData: { actions_total: 3, uploads_total: 1 } });
+    const d = await ctx.SB.insightFront(30);
+    check("正常返回：拿到数据", !!(d && Number(d.actions_total) === 3));
   }
 
   // ---------- B. 令牌续期 ----------

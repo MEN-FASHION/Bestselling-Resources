@@ -214,11 +214,16 @@ function fmtSize(n) {
     }
     sel.innerHTML = "";
     sel.add(new Option("── 请选择类目 ──", ""));
-    // 常用类目排前面
-    if (currentFavCats.length) {
-      currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
+    // 常用类目排前面并带 ★（统一走 CAT_SEARCH，保证各入口口径一致）
+    const CATS = window.CAT_SEARCH;
+    const ordered = CATS ? CATS.sortCats(cats, currentFavCats) : cats.map(n => ({ name: n, fav: false }));
+    ordered.forEach(o => sel.add(new Option((o.fav ? "★ " : "") + o.name, o.name)));
+    sel._allCats = cats;
+    // 搜索框：只筛选项，不改变已选中的值
+    if (CATS) {
+      CATS.mountBox(sel, "cat-search-visual", "搜索类目…", (v) => { CATS.kw("visual", v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("visual"));
     }
-    cats.forEach(c => sel.add(new Option(c, c)));
   }
 
 // ================= 我的常用类目 =================
@@ -230,19 +235,55 @@ async function loadFavCats() {
     try { currentFavCats = await SB.myFavCats(); } catch (e) { currentFavCats = []; }
     // 与前台类目保持一致：候选以「前台类目 currentActiveCats」为主，勾选状态 = 前台类目
     const base = (currentActiveCats && currentActiveCats.length) ? currentActiveCats : currentFavCats;
-    const opts = new Set((window.CONFIG.CATEGORY_OPTIONS || []).concat(base));
+    const CATS = window.CAT_SEARCH;
+    // 候选 = 内置清单 + 前台类目，再扣掉「已删除清单」。
+    // 旧写法没扣，被删掉的类目（尤其是 config.js 里的内置类目）会一直留在候选里，
+    // 看起来就是"我在前台类目里删了，这边还保留着以前的类目"。
+    // catRemoved 是本文件内的全局词法变量（已删除清单）
+    const removedSet = new Set(((catRemoved || [])).map(x => String(x == null ? "" : x).trim()));
+    let optSet = (window.CONFIG.CATEGORY_OPTIONS || []).concat(base);
+    let names = [...new Set(optSet)].filter(n => n && !removedSet.has(String(n).trim()));
+    // 存量常用类目里若还留着已删除的类目，直接清掉（否则它会一直生效却看不见）
+    const stale = currentFavCats.filter(n => removedSet.has(String(n || "").trim()));
+    if (stale.length) {
+      currentFavCats = currentFavCats.filter(n => !removedSet.has(String(n || "").trim()));
+      try { await SB.updateFavCats(currentFavCats); } catch (e) { }
+    }
+    names.sort((a, b) => a.localeCompare(b, "zh"));
+    const ordered = CATS ? CATS.sortCats(names, currentFavCats) : names.map(n => ({ name: n, fav: false }));
     const box = $("#fav-list");
+    if (!box) return;
+    const kwv = CATS ? CATS.kw("fav") : "";
+    if (CATS) {
+      CATS.mountBox(box, "cat-search-fav", "搜索类目…", (v) => { CATS.kw("fav", v); loadFavCats(); });
+      const sbx = document.getElementById("cat-search-fav");
+      if (sbx && sbx.value !== kwv) sbx.value = kwv;
+    }
     box.innerHTML = "";
-    [...opts].sort((a, b) => a.localeCompare(b, "zh")).forEach(name => {
+    const list = kwv ? ordered.filter(o => CATS.hit(o.name, kwv)) : ordered;
+    list.forEach(o => {
+      const name = o.name;
       const label = document.createElement("label");
       label.className = "check-item";
-      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span>${escHtml(name)}</span>`;
+      label.innerHTML = `<input type="checkbox" value="${escAttr(name)}"> <span title="${escAttr(name)}">${o.fav ? '<span class="cat-fav" title="我的常用类目">★</span>' : ""}${escHtml(name)}</span>`;
       label.querySelector("input").checked = base.includes(name);
       label.querySelector("input").onchange = () => {
         $("#fav-save").disabled = false;
       };
       box.appendChild(label);
     });
+    if (!list.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = kwv ? "没有匹配的类目（清空搜索框可看全部）" : "暂无可选类目（前台类目里还没有类目）";
+      box.appendChild(p);
+    }
+    if (stale.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = "已自动移除 " + stale.length + " 个「已被删除」的类目：" + stale.join("、");
+      box.appendChild(p);
+    }
     $("#fav-save").disabled = true;
   }
 
@@ -304,9 +345,12 @@ async function loadCatMgmt() {
           await SB.removeCategory(name);
           /* 一次性清空图片上的该类目（数据库函数；未建库时自动分批清理，单条失败不中断） */
           const n = await SB.clearCategoryOnImages(name);
-          // 同步从常用类目移除
-          const fav = (currentFavCats || []).filter(c => c !== name);
-          try { await SB.updateFavCats(fav); currentFavCats = fav; } catch (e) {}
+          // 从「所有管理员」的常用类目里移除该类目（不只清自己这一份）
+          try {
+            await SB.clearCatFromProfiles(name);
+            const fav = (currentFavCats || []).filter(c => c !== name);
+            currentFavCats = fav;
+          } catch (e) { /* 清理失败不影响删除本身 */ }
           /* 内置候选清单里的名字会自己回来 → 记进「已删除清单」把它压住，才算是真删掉 */
           if ((window.CONFIG.CATEGORY_OPTIONS || []).includes(name) && catRemoved.indexOf(name) < 0) {
             catRemoved = catRemoved.concat([name]);
@@ -475,14 +519,24 @@ async function loadManage() {
       for (const c of usedCats) { try { catCounts[c] = await SB.countImages(c); } catch (e) { catCounts[c] = 0; } }
     } catch (e) { catCounts["全部"] = 0; }
 
-    ["全部"].concat(usedCats).forEach(c => {
+    const CATS = window.CAT_SEARCH;
+    const favSet = new Set((currentFavCats || []).map(x => String(x == null ? "" : x).trim()));
+    const ordered = CATS ? CATS.sortCats(usedCats, currentFavCats) : usedCats.map(n => ({ name: n, fav: false }));
+    const searchRows = [];
+    ["全部"].concat(ordered.map(o => o.name)).forEach(c => {
       const row = document.createElement("div");
       row.className = "cat-menu-row";
       const b = document.createElement("button");
       b.className = "cat-menu-item" + (c === currentManageCat ? " active" : "");
-      b.textContent = c + "（" + (catCounts[c] != null ? catCounts[c] : 0) + "）";
+      if (c !== "全部" && favSet.has(c)) {
+        const st = document.createElement("span");
+        st.className = "cat-fav"; st.title = "我的常用类目"; st.textContent = "★";
+        b.appendChild(st);
+      }
+      b.appendChild(document.createTextNode(c + "（" + (catCounts[c] != null ? catCounts[c] : 0) + "）"));
       b.onclick = () => { currentManageCat = c; renderManageGrid(null, usedCats); };
       row.appendChild(b);
+      searchRows.push({ name: c, row: row });
       if (c !== "全部" && !configured.has(c)) {
         const del = document.createElement("button");
         del.className = "cat-menu-del";
@@ -503,6 +557,23 @@ async function loadManage() {
       }
       menu.appendChild(row);
     });
+    // 搜索：只隐藏不匹配的行，不重新取数（避免每敲一个字都去数图片）
+    if (CATS) {
+      CATS.mountBox(menu, "cat-search-manage", "搜索类目…", (v) => {
+        CATS.kw("manage", v);
+        searchRows.forEach(it => {
+          it.row.style.display = (it.name === "全部" || !v || CATS.hit(it.name, v)) ? "" : "none";
+        });
+      });
+      const kwNow = CATS.kw("manage");
+      const box2 = document.getElementById("cat-search-manage");
+      if (box2) box2.value = kwNow;
+      if (kwNow) {
+        searchRows.forEach(it => {
+          it.row.style.display = (it.name === "全部" || CATS.hit(it.name, kwNow)) ? "" : "none";
+        });
+      }
+    }
 
     renderManageGrid(null, usedCats);
   }
@@ -1009,11 +1080,18 @@ async function refreshTagConsumers() {
 function buildDashCatFilter(imgs) {
     const sel = document.getElementById("dash-cat-filter");
     if (!sel) return;
+    const CATS = window.CAT_SEARCH;
     const cur = sel.value;
     const cats = [...new Set((imgs || []).map(i => i.category))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh"));
     if (!cats.length) { sel.innerHTML = '<option value="">全部类目</option>'; return; }
-    sel.innerHTML = '<option value="">全部类目</option>' + cats.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join("");
+    const ordered = CATS ? CATS.sortCats(cats, currentFavCats) : cats.map(n => ({ name: n, fav: false }));
+    sel.innerHTML = '<option value="">全部类目</option>' +
+      ordered.map(o => `<option value="${escAttr(o.name)}">${o.fav ? "★ " : ""}${escHtml(o.name)}</option>`).join("");
     if (cur && cats.includes(cur)) sel.value = cur; else sel.value = "";
+    if (CATS) {
+      CATS.mountBox(sel, "cat-search-dash", "搜索类目…", (v) => { CATS.kw("dash", v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("dash"));
+    }
   }
 
 async function loadDashboard() {

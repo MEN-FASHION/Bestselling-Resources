@@ -172,6 +172,20 @@ async function loadSmartAll() {
     smartTagsCache = Array.isArray(list) ? list.slice() : [];
     const box = document.querySelector("#smart-tags");
     if (!box) return;
+    // 类目维度：标签很多，加搜索框（宽松模糊），并把常用类目排到最前带 ★
+    const CATS = window.CAT_SEARCH;
+    const isCat = smartDim === "category";
+    const kwv = (isCat && CATS) ? CATS.kw("smart-cattags") : "";
+    let ordered = list.slice();
+    if (isCat && CATS) {
+      CATS.mountBox(box, "cat-search-smarttags", "搜索类目…", (v) => {
+        CATS.kw("smart-cattags", v);
+        renderSmartTags(smartTagsCache);
+      });
+      const sbx = document.getElementById("cat-search-smarttags");
+      if (sbx && sbx.value !== kwv) sbx.value = kwv;
+      ordered = CATS.sortCats(CATS.filter(list, kwv), currentFavCats);
+    }
     box.innerHTML = "";
     // 顶部标签栏「＋新增」：非渠道维度可直接新增标签并同步到标签管理
     if (smartDim && smartDim !== "channel") {
@@ -183,6 +197,13 @@ async function loadSmartAll() {
       addBtn.addEventListener("click", (e) => { e.stopPropagation(); smartAddAlbum(); });
       box.appendChild(addBtn);
     }
+    if (isCat && !list.length) {
+      const t0 = document.createElement("span");
+      t0.className = "smart-tag-empty";
+      t0.textContent = "暂无类目标签，请到「类目管理」或「标签管理」新增";
+      box.appendChild(t0);
+      return;
+    }
     if (!list.length) {
       const t = document.createElement("span");
       t.className = "smart-tag-empty";
@@ -192,10 +213,16 @@ async function loadSmartAll() {
       box.appendChild(t);
       return;
     }
-    list.forEach(tag => {
+    (isCat ? ordered : list.map(n => ({ name: n, fav: false }))).forEach(o => {
+      const tag = o.name;
       const b = document.createElement("button");
       b.className = "smart-tag" + (tag === smartTag ? " active" : "");
       b.type = "button";
+      if (o.fav) {
+        const st = document.createElement("span");
+        st.className = "cat-fav"; st.title = "我的常用类目"; st.textContent = "★";
+        b.appendChild(st);
+      }
       const nameSpan = document.createElement("span");
       nameSpan.className = "smart-tag-name";
       nameSpan.textContent = tag;
@@ -219,7 +246,9 @@ async function loadSmartAll() {
     // 末尾显示候选总数（类目维度可据此确认候选是否完整）
     const cnt = document.createElement("span");
     cnt.className = "smart-tag-empty";
-    cnt.textContent = "共 " + list.length + " 项";
+    cnt.textContent = (isCat && kwv)
+      ? ("命中 " + CATS.filter(list, kwv).length + " / 共 " + list.length + " 项")
+      : ("共 " + list.length + " 项");
     cnt.title = "当前维度的候选标签总数";
     box.appendChild(cnt);
   }
@@ -1120,10 +1149,14 @@ async function fillSmartCat() {
     try { cats = await SB.listActiveCats(); } catch (e) {}
     sel.innerHTML = "";
     sel.add(new Option("类目…", ""));
-    if (currentFavCats.length) {
-      currentFavCats.forEach(c => { if (cats.includes(c)) sel.add(new Option("★ " + c, c)); });
+    const CATS = window.CAT_SEARCH;
+    const ordered = CATS ? CATS.sortCats(cats, currentFavCats) : cats.map(n => ({ name: n, fav: false }));
+    ordered.forEach(o => sel.add(new Option((o.fav ? "★ " : "") + o.name, o.name)));
+    sel._allCats = cats;
+    if (CATS) {
+      CATS.mountBox(sel, "cat-search-smartcat", "搜索类目…", (v) => { CATS.kw("smartcat", v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("smartcat"));
     }
-    cats.forEach(c => sel.add(new Option(c, c)));
   }
 
 // 点「＋」上传入口卡片：打开文件选择

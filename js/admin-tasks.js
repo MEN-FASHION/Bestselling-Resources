@@ -233,6 +233,14 @@ function buildRecruitXlsxPreview() {
     // 批量类目工具条：一次把「全部行」统一设为某类目（单张仍可由卡片下拉单独调整）
     const tb = document.createElement("div");
     tb.className = "rg-batch-bar";
+    // 类目搜索：批量/行内/正式卡片的下拉共用同一个关键词，输入一次全缩范围
+    if (window.CAT_SEARCH) {
+      window.CAT_SEARCH.mountBox(tb, "cat-search-recruit", "搜索类目…", (v) => {
+        window.CAT_SEARCH.kw("recruit", v);
+        document.querySelectorAll(".rg-batch-sel, .rg-row-cat-sel, .rcac-cat-sel")
+          .forEach(s => window.CAT_SEARCH.filterSelect(s, v));
+      });
+    }
     const tbLabel = document.createElement("span");
     tbLabel.className = "rg-batch-label"; tbLabel.textContent = "批量类目：";
     tb.appendChild(tbLabel);
@@ -1356,12 +1364,20 @@ async function fillZoneCatSelect(zone) {
     // BESTSELLER 类目必选：默认占位提示，不提供"不限类目"免选
     opt0.value = ""; opt0.textContent = zone === "bestseller" ? "（请选择上传类目）" : "（不限类目）";
     sel.appendChild(opt0);
-    cats.forEach(c => {
-      const o = document.createElement("option");
-      o.value = c.name; o.textContent = c.name;
-      sel.appendChild(o);
+    const CATS = window.CAT_SEARCH;
+    let favs = [];
+    try { favs = await SB.myFavCats(); } catch (e) { favs = []; }
+    const ordered = CATS ? CATS.sortCats(cats.map(c => (c && c.name) || c), favs) : cats.map(c => ({ name: (c && c.name) || c, fav: false }));
+    ordered.forEach(o => {
+      const op = document.createElement("option");
+      op.value = o.name; op.textContent = (o.fav ? "★ " : "") + o.name;
+      sel.appendChild(op);
     });
     sel._allCats = cats;
+    if (CATS) {
+      CATS.mountBox(sel, "cat-search-zone-" + zone, "搜索类目…", (v) => { CATS.kw("zone-" + zone, v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("zone-" + zone));
+    }
     if (zone === "recruit") window.RECRUIT_CAT_POOL = cats.map(c => c.name).filter(Boolean);
   }
 
@@ -1397,6 +1413,12 @@ function refreshRecruitCatSelects() {
       opts.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
       sel.value = cur || "";
     });
+    // 下拉被重建后，把当前搜索关键词重新应用一遍，避免"重建后搜索失效"
+    if (window.CAT_SEARCH) {
+      const v = window.CAT_SEARCH.kw("recruit");
+      document.querySelectorAll(".rg-batch-sel, .rg-row-cat-sel, .rcac-cat-sel")
+        .forEach(s => window.CAT_SEARCH.filterSelect(s, v));
+    }
   }
 
 function loadRecruitCatPicker() {
@@ -1437,9 +1459,12 @@ async function loadZoneCatList() {
     const box = $("#zone-cat-list");
     if (!box) return;
     try { zoneCatModalCats = await SB.listZoneCats(zoneCatModalZone); } catch (e) { zoneCatModalCats = []; }
-    const kw = ($("#zone-cat-filter").value || "").trim().toLowerCase();
+    const kw = ($("#zone-cat-filter").value || "").trim();
     box.innerHTML = "";
-    const list = zoneCatModalCats.filter(c => !kw || c.name.toLowerCase().includes(kw));
+    // 宽松模糊：忽略大小写与符号、支持隔字（连衣 → 连衣裙）
+    const list = zoneCatModalCats.filter(c => !kw || (window.CAT_SEARCH
+      ? window.CAT_SEARCH.hit(c.name, kw)
+      : c.name.toLowerCase().includes(kw.toLowerCase())));
     if (!list.length) { box.innerHTML = '<p class="hint">暂无类目。</p>'; return; }
     list.forEach(c => {
       const row = document.createElement("div");

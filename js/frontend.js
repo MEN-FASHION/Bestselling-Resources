@@ -326,13 +326,15 @@
 
   async function loadGallery() {
     try {
-      const [active, used, defs] = await Promise.all([
+      const [active, used, defs, favs] = await Promise.all([
         SB.listActiveCats().catch(() => []),
         SB.listUsedCats().catch(() => []),
         SB.listTagDefs().catch(() => []),
+        (SB.myFavCats ? SB.myFavCats() : Promise.resolve([])).catch(() => []),
       ]);
       activeCats = active;
       usedCats = used;
+      favCats = (Array.isArray(favs) ? favs : []).map(c => String(c == null ? "" : c).trim()).filter(Boolean);
       styleDefs = defs.filter(d => d.type === "style").map(d => d.name);
       elementDefs = defs.filter(d => d.type === "element").map(d => d.name);
       sceneDefs = defs.filter(d => d.type === "scene").map(d => d.name);
@@ -391,14 +393,50 @@
   }
 
   // 后台新增的专区（静态菜单里没有的）也要出现在顶部菜单
+  /* 当前账号的常用类目（登录后读取，未登录为空）：用于把常用类目排到最前 */
+  let favCats = [];
+  let catMenuCats = [];   // 最近一次渲染用的类目清单（搜索时按它重绘）
+
   function renderCatMenu(cats) {
     const menu = $("#cat-menu");
+    if (!menu) return;
+    catMenuCats = (cats || []).slice();
+    const CATS = window.CAT_SEARCH;
+    // 搜索框：插在类目菜单上方，只插一次
+    if (CATS) {
+      CATS.mountBox(menu, "cat-search", "搜索类目…", (v) => { CATS.kw("front", v); renderCatMenu(catMenuCats); });
+      const sb = document.getElementById("cat-search");
+      if (sb && sb.value !== CATS.kw("front")) sb.value = CATS.kw("front");
+    }
+    const kwv = CATS ? CATS.kw("front") : "";
+    const hitList = CATS ? CATS.filter(catMenuCats, kwv) : catMenuCats.slice();
+    const ordered = CATS ? CATS.sortCats(hitList, favCats) : hitList.map(n => ({ name: n, fav: false }));
+    // 搜索时若当前选中项被过滤掉，把它钉在顶部，避免"选中了却看不见"
+    if (kwv && currentCat && currentCat !== "全部" && !ordered.some(o => o.name === currentCat)) {
+      ordered.unshift({ name: currentCat, fav: favCats.indexOf(currentCat) >= 0 });
+    }
     menu.innerHTML = "";
-    ["全部"].concat(cats).forEach(c => {
+    const all = document.createElement("button");
+    all.className = "cat-menu-item" + (currentCat === "全部" ? " active" : "");
+    all.textContent = "全部";
+    all.onclick = () => { currentCat = "全部"; renderCatMenu(catMenuCats); renderGrid("全部"); };
+    menu.appendChild(all);
+    if (!ordered.length) {
+      const tip = document.createElement("div");
+      tip.className = "cat-menu-tip";
+      tip.textContent = kwv ? "没有匹配的类目（清空搜索框可看全部）" : "暂无类目";
+      menu.appendChild(tip);
+    }
+    ordered.forEach(o => {
       const b = document.createElement("button");
-      b.className = "cat-menu-item" + (c === currentCat ? " active" : "");
-      b.textContent = c;
-      b.onclick = () => { currentCat = c; renderCatMenu(cats); renderGrid(c); };
+      b.className = "cat-menu-item" + (o.name === currentCat ? " active" : "") + (o.fav ? " cat-menu-fav" : "");
+      if (o.fav) {
+        const st = document.createElement("span");
+        st.className = "cat-fav"; st.title = "我的常用类目"; st.textContent = "★";
+        b.appendChild(st);
+      }
+      b.appendChild(document.createTextNode(o.name));
+      b.onclick = () => { currentCat = o.name; renderCatMenu(catMenuCats); renderGrid(o.name); };
       menu.appendChild(b);
     });
   }

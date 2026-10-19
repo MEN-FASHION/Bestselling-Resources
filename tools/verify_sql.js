@@ -183,10 +183,19 @@ ok(/group by coalesce\(nullif\(country/i.test(sanitize(raw).replace(/\s+/g, " ")
   "地区分布已按 coalesce(...) 表达式分组（与 select 输出一致）");
 
 console.log("\n[3] 函数授权是否配套（避免「函数在却调不动」）");
-const funcs = [...raw.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.([a-z_][a-z0-9_]*)/gi)]
-  .map((m) => m[1].toLowerCase());
-const uniq = [...new Set(funcs)];
+// 逐个函数扫描：拿到「函数名 + 返回类型」，用来判定是否为触发器函数
+const defs = [...raw.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.([a-z_][a-z0-9_]*)\s*\([^)]*\)\s*returns\s+([a-z_][a-z0-9_ ]*)/gi)]
+  .map((m) => ({ name: m[1].toLowerCase(), ret: (m[2] || "").trim().toLowerCase() }));
+const uniq = [...new Set(defs.map((d) => d.name))];
 for (const f of uniq) {
+  const ret = (defs.find((d) => d.name === f) || {}).ret || "";
+  // 触发器函数只能由触发器调用，PostgREST 无法通过接口调用它，
+  // 因此不要求（也不应该假装）授予 execute 权限。
+  if (ret === "trigger") {
+    ok(!new RegExp("grant\\s+execute\\s+on\\s+function\\s+public\\." + f + "\\s*\\(", "i").test(raw),
+      "触发器函数 " + f + " 未授予 execute（触发器函数不能被接口调用，无需授权）");
+    continue;
+  }
   const re = new RegExp("grant\\s+execute\\s+on\\s+function\\s+public\\." + f + "\\s*\\(", "i");
   ok(re.test(raw), "函数 " + f + " 有 grant execute 授权");
 }
@@ -195,7 +204,7 @@ console.log("\n[4] 版本号一致性");
 const headVer = (raw.match(/版本：\s*(20\d{6}[A-Z])/) || [])[1];
 const metaVer = (raw.match(/'script'\s*,\s*'(20\d{6}[A-Z])'/) || [])[1];
 ok(!!headVer, "脚本头部标注了版本号", headVer || "未找到");
-ok(!!metaVer, "看板返回的 meta 里标注了版本号", metaVer || "未找到");
+ok(!!metaVer, "统计接口返回的 meta 里标注了版本号", metaVer || "未找到");
 ok(headVer && metaVer && headVer === metaVer,
   "两处版本号一致", "头部 " + headVer + " / meta " + metaVer);
 

@@ -48,6 +48,8 @@ const PANEL_ZONE = {
   "marketing-card": "marketing",
   "notice-card": "notice",
   "super-card": "super",
+  "insight-card": "",       // 用户动向：任一授权专区即可（与数据看板同口径）
+  "backup-card": "super",   // 版本恢复：仅超管
 };
 
 const isSuper = () => currentRole === "super_admin";
@@ -101,7 +103,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "dash-card" || target === "rank-card") return true;
+    if (target === "dash-card" || target === "rank-card" || target === "insight-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -167,6 +169,10 @@ function switchPanel(target) {
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles(); }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
+    // 用户动向：三个子页各自懒加载（只读，不发写请求）
+    if (target === "insight-card" && typeof loadInsight === "function") { loadInsight(); }
+    // 版本恢复：列出快照（不自动生成，避免每次进入都占用一次快照名额）
+    if (target === "backup-card" && typeof loadBackupList === "function") { loadBackupList(); loadBackupPolicy(); }
   }
 
 function setPreviewTab(url) {

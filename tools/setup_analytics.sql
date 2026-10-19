@@ -1,13 +1,18 @@
 -- ============================================================
--- TREND BANK · 数据看板（访问统计 / 用户增长 / 地区分布）
--- 版本：20261016I
+-- TREND BANK · 用户动向（前台访客 + 后台管理员的行为统计）
+-- 版本：20261016P
 -- 用法：在 Supabase SQL Editor 整段执行（可重复执行，不会重复建表、不会清数据）
--- 目的：回答「用户从哪来、有多少、在干什么、干了多久」
---   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 停留时长 / IP / 国家地区）
+-- 目的：回答「他们从哪来、干了什么、干了多久」
+--   ① visit_logs：登录用户每次进入某专区的访问记录（专区 / 页面 / 来源 referrer / 停留时长 / IP / 国家地区），
+--      以及「菜单点击」事件行（event='menu'，记录哪个专区的哪个菜单被点）
 --   ② record_visit()：页面打开时登记一次访问
 --   ③ visit_ping()：页面心跳累加停留时长（含离开页面时补最后一次）
---   ④ admin_dashboard()：超管专用，一次返回全部看板指标（用户增长 / 在线时长 / 各专区 / 地区分布 / 最近活跃）
---   ⑤ is_super_admin()：超管判定（本脚本一并重建，容错大小写与首尾空格）
+--   ④ track_event()：菜单点击等行为上报（静默失败，统计不到不影响浏览）
+--   ⑤ log_admin_action()：后台写操作留痕（谁上传了多少图、删了什么、改了什么）
+--   ⑥ insight_front()：超管专用，一次返回前台访客动向（从哪来 / 谁在干什么 / 干了多久 / 专区与菜单热度 / 每日趋势）
+--   ⑦ insight_admin()：超管专用，一次返回后台管理员动向（谁上传多少图 / 操作次数 / 操作明细）
+--   ⑧ is_super_admin()：超管判定（本脚本一并重建，容错大小写与首尾空格）
+-- 注：旧的「权限管理 → 数据看板」聚合接口已随该面板一并移除，其能力并入 ⑥ / ⑦。
 -- 说明：只统计「已登录用户」的真实访问（游客不计），避免匿名流量污染口径。
 --
 -- 本版重点修复「明明是超级管理员，却提示没有查看看板的权限」：
@@ -134,152 +139,6 @@ $$;
 revoke all on function public.visit_ping(bigint, integer) from public, anon;
 grant execute on function public.visit_ping(bigint, integer) to authenticated;
 
--- ---------- 4. 数据看板（超管专用，一次返回全部指标） ----------
-drop function if exists public.admin_dashboard();
-create function public.admin_dashboard()
-returns jsonb
-language plpgsql security definer stable
-set search_path = public, pg_temp
-as $$
-declare
-  v_uid uuid;
-  v_role text;
-  v_is_super boolean;
-  -- 时间口径统一按北京时间（Asia/Shanghai）切分「今日/昨日/本周/本月」，避免按 UTC 结算导致跨天偏差
-  v_today timestamptz;
-  v_yday timestamptz;
-  v_week timestamptz;
-  v_month timestamptz;
-  v_last_month timestamptz;
-  v jsonb;
-begin
-  -- 超管判定：直接读自己的 profiles 角色并做容错归一化（不依赖外部函数是否存在）
-  select auth.uid() into v_uid;
-  if v_uid is null then
-    raise exception 'not authenticated';
-  end if;
-  select p.role into v_role from public.profiles p where p.user_id = v_uid;
-  v_is_super := (lower(btrim(coalesce(v_role, ''))) = 'super_admin');
-  if not v_is_super then
-    return null;  -- 非超管返回 null（不给任何数据）
-  end if;
-
-  v_today := (((now() at time zone 'Asia/Shanghai')::date)::timestamp at time zone 'Asia/Shanghai');
-  v_yday := v_today - interval '1 day';
-  v_week := ((( (now() at time zone 'Asia/Shanghai')::date
-               - extract(dow from (now() at time zone 'Asia/Shanghai')::date)::int ))::timestamp at time zone 'Asia/Shanghai');
-  v_month := ((date_trunc('month', (now() at time zone 'Asia/Shanghai')::date))::timestamp at time zone 'Asia/Shanghai');
-  v_last_month := (((date_trunc('month', (now() at time zone 'Asia/Shanghai')::date)) - interval '1 month')::timestamp at time zone 'Asia/Shanghai');
-
-  select jsonb_build_object(
-    -- ===== 本次调用元信息（便于确认"服务端认为你是谁"） =====
-    'meta', jsonb_build_object(
-      'script', '20261016I',
-      'uid', v_uid::text,
-      'role', coalesce(v_role, ''),
-      'isSuper', true
-    ),
-    -- ===== 用户增长 =====
-    'users', (
-      select jsonb_build_object(
-        'total',      count(*)::int,
-        'newToday',   count(*) filter (where created_at >= v_today)::int,
-        'newYday',    count(*) filter (where created_at >= v_yday and created_at < v_today)::int,
-        'newWeek',    count(*) filter (where created_at >= v_week)::int,
-        'newMonth',   count(*) filter (where created_at >= v_month)::int,
-        'newLastMonth', count(*) filter (where created_at >= v_last_month and created_at < v_month)::int,
-        'newPrev7',   count(*) filter (where created_at >= v_today - interval '7 day' and created_at < v_today)::int
-      )
-      from public.profiles
-    ),
-    -- ===== 访问 / 在线时长 =====
-    'visits', (
-      select jsonb_build_object(
-        'pvToday',  count(*) filter (where started_at >= v_today)::int,
-        'pvYday',   count(*) filter (where started_at >= v_yday and started_at < v_today)::int,
-        'pvTotal',  count(*)::int,
-        'uvToday',  count(distinct user_id) filter (where started_at >= v_today)::int,
-        'uvYday',   count(distinct user_id) filter (where started_at >= v_yday and started_at < v_today)::int,
-        'uvTotal',  count(distinct user_id)::int,
-        'durToday', coalesce(sum(duration_sec) filter (where started_at >= v_today), 0)::int,
-        'durYday',  coalesce(sum(duration_sec) filter (where started_at >= v_yday and started_at < v_today), 0)::int,
-        'durTotal', coalesce(sum(duration_sec), 0)::int,
-        'durAvg',   coalesce(round(avg(nullif(duration_sec, 0))), 0)::int
-      )
-      from public.visit_logs
-    ),
-    -- ===== 各专区：今日/累计 访问量 + 停留时长（回答"在干什么、干了多久"） =====
-    'zones', coalesce((
-      select jsonb_agg(x order by (x->>'pvTotal')::int desc)
-      from (
-        select jsonb_build_object(
-          'zone',     zone,
-          'pvToday',  count(*) filter (where started_at >= v_today)::int,
-          'pvTotal',  count(*)::int,
-          'uvTotal',  count(distinct user_id)::int,
-          'uvToday',  count(distinct user_id) filter (where started_at >= v_today)::int,
-          'durToday', coalesce(sum(duration_sec) filter (where started_at >= v_today), 0)::int,
-          'durTotal', coalesce(sum(duration_sec), 0)::int
-        ) as x
-        from public.visit_logs
-        where zone is not null
-        group by zone
-      ) t
-    ), '[]'::jsonb),
-    -- ===== 地区分布（按 IP 解析出的国家/省州聚合；回答"用户从哪来"） =====
-    'regions', coalesce((
-      select jsonb_agg(x order by (x->>'pvTotal')::int desc)
-      from (
-        select jsonb_build_object(
-          'country', coalesce(nullif(country, ''), '未知'),
-          'region',  coalesce(nullif(region, ''), nullif(country, ''), '未知'),
-          'city',    coalesce(nullif(city, ''), ''),
-          'users',   count(distinct user_id)::int,
-          'pvToday', count(*) filter (where started_at >= v_today)::int,
-          'pvTotal', count(*)::int,
-          'durTotal', coalesce(sum(duration_sec), 0)::int
-        ) as x
-        from public.visit_logs
-        -- ⚠️ 必须按「表达式」分组，不能用 group by 1,2,3：
-        -- 本子查询的输出只有一列（jsonb_build_object(...) as x），
-        -- 而 group by 序号指的是「输出列的位置」。group by 2 会因为「select 列表里没有第 2 列」
-        -- 直接报错 42803（GROUP BY position 2 is not in select list）—— 而且每次调用都会报，
-        -- 导致看板接口永远 400、页面读不到任何数据。
-        -- 该错误只在函数被调用（首次执行）时抛出，所以"函数是否存在"的自检会显示为已建好，掩盖这个问题。
-        group by coalesce(nullif(country, ''), '未知'),
-                 coalesce(nullif(region, ''), nullif(country, ''), '未知'),
-                 coalesce(nullif(city, ''), '')
-      ) t
-    ), '[]'::jsonb),
-    -- ===== 最近活跃（谁、在哪个专区、停留多久、从哪个地区来） =====
-    'recent', coalesce((
-      select jsonb_agg(x order by (x->>'startedAt') desc)
-      from (
-        select jsonb_build_object(
-          'email',    coalesce(nullif(l.email, ''), '（未知用户）'),
-          'zone',     coalesce(l.zone, ''),
-          'country',  coalesce(nullif(l.country, ''), ''),
-          'region',   coalesce(nullif(l.region, ''), ''),
-          'city',     coalesce(nullif(l.city, ''), ''),
-          'ip',       coalesce(l.ip, ''),
-          'duration', l.duration_sec,
-          'startedAt', l.started_at
-        ) as x
-        from public.visit_logs l
-        order by l.started_at desc
-        limit 20
-      ) t
-    ), '[]'::jsonb),
-    'serverTime', now()
-  ) into v;
-
-  return v;
-end;
-$$;
--- 授权：只有登录用户可调用（匿名用户不可调用；非超管调用会返回空）
-revoke all on function public.admin_dashboard() from public, anon;
-grant execute on function public.admin_dashboard() to authenticated;
-
 -- ---------- 5. 让新函数立刻对接口生效 + 自检 ----------
 -- 新建或修改函数后，接口层的结构缓存可能还要一会儿才认识这些函数；
 -- 这里主动通知它重载，避免出现「数据库里明明有函数、接口却报找不到」的情况。
@@ -296,9 +155,21 @@ select '停留时长 visit_ping',
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'visit_ping')
 union all
-select '看板接口 admin_dashboard',
+select '动向统计 insight_front',
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-          where n.nspname = 'public' and p.proname = 'admin_dashboard')
+          where n.nspname = 'public' and p.proname = 'insight_front')
+union all
+select '管理员动向 insight_admin',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'insight_admin')
+union all
+select '行为上报 track_event',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'track_event')
+union all
+select '操作留痕 log_admin_action',
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'log_admin_action')
 union all
 select '超管判定 is_super_admin',
   exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -307,15 +178,520 @@ select '超管判定 is_super_admin',
 -- 自检 ②：接口授权 / 超管账号 / 现有数据量（期望：登录用户可调用 = true，匿名可调用 = false）
 -- 说明：SQL Editor 里没有浏览器登录态，所以 auth.uid() 为空属正常，不影响下面这些检查。
 select
-  has_function_privilege('authenticated', 'public.admin_dashboard()', 'EXECUTE') as "登录用户可调用看板",
-  has_function_privilege('anon', 'public.admin_dashboard()', 'EXECUTE') as "匿名可调用看板_应为false",
+  has_function_privilege('authenticated', 'public.insight_front(integer)', 'EXECUTE') as "登录用户可调用前台动向",
+  has_function_privilege('anon', 'public.insight_front(integer)', 'EXECUTE') as "匿名可调用前台动向_应为false",
+  has_function_privilege('authenticated', 'public.insight_admin(integer)', 'EXECUTE') as "登录用户可调用管理员动向",
+  has_function_privilege('authenticated', 'public.track_event(text, text, text, text)', 'EXECUTE') as "登录用户可上报行为",
+  has_function_privilege('authenticated', 'public.log_admin_action(text, text, jsonb)', 'EXECUTE') as "登录用户可写操作留痕",
   (select count(*) from public.visit_logs) as "已有访问记录数",
   (select count(*) from public.profiles where lower(btrim(coalesce(role, ''))) = 'super_admin') as "超管账号数",
   (select string_agg(coalesce(email, '(无邮箱)') || ' → ' || coalesce(role, '(空)'), '  |  ' order by email) from public.profiles) as "全部账号与角色";
 
 -- ============================================================
--- 执行完成后：前台各页面打开时会自动登记访问（仅登录用户），
--- 超管后台「权限管理 → 数据看板」即可看到今天谁来了、从哪来、看了哪个专区、待了多久。
--- 若执行后后台仍提示"没有看板权限"，请点后台的「看板自检」按钮，
--- 并用浏览器 F12 → Console 查看「[看板诊断]」开头的记录（里面含接口返回的真实错误码）。
+-- 执行完成后：前台各页面打开时会自动登记访问（仅登录用户），点击菜单会上报菜单事件，
+-- 后台的每一次写操作会留痕。超管后台「⑬ 用户动向」即可看到：
+--   前台用户 = 从哪来 / 在哪个专区待了多久 / 最近访问明细
+--   专区 · 菜单热度 = 哪些专区、哪些菜单被点最多、浏览时间最长
+--   后台管理员 = 谁上传了多少图、做了什么操作
+-- 若执行后后台仍提示"没有执行授权"，请在「用户动向」面板点「重新执行自检」，
+-- 页面会直接给出是哪一层断了（配置 / 登录态 / 最小读写 / 动向接口）。
 -- ============================================================
+-- ============================================================
+-- 5. 用户动向（前台访客 + 后台管理员）—— 2026-10-18 扩展
+--    本段可重复执行（幂等）。
+-- ============================================================
+
+-- ---------- 5.1 访问记录补充三列：来源 / 事件 / 菜单 ----------
+alter table public.visit_logs add column if not exists referrer text;   -- 从哪来（外链来源，空=直接进入）
+alter table public.visit_logs add column if not exists event text;      -- 行为类型：空=页面浏览 / menu=菜单点击
+alter table public.visit_logs add column if not exists menu text;       -- 被点击的菜单名
+
+create index if not exists visit_logs_event_idx on public.visit_logs (event);
+create index if not exists visit_logs_menu_idx on public.visit_logs (menu);
+
+-- ---------- 5.2 record_visit：增补「来源」参数 ----------
+-- 末参带默认值：老的 6 参调用方式依然可用（前端未刷新时也不会报错）。
+create or replace function public.record_visit(
+  p_zone text, p_path text, p_ip text, p_country text, p_region text, p_city text,
+  p_referrer text default ''
+)
+returns bigint
+language plpgsql security definer volatile
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_email text;
+  v_id bigint;
+begin
+  select auth.uid() into v_uid;
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  select p.email into v_email from public.profiles p where p.user_id = v_uid;
+  insert into public.visit_logs (user_id, email, zone, path, ip, country, region, city, referrer)
+  values (
+    v_uid, v_email,
+    nullif(trim(coalesce(p_zone, '')), ''),
+    nullif(trim(coalesce(p_path, '')), ''),
+    nullif(trim(coalesce(p_ip, '')), ''),
+    nullif(trim(coalesce(p_country, '')), ''),
+    nullif(trim(coalesce(p_region, '')), ''),
+    nullif(trim(coalesce(p_city, '')), ''),
+    nullif(trim(coalesce(p_referrer, '')), '')
+  )
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+-- 新签名建好之后再删掉旧的 6 参版本，避免出现「函数不存在」的空窗
+drop function if exists public.record_visit(text, text, text, text, text, text);
+revoke all on function public.record_visit(text, text, text, text, text, text, text) from public, anon;
+grant execute on function public.record_visit(text, text, text, text, text, text, text) to authenticated;
+
+-- ---------- 5.3 菜单点击等事件上报 ----------
+create function public.track_event(
+  p_event text, p_zone text default '', p_menu text default '', p_path text default ''
+)
+returns bigint
+language plpgsql security definer volatile
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_email text;
+  v_ev text;
+  v_id bigint;
+begin
+  select auth.uid() into v_uid;
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  v_ev := nullif(trim(coalesce(p_event, '')), '');
+  if v_ev is null then
+    raise exception 'event required';
+  end if;
+  select p.email into v_email from public.profiles p where p.user_id = v_uid;
+  insert into public.visit_logs (user_id, email, zone, path, event, menu)
+  values (
+    v_uid, v_email,
+    nullif(trim(coalesce(p_zone, '')), ''),
+    nullif(trim(coalesce(p_path, '')), ''),
+    left(v_ev, 40),
+    nullif(left(trim(coalesce(p_menu, '')), 60), '')
+  )
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+revoke all on function public.track_event(text, text, text, text) from public, anon;
+grant execute on function public.track_event(text, text, text, text) to authenticated;
+
+-- ---------- 5.4 后台管理员操作日志 ----------
+create table if not exists public.admin_actions (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  user_id uuid references auth.users (id) on delete set null,
+  email text,
+  action text not null,                       -- 如 image_upload / notice_publish / perm_update
+  target text,                                -- 作用对象（类目名 / 期次 / 用户邮箱 …）
+  detail jsonb not null default '{}'::jsonb
+);
+create index if not exists admin_actions_created_idx on public.admin_actions (created_at desc);
+create index if not exists admin_actions_user_idx on public.admin_actions (user_id);
+
+alter table public.admin_actions enable row level security;
+
+-- 本人只能写自己的操作记录；读取只走下面的超管函数（不建 select 策略）
+drop policy if exists "insert own admin action" on public.admin_actions;
+create policy "insert own admin action"
+  on public.admin_actions for insert to authenticated
+  with check (user_id = auth.uid());
+
+create or replace function public.log_admin_action(
+  p_action text, p_target text default '', p_detail jsonb default '{}'::jsonb
+)
+returns bigint
+language plpgsql security definer volatile
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_email text;
+  v_role text;
+  v_act text;
+  v_id bigint;
+begin
+  select auth.uid() into v_uid;
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  select p.email, p.role into v_email, v_role from public.profiles p where p.user_id = v_uid;
+  -- 只有管理员/超管才是「后台操作」，访客不算
+  if coalesce(v_role, 'visitor') not in ('admin', 'super_admin') then
+    raise exception 'not allowed';
+  end if;
+  v_act := nullif(trim(coalesce(p_action, '')), '');
+  if v_act is null then
+    raise exception 'action required';
+  end if;
+  insert into public.admin_actions (user_id, email, action, target, detail)
+  values (
+    v_uid, v_email, left(v_act, 60),
+    nullif(left(trim(coalesce(p_target, '')), 200), ''),
+    coalesce(p_detail, '{}'::jsonb)
+  )
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+revoke all on function public.log_admin_action(text, text, jsonb) from public, anon;
+grant execute on function public.log_admin_action(text, text, jsonb) to authenticated;
+
+-- ---------- 5.5 前台用户动向汇总（超管专用） ----------
+create function public.insight_front(p_days integer default 30)
+returns jsonb
+language plpgsql security definer stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_days integer;
+  v_from timestamptz;
+  v_out jsonb;
+begin
+  if not public.is_super_admin() then
+    raise exception 'not allowed';
+  end if;
+  v_days := greatest(1, least(coalesce(p_days, 30), 365));
+  v_from := now() - make_interval(days => v_days);
+
+  with v as (
+    select * from public.visit_logs
+    where started_at >= v_from and coalesce(event, '') = ''
+  )
+  select jsonb_build_object(
+    'script', '20261016P',
+    'days', v_days,
+    'from', v_from,
+    'totals', (
+      select jsonb_build_object(
+        'views', count(*),
+        'users', count(distinct user_id),
+        'sec', coalesce(sum(duration_sec), 0),
+        'avg_sec', coalesce(round(avg(duration_sec)), 0)
+      ) from v
+    ),
+    'visitors', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select user_id, max(email) as email, count(*) as visits,
+               coalesce(sum(duration_sec), 0) as sec,
+               coalesce(round(avg(duration_sec)), 0) as avg_sec,
+               count(distinct zone) as zones,
+               max(started_at) as last_at,
+               (array_agg(coalesce(nullif(country, ''), '') order by started_at))[1] as country,
+               (array_agg(coalesce(nullif(referrer, ''), '') order by started_at))[1] as first_referrer
+        from v
+        group by user_id
+        order by coalesce(sum(duration_sec), 0) desc, count(*) desc
+        limit 200
+      ) x
+    ),
+    'sources', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(nullif(referrer, ''), '(直接进入)') as referrer,
+               count(*) as n, count(distinct user_id) as users
+        from v
+        group by coalesce(nullif(referrer, ''), '(直接进入)')
+        order by count(*) desc
+        limit 30
+      ) x
+    ),
+    'countries', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(nullif(country, ''), '(未知)') as country,
+               count(*) as n, count(distinct user_id) as users
+        from v
+        group by coalesce(nullif(country, ''), '(未知)')
+        order by count(*) desc
+        limit 30
+      ) x
+    ),
+    'zones', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select zone, count(*) as views, count(distinct user_id) as users,
+               coalesce(sum(duration_sec), 0) as sec,
+               coalesce(round(avg(duration_sec)), 0) as avg_sec
+        from v
+        where coalesce(zone, '') <> ''
+        group by zone
+        order by count(*) desc
+      ) x
+    ),
+    'menus', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(zone, '') as zone, menu, count(*) as n, count(distinct user_id) as users
+        from public.visit_logs
+        where started_at >= v_from and event = 'menu' and coalesce(menu, '') <> ''
+        group by coalesce(zone, ''), menu
+        order by count(*) desc
+        limit 120
+      ) x
+    ),
+    'daily', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select to_char(date_trunc('day', started_at), 'YYYY-MM-DD') as d,
+               count(*) as views, count(distinct user_id) as users,
+               coalesce(sum(duration_sec), 0) as sec
+        from v
+        group by date_trunc('day', started_at)
+        order by date_trunc('day', started_at)
+      ) x
+    ),
+    'recent', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select jsonb_build_object(
+                 'at', started_at, 'email', email, 'zone', zone, 'path', path,
+                 'referrer', referrer, 'country', country, 'sec', duration_sec
+               ) as x
+        from v
+        order by started_at desc
+        limit 80
+      ) y
+    )
+  ) into v_out;
+
+  return v_out;
+end;
+$$;
+revoke all on function public.insight_front(integer) from public, anon;
+grant execute on function public.insight_front(integer) to authenticated;
+
+-- ---------- 5.6 后台管理员动向汇总（超管专用） ----------
+create function public.insight_admin(p_days integer default 30)
+returns jsonb
+language plpgsql security definer stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_days integer;
+  v_from timestamptz;
+  v_out jsonb;
+begin
+  if not public.is_super_admin() then
+    raise exception 'not allowed';
+  end if;
+  v_days := greatest(1, least(coalesce(p_days, 30), 365));
+  v_from := now() - make_interval(days => v_days);
+
+  select jsonb_build_object(
+    'days', v_days,
+    'from', v_from,
+    'uploads', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(p.email, i.uploaded_by::text, '(未知)') as email, count(*) as n
+        from public.images i
+        left join public.profiles p on p.user_id = i.uploaded_by
+        where i.created_at >= v_from
+        group by coalesce(p.email, i.uploaded_by::text, '(未知)')
+        order by count(*) desc
+        limit 50
+      ) x
+    ),
+    'uploads_total', (
+      select count(*) from public.images i where i.created_at >= v_from
+    ),
+    'actions', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(a.email, a.user_id::text, '(未知)') as email, a.action,
+               count(*) as n, max(a.created_at) as last_at
+        from public.admin_actions a
+        where a.created_at >= v_from
+        group by coalesce(a.email, a.user_id::text, '(未知)'), a.action
+        order by count(*) desc
+        limit 200
+      ) x
+    ),
+    'by_user', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select coalesce(a.email, a.user_id::text, '(未知)') as email,
+               count(*) as n, max(a.created_at) as last_at,
+               jsonb_object_agg(a.action, a.c) as types
+        from (
+          select email, user_id, action, count(*) as c
+          from public.admin_actions
+          where created_at >= v_from
+          group by email, user_id, action
+        ) a
+        group by coalesce(a.email, a.user_id::text, '(未知)')
+        order by count(*) desc
+        limit 50
+      ) x
+    ),
+    'recent', (
+      select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+        select jsonb_build_object(
+                 'at', a.created_at, 'email', a.email, 'action', a.action,
+                 'target', a.target, 'detail', a.detail
+               ) as x
+        from public.admin_actions a
+        order by a.created_at desc
+        limit 100
+      ) y
+    ),
+    'actions_total', (
+      select count(*) from public.admin_actions a where a.created_at >= v_from
+    )
+  ) into v_out;
+
+  return v_out;
+end;
+$$;
+revoke all on function public.insight_admin(integer) from public, anon;
+grant execute on function public.insight_admin(integer) to authenticated;
+
+-- ============================================================
+-- 5.7 管理员操作留痕（数据库侧自动记录，覆盖所有写入路径）
+-- ------------------------------------------------------------
+-- 为什么放在数据库而不是前端逐个埋点：后台的写操作分散在十几个面板里
+-- （上传、批量删除、批量打标、类目/标签、周次/站点、导入、权限、公告、营销日历…），
+-- 前端埋点必然漏记；这里用「语句级触发器」统一记录，任何面板、任何写法都跑不掉。
+-- 口径：
+--   * 只有 admin / super_admin 的写入才记（与 log_admin_action 一致，访客不记）；
+--   * 一条写入语句记一条（detail.n = 本次影响行数），避免批量上传刷出成千上万条日志；
+--   * 只记业务数据表；访问日志、操作日志自身、快照表、登录日志不记；
+--   * 触发器为 security definer，不受 RLS 影响，也不会因为记日志失败而挡住业务写入。
+-- ============================================================
+
+create or replace function public.log_admin_tbl()
+returns trigger
+language plpgsql security definer volatile
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_role text;
+  v_email text;
+  v_n bigint := 0;
+  v_lab text;
+begin
+  select auth.uid() into v_uid;
+  if v_uid is null then return null; end if;
+  select p.role, p.email into v_role, v_email from public.profiles p where p.user_id = v_uid;
+  -- 只有管理员/超管算「后台操作」，访客不算
+  if v_role is null or v_role not in ('admin', 'super_admin') then return null; end if;
+  v_lab := coalesce(tg_argv[0], tg_table_name);
+  begin
+    if tg_op = 'INSERT' then select count(*) into v_n from newtab;
+    elsif tg_op = 'DELETE' then select count(*) into v_n from oldtab;
+    else select count(*) into v_n from newtab;
+    end if;
+  exception when others then v_n := 0;
+  end;
+  if v_n = 0 then return null; end if;
+  insert into public.admin_actions (user_id, email, action, target, detail)
+  values (
+    v_uid, coalesce(v_email, ''),
+    case tg_op when 'INSERT' then '新增' when 'UPDATE' then '修改' else '删除' end || v_lab,
+    v_lab,
+    jsonb_build_object('tbl', tg_table_name, 'op', lower(tg_op), 'n', v_n)
+  );
+  return null;
+end;
+$$;
+
+-- 账号资料单独处理：只看真正变了的字段，避免管理员改自己的「常用类目」也刷出一条日志
+create or replace function public.log_admin_profile()
+returns trigger
+language plpgsql security definer volatile
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_role text;
+  v_email text;
+  v_n bigint := 0;
+begin
+  select auth.uid() into v_uid;
+  if v_uid is null then return null; end if;
+  select p.role, p.email into v_role, v_email from public.profiles p where p.user_id = v_uid;
+  if v_role is null or v_role not in ('admin', 'super_admin') then return null; end if;
+  begin
+    if tg_op = 'INSERT' then
+      select count(*) into v_n from newtab where role in ('admin', 'super_admin');
+    elsif tg_op = 'DELETE' then
+      select count(*) into v_n from oldtab where role in ('admin', 'super_admin');
+    else
+      select count(*) into v_n
+      from newtab n join oldtab o using (user_id)
+      where n.role is distinct from o.role
+         or n.manage_zones is distinct from o.manage_zones
+         or n.frontend_zones is distinct from o.frontend_zones
+         or n.user_tag is distinct from o.user_tag
+         or n.user_note is distinct from o.user_note;
+    end if;
+  exception when others then v_n := 0;
+  end;
+  if v_n = 0 then return null; end if;
+  insert into public.admin_actions (user_id, email, action, target, detail)
+  values (
+    v_uid, coalesce(v_email, ''), '调整账号权限', '账号',
+    jsonb_build_object('tbl', 'profiles', 'op', lower(tg_op), 'n', v_n)
+  );
+  return null;
+end;
+$$;
+
+-- 逐个挂触发器：表不存在（未启用该模块）就跳过；单个失败只提示、不中断整段脚本
+do $$
+declare
+  t record;
+begin
+  for t in
+    select * from (values
+      ('images', '图片'),
+      ('categories', '类目'),
+      ('tag_defs', '标签'),
+      ('site_settings', '站点设置'),
+      ('trends', '趋势'),
+      ('announcements', '公告'),
+      ('recruit_tasks', '招品任务'),
+      ('recruit_submissions', '回品提交'),
+      ('recruit_categories', '招品类目'),
+      ('bestseller_tasks', 'BESTSELLER任务'),
+      ('bestseller_submissions', 'BESTSELLER提交'),
+      ('bestseller_categories', 'BESTSELLER类目'),
+      ('zone_permissions', '专区权限'),
+      ('marketing_nodes', '营销日历节点'),
+      ('marketing_articles', '营销日历文章'),
+      ('rank_sites', '榜单站点'),
+      ('rank_batches', '榜单期次'),
+      ('rank_items', '榜单条目')
+    ) as x(tbl, lab)
+  loop
+    if to_regclass('public.' || t.tbl) is null then
+      raise notice '操作留痕：跳过（表不存在） %', t.tbl;
+      continue;
+    end if;
+    execute format('drop trigger if exists trg_adminlog on public.%I', t.tbl);
+    begin
+      execute format(
+        'create trigger trg_adminlog after insert or update or delete on public.%I '
+        'referencing old table as oldtab new table as newtab '
+        'for each statement execute function public.log_admin_tbl(%L)',
+        t.tbl, t.lab);
+    exception when others then
+      raise notice '操作留痕：跳过 %（%）', t.tbl, sqlerrm;
+    end;
+  end loop;
+
+  if to_regclass('public.profiles') is not null then
+    execute 'drop trigger if exists trg_adminlog on public.profiles';
+    begin
+      execute 'create trigger trg_adminlog after insert or update or delete on public.profiles '
+           || 'referencing old table as oldtab new table as newtab '
+           || 'for each statement execute function public.log_admin_profile()';
+    exception when others then
+      raise notice '操作留痕：跳过 profiles（%）', sqlerrm;
+    end;
+  end if;
+end $$;

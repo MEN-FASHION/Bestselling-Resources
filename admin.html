@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261016M">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261016M">
+<link rel="stylesheet" href="css/style.css?v=20261016P">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261016P">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -132,6 +132,8 @@
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
+          <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
+          <a class="nav-item" data-target="backup-card" data-super="1">版本恢复</a>
           <a class="nav-item" data-target="super-card" data-super="1">超管权限</a>
         </nav>
       </aside>
@@ -401,29 +403,6 @@
         <div class="super-sub" data-sv="sv-2" style="display:none;">
           <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
 
-          <!-- 数据看板：用户从哪来、有多少、在干什么、干了多久（只统计已登录用户） -->
-          <div id="perm-dash" class="dash-box hidden">
-            <div class="dash-head">
-              <h4 class="dash-title">数据看板 <span class="hint-inline">（只统计已登录用户；今日 / 昨日 / 本周 / 本月按北京时间结算）</span></h4>
-              <button id="perm-dash-refresh" class="btn-ghost small" type="button">刷新</button>
-              <button id="perm-dash-check" class="btn-ghost small" type="button">看板自检</button>
-              <span id="perm-dash-updated" class="hint-inline"></span>
-            </div>
-            <div id="dash-cards" class="dash-cards"><span class="hint">加载中…</span></div>
-            <div id="perm-dash-note" class="dash-note"></div>
-            <div class="dash-cols">
-              <div class="dash-col">
-                <h5 class="dash-sub">各专区 · 访问量与停留时长 <span class="hint-inline">（在干什么、干了多久）</span></h5>
-                <div id="dash-zones" class="dash-table-wrap"></div>
-              </div>
-              <div class="dash-col">
-                <h5 class="dash-sub">用户地区分布 <span class="hint-inline">（按网络 IP 解析 · 从哪来）</span></h5>
-                <div id="dash-regions" class="dash-table-wrap"></div>
-              </div>
-            </div>
-            <h5 class="dash-sub">最近活跃 <span class="hint-inline">（最近 20 次访问：谁、在哪个专区、从哪来、待了多久）</span></h5>
-            <div id="dash-recent" class="dash-table-wrap"></div>
-          </div>
           <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【用户】【角色】【标签】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
 
           <!-- 按标签筛选：权限表顶部直接按用户标签筛选 -->
@@ -490,6 +469,9 @@
               <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="11" class="hint">加载中…</td></tr></tbody>
             </table>
           </div>
+
+          <!-- 分页条：用户多了以后不再从头拉到尾 -->
+          <div class="perm-pager" id="perm-pager"></div>
 
           <hr class="tag-sub-hr">
           <div class="perm-zone" style="margin-top:12px">
@@ -1012,6 +994,99 @@
         </section>
       </div>
 
+      <div class="panel-card hidden" id="insight-card">
+        <h2>⑬ 用户动向 <span class="hint-inline">（超级管理员 · 前台访客 + 后台管理员都在干什么）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="ins-toolbar">
+          <label class="field">时间范围</label>
+          <select id="ins-days" class="input" style="max-width:150px">
+            <option value="7">最近 7 天</option>
+            <option value="30" selected>最近 30 天</option>
+            <option value="90">最近 90 天</option>
+            <option value="365">最近一年</option>
+          </select>
+          <button id="ins-refresh" class="btn-primary" type="button">刷新</button>
+          <button id="ins-probe" class="btn-ghost" type="button">重新执行自检</button>
+          <span id="ins-updated" class="hint-inline"></span>
+          <span class="hint-inline">（只统计已登录用户；前台时长按页面停留累计，切到后台标签页时暂停累加）</span>
+        </div>
+
+        <div id="ins-probe-out" class="ins-probe-out"></div>
+
+        <div class="ins-tabs" id="ins-tabs">
+          <button class="ins-tab active" data-iv="iv-1" type="button">前台用户</button>
+          <button class="ins-tab" data-iv="iv-2" type="button">专区 · 菜单热度</button>
+          <button class="ins-tab" data-iv="iv-3" type="button">后台管理员</button>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-1">
+          <div id="ins-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">从哪来 <span class="hint-inline">（进入站点时的来源；直接进入记为「直接进入」）</span></h5>
+              <div id="ins-sources" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">地区分布 <span class="hint-inline">（按网络 IP 解析）</span></h5>
+              <div id="ins-regions" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">访客清单 <span class="hint-inline">（谁 · 来了几次 · 看了几个专区 · 待了多久 · 最近一次）</span></h5>
+          <div id="ins-visitors" class="dash-table-wrap"></div>
+          <h5 class="dash-sub">最近访问明细 <span class="hint-inline">（最近 80 次：谁、在哪个专区、从哪来、待了多久）</span></h5>
+          <div id="ins-recent" class="dash-table-wrap"></div>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-2" style="display:none">
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">专区热度 <span class="hint-inline">（按浏览最多排序 · 含停留时长）</span></h5>
+              <div id="ins-zones" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">菜单点击 <span class="hint-inline">（哪些专区的哪个菜单被点得最多）</span></h5>
+              <div id="ins-menus" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">每日趋势 <span class="hint-inline">（近 N 天：浏览次数 / 访客数 / 总时长）</span></h5>
+          <div id="ins-daily" class="dash-table-wrap"></div>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-3" style="display:none">
+          <div id="ins-admin-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">上传图片数 <span class="hint-inline">（按上传人统计，时间范围内）</span></h5>
+              <div id="ins-uploads" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">管理员操作 <span class="hint-inline">（谁做了什么 · 次数 · 最近一次）</span></h5>
+              <div id="ins-admin-by-user" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">操作明细 <span class="hint-inline">（最近 100 条后台操作）</span></h5>
+          <div id="ins-admin-recent" class="dash-table-wrap"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="backup-card">
+        <h2>⑭ 版本恢复 <span class="hint-inline">（超级管理员 · 生成数据快照，误删误改可一键回滚）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="bkp-note">
+          <b>它能保护什么：</b>站内核心数据表整体存成一份快照 —— 图片记录（含所属类目 / 各维度标签 / 上传人 / 首图链接）、类目、标签定义、榜单（站点 / 批次 / 条目）、公告、营销日历、招品回品与 BESTSELLER 类目、前台访问与专区设置、权限配置。<br>
+          <b>它不能保护什么：</b>快照存的是<b>数据库里的记录</b>，<b>不含图片文件本身</b>。图片文件存在对象存储上，本功能不复制文件；若文件已被物理删除，恢复只能找回「记录」而找不回文件。<br>
+          <b>恢复的安全性：</b>点恢复时，系统会<b>先把当前状态自动备份一份</b>（列表里标记为「恢复前自动备份」），整个恢复在一个事务里执行 —— 任何一步失败都会全部回滚，原数据不受影响。恢复后若发现问题，用那份自动备份再恢复一次即可退回。<br>
+          <b>上限：</b>最多保留最近 10 份快照，超出自动清理最早的。
+        </div>
+        <div class="bkp-actions">
+          <input id="bkp-note-input" class="input" placeholder="快照备注（可选，例如：改榜单前留底）" maxlength="60" style="max-width:340px">
+          <button id="bkp-create" class="btn-primary" type="button">立即生成快照</button>
+          <button id="bkp-refresh" class="btn-ghost" type="button">刷新列表</button>
+          <span id="bkp-status" class="hint-inline"></span>
+        </div>
+        <div id="bkp-list" class="dash-table-wrap"><span class="hint">加载中…</span></div>
+      </div>
+
       <div class="panel-card hidden" id="dash-card">
         <h2>⑤ 数据看板 <span class="hint-inline">（各类标签图片数量与覆盖率统计）</span></h2>
         <div class="dash-toolbar">
@@ -1169,7 +1244,7 @@
           </div>
         </div>
         <div class="rg-row"><label class="field">搜索类目</label>
-          <input id="zone-cat-filter" class="input" placeholder="输入关键词过滤当前列表…">
+          <input id="zone-cat-filter" class="input" placeholder="搜索类目（宽松模糊：忽略大小写与符号，可隔字，如「连衣」可搜到「连衣裙」）">
         </div>
         <div id="zone-cat-list" class="zone-cat-list"></div>
       </div>
@@ -1258,24 +1333,27 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261016M"></script>
-  <script src="vendor/quill.js?v=20261016M"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261016M"></script>
-  <script src="vendor/qrcode.min.js?v=20261016M"></script>
-  <script src="js/config.js?v=20261016M"></script>
-  <script src="js/supabase.js?v=20261016M"></script>
+  <script src="vendor/supabase.js?v=20261016P"></script>
+  <script src="vendor/quill.js?v=20261016P"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261016P"></script>
+  <script src="vendor/qrcode.min.js?v=20261016P"></script>
+  <script src="js/config.js?v=20261016P"></script>
+  <script src="js/supabase.js?v=20261016P"></script>
+  <script src="js/track-menu.js?v=20261016P"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin.js?v=20261016M"></script>
-  <script src="js/admin-images.js?v=20261016M"></script>
-  <script src="js/admin-smart.js?v=20261016M"></script>
-  <script src="js/admin-trend.js?v=20261016M"></script>
-  <script src="js/admin-notice.js?v=20261016M"></script>
-  <script src="js/admin-marketing.js?v=20261016M"></script>
-  <script src="js/admin-tasks.js?v=20261016M"></script>
-  <script src="js/admin-bestseller.js?v=20261016M"></script>
-  <script src="js/admin-perm.js?v=20261016M"></script>
-  <script src="js/admin-pool.js?v=20261016M"></script>
-  <script src="js/admin-rank.js?v=20261016M"></script>
+  <script src="js/admin.js?v=20261016P"></script>
+  <script src="js/admin-images.js?v=20261016P"></script>
+  <script src="js/admin-smart.js?v=20261016P"></script>
+  <script src="js/admin-trend.js?v=20261016P"></script>
+  <script src="js/admin-notice.js?v=20261016P"></script>
+  <script src="js/admin-marketing.js?v=20261016P"></script>
+  <script src="js/admin-tasks.js?v=20261016P"></script>
+  <script src="js/admin-bestseller.js?v=20261016P"></script>
+  <script src="js/admin-perm.js?v=20261016P"></script>
+  <script src="js/admin-pool.js?v=20261016P"></script>
+  <script src="js/admin-rank.js?v=20261016P"></script>
+  <script src="js/admin-insight.js?v=20261016P"></script>
+  <script src="js/admin-backup.js?v=20261016P"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

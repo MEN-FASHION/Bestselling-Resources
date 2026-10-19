@@ -1386,3 +1386,71 @@ end $$;
 
 grant execute on function public.remove_tag_from_images(text, text) to authenticated;
 grant execute on function public.clear_image_category(text) to authenticated;
+
+
+-- ============================================================
+-- 【2026-10-18】常用类目（每个管理员自己的快捷清单）+ 类目删除时的一致性清理
+-- ============================================================
+-- 历史缺陷：profiles 表从未建立 favorite_categories 字段，而且 profiles 的 update 策略只给了超管，
+-- 普通账号无权更新自己的 profiles。结果是「我的常用类目」能勾、能点保存、还提示成功，
+-- 实际一个字节都没写进库；「常用置顶」从来没生效过，类目删掉后旧项也一直挂着。
+-- 这里补上字段，并用 security definer 函数完成读写 —— 不放开 profiles 的 update 策略，避免提权风险。
+alter table public.profiles
+  add column if not exists favorite_categories text[] not null default '{}';
+
+-- 读：当前账号自己的常用类目
+create or replace function public.get_my_favorite_categories()
+returns text[]
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v text[];
+begin
+  if auth.uid() is null then return '{}'::text[]; end if;
+  select favorite_categories into v from public.profiles where user_id = auth.uid();
+  return coalesce(v, '{}'::text[]);
+end $$;
+
+-- 写：只写自己那一行，去空 + 去重
+create or replace function public.set_my_favorite_categories(p_list text[])
+returns text[]
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v text[];
+begin
+  if auth.uid() is null then raise exception '未登录'; end if;
+  select array_agg(distinct btrim(x)) into v
+    from unnest(coalesce(p_list, '{}'::text[])) as x
+   where btrim(coalesce(x, '')) <> '';
+  v := coalesce(v, '{}'::text[]);
+  update public.profiles set favorite_categories = v where user_id = auth.uid();
+  return v;
+end $$;
+
+-- 类目被删除时：把该类目从所有管理员的常用类目里一并移除
+create or replace function public.remove_category_from_profiles(p_name text)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare n integer := 0;
+begin
+  if not exists (select 1 from public.profiles p
+                 where p.user_id = auth.uid() and p.role in ('admin','super_admin')) then
+    raise exception '没有权限';
+  end if;
+  if coalesce(btrim(p_name), '') = '' then return 0; end if;
+  update public.profiles
+     set favorite_categories = array_remove(coalesce(favorite_categories, '{}'), btrim(p_name))
+   where coalesce(favorite_categories, '{}') @> array[btrim(p_name)];
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+grant execute on function public.get_my_favorite_categories() to authenticated;
+grant execute on function public.set_my_favorite_categories(text[]) to authenticated;
+grant execute on function public.remove_category_from_profiles(text) to authenticated;

@@ -768,6 +768,79 @@
     Array.prototype.forEach.call(box.querySelectorAll(".rk-card"), function (el) {
       el.onclick = function () { openLB(el.getAttribute("data-url")); };
     });
+
+    fitPoolsSoon();
+  }
+
+  /* ---------------- 对比池自适应铺满 ---------------- */
+  /* 需求口径：不管用户选了几列对比，对比池都要把下方区域铺满，
+     且**不能溢出到右侧**（不需要横向滚动）、一眼就能看全。
+     做法：列宽由 CSS 按列数均分（flex:1 1 0 + min-width:0，因此几列都不会撑破），
+     图片每行排几张则按「该列实际宽度 + 可用高度」反推——行数正好填满高度，不多不少。 */
+  var POOL_GAP = 10;          /* 列与列之间的缝（px）—— 必须与 CSS 的 .rk-pools gap 一致 */
+  var POOL_VGAP = 6;          /* 图与图之间的缝（px）—— 必须与 CSS 的 .rk-pool-grid gap 一致 */
+  var POOL_MIN_CARD = 34;     /* 卡片最小可读宽度（px） */
+  var POOL_R_MAX = 12;        /* 每行最多排几张（防止细长列排出几十张的小图） */
+  var poolFitTimer = null;
+
+  /* 对比池铺满到视口底部：
+     原先把可用高度写死成 calc(100vh - 244px)，筛选栏高度一变就会在池底留白或把页面撑出滚动条。
+     这里按「池体顶部到视口底部」的实测距离写入 --rk-fill，几列对比都正好铺满一屏。 */
+  function fillPoolsHeight() {
+    try {
+      var body = document.querySelector("#rank-view .rk-body");
+      if (!body || !body.getBoundingClientRect) return 0;
+      var top = body.getBoundingClientRect().top + (window.pageYOffset || 0);
+      var avail = Math.round((window.innerHeight || 0) - (top - (window.pageYOffset || 0)) - 8);
+      if (!isFinite(avail) || avail <= 0) return 0;
+      var h = Math.max(420, avail); /* 与 CSS 的下限保持一致：太矮时不再压缩，保证图还看得清 */
+      body.style.setProperty("--rk-fill", h + "px");
+      return h;
+    } catch (e) { return 0; }
+  }
+
+  function fitPools() {
+    fillPoolsHeight();
+    var pools = document.querySelector("#rank-view .rk-pools") || document.querySelector(".rk-pools");
+    if (!pools) return;
+    var cols = pools.querySelectorAll(".rk-pool");
+    if (!cols.length) return;
+    var K = cols.length;
+
+    /* 可用高度 = 对比池容器高度 − 上下内边距（列头 / 脚注高度单独再扣） */
+    var availH = pools.clientHeight || 0;
+    try {
+      var ps = getComputedStyle(pools);
+      availH = Math.max(1, (pools.clientHeight || 0) - (parseFloat(ps.paddingTop) || 0) - (parseFloat(ps.paddingBottom) || 0));
+    } catch (e) { /* 取不到样式就用原值 */ }
+
+    var clipped = false;
+    Array.prototype.forEach.call(cols, function (col) {
+      var grid = col.querySelector(".rk-pool-grid");
+      if (!grid) return;
+      var n = grid.querySelectorAll(".rk-card").length;
+      if (!n) return;
+      var head = col.querySelector(".rk-pool-head");
+      var foot = col.querySelector(".rk-pool-foot");
+      var headH = head ? (head.offsetHeight || 0) : 0;
+      var footH = foot ? (foot.offsetHeight || 0) : 0;
+      var colW = grid.clientWidth || 0;
+      if (!colW) {
+        /* 刚写入 DOM 还没排版出来时按容器宽度估一个（下一帧 resize 会再校正） */
+        colW = Math.max(1, ((pools.clientWidth || 0) - (K - 1) * POOL_GAP) / K);
+      }
+      var fit = eyeFitCalc(colW, Math.max(1, availH - headH - footH), 1, n, {
+        headH: 0, gap: POOL_VGAP, vgap: POOL_VGAP, minW: POOL_MIN_CARD, rMax: POOL_R_MAX
+      });
+      grid.style.setProperty("--rk-r", String(fit.r));
+      if (fit.clipped) clipped = true;
+    });
+    pools.setAttribute("data-pool-clip", clipped ? "1" : "0");
+  }
+
+  function fitPoolsSoon() {
+    if (poolFitTimer) clearTimeout(poolFitTimer);
+    poolFitTimer = setTimeout(function () { poolFitTimer = null; try { fitPools(); } catch (e) {} }, 60);
   }
 
   /* ---------------- 天眼：一屏铺满「每一列的全部图」 ---------------- */
@@ -1194,6 +1267,11 @@
     }
 
     var logged = await renderAuth();
+    /* 窗口尺寸变化 → 重新按列数与高度铺排对比池 */
+    if (!window.__rkPoolFitBound) {
+      window.__rkPoolFitBound = true;
+      window.addEventListener("resize", fitPoolsSoon);
+    }
     try { sessionStorage.setItem("nl_landed", "1"); } catch (e) {}   // 已落地过：避免从榜单点回视觉专区又被弹回来
     if (logged && window.Common && Common.visit) Common.visit.track("rank");   // 访问统计（后台数据看板）
 

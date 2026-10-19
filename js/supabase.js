@@ -498,8 +498,17 @@ const SB = (() => {
       }
     },
 
-    // ============ 常用类目（当前用户 profiles.favorite_categories） ============
+    // ============ 常用类目（当前用户的快捷清单，仅自己可见） ============
+    // 历史缺陷：profiles 表根本没有 favorite_categories 字段，而且普通账号无权更新自己的 profiles
+    // （update 策略只给了超管），所以「常用类目」既读不出来也存不进去——界面能勾、能点保存、
+    // 还提示成功，实际什么都没写；「常用置顶」从来没生效过，删掉类目后旧项也一直挂着。
+    // 现在改为调用 security definer 函数读写（不放开 profiles 的 update 策略，避免提权风险）；
+    // 函数尚未在库里建立时自动回退旧写法（至少不会直接崩）。
     async myFavCats() {
+      try {
+        const { data, error } = await client.rpc("get_my_favorite_categories");
+        if (!error) return (Array.isArray(data) ? data : []).filter(Boolean);
+      } catch (e) { /* 函数未建 → 回退 */ }
       const session = await this.getSession();
       if (!session) return [];
       const { data, error } = await client
@@ -511,15 +520,34 @@ const SB = (() => {
       return data.favorite_categories || [];
     },
     async updateFavCats(arr) {
+      const list = [...new Set((arr || []).map(x => (x || "").trim()).filter(Boolean))];
+      try {
+        const { data, error } = await client.rpc("set_my_favorite_categories", { p_list: list });
+        if (!error) return (Array.isArray(data) ? data : list);
+      } catch (e) { /* 函数未建 → 回退 */ }
       const session = await this.getSession();
       if (!session) throw new Error("未登录");
-      const list = [...new Set((arr || []).map(x => (x || "").trim()).filter(Boolean))];
       const { error } = await client
         .from("profiles")
         .update({ favorite_categories: list })
         .eq("user_id", session.user.id);
       if (error) throw new Error(error.message || "保存失败");
       return list;
+    },
+    // 类目被删除时：把该类目从所有管理员的常用类目里一并清掉
+    // （优先数据库函数一次完成；函数未建时退化为"只清当前账号"，保证自己这边不残留）
+    async clearCatFromProfiles(name) {
+      const v = String(name || "").trim();
+      if (!v) return 0;
+      try {
+        const { data, error } = await client.rpc("remove_category_from_profiles", { p_name: v });
+        if (!error) return Number(data) || 0;
+      } catch (e) { /* 函数未建 → 退化为只清当前账号 */ }
+      try {
+        const mine = await this.myFavCats();
+        if (mine.indexOf(v) >= 0) { await this.updateFavCats(mine.filter((c) => c !== v)); return 1; }
+      } catch (e) { }
+      return 0;
     },
     async addImageRecord({ category, name, path, url }) {
       const token = await currentToken();
@@ -1547,43 +1575,36 @@ async removeTrendRecord(id) {
         await client.rpc("visit_ping", { p_id: id, p_add: Math.max(0, Math.round(addSec || 0)) });
       } catch (e) { /* 统计失败不影响正常使用 */ }
     },
-    // 超管：读取数据看板全部指标（非超管返回 null）
-    // 失败时把原因归一化到 e.diag（missing_function / not_authenticated / forbidden / other），
-    // 界面据此给出人话提示；原始报错只输出到浏览器控制台（便于排查），不显示到页面上。
     // 配置自检：一眼看出"密钥是否缺失 / 是否用错项目"
     configCheck: checkConfigHealth,
-    async adminDashboard() {
-      // 先做配置自检：若页面没拿到可用密钥，请求会在网关就被拒，
-      // 这里直接给出人话原因，不发出注定失败的请求、也不误报成"没有权限"。
-      const cc = checkConfigHealth();
-      if (!cc.ok) {
-        try { console.warn("[看板诊断] 配置自检未通过：", cc.problems.join("；")); } catch (e) {}
-        const e1 = new Error("页面配置未生效");
-        e1.diag = "no_api_key"; e1.code = ""; e1.http = 0; e1.detail = cc.problems.join("；");
-        throw e1;
+
+    // ============ 用户动向（超管专用：前台访客 + 后台管理员） ============
+    // 统一严格 RPC：失败时把原因归一化到 e.diag（missing_function / not_authenticated /
+    // forbidden / sql_exec / blocked / other），界面据此给出人话提示；
+    // 原始报错只进浏览器控制台，不显示到页面（也不外泄内部地址）。
+    async rpcJson(name, args, label) {
+      // 先做配置自检：页面没拿到可用密钥时，请求会在网关就被拒，
+      // 这里直接给出人话原因，既不发出注定失败的请求，也不误报成「没有权限」。
+      const cc0 = checkConfigHealth();
+      if (!cc0.ok) {
+        try { console.warn("[动向诊断] 配置自检未通过：", cc0.problems.join("；")); } catch (e) {}
+        const e0 = new Error("页面配置未生效");
+        e0.diag = "no_api_key"; e0.code = ""; e0.http = 0; e0.detail = cc0.problems.join("；");
+        throw e0;
       }
-      // 【关键】调用前先确保"手里有可用的登录令牌"：
-      // 若此时客户端还没有登录态（页面刚加载、登录态尚未恢复），
-      // 直接用 client.rpc 会以"未登录身份"打到接口 —— 接口侧只能拒绝，
-      // 页面就会把它读成"没有看板权限"，冤枉真正的超级管理员。
-      // 这里先取一次令牌（过期会自动续期）；确实取不到就直接按"登录态失效"处理，
-      // 既避免产生一次注定失败的请求，也能给出准确原因。
       const tk = await freshAccessToken();
       if (!tk) {
-        const e0 = new Error("登录状态已失效");
-        e0.diag = "not_authenticated"; e0.code = ""; e0.http = 0;
-        throw e0;
+        const e = new Error((label || "接口") + "：登录状态已失效");
+        e.diag = "not_authenticated"; e.code = ""; e.http = 0;
+        throw e;
       }
       let resp;
       try {
-        resp = await client.rpc("admin_dashboard");
+        resp = await client.rpc(name, args || {});
       } catch (netErr) {
-        // 请求根本没抵达数据库、或没收到回应（跨域预检被拒 / CORS / 断网）。
-        // 【重要】此时浏览器看到的"未携带密钥"往往是预检请求(OPTIONS)被拒的返回，
-        // 而预检请求本来就不带密钥 —— 不能据此判定账号权限或配置错误。
         const m = String((netErr && netErr.message) || netErr || "");
-        try { console.warn("[看板诊断] 请求未抵达数据库（浏览器层被拦：预检/CORS/网络）：", m); } catch (e) {}
-        const e = new Error("读取数据看板失败");
+        try { console.warn("[动向诊断] " + name + " 请求未抵达数据库（浏览器层被拦）：", m); } catch (x) {}
+        const e = new Error((label || "接口") + "读取失败");
         e.diag = "blocked"; e.code = ""; e.http = 0; e.detail = m;
         throw e;
       }
@@ -1592,37 +1613,62 @@ async removeTrendRecord(id) {
         const code = String(error.code || "");
         const raw = [error.message, error.details, error.hint, code].map(v => String(v || "")).join(" ");
         let diag = "other";
-        // 先按错误码判：42501=无执行权限、PGRST301/302=登录态问题、PGRST202/42883=函数不存在
+        // 判定顺序很关键，三条硬规则：
+        //   ① 「没有执行授权」必须只看权限类信号（错误码 42501 / permission denied / forbidden / 403），
+        //      不能把「aggregate functions are not allowed in GROUP BY」里的 not allowed 当成权限问题，
+        //      否则统计脚本自身写错时会把用户引向去改权限（2026-10-16 真实故障的教训）。
+        //   ② 42xxx（除 42501 权限码）＝函数内那段 SQL 自己写错了，与账号权限无关。
+        //   ③ 「函数不存在」优先按缺函数处理，不落到「没有权限」。
         if (code === "PGRST202" || code === "42883") diag = "missing_function";
         else if (code === "PGRST301" || code === "PGRST302") diag = "not_authenticated";
-        else if (code === "42501" || code === "PGRST402") diag = "forbidden";
-        // 42803 等 SQL 执行类错误（错误码 42xxx = "语法错误或访问规则违反"）：
-        // 这类错误是「函数内部那条 SQL 自己写错了」，**与账号权限无关**，
-        // 但报文里常带 "not allowed" / "denied" 字样，若不单独归类就会被误判成 forbidden（让用户以为要去改权限）。
-        // 典型实例：统计脚本里 `group by 1, 2, 3` 引用输出列位置，而该输出列里含聚合函数 →
-        // 数据库返回 42803 "aggregate functions are not allowed in GROUP BY"。
-        // → 必须放在通用的 permission 判断之前，否则会被吞掉。
-        else if (/^42[0-9]{3}$/.test(code) || /not allowed in group by|grouping error|syntax error at|invalid input syntax/i.test(raw)) diag = "sql_exec";
-        else if (/could not find the function|does not exist|schema cache|PGRST202/i.test(raw)) diag = "missing_function";
-        else if (/no api key found|no `apikey`|apikey request header/i.test(raw)) diag = "no_api_key";
-        else if (/not authenticated|jwt|invalid token|PGRST301|401/i.test(raw)) diag = "not_authenticated";
-        else if (/permission|not allowed|denied|forbidden|42501|403/i.test(raw)) diag = "forbidden";
-        try {
-          console.warn("[看板诊断] 看板接口读取失败：diag=" + diag + " code=" + (code || "(无)") + " http=" + (status || "?"),
-            { message: error.message, details: error.details, hint: error.hint });
-        } catch (e) { /* 控制台输出失败不影响流程 */ }
-        const e = new Error("读取数据看板失败");
-        e.diag = diag;
-        e.code = code;
-        e.http = status || 0;
+        else if (/no api key|api key|apikey/i.test(raw)) diag = "no_api_key";
+        else if (code === "42501" || /permission denied|forbidden|\b403\b/i.test(raw)) diag = "forbidden";
+        else if (/^42[0-9]{3}$/.test(code) || /not allowed|grouping error|syntax error at|invalid input syntax/i.test(raw)) diag = "sql_exec";
+        else if (/could not find the function|does not exist|schema cache/i.test(raw)) diag = "missing_function";
+        else if (/not authenticated|invalid token|PGRST301|\b401\b/i.test(raw)) diag = "not_authenticated";
+        const e = new Error((label || "接口") + "读取失败");
+        e.diag = diag; e.code = code; e.http = status || 0; e.detail = raw;
+        try { console.warn("[动向诊断] " + name + " 失败：diag=" + diag + " code=" + (code || "(无)") + " http=" + (status || "?")); } catch (x) {}
         throw e;
       }
-      if (data && typeof data === "object" && data.meta) {
-        try { console.info("[看板诊断] 看板接口正常，服务端判定：", data.meta); } catch (e) {}
-      }
-      return data || null;
+      return data;
     },
-    // 一键连通性自检：一次点清「配置 → 登录态 → 最小读写 → 看板接口」四层里到底哪一层断了。
+    async insightFront(days) { return this.rpcJson("insight_front", { p_days: Number(days) || 30 }, "用户动向"); },
+    async insightAdmin(days) { return this.rpcJson("insight_admin", { p_days: Number(days) || 30 }, "管理员动向"); },
+    // 菜单点击等行为上报：静默失败，绝不影响浏览（统计不到也不能挡住用户）
+    async trackEvent(ev, zone, menu, path) {
+      try {
+        const tk = await freshAccessToken();
+        if (!tk) return null;
+        const { data, error } = await client.rpc("track_event", {
+          p_event: ev || "menu", p_zone: zone || "", p_menu: menu || "", p_path: path || "",
+        });
+        if (error) return null;
+        return data;
+      } catch (e) { return null; }
+    },
+    // 后台操作日志：同样静默失败（日志不该挡住业务动作）
+    async logAdminAction(action, target, detail) {
+      try {
+        const tk = await freshAccessToken();
+        if (!tk) return null;
+        const { data, error } = await client.rpc("log_admin_action", {
+          p_action: action || "", p_target: target || "", p_detail: detail || {},
+        });
+        if (error) return null;
+        return data;
+      } catch (e) { return null; }
+    },
+
+    // ============ 版本恢复（超管专用：数据快照 / 一键回滚） ============
+    async backupCreate(note) { return this.rpcJson("backup_create", { p_note: String(note || ""), p_kind: "manual" }, "生成快照"); },
+    async backupList() { const d = await this.rpcJson("backup_list", {}, "快照列表"); return Array.isArray(d) ? d : []; },
+    async backupGet(id) { return this.rpcJson("backup_get", { p_id: Number(id) }, "读取快照"); },
+    async backupDelete(id) { return this.rpcJson("backup_delete", { p_id: Number(id) }, "删除快照"); },
+    async backupRestore(id) { return this.rpcJson("backup_restore", { p_id: Number(id) }, "恢复快照"); },
+    backupPolicy() { return { max: 10 }; },
+
+    // 一键连通性自检：一次点清「配置 → 登录态 → 最小读写 → 动向接口」四层里到底哪一层断了。
     // 目的：不需要用户翻开发者工具，页面自己给出结论。
     async connProbe() {
       const out = { config: null, session: false, minimal: null, dashboard: null, verdict: "" };
@@ -1634,15 +1680,14 @@ async removeTrendRecord(id) {
         if (r && r.error) out.minimal = { ok: false, code: String(r.error.code || ""), http: r.status || 0, msg: String(r.error.message || "") };
         else out.minimal = { ok: true, http: (r && r.status) || 200 };
       } catch (e) { out.minimal = { ok: false, code: "", http: 0, msg: String((e && e.message) || e) }; }
-      // 看板接口
+      // 动向统计接口（超管专用；非超管会走到 forbidden 分支）
       try {
-        const d = await this.adminDashboard();
-        // 「empty」判断口径：接口本身可用，但一条访问记录都还没有。
-        // 注意不能只看有没有返回 meta —— 没记录时接口同样会正常返回 meta，
-        // 若只看 meta 就会把「还没人来过」误报成「看板已正常」，用户会以为好了却还是空的。
-        const v = (d && d.visits) || {};
-        const noVisits = Number(v.pvTotal || 0) === 0 && Number(v.uvTotal || 0) === 0;
-        out.dashboard = { ok: true, empty: !d || !d.meta || noVisits };
+        const d = await this.insightAdmin(7);
+        // 「empty」判断口径：接口本身可用，但还没有任何动向记录。
+        // 注意不能只看返回对象是否非空 —— 没记录时接口同样会正常返回结构，
+        // 若只看结构就会把「还没人来过」误报成「已正常」，用户会以为好了却还是空的。
+        const noRec = !d || (Number(d.actions_total || 0) === 0 && Number(d.uploads_total || 0) === 0);
+        out.dashboard = { ok: true, empty: noRec };
       }
       catch (e) { out.dashboard = { ok: false, diag: (e && e.diag) || "other", code: (e && e.code) || "", http: (e && e.http) || 0, detail: (e && e.detail) || "" }; }
       // 给出人话结论（逐层判断，先断的层先报）
@@ -1651,16 +1696,16 @@ async removeTrendRecord(id) {
       else if (!out.session) out.verdict = "登录态未就绪：请先登录（或重新登录）后再试。";
       else if (m.ok === false && !m.http) out.verdict = "请求没能抵达数据库（浏览器层被拦：预检/CORS/网络），与账号权限无关。";
       else if (m.ok === false) out.verdict = "数据库网关拒绝了请求（密钥或授权问题），返回码 " + (m.code || "无") + "。";
-      else if (d.ok) out.verdict = d.empty ? "接口连通，但还没有访问记录：到前台页面登录后打开一次，再回来看板。" : "接口连通且有数据，看板应能正常显示。";
+      else if (d.ok) out.verdict = d.empty ? "接口连通，但还没有动向记录：让用户登录前台打开一次专区、后台做一次操作，再回来看。" : "接口连通且有数据，用户动向应能正常显示。";
       // 函数内部 SQL 自身报错（42xxx）：与账号权限无关，必须重跑统计脚本
       else if (d.diag === "sql_exec") out.verdict = "数据库执行统计接口时报错（错误码 " + (d.code || "无") + "）：统计脚本内部那段查询写错了，请把仓库里 tools/setup_analytics.sql 整段重新执行一次（与账号权限无关）。";
       else if (d.diag === "forbidden") out.verdict = "登录用户没有统计接口的执行授权：请重跑 tools/setup_analytics.sql（其中含授权语句）。";
       else if (d.diag === "missing_function") out.verdict = "数据库里还没有统计接口（或接口缓存未刷新）：请先执行 tools/setup_analytics.sql。";
-      else if (d.diag === "blocked") out.verdict = "仅看板接口这一层失败：请求被浏览器/网络层拦下（与账号权限无关），请强刷页面、关闭代理或拦截插件后再试。";
+      else if (d.diag === "blocked") out.verdict = "仅动向接口这一层失败：请求被浏览器/网络层拦下（与账号权限无关），请强刷页面、关闭代理或拦截插件后再试。";
       else if (d.diag === "not_authenticated") out.verdict = "登录状态已失效：请重新登录后再试。";
       else if (d.diag === "no_api_key") out.verdict = "页面未携带访问密钥：请核对配置里的地址与密钥（与账号权限无关）。";
-      else out.verdict = "仅看板接口这一层失败，其余读写都正常：返回码 " + (d.code || "无") + "（" + d.diag + "），请把此行连同返回码反馈。";
-      try { console.info("[看板诊断] 连通性自检：", out.verdict, out); } catch (e) {}
+      else out.verdict = "仅动向接口这一层失败，其余读写都正常：返回码 " + (d.code || "无") + "（" + d.diag + "），请把此行连同返回码反馈。";
+      try { console.info("[动向诊断] 连通性自检：", out.verdict, out); } catch (e) {}
       return out;
     },
     // 访问地区：由服务端按真实网络出口解析（拿不到则返回 null，看板显示「未知」）
