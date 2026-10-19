@@ -437,6 +437,17 @@ window.Common = (function () {
       });
     }
 
+    /* 兜底：配置读不到时也不能让菜单一直隐身 */
+    if (typeof window !== "undefined" && !window.__navBootTimer
+        && typeof document !== "undefined" && typeof document.querySelector === "function") {
+      window.__navBootTimer = setTimeout(function () {
+        try {
+          const t = document.querySelector(".top-tabs");
+          if (t) t.classList.remove("is-booting");
+        } catch (e) { /* 环境不支持时忽略 */ }
+      }, 1500);
+    }
+
     /* 顶部菜单显隐的唯一实现（四个前台页面共用）：
        - 认领 data-zone（按 href 匹配专区定义；data-viewtab 直接作为专区 key；公告按钮特判）
        - 按可见性显示/隐藏：用户级白名单 > 全局开关
@@ -444,6 +455,9 @@ window.Common = (function () {
     function applyNav() {
       const tabs = document.querySelector(".top-tabs");
       if (!tabs) return;
+      /* 首帧先隐藏、判定完再露出：否则"配置还没读到"的那一瞬间会把
+         本该隐藏的入口先画出来（就是招品回品 / BESTSELLER 一闪而过）。 */
+      if (!tabs.classList.contains("is-booting")) { /* 已判定过，直接按结果刷新 */ }
       Array.prototype.slice.call(tabs.querySelectorAll(".tab-link")).forEach((a) => {
         let z = a.getAttribute("data-zone");
         if (!z) {
@@ -468,6 +482,7 @@ window.Common = (function () {
         a.style.display = visible(z) ? "" : "none";
       });
       renderNav();
+      tabs.classList.remove("is-booting");
     }
 
     return {

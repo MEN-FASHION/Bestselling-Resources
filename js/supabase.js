@@ -980,6 +980,37 @@ async removeTrendRecord(id) {
       const { data, error } = await client.from("marketing_nodes").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
       return { data: data || [], error };
     },
+    /* ---- 营销日历 · 节庆库（前台只读，后台「营销日历」维护） ---- */
+    async listFestivals() {
+      const { data, error } = await client
+        .from("marketing_festivals")
+        .select("*")
+        .order("sort_no", { ascending: true })
+        .order("date", { ascending: true });
+      return { data: data || [], error };
+    },
+    async upsertFestivals(rows) {
+      const list = (rows || []).filter(Boolean);
+      if (!list.length) return { error: null };
+      const clean = list.map((r) => ({
+        id: String(r.id), name: r.name, date: r.date,
+        en: r.en || "", region: r.region || "其他", cat: r.cat || "trad",
+        star: r.star || 3, lead: r.lead == null ? 120 : r.lead,
+        dur: r.dur || 1, idea: r.idea || "", note: r.note || "",
+        overrides: r.overrides || null, sort_no: r.sort_no || 0,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await client.from("marketing_festivals").upsert(clean, { onConflict: "id" });
+      return { error };
+    },
+    async deleteFestival(id) {
+      const { error } = await client.from("marketing_festivals").delete().eq("id", String(id));
+      return { error };
+    },
+    async clearFestivals() {
+      const { error } = await client.from("marketing_festivals").delete().neq("id", "");
+      return { error };
+    },
     async addMarketingNode({ title, date, category, sort_order, image, url, description }) {
       const { error } = await client.from("marketing_nodes").insert({
         title, date: date || "", category: category || "festival", sort_order: sort_order || 0,

@@ -1631,14 +1631,84 @@
     }
   }
 
-  // 筛选条：除悬停展开外，点击也可锁定展开（触屏 / 不习惯悬停时）
+  /* ---------------- 筛选栏：感应收缩 ----------------
+   * 收起态只有一行摘要（当前类目 · 周次 · 国家 · 标签），不占版面；
+   * 鼠标移到筛选条上（含上方 10px 感应带、下方 8px 过桥带）就自动展开 —— 不用点；
+   * 选好「单选类」条件后自动收起；鼠标移开也会延迟收起，手抖不会闪退；
+   * 触屏 / 键盘没有悬停：点一下筛选条展开，再点一下收起，Tab 也能进去。 */
+  var F_CLOSE_DELAY = 200;    /* 鼠标移开后多久收起 */
+  var F_PICK_DELAY = 340;     /* 单选完成后多久收起：留一点时间让用户看清选中态 */
+  var _fCloseTimer = null;
+
+  function filterEl() { return $("#rk-filter"); }
+
+  function filterOpen() {
+    var f = filterEl();
+    if (!f) return;
+    if (_fCloseTimer) { clearTimeout(_fCloseTimer); _fCloseTimer = null; }
+    f.classList.add("is-open");
+  }
+
+  function filterClose(delay) {
+    var f = filterEl();
+    if (!f) return;
+    if (_fCloseTimer) clearTimeout(_fCloseTimer);
+    _fCloseTimer = setTimeout(function () {
+      _fCloseTimer = null;
+      var el = filterEl();
+      if (el) el.classList.remove("is-open");
+    }, delay == null ? F_CLOSE_DELAY : delay);
+  }
+
+  /* 多选类条件不自动收起（横向要多选国家、纵向要多选周次，连着点才对）；
+     其余单选类条件点完就收起。 */
+  var PICK_ATTRS = "[data-mode],[data-cols],[data-site],[data-period],[data-group],[data-tag],[data-sort],[data-size],[data-move],[data-scope],[data-only]";
+  function isMultiPick(el) {
+    if (!el || !el.hasAttribute) return false;
+    if (el.hasAttribute("data-site")) return MODE !== "v";      /* 横向：国家可多选 */
+    if (el.hasAttribute("data-period")) return MODE !== "h";    /* 纵向：周次可多选 */
+    return false;
+  }
+
   function bindTrigger() {
-    var t = $("#rk-trigger");
-    if (!t) return;
-    t.onclick = function () {
-      var f = $("#rk-filter");
-      if (f) f.classList.toggle("open");
-    };
+    var f = filterEl(), t = $("#rk-trigger");
+    if (!f) return;
+
+    /* 悬停感应：只认鼠标 / 触控笔，触屏不要被 pointerenter 抢跑 */
+    function byPointer(e) {
+      var pt = e.pointerType;
+      return !pt || pt === "mouse" || pt === "pen";
+    }
+    f.addEventListener("pointerenter", function (e) { if (byPointer(e)) filterOpen(); });
+    f.addEventListener("pointerleave", function (e) { if (byPointer(e)) filterClose(); });
+
+    /* 点击开合（触屏 / 不想悬停时） */
+    if (t) t.addEventListener("click", function () {
+      var el = filterEl();
+      if (!el) return;
+      if (el.classList.contains("is-open")) filterClose(0);
+      else filterOpen();
+    });
+
+    /* 面板内选完条件：单选类自动收起 */
+    f.addEventListener("click", function (e) {
+      var node = e.target;
+      if (!node || !node.closest) return;
+      var chip = node.closest(PICK_ATTRS);
+      if (!chip) return;
+      if (isMultiPick(chip)) return;
+      filterClose(F_PICK_DELAY);
+    });
+
+    /* Esc 收起 */
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") filterClose(0);
+    });
+
+    /* 面板重新渲染（点击后整块重绘）会丢焦点：保证收起态时不会被 focus-within 顶开 */
+    if (f.matches(":focus-within") && !f.classList.contains("is-open")) {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

@@ -4,7 +4,8 @@
  */
 const fs = require("fs");
 const vm = require("vm");
-const path = process.argv[2];
+/* 支持 node tools/verify_boot.js 直接跑：没给路径就用项目的 admin.js */
+const path = process.argv[2] || require('path').resolve(__dirname, '..', 'js', 'admin.js');
 
 function mkEl(id) {
   return { id, _cls: new Set(["hidden"]), classList: null, textContent: "" };

@@ -1,3 +1,5 @@
+/* 前台只读：节庆库的维护（新建 / 编辑 / 删除 / 导入 / 导出 / 恢复默认）全部在后台「营销日历」里做。 */
+var MK_READONLY = true;
 var STORE_KEY = 'festival_dev_timeline_v1';
 var SET_KEY = 'festival_dev_timeline_settings_v2';
 var DAY = 86400000;
@@ -489,8 +491,6 @@ function renderCards(list){
          +  '提前期 <b class="num" style="font-size:13px">'+it.lead+'</b> 天 · 最晚启动 '
          +  '<b class="num" style="font-size:13px">'+(it.startDaysLeft<0?'已过期':fmtShort(it.start))+'</b>'
          +  (it.startDaysLeft>=0? '（'+it.startDaysLeft+' 天后）':'')+'</div>';
-    html += '<div class="cact"><button data-act="edit" data-id="'+esc(it.h.id)+'">编辑</button>'
-         +  '<button class="del" data-act="del" data-id="'+esc(it.h.id)+'">删除</button></div>';
     html += '</article>';
   }
   html += '</div>';
@@ -741,9 +741,6 @@ function toast(msg){
 
 /* ============ 交互绑定 ============ */
 function bindGlobal(){
-  document.getElementById('menuBtn').onclick = function(){
-    document.getElementById('sidebar').classList.toggle('open');
-  };
   document.getElementById('backdrop').onclick = function(e){
     if(e.target === this) closeModal();
   };
@@ -757,13 +754,11 @@ function bindGlobal(){
   }, true);
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeModal(); });
 
-  document.getElementById('addBtn').onclick = function(){ openModal(null); };
 
   document.getElementById('viewTabs').addEventListener('click', function(e){
     var b = e.target.closest('button');
     if(!b) return;
     state.view = b.getAttribute('data-view');
-    document.getElementById('sidebar').classList.remove('open');
     render();
     window.scrollTo({ top:0, behavior:'smooth' });
   });
@@ -808,15 +803,15 @@ function bindGlobal(){
         clearTimeout(rgOpenTimer);
         rgOpenTimer = setTimeout(function(){
           openGroups.active = lab;
-          refreshRegionDetail();
-        }, 90);
+          refreshRegionDetail();   /* 切到哪个洲，下面就直接展开那个洲的国家 */
+        }, 60);
       });
       rgList.addEventListener('mouseleave', function(){
         clearTimeout(rgOpenTimer);
         rgCloseTimer = setTimeout(function(){
           openGroups.active = null;
           refreshRegionDetail();
-        }, 320);
+        }, 700);   /* 给足时间从洲名移到国家区，不要一离开就收起 */
       });
     }
     fbTrigger.addEventListener('focus', function(){ fbOpen(0); });
@@ -900,6 +895,7 @@ function bindGlobal(){
   /* 卡片操作 / 时间轴 / 甘特点击 */
   document.querySelector('.main-inner').addEventListener('click', function(e){
     var actBtn = e.target.closest('button[data-act]');
+    if(actBtn && MK_READONLY){ return; }   /* 前台只读：不响应任何编辑/删除 */
     if(actBtn){
       var id = actBtn.getAttribute('data-id');
       if(actBtn.getAttribute('data-act')==='edit'){ openModal(id); return; }
@@ -912,11 +908,7 @@ function bindGlobal(){
         return;
       }
     }
-    var t = e.target.closest('.fest, .gl, .gbar');
-    if(t){
-      var tid = t.getAttribute('data-id');
-      if(tid) openModal(tid);
-    }
+    /* 前台只读：点卡片不再打开编辑弹窗（维护在后台「营销日历」） */
   });
 
   /* 日期归一化：支持 02-17 / 2-17 / 2027-02-17 / 2027/2/17 */
@@ -931,76 +923,7 @@ function normMMDD(v){
   return (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
 }
 
-/* 数据管理 */
-  document.getElementById('exportBtn').onclick = function(){
-    var payload = { version:1, exportedAt:new Date().toISOString(), settings:state.settings, festivals:state.festivals };
-    var blob = new Blob([JSON.stringify(payload,null,2)], { type:'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'festival-library-'+fmtISODefault()+'.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
-    toast('节庆库已导出');
-  };
-  document.getElementById('importBtn').onclick = function(){ document.getElementById('importFile').click(); };
-  document.getElementById('importFile').addEventListener('change', function(e){
-    var f = e.target.files && e.target.files[0];
-    if(!f) return;
-    var rd = new FileReader();
-    rd.onload = function(){
-      try{
-        var obj = JSON.parse(rd.result);
-        var arr = Array.isArray(obj) ? obj : obj.festivals;
-        if(!Array.isArray(arr) || !arr.length) throw new Error('bad');
-        var clean = [], noName = 0, noDate = 0, badRow = 0, n = 0;
-        for(var i=0;i<arr.length;i++){
-          var x = arr[i];
-          if(!x || typeof x !== 'object'){ badRow++; continue; }
-          if(!x.name){ noName++; continue; }
-          var md = normMMDD(x.date);
-          if(!md){ noDate++; continue; }
-          n++;
-          var dur = parseInt(x.dur, 10);
-          if(!(dur > 0)) dur = parseInt(x.duration, 10);
-          clean.push({
-            id: x.id || ('i'+Date.now().toString(36)+n),
-            name: String(x.name),
-            en: x.en || '',
-            region: x.region || '其他',
-            date: md,
-            cat: CATS[x.cat] ? x.cat : 'trad',
-            star: Math.min(5, Math.max(1, parseInt(x.star,10) || 3)),
-            lead: Math.max(0, parseInt(x.lead,10) || 120),
-            dur: dur > 0 ? dur : 1,
-            idea: x.idea || '',
-            note: x.note || '',
-            overrides: x.overrides || null
-          });
-        }
-        if(!clean.length) throw new Error('empty');
-        state.festivals = clean; saveFestivals(); render();
-        var sk = noName + noDate + badRow, msg = '已导入 ' + clean.length + ' 个节庆节点';
-        if(sk){
-          var why = [];
-          if(noName) why.push('缺名称 ' + noName + ' 条');
-          if(noDate) why.push('日期格式不对 ' + noDate + ' 条');
-          if(badRow) why.push('格式不正确 ' + badRow + ' 条');
-          msg += '，跳过 ' + sk + ' 条（' + why.join('、') + '）';
-        }
-        toast(msg);
-      }catch(err){
-        toast('导入失败，请检查 JSON 格式');
-      }
-      e.target.value = '';
-    };
-    rd.readAsText(f);
-  });
-  document.getElementById('resetBtn').onclick = function(){
-    if(confirm('恢复为内置节庆库？当前自定义的节日与修改将全部丢失。')){
-      state.festivals = defaultFestivals(); saveFestivals(); render(); toast('已恢复默认节庆库');
-    }
-  };
+/* 数据管理（导出 / 导入 / 恢复默认）已迁到后台「营销日历」，前台只读，这里不再有任何写入口。 */
 }
 function syncMode(){
   document.getElementById('modeRec').classList.toggle('active', !state.settings.useCustom);
@@ -1015,9 +938,51 @@ function syncMode(){
   document.getElementById('vTotal').textContent = (state.settings.sample|0)+(state.settings.produce|0)+(state.settings.ship|0);
 }
 
+/* ============ 节庆库数据源：后台维护的数据库（前台只读） ============
+ * 顺序：先用内置库把页面画出来（不会白屏）→ 再异步取数据库里那一份 → 有数据就替换并重绘。
+ * 数据库为空（后台还没点过"恢复默认节庆库"）时保持内置库，保证前台永远有内容。
+ * ============================================================ */
+function dbRowToFestival(r){
+  return {
+    id: String(r.id),
+    name: r.name || '',
+    en: r.en || '',
+    region: r.region || '其他',
+    date: normMMDD(r.date) || r.date || '',
+    cat: CATS[r.cat] ? r.cat : 'trad',
+    star: Math.min(5, Math.max(1, parseInt(r.star,10) || 3)),
+    lead: Math.max(0, parseInt(r.lead,10) || 120),
+    dur: Math.max(1, parseInt(r.dur,10) || 1),
+    idea: r.idea || '',
+    note: r.note || '',
+    overrides: (r.overrides && typeof r.overrides === 'object') ? r.overrides : null,
+    custom: true
+  };
+}
+function loadFestivalsFromDb(){
+  if(!window.SB || typeof SB.listFestivals !== 'function') return;
+  Promise.resolve()
+    .then(function(){ return SB.listFestivals(); })
+    .then(function(res){
+      var rows = (res && res.data) || [];
+      if(!rows.length) return;                       /* 后台还没维护过 → 保留内置库 */
+      var list = [];
+      for(var i=0;i<rows.length;i++){
+        var f = dbRowToFestival(rows[i]);
+        if(f.name && f.date) list.push(f);
+      }
+      if(!list.length) return;
+      backfillDurations(list);
+      state.festivals = list;
+      render();
+    })
+    .catch(function(){ /* 读不到就用内置库，绝不让页面报错 */ });
+}
+
 /* ============ 启动 ============ */
 (function init(){
   load();
+  loadFestivalsFromDb();
   document.getElementById('todayText').textContent = '今天 ' + fmtFull(todayStart());
   syncMode();
   bindGlobal();

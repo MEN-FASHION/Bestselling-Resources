@@ -42,6 +42,7 @@ const PANEL_ZONE = {
   "tag-card": "visual",
   "dash-card": "",          // 任一授权专区即可
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
+  "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
   "recruit-card": "recruit",
   "bestseller-card": "bestseller",
@@ -167,7 +168,12 @@ function switchPanel(target) {
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
-    if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles(); }
+    if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
+    // 营销日历：节庆库（前台只读的那一份）+ 已发布素材，独立菜单
+    if (target === "mk-card") {
+      if (typeof loadFestivalsPanel === "function") loadFestivalsPanel();
+      loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles();
+    }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
     // 用户动向：三个子页各自懒加载（只读，不发写请求）
     if (target === "insight-card" && typeof loadInsight === "function") { loadInsight(); }

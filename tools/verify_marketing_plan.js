@@ -25,13 +25,16 @@ ok('页面引用数据脚本', /marketing-data\.js\?v=/.test(html));
 ok('页面引用主脚本', /marketing-main\.js\?v=/.test(html));
 ok('页面含 .mkzone 容器', /class="mkzone"/.test(html));
 ok('旧版时间轴区块已隐藏', /class="mk-legacy hidden"/.test(html));
-ok('版本号已统一为 B 且无旧版残留',
-  /20261019B/.test(html) && !/20261019A/.test(html) &&
-  !/20261019A/.test(css + dataJs + mainJs));
-const ids = ['viewTabs', 'addBtn', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
-  'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal', 'exportBtn', 'importBtn', 'resetBtn',
-  'importFile', 'stats', 'view-timeline', 'view-gantt', 'view-cards', 'backdrop', 'modal', 'mkToast'];
+ok('版本号已统一为 C 且无旧版残留',
+  /20261019C/.test(html) && !/20261019B/.test(html) &&
+  !/20261019B/.test(css + dataJs + mainJs));
+const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
+  'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal',
+  'stats', 'view-timeline', 'view-gantt', 'view-cards', 'backdrop', 'modal', 'mkToast'];
 ids.forEach(id => ok('页面存在 #' + id, new RegExp('id="' + id + '"').test(html)));
+/* 前台只读：维护类控件必须不在前台出现 */
+['addBtn', 'exportBtn', 'importBtn', 'resetBtn', 'importFile'].forEach(id =>
+  ok('前台不含维护控件 #' + id, !new RegExp('id="' + id + '"').test(html)));
 ok('未再使用旧 toast id 作为脚本目标', !/getElementById\('toast'\)/.test(mainJs));
 ok('样式已限定在 .mkzone 内（抽查）', /\.mkzone \.fcard/.test(css) && /\.mkzone \.gbar/.test(css));
 ok('样式含三视图与筛选样式', ['\.mkzone \.fest','\.mkzone \.month-head','\.mkzone \.rchip','\.mkzone \.chip','\.mkzone \.preview'].every(r => new RegExp(r).test(css)));
@@ -51,7 +54,11 @@ eq('页面 id 无重复', dupIds.length, 0);
 ok('粘性偏移使用统一变量', /--mk-top/.test(css) && /\.mkzone \.sidebar \{[^}]*var\(--mk-top\)/.test(css));
 ok('侧栏吸顶不遮挡主区（grid 两列）', /\.mkzone \{[^}]*grid-template-columns: 286px minmax\(0, 1fr\)/.test(css));
 
-ok('移动端侧栏抽屉样式存在', /@media \(max-width: 980px\)/.test(css) && /\.mkzone \.sidebar\.open/.test(css));
+ok('窄屏侧栏改为常显（不再做抽屉）',
+  /@media \(max-width: 980px\)/.test(css) &&
+  /\.mkzone \.sidebar \{ position: static/.test(css) &&
+  !/\.mkzone \.sidebar\.open/.test(css) &&
+  !/id="menuBtn"/.test(html));
 
 /* ---------- 运行时（jsdom） ---------- */
 const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://example.test/marketing.html', pretendToBeVisual: true });
@@ -146,38 +153,20 @@ eq('滑块改动后合计提前期更新', parseInt(d.getElementById('vTotal').t
 eq('提前期联动到倒推计算', w.eval('buildList()[0].lead'), 135);
 eq('设置已持久化', JSON.parse(w.localStorage.getItem(w.eval('SET_KEY'))).sample, 90);
 
-/* 新建 → 保存 → 持久化 */
-const n0 = st.festivals.length;
-d.getElementById('addBtn').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-ok('新建弹窗已打开', d.getElementById('backdrop').classList.contains('open'));
-ok('弹窗含预览块', d.getElementById('mPreview') !== null);
-d.getElementById('fName').value = '测试节庆ABC';
-d.getElementById('fDate').value = '2027-03-08';
-d.getElementById('fName').dispatchEvent(new w.Event('input', { bubbles: true }));
-ok('预览随名称更新', /测试节庆ABC/.test(d.getElementById('mPreview').textContent));
-d.getElementById('mSave').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-eq('新建后节庆数 +1', w.eval('state.festivals.length'), n0 + 1);
-ok('新建弹窗已关闭', !d.getElementById('backdrop').classList.contains('open'));
-const saved = JSON.parse(w.localStorage.getItem(w.eval('STORE_KEY')));
-ok('新节庆已写入 localStorage', saved.some(f => f.name === '测试节庆ABC'));
-ok('新节庆出现在列表（按日期排序）', w.eval('buildList()').some(x => x.h.name === '测试节庆ABC'));
+/* ===== 前台只读：维护入口全部搬到后台 ===== */
+ok('前台没有「新建节日」按钮', d.getElementById('addBtn') === null);
+ok('前台没有「导出 / 导入 / 恢复默认」数据管理区', d.getElementById('exportBtn') === null && d.getElementById('importBtn') === null && d.getElementById('resetBtn') === null);
+ok('前台脚本声明为只读', w.eval('MK_READONLY') === true);
+eq('卡片不再带编辑/删除按钮', d.querySelectorAll('#view-cards [data-act]').length, 0);
 
-/* 编辑 → 删除 */
-const newId = w.eval('state.festivals[state.festivals.length-1].id');
-w.eval('openModal("' + newId + '")');
-d.getElementById('fName').value = '测试节庆XYZ';
-d.getElementById('mSave').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-ok('编辑后名称已更新', w.eval('state.festivals[state.festivals.length-1].name') === '测试节庆XYZ');
-w.eval('openModal("' + newId + '")');
-d.getElementById('mDel').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-eq('删除需二次确认', w.eval('state.festivals.length'), n0 + 1);
-d.getElementById('mDel').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-eq('确认后删除成功', w.eval('state.festivals.length'), n0);
-
-/* 恢复默认 */
-w.eval('state.festivals=[];saveFestivals();');
-d.getElementById('resetBtn').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-ok('恢复默认节庆库', w.eval('state.festivals.length') >= 150, w.eval('state.festivals.length'));
+const cardEl = d.querySelector('#view-cards .fcard');
+if (cardEl) {
+  cardEl.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  ok('点卡片不会打开编辑弹窗', !d.getElementById('backdrop').classList.contains('open'));
+} else {
+  ok('点卡片不会打开编辑弹窗', true, '无卡片可点（跳过）');
+}
+ok('前台脚本里不再有数据管理的绑定代码', !/getElementById\('exportBtn'\)/.test(mainJs));
 
 /* 倒推逻辑自洽：最晚启动 = 节期 - 提前期 */
 const item = w.eval('buildList()[0]');

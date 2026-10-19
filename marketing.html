@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20261019B">
+<link rel="stylesheet" href="css/style.css?v=20261019C">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
 
@@ -67,7 +67,7 @@
   <header class="topbar" id="front-topbar">
     <div class="topbar-inner">
       <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="front-brand">TREND BANK</span></div>
-      <nav class="top-tabs">
+      <nav class="top-tabs is-booting">
         <a href="rank.html" class="tab-link">趋势上升榜</a>
         <a href="marketing.html" class="tab-link active" data-viewtab="marketing">营销日历</a>
         <a href="index.html" class="tab-link">视觉专区</a>
@@ -119,8 +119,6 @@
             <button data-view="gantt"><span class="seg-full">开发倒推</span><span class="seg-mini">倒推</span></button>
           </div>
           <div class="today-pill"><span class="dot"></span><span id="todayText">—</span></div>
-          <button class="btn btn-primary" id="addBtn">＋ 新建节日</button>
-          <button class="menu-btn btn" id="menuBtn">筛选</button>
         </div>
       </div>
 
@@ -159,53 +157,6 @@
     </div>
     </section>
 
-    <section class="side-sec">
-    <h3>数据管理</h3>
-    <div class="data-btns">
-    <button class="btn btn-ghost" id="exportBtn">导出数据</button>
-    <button class="btn btn-ghost" id="importBtn">导入数据</button>
-    <button class="btn btn-ghost full" id="resetBtn">恢复默认节庆库</button>
-    </div>
-    <input type="file" id="importFile" accept=".json,application/json" class="hidden">
-
-    <details class="spec">
-      <summary>导入字段说明</summary>
-      <div class="spec-body">
-        <p>文件为 <b>JSON</b> 格式，可以是一个<b>数组</b>，也可以直接用本页导出的文件（含 festivals 字段）原样回导。<br>
-           <b>注意：导入会整体替换当前节庆库</b>，不是追加。只想补充节日请用「＋ 新建节日」。</p>
-        <table class="spec-table">
-          <tr><th>字段</th><th></th><th>说明</th></tr>
-          <tr><td>name</td><td class="req">必填</td><td>节日名称。缺名称或日期的行会被跳过</td></tr>
-          <tr><td>date</td><td class="req">必填</td><td>日期，格式 <b>MM-DD</b>，如 <b>02-17</b></td></tr>
-          <tr><td>en</td><td class="opt">选填</td><td>英文名，卡片上会小字显示</td></tr>
-          <tr><td>region</td><td class="opt">选填</td><td>地区，默认「其他」</td></tr>
-          <tr><td>cat</td><td class="opt">选填</td><td>类别：trad 传统 / rel 宗教 / nat 国家纪念 / promo 电商大促 / sport 体育赛事 / season 季节档期，默认 trad</td></tr>
-          <tr><td>star</td><td class="opt">选填</td><td>重要度 1–5，默认 3</td></tr>
-          <tr><td>lead</td><td class="opt">选填</td><td>推荐提前期（天），默认 120</td></tr>
-          <tr><td>dur</td><td class="opt">选填</td><td>持续时间（天），默认 1。多日节庆填实际天数</td></tr>
-          <tr><td>idea</td><td class="opt">选填</td><td>选品方向，填文案</td></tr>
-          <tr><td>overrides</td><td class="opt">选填</td><td>指定年份日期，如 <b>{"2027":"02-06"}</b>，用于农历与浮动节日</td></tr>
-          <tr><td>note</td><td class="opt">选填</td><td>备注</td></tr>
-          <tr><td>id</td><td class="opt">选填</td><td>唯一标识，不填自动生成（重复会导致覆盖，建议留空）</td></tr>
-        </table>
-        <pre class="spec-code">[
-  {
-    "name": "巴西儿童节",
-    "date": "10-12",
-    "en": "Children's Day (BR)",
-    "region": "巴西",
-    "cat": "nat",
-    "star": 3,
-    "lead": 90,
-    "dur": 1,
-    "idea": "童装、亲子装、儿童配饰",
-    "overrides": null,
-    "note": "南半球春季档"
-  }
-]</pre>
-      </div>
-    </details>
-    </section>
     </div>
   </aside>
 
@@ -232,7 +183,7 @@
         <div id="view-gantt" class="view hidden"></div>
         <div id="view-cards" class="view"></div>
         <section class="mk-db hidden" id="mk-db">
-          <div class="sec-head"><h2>已发布营销素材</h2><span class="sub">后台「营销日历管理」中已发布的节点与文章</span><span class="line"></span></div>
+          <div class="sec-head"><h2>已发布营销素材</h2><span class="sub">后台「营销日历」中已发布的节点与文章</span><span class="line"></span></div>
           <div class="db-grid" id="mk-db-grid"></div>
         </section>
         <footer class="footer">
@@ -301,14 +252,14 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261019B"></script>
-  <script src="vendor/qrcode.min.js?v=20261019B"></script>
-  <script src="js/config.js?v=20261019B"></script>
-  <script src="js/supabase.js?v=20261019B"></script>
-  <script src="js/track-menu.js?v=20261019B"></script>
-  <script src="js/common.js?v=20261019B"></script>
-  <script src="js/marketing.js?v=20261019B"></script>
-  <script src="js/marketing-data.js?v=20261019B"></script>
-  <script src="js/marketing-main.js?v=20261019B"></script>
+  <script src="vendor/supabase.js?v=20261019C"></script>
+  <script src="vendor/qrcode.min.js?v=20261019C"></script>
+  <script src="js/config.js?v=20261019C"></script>
+  <script src="js/supabase.js?v=20261019C"></script>
+  <script src="js/track-menu.js?v=20261019C"></script>
+  <script src="js/common.js?v=20261019C"></script>
+  <script src="js/marketing.js?v=20261019C"></script>
+  <script src="js/marketing-data.js?v=20261019C"></script>
+  <script src="js/marketing-main.js?v=20261019C"></script>
 </body>
 </html>
