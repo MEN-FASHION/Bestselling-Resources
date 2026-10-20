@@ -2955,7 +2955,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  /* 20261019M：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  /* 20261019N：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
   max-width: none; width: 100%; margin: 0; box-sizing: border-box;
   padding: 14px clamp(14px, 1.4vw, 26px) 56px;
   display: grid; grid-template-columns: 300px minmax(0, 1fr);
@@ -3373,7 +3373,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================
-   20261019M · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   20261019N · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
    前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
    ============================================================ */
 .mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -3442,7 +3442,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 @keyframes sbd-pop{ from{opacity:0; transform:translateY(6px) scale(.98)} to{opacity:1; transform:none} }
 
 /* ============================================================
- * 20261019M · 营销日历页头瘦身
+ * 20261019N · 营销日历页头瘦身
  * 顶部导航已有「营销日历」页签，页内不再重复一份大标题页头；
  * 只留一条精简工具条：视图切换 + 今日日期，右对齐、不占高度。
  * ============================================================ */

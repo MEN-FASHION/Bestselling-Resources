@@ -623,9 +623,35 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!window.__authReady) { window.__authReady = true; showLoginView(); }
     }, 3000);
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
-    [bindLogin, bindLogout, bindChangepwd, bindToken, bindManage, bindFavCats,
-     bindCatMgmt, bindAccess, bindTagDefs, bindDashboard, bindAdminNav, bindSmartModal, bindTrend, bindNotice, bindRecruit, bindBestseller, bindPreview, bindExport, bindZoneCatModal, bindPermission, bindImagePool, bindMarketing, bindSuperTabs, bindRankPanel]
-      .forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
+    // 必须用 typeof 守卫（历史缺陷，20261019N 修复）：若直接写函数名而某模块已被删除，
+    // 数组字面量求值会抛 ReferenceError，导致整个绑定序列不执行
+    // （表现为「关闭 / Esc / 退出 / 修改密码」全部无反应）。
+    const INITERS = [
+      typeof bindLogin === "function" && bindLogin,
+      typeof bindLogout === "function" && bindLogout,
+      typeof bindChangepwd === "function" && bindChangepwd,
+      typeof bindToken === "function" && bindToken,
+      typeof bindManage === "function" && bindManage,
+      typeof bindFavCats === "function" && bindFavCats,
+      typeof bindCatMgmt === "function" && bindCatMgmt,
+      typeof bindAccess === "function" && bindAccess,
+      typeof bindTagDefs === "function" && bindTagDefs,
+      typeof bindDashboard === "function" && bindDashboard,
+      typeof bindAdminNav === "function" && bindAdminNav,
+      typeof bindSmartModal === "function" && bindSmartModal,
+      typeof bindTrend === "function" && bindTrend,
+      typeof bindNotice === "function" && bindNotice,
+      typeof bindRecruit === "function" && bindRecruit,
+      typeof bindBestseller === "function" && bindBestseller,
+      typeof bindPreview === "function" && bindPreview,
+      typeof bindExport === "function" && bindExport,
+      typeof bindZoneCatModal === "function" && bindZoneCatModal,
+      typeof bindPermission === "function" && bindPermission,
+      typeof bindImagePool === "function" && bindImagePool,
+      // 已下线模块（bindMarketing / bindSuperTabs）：无对应实现，不再参与绑定
+      typeof bindRankPanel === "function" && bindRankPanel,
+    ].filter(fn => typeof fn === "function");
+    INITERS.forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
   });
 
   /* 暴露给其它模块 / 事件绑定 */
