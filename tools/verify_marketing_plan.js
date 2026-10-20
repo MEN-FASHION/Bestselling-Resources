@@ -19,6 +19,7 @@ const html = fs.readFileSync(path.join(ROOT, 'marketing.html'), 'utf8');
 const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
 const dataJs = fs.readFileSync(path.join(ROOT, 'js/marketing-data.js'), 'utf8');
 const mainJs = fs.readFileSync(path.join(ROOT, 'js/marketing-main.js'), 'utf8');
+const railJs = fs.readFileSync(path.join(ROOT, 'js/rail.js'), 'utf8');
 
 /* ---------- 静态结构检查 ---------- */
 ok('页面引用数据脚本', /marketing-data\.js\?v=/.test(html));
@@ -37,6 +38,23 @@ ok('页面引入编辑层脚本（放在主脚本之后）',
   const v = [...vers][0] || "";
   ok('版本号未回退（不早于 20261019A）', v >= "20261019A" && !/^20261019B$/.test(v), v);
 }
+/* ---------- 左栏「完整常显」：其它前台专区的细轨收缩不得作用于营销页 ---------- */
+{
+  const railBlock = css.slice(
+    css.indexOf('/* ---------- 一、左侧类目菜单：细轨 ⇄ 展开面板 ---------- */'),
+    css.indexOf('/* 滚动条收细，展开态更干净 */')
+  );
+  ok('营销页 body 带 mk-page 标记（把它从细轨收缩里排除）', /<body class="front mk-page">/.test(html));
+  ok('细轨选择器全部限定 :not(.mk-page)', railBlock.length > 200
+    && !/body\.front \.sidebar/.test(railBlock) && !/body\.front \.gallery-layout/.test(railBlock));
+  ok('细轨仍对其它前台专区生效（规则未被误删）', /body\.front:not\(\.mk-page\) \.sidebar \{[^}]*width: 54px/.test(railBlock));
+  ok('细轨控制器对营销页直接跳过', /classList\.contains\("mk-page"\)\) return;/.test(railJs));
+  ok('营销页侧栏钉死整宽、不写竖排', /\.mkzone \.sidebar \{[^}]*width: 100%/.test(css)
+    && /\.mkzone \.sidebar \{[^}]*writing-mode: horizontal-tb/.test(css));
+  ok('营销页侧栏高度随内容（不写死 118px 小把手）', /\.mkzone \.sidebar \{[^}]*max-height: calc\(100vh - var\(--mk-top\)/.test(css));
+  ok('桌面栅格给侧栏独立列宽', /\.mkzone \{[^}]*grid-template-columns: 300px minmax\(0, 1fr\)/.test(css));
+}
+
 const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
   'starChips', 'modeRec', 'modeCus', 'sSample', 'vTotal',
   'stats', 'view-timeline', 'view-gantt', 'view-cards', 'backdrop', 'modal', 'mkToast'];

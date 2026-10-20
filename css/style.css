@@ -2449,9 +2449,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* ---------- 一、左侧类目菜单：细轨 ⇄ 展开面板 ---------- */
 @media (min-width: 901px) {
   /* 布局列宽按「细轨」算，图片区多出约 158px */
-  body.front .gallery-layout { grid-template-columns: 54px 1fr; gap: 10px; }
+  body.front:not(.mk-page) .gallery-layout { grid-template-columns: 54px 1fr; gap: 10px; }
 
-  body.front .sidebar {
+  body.front:not(.mk-page) .sidebar {
     position: sticky; top: 78px;
     width: 54px; padding: 14px 0;
     max-height: 118px;                    /* 收起态：只留一张小卡片当把手 */
@@ -2464,17 +2464,17 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   }
 
   /* 收起态：标题竖排，menu 隐去 */
-  body.front .sidebar .side-head {
+  body.front:not(.mk-page) .sidebar .side-head {
     writing-mode: vertical-rl; text-orientation: upright;
     letter-spacing: 4px; font-size: 12px; font-weight: 600;
     color: var(--gold); text-transform: none; white-space: nowrap;
     width: auto; margin: 0 auto; padding: 0 0 10px;
     border-bottom: none;
   }
-  body.front .sidebar .cat-menu { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+  body.front:not(.mk-page) .sidebar .cat-menu { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
 
   /* 右侧边缘的小把手，提示「可以展开」 */
-  body.front .sidebar::after {
+  body.front:not(.mk-page) .sidebar::after {
     content: "›";
     position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
     width: 17px; height: 32px; display: grid; place-items: center;
@@ -2484,9 +2484,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   }
 
   /* 展开态 */
-  body.front .sidebar:hover,
-  body.front .sidebar:focus-within,
-  body.front .sidebar.rail-open {          /* .rail-open 由 js/rail.js 按「整列命中」加上 */
+  body.front:not(.mk-page) .sidebar:hover,
+  body.front:not(.mk-page) .sidebar:focus-within,
+  body.front:not(.mk-page) .sidebar.rail-open {          /* .rail-open 由 js/rail.js 按「整列命中」加上 */
     width: 212px; padding: 16px 12px;
     max-height: calc(100vh - 100px);
     overflow-y: auto;
@@ -2494,23 +2494,23 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
     box-shadow: 0 20px 48px rgba(20,20,20,.18);
     transition-delay: 0s;
   }
-  body.front .sidebar:hover .side-head,
-  body.front .sidebar:focus-within .side-head,
-  body.front .sidebar.rail-open .side-head {
+  body.front:not(.mk-page) .sidebar:hover .side-head,
+  body.front:not(.mk-page) .sidebar:focus-within .side-head,
+  body.front:not(.mk-page) .sidebar.rail-open .side-head {
     writing-mode: horizontal-tb; letter-spacing: 2px;
     margin: 0 0 8px; padding: 4px 8px 12px;
     border-bottom: 1px solid var(--line);
   }
-  body.front .sidebar:hover .cat-menu,
-  body.front .sidebar:focus-within .cat-menu,
-  body.front .sidebar.rail-open .cat-menu { opacity: 1; pointer-events: auto; }
-  body.front .sidebar:hover::after,
-  body.front .sidebar:focus-within::after,
-  body.front .sidebar.rail-open::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
+  body.front:not(.mk-page) .sidebar:hover .cat-menu,
+  body.front:not(.mk-page) .sidebar:focus-within .cat-menu,
+  body.front:not(.mk-page) .sidebar.rail-open .cat-menu { opacity: 1; pointer-events: auto; }
+  body.front:not(.mk-page) .sidebar:hover::after,
+  body.front:not(.mk-page) .sidebar:focus-within::after,
+  body.front:not(.mk-page) .sidebar.rail-open::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
 
   /* 滚动条收细，展开态更干净 */
-  body.front .sidebar::-webkit-scrollbar { width: 6px; }
-  body.front .sidebar::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
+  body.front:not(.mk-page) .sidebar::-webkit-scrollbar { width: 6px; }
+  body.front:not(.mk-page) .sidebar::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
 }
 
 /* ---------- 二、顶部筛选栏：修掉「鼠标移过去就收回」的死区 + 收回缓冲 ---------- */
@@ -2955,7 +2955,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  /* 20261019G：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  /* 20261019I：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
   max-width: none; width: 100%; margin: 0; box-sizing: border-box;
   padding: 14px clamp(14px, 1.4vw, 26px) 56px;
   display: grid; grid-template-columns: 300px minmax(0, 1fr);
@@ -3011,7 +3011,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .menu-btn { display: none; }
 
 /* ---------- 侧栏 ---------- */
-.mkzone .sidebar { position: sticky; top: calc(var(--mk-top) + 10px); max-height: calc(100vh - var(--mk-top) - 22px); overflow-y: auto; overscroll-behavior: contain; align-self: start; padding: 18px 16px 26px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+.mkzone .sidebar { width: 100%; min-width: 0; flex: none; writing-mode: horizontal-tb; position: sticky; top: calc(var(--mk-top) + 10px); max-height: calc(100vh - var(--mk-top) - 22px); overflow-y: auto; overscroll-behavior: contain; align-self: start; padding: 18px 16px 26px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
 .mkzone .side-sec { margin-bottom: 22px; }
 .mkzone .side-sec:last-child { margin-bottom: 0; }
 .mkzone .side-sec h3 { display: flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--mk-ink3); font-weight: 700; margin-bottom: 10px; }
@@ -3325,7 +3325,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================
-   20261019G · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   20261019I · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
    前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
    ============================================================ */
 .mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;

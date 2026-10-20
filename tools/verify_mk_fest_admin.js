@@ -12,7 +12,9 @@ const festJs = read('js/admin-festival.js');
 const dataJs = read('js/marketing-data.js');
 const css = read('css/style.css');
 /* 只取「营销日历」面板那一段（其它面板本来就有各自的预览 iframe，与本需求无关） */
-const mkPanel = admin.slice(admin.indexOf('id="mk-card"'), admin.indexOf('id="mk-publish-sub"') > 0 ? admin.indexOf('id="mk-publish-sub"') : undefined);
+const _mkFrom = admin.indexOf('id="mk-card"');
+const _mkTo = admin.indexOf('<div class="panel-card', _mkFrom + 10);
+const mkPanel = admin.slice(_mkFrom, _mkTo > 0 ? _mkTo : undefined);
 
 let pass = 0, fail = 0; const fails = [];
 function ok(name, cond, extra) {

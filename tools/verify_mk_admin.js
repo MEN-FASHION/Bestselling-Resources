@@ -89,7 +89,10 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 25));
   ok('旧节庆脚本不再被引用', !/admin-festivals\.js/.test(admin));
   ok('旧节庆脚本文件已删除', !fs.existsSync(path.join(ROOT, 'js/admin-festivals.js')));
   ok('admin.js 不再调用 loadFestivalsPanel', !/loadFestivalsPanel/.test(adminJs));
-  ok('已发布素材区仍在（②保留）', /id="mk-publish-sub"/.test(admin) && /id="mk-viz-timeline"/.test(admin));
+  ok('旧「已发布营销素材」区块已下线', !/id="mk-publish-sub"/.test(admin) && !/id="mk-viz-timeline"/.test(admin) && !/id="mk-viz-grid"/.test(admin));
+  ok('旧节点/文章弹窗已删除', !/id="mk-node-modal"/.test(admin) && !/id="mk-art-modal"/.test(admin));
+  ok('旧营销脚本已移除且文件删除', !/admin-marketing\.js/.test(admin) && !fs.existsSync(path.join(ROOT, 'js/admin-marketing.js')));
+  ok('后台营销面板只剩节庆库一块', (admin.match(/id="mk-card"/g) || []).length === 1 && !/已发布营销素材/.test(admin));
   ok('侧栏菜单名仍为「营销日历」且仅超管', /data-target="mk-card" data-super="1">营销日历</.test(admin));
   ok('后台内嵌版样式存在（单列、无侧栏）', /\.mkzone\.mk-adm \{[^}]*grid-template-columns: minmax\(0, 1fr\)/.test(css));
 

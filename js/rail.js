@@ -56,6 +56,8 @@
 
   function boot() {
     if (!document.body || !document.body.classList.contains("front")) return;
+    /* 营销日历页的侧栏是"完整常显"的筛选栏，不参与细轨收缩（20261019I） */
+    if (document.body.classList.contains("mk-page")) return;
     layout = document.querySelector(".gallery-layout");
     sb = layout ? layout.querySelector(".sidebar") : null;
     if (!sb) return;

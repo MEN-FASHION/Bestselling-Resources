@@ -19,7 +19,7 @@ const path = require("path");
 
 const root = process.argv[2] || ".";
 const ORDER = ["admin.js", "admin-images.js", "admin-smart.js", "admin-trend.js", "admin-notice.js",
-  "admin-marketing.js", "admin-tasks.js", "admin-bestseller.js", "admin-perm.js", "admin-pool.js", "admin-rank.js",
+  "admin-tasks.js", "admin-bestseller.js", "admin-perm.js", "admin-pool.js", "admin-rank.js",
   "admin-insight.js", "admin-backup.js"];
 
 function read(f) { return fs.readFileSync(path.join(root, "js", f), "utf8"); }

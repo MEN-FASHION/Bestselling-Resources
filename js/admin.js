@@ -193,10 +193,9 @@ function switchPanel(target) {
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); if (typeof window.loadRecruitDashStats === "function") window.loadRecruitDashStats(); }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
-    // 营销日历：① 节庆库（原生编辑器，直接在本页编辑）② 已发布素材
+    // 营销日历：节庆库（原生编辑器，直接在本页编辑；旧的素材区块已下线）
     if (target === "mk-card") {
       if (window.FEST && typeof FEST.mount === "function") FEST.mount();
-      loadMarketingNodes(); loadMarketingArticlePick(); loadMarketingArticles();
     }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
     // 用户动向：三个子页各自懒加载（只读，不发写请求）
