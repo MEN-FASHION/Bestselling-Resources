@@ -165,25 +165,22 @@ function regionDetailHTML(lab){
   return h + '</div>';
 }
 
-/* 悬停切换洲：只刷新洲标签状态与国家区，不重建整行（避免鼠标下方元素被替换导致反复触发） */
+/* 悬停切换洲：就地开合该洲下面的国家块，不重建整列（避免鼠标下方元素被替换） */
 function refreshRegionDetail(){
   var lab = (openGroups.active && GROUPS_CACHE[openGroups.active]) ? openGroups.active : null;
-  var rowEl = document.getElementById('rgRow');
-  if(rowEl){
-    var cards = rowEl.querySelectorAll('.rgc');
-    for(var i=0; i<cards.length; i++){
-      var nm = cards[i].querySelector('.rgc-name');
+  var listEl = document.getElementById('rgList');
+  if(listEl){
+    var cols = listEl.querySelectorAll('.rgc');
+    for(var i=0; i<cols.length; i++){
+      var nm = cols[i].querySelector('.rgc-name');
       var l = nm ? nm.getAttribute('data-whole') : null;
       var hit = !!l && l === lab;
-      cards[i].classList.toggle('open', hit);
-      var tog = cards[i].querySelector('.rgc-tog');
+      cols[i].classList.toggle('open', hit);
+      var tog = cols[i].querySelector('.rgc-tog');
       if(tog) tog.setAttribute('aria-expanded', hit ? 'true' : 'false');
+      var body = cols[i].querySelector('.rg-body');
+      if(body) body.innerHTML = hit ? regionDetailHTML(l) : '';
     }
-  }
-  var dEl = document.getElementById('rgDetail');
-  if(dEl){
-    dEl.innerHTML = lab ? regionDetailHTML(lab) : '';
-    dEl.classList.toggle('show', !!lab);
   }
 }
 function renderFilters(){
@@ -214,34 +211,28 @@ function renderFilters(){
   }
   if(GROUPS_CACHE['其他']) order.push('其他');
 
-  /* 保留横向滚动位置，避免重绘后跳回开头 */
-  var oldRow = document.getElementById('rgRow');
-  var keepScroll = oldRow ? oldRow.scrollLeft : 0;
-
   var activeLab = (openGroups.active && GROUPS_CACHE[openGroups.active]) ? openGroups.active : null;
 
-  var row = '';
+  /* 每个洲一个独立区块：国家直接长在该洲下面（手风琴），不再堆到所有洲的最底部 */
+  var blocks = '';
   for(var g4=0; g4<order.length; g4++){
     var lab = order[g4];
     var items = GROUPS_CACHE[lab];
     var selN = 0;
-    for(var s=0; s<items.length; s++){ if(state.filters.regions.indexOf(items[s])>=0) selN++; }
+    for(var s2=0; s2<items.length; s2++){ if(state.filters.regions.indexOf(items[s2])>=0) selN++; }
     var cls = selN===0 ? '' : (selN===items.length ? 'on' : 'part');
     var isOpen = (lab === activeLab);
-    row += '<div class="rgc ' + cls + (isOpen?' open':'') + '">'
-        +  '<button class="rgc-name" data-whole="'+esc(lab)+'">'+esc(lab)
-        +  '<span class="rgc-cnt">' + (selN ? selN+'/' : '') + items.length + '</span></button>'
-        +  '<button class="rgc-tog" data-chev="'+esc(lab)+'" aria-label="展开 '+esc(lab)+' 的国家" aria-expanded="'+(isOpen?'true':'false')+'"></button>'
+    blocks += '<div class="rgc ' + cls + (isOpen?' open':'') + '">'
+        +  '<div class="rgc-h">'
+        +    '<button class="rgc-name" data-whole="'+esc(lab)+'">'+esc(lab)
+        +    '<span class="rgc-cnt">' + (selN ? selN+'/' : '') + items.length + '</span></button>'
+        +    '<button class="rgc-tog" data-chev="'+esc(lab)+'" aria-label="展开 '+esc(lab)+' 的国家" aria-expanded="'+(isOpen?'true':'false')+'"></button>'
+        +  '</div>'
+        +  '<div class="rg-body">' + (isOpen ? regionDetailHTML(lab) : '') + '</div>'
         +  '</div>';
   }
 
-  document.getElementById('regionList').innerHTML =
-      '<div class="rg-row" id="rgRow">' + row + '</div>'
-    + '<div class="rg-detail'+(activeLab?' show':'')+'" id="rgDetail">'
-    + (activeLab ? regionDetailHTML(activeLab) : '') + '</div>';
-
-  var rowEl = document.getElementById('rgRow');
-  if(rowEl && keepScroll) rowEl.scrollLeft = keepScroll;
+  document.getElementById('regionList').innerHTML = '<div class="rg-list" id="rgList">' + blocks + '</div>';
 
   var selAll = state.filters.regions;
   var hintEl = document.getElementById('regionHint');

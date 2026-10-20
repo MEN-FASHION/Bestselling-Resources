@@ -214,6 +214,69 @@ try {
   ok('300 条数据渲染不报错', false, e.message);
 }
 
+/* ===== 本轮：侧栏占满整列 / 重要度竖排 / 自定义周期提示 / 地区「洲内展开」 ===== */
+{
+  /* 侧栏：高度撑满可视区，滚动交给内部容器 */
+  const sbRule = (css.match(/\.mkzone \.sidebar \{[^}]*\}/) || [''])[0];
+  ok('侧栏高度撑满整列（不是内容高度）',
+    /\.mkzone \.sidebar \{[^}]*[;{]\s*height: calc\(100vh - var\(--mk-top\) - 22px\)/.test(sbRule));
+  ok('侧栏为纵向弹性容器（滚动交给内部）', /display: flex/.test(sbRule) && /flex-direction: column/.test(sbRule) && /overflow: hidden/.test(sbRule));
+  ok('内部滚动区可伸缩（flex:1 + min-height:0）', /\.mkzone \.side-scroll \{[^}]*flex: 1 1 auto/.test(css) && /\.mkzone \.side-scroll \{[^}]*min-height: 0/.test(css));
+  ok('窄屏不再锁高（改回自适应）', /@media \(max-width: 980px\)[\s\S]{0,400}\.mkzone \.sidebar \{[^}]*height: auto/.test(css));
+  ok('侧栏内确实包着可滚动容器', /<aside class="sidebar" id="sidebar">\s*<div class="side-scroll">/.test(html));
+
+  /* 重要度：四个选项竖排 */
+  ok('重要度选项整列竖排', /\.mkzone #starChips \{[^}]*flex-direction: column/.test(css)
+    && /\.mkzone #starChips \.chip \{[^}]*width: 100%/.test(css));
+  eq('重要度仍是 4 个选项（全部/3星以上/4星/5星）', (d.querySelectorAll('#starChips .chip').length), 4);
+  const sy = [...d.querySelectorAll('#starChips .chip')].map(el => el.getBoundingClientRect().top);
+  ok('四个选项纵向依次下排（不折成两列）', sy.every((v, i) => i === 0 || v > sy[i - 1] - 1), sy.join(','));
+
+  /* 自定义周期提示 */
+  const tip = d.querySelector('#customPanel .cycle-tip');
+  ok('自定义周期有说明提示', !!tip && /自己的开发打样节奏/.test(tip.textContent));
+  ok('提示说明三段相加为提前期', !!tip && /三段相加/.test(tip.textContent));
+
+  /* 地区：国家长在所属洲下面，而不是所有洲的最底部 */
+  const list = d.getElementById('rgList');
+  ok('地区面板为洲块列表结构', !!list && list.querySelectorAll('.rgc').length > 1);
+  ok('不再有独立的底部国家区（rgDetail 已移除）', d.getElementById('rgDetail') === null && d.querySelector('.rg-row') === null);
+  const blocks = [...list.querySelectorAll('.rgc')];
+  ok('每个洲块自带国家容器', blocks.every(b => b.querySelector('.rg-body') !== null));
+  ok('同时最多只有一个洲展开（手风琴不串开）', blocks.filter(b => b.classList.contains('open')).length <= 1);
+
+  /* 点第二个洲的展开箭头 → 只有该洲内部出现国家 */
+  const target = blocks[1];
+  target.querySelector('.rgc-tog').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const blocks2 = [...d.getElementById('rgList').querySelectorAll('.rgc')];
+  const openedIdx = blocks2.findIndex(b => b.classList.contains('open'));
+  ok('点箭头后该洲展开', openedIdx === 1, 'openedIdx=' + openedIdx);
+  const chipsInOpen = blocks2[1].querySelectorAll('.rg-body .rchip').length;
+  ok('国家渲染在该洲块内部', chipsInOpen > 0, chipsInOpen);
+  ok('其它洲块内部没有国家', blocks2.filter((b, i) => i !== 1).every(b => b.querySelectorAll('.rg-body .rchip').length === 0));
+  ok('展开洲的国家数量与该洲国家数一致',
+    chipsInOpen === w.eval('GROUPS_CACHE')[blocks2[1].querySelector('.rgc-name').getAttribute('data-whole')].length,
+    chipsInOpen);
+  ok('展开箭头 aria 状态同步', blocks2[1].querySelector('.rgc-tog').getAttribute('aria-expanded') === 'true'
+    && blocks2.filter((b, i) => i !== 1).every(b => b.querySelector('.rgc-tog').getAttribute('aria-expanded') === 'false'));
+
+  /* 该洲内部点一个国家 → 正常进入筛选，且仍在该洲块内高亮 */
+  const chip = blocks2[1].querySelector('.rg-body .rchip');
+  if (!chip) { ok('点洲内国家可选中', false, '该洲块内没有国家（国家没长在洲下面）'); }
+  const rname = chip ? chip.getAttribute('data-region') : null;
+  if (chip) chip.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const picked = w.eval('state.filters.regions');
+  ok('点洲内国家可选中', picked.indexOf(rname) >= 0, picked.join('|'));
+  const stillOpen = d.getElementById('rgList').querySelectorAll('.rgc')[1];
+  ok('选中后该洲仍展开（便于继续挑）', stillOpen.classList.contains('open'));
+  ok('选中后该洲计数显示 已选/总数', /\/\d+$/.test(stillOpen.querySelector('.rgc-cnt').textContent));
+  /* 点击会触发重绘：必须重新取节点（旧节点已脱离文档） */
+  const chip2 = rname ? d.querySelector('#regionList .rchip[data-region="' + rname + '"]') : null;
+  ok('重绘后该国家仍在所属洲块内', !!chip2 && !!chip2.closest('.rg-body'));
+  if (chip2) chip2.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  ok('再点一次取消该国家', !rname || w.eval('state.filters.regions').indexOf(rname) < 0);
+}
+
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fails.length) { console.log('失败项：'); fails.forEach(f => console.log(' - ' + f)); }
 w.close();

@@ -2955,7 +2955,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  /* 20261019I：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  /* 20261019J：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
   max-width: none; width: 100%; margin: 0; box-sizing: border-box;
   padding: 14px clamp(14px, 1.4vw, 26px) 56px;
   display: grid; grid-template-columns: 300px minmax(0, 1fr);
@@ -3011,12 +3011,18 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .menu-btn { display: none; }
 
 /* ---------- 侧栏 ---------- */
-.mkzone .sidebar { width: 100%; min-width: 0; flex: none; writing-mode: horizontal-tb; position: sticky; top: calc(var(--mk-top) + 10px); max-height: calc(100vh - var(--mk-top) - 22px); overflow-y: auto; overscroll-behavior: contain; align-self: start; padding: 18px 16px 26px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+.mkzone .sidebar { width: 100%; min-width: 0; flex: none; writing-mode: horizontal-tb; position: sticky; top: calc(var(--mk-top) + 10px); height: calc(100vh - var(--mk-top) - 22px); max-height: calc(100vh - var(--mk-top) - 22px); display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; align-self: start; padding: 18px 16px 22px; background: var(--card); border: 1px solid var(--mk-line); border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+.mkzone .side-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px; }
+.mkzone .side-scroll::-webkit-scrollbar { width: 6px; }
+.mkzone .side-scroll::-webkit-scrollbar-thumb { background: rgba(156,139,116,.3); border-radius: 3px; }
 .mkzone .side-sec { margin-bottom: 22px; }
 .mkzone .side-sec:last-child { margin-bottom: 0; }
 .mkzone .side-sec h3 { display: flex; align-items: center; gap: 9px; font-size: 11px; letter-spacing: .16em; color: var(--mk-ink3); font-weight: 700; margin-bottom: 10px; }
 .mkzone .side-sec h3::after { content: ""; flex: 1; height: 1px; background: var(--mk-line); }
 .mkzone .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 重要度：四个选项整列竖排，一眼看全不折行 */
+.mkzone #starChips { flex-direction: column; gap: 5px; }
+.mkzone #starChips .chip { width: 100%; justify-content: flex-start; }
 .mkzone .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 8px; font-size: 12px; color: var(--mk-ink2); background: var(--mk-paper); border: 1px solid var(--mk-line); cursor: pointer; transition: .16s; }
 .mkzone .chip:hover { color: var(--mk-ink); border-color: var(--gold2); }
 .mkzone .chip.active { background: var(--gold); border-color: var(--gold); color: #fff; }
@@ -3024,6 +3030,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 11px; background: var(--mk-paper2); }
 .mkzone .toggle { padding: 8px 6px; border-radius: 8px; font-size: 12px; color: var(--mk-ink2); border: 0; background: transparent; cursor: pointer; transition: .2s; }
 .mkzone .toggle.active { background: var(--card); color: var(--mk-ink); font-weight: 600; box-shadow: 0 2px 10px -6px rgba(60,52,42,.7); }
+.mkzone .cycle-tip { margin: 12px 0 0; padding: 9px 11px; border-radius: 9px; background: rgba(139,115,85,.07); border: 1px dashed var(--mk-line2); font-size: 11px; line-height: 1.65; color: var(--mk-ink2); }
 .mkzone .custom-panel { margin-top: 12px; padding: 14px; border-radius: 12px; background: var(--mk-paper); border: 1px solid var(--mk-line); }
 .mkzone .slider-row { margin-bottom: 12px; }
 .mkzone .slider-row label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--mk-ink2); margin-bottom: 7px; }
@@ -3074,22 +3081,21 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .fb-clear { margin-left: auto; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--mk-line); background: var(--mk-paper); font-size: 11.5px; color: var(--mk-ink2); cursor: pointer; }
 .mkzone .fb-clear.dim { opacity: .45; }
 .mkzone .region-list { max-height: 62vh; overflow: auto; }
-/* 洲行钉在面板顶部：往下翻国家时洲名始终在眼前，切洲不用来回滚动 */
-.mkzone .rg-row { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 0 8px; position: sticky; top: -14px; z-index: 2; background: var(--card); }
-/* 国家紧跟洲行之下，不做视觉上的分离 */
-.mkzone .rg-detail.show { display: block; }
-/* 洲行在最上面，国家区紧跟其下：视觉上属于同一个洲，减少跨越空隙就收起的挫败感 */
-.mkzone .rg-detail { margin-top: 8px; padding: 12px; border-radius: 12px; background: var(--mk-paper); border: 1px solid var(--mk-line); }
-.mkzone .rgc { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--mk-line); border-radius: 9px; background: var(--mk-paper); overflow: hidden; flex: 0 0 auto; }
-.mkzone .rgc.on { border-color: var(--gold); background: rgba(139,115,85,.1); }
+/* 地区：一个洲一个区块，国家直接长在该洲下面（手风琴），不要堆到最底部 */
+.mkzone .rg-list { display: flex; flex-direction: column; gap: 6px; }
+.mkzone .rgc { display: block; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-paper); overflow: hidden; }
+.mkzone .rgc.on { border-color: var(--gold); background: rgba(139,115,85,.08); }
 .mkzone .rgc.part { border-color: var(--gold2); }
-.mkzone .rgc.open { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(139,115,85,.1); }
-.mkzone .rgc-name { padding: 7px 11px; font-size: 12px; color: var(--mk-ink2); background: transparent; border: 0; cursor: pointer; white-space: nowrap; }
+.mkzone .rgc.open { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(139,115,85,.09); }
+.mkzone .rgc-h { display: flex; align-items: stretch; }
+.mkzone .rgc-name { flex: 1 1 auto; text-align: left; padding: 8px 12px; font-size: 12.5px; color: var(--mk-ink2); background: transparent; border: 0; cursor: pointer; white-space: nowrap; }
 .mkzone .rgc.on .rgc-name, .mkzone .rgc.open .rgc-name { color: var(--gold); font-weight: 600; }
-.mkzone .rgc-cnt { margin-left: 5px; font-size: 10px; color: var(--mk-ink3); }
-.mkzone .rgc-tog { width: 24px; align-self: stretch; border: 0; border-left: 1px solid var(--mk-line); background: transparent; cursor: pointer; position: relative; }
+.mkzone .rgc-cnt { margin-left: 6px; font-size: 10px; color: var(--mk-ink3); }
+.mkzone .rgc-tog { width: 32px; flex: 0 0 32px; border: 0; border-left: 1px solid var(--mk-line); background: transparent; cursor: pointer; position: relative; }
 .mkzone .rgc-tog::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-right: 1.4px solid var(--mk-ink3); border-bottom: 1.4px solid var(--mk-ink3); transform: translate(-50%,-70%) rotate(45deg); }
 .mkzone .rgc-tog[aria-expanded="true"]::after { transform: translate(-50%,-30%) rotate(225deg); }
+.mkzone .rg-body { padding: 10px 11px 12px; border-top: 1px solid var(--mk-line); }
+.mkzone .rg-body:empty { border-top: 0; }
 .mkzone .rg-detail { display: none; }
 .mkzone .rg-detail.show { display: block; }
 .mkzone .rg-dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 11.5px; color: var(--mk-ink2); }
@@ -3262,7 +3268,8 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .mkzone { grid-template-columns: minmax(0, 1fr); padding: 18px 16px 44px; }
   /* 侧栏永远完整显示：窄屏也不做抽屉，改为整条铺在内容上方 */
   .mkzone .menu-btn { display: none; }
-  .mkzone .sidebar { position: static; width: auto; max-height: none; border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+  .mkzone .sidebar { position: static; width: auto; height: auto; max-height: none; overflow: visible; border-radius: 16px; box-shadow: 0 10px 26px -22px rgba(60,52,42,.8); }
+  .mkzone .side-scroll { overflow: visible; }
   .mkzone .seg-full { display: none; }
   .mkzone .seg-mini { display: inline; }
   .mkzone .gantt-head { position: static; }
@@ -3325,7 +3332,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================
-   20261019I · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   20261019J · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
    前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
    ============================================================ */
 .mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;
