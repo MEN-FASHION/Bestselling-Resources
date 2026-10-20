@@ -261,6 +261,26 @@ function openPreviewInNewTab() {
     window.open(previewPage, "_blank");
   }
 
+/* 超管权限面板：子页签切换（公告管理 / 权限管理 / 前台访问设置 / 数据导出 / 存量图片压缩池）
+ * 说明：这一段的绑定原先放在已下线的旧营销脚本里，模块删除后子页签就点不动了，
+ * 现改为在本文件内实现，并由初始化清单统一绑定（20261019O 修复）。 */
+function bindSuperTabs() {
+  const tabs = Array.prototype.slice.call(document.querySelectorAll("#super-tabs .super-tab"));
+  if (!tabs.length) return;
+  const subs = Array.prototype.slice.call(document.querySelectorAll("#super-card .super-sub"));
+  const apply = (key) => {
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.sv === key));
+    subs.forEach(sp => { sp.style.display = (sp.dataset.sv === key) ? "" : "none"; });
+  };
+  tabs.forEach(t => {
+    if (t.dataset.bound === "1") return;
+    t.dataset.bound = "1";
+    t.addEventListener("click", () => apply(t.dataset.sv));
+  });
+  const active = tabs.filter(t => t.classList.contains("active"))[0] || tabs[0];
+  if (active) apply(active.dataset.sv);
+}
+
 function bindPreview() {
     const btn = $("#admin-preview-btn");
     if (btn) btn.addEventListener("click", openPreview);
@@ -623,7 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!window.__authReady) { window.__authReady = true; showLoginView(); }
     }, 3000);
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
-    // 必须用 typeof 守卫（历史缺陷，20261019N 修复）：若直接写函数名而某模块已被删除，
+    // 必须用 typeof 守卫（历史缺陷，20261019O 修复）：若直接写函数名而某模块已被删除，
     // 数组字面量求值会抛 ReferenceError，导致整个绑定序列不执行
     // （表现为「关闭 / Esc / 退出 / 修改密码」全部无反应）。
     const INITERS = [
@@ -638,6 +658,7 @@ document.addEventListener("DOMContentLoaded", () => {
       typeof bindTagDefs === "function" && bindTagDefs,
       typeof bindDashboard === "function" && bindDashboard,
       typeof bindAdminNav === "function" && bindAdminNav,
+      typeof bindSuperTabs === "function" && bindSuperTabs,
       typeof bindSmartModal === "function" && bindSmartModal,
       typeof bindTrend === "function" && bindTrend,
       typeof bindNotice === "function" && bindNotice,
@@ -648,7 +669,7 @@ document.addEventListener("DOMContentLoaded", () => {
       typeof bindZoneCatModal === "function" && bindZoneCatModal,
       typeof bindPermission === "function" && bindPermission,
       typeof bindImagePool === "function" && bindImagePool,
-      // 已下线模块（bindMarketing / bindSuperTabs）：无对应实现，不再参与绑定
+      // 已下线模块：bindMarketing 随旧营销脚本一并移除（超管子页签改由本文件 bindSuperTabs 实现）
       typeof bindRankPanel === "function" && bindRankPanel,
     ].filter(fn => typeof fn === "function");
     INITERS.forEach(fn => { try { fn(); } catch (e) { console.warn("init 跳过:", fn.name, e); } });
@@ -656,7 +677,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    canAccessPanel, canOperateZone, guardZone, bindAdminNav, switchPanel, setPreviewTab, setPreviewFrame, openPreview, closePreview, refreshPreview, switchPreviewPage, openPreviewInNewTab, bindPreview, saveCatOrder, refreshUserBadge, bindLogin, bindLogout, bindChangepwd, enterPanel, bindToken, loadAccess, loadZoneVisibility, loadCatVisibility, bindAccess
+    canAccessPanel, canOperateZone, guardZone, bindAdminNav, switchPanel, setPreviewTab, setPreviewFrame, openPreview, closePreview, refreshPreview, switchPreviewPage, openPreviewInNewTab, bindPreview, saveCatOrder, refreshUserBadge, bindLogin, bindLogout, bindChangepwd, enterPanel, bindToken, loadAccess, loadZoneVisibility, loadCatVisibility, bindAccess, bindSuperTabs
   });
 
 })();

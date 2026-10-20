@@ -2,7 +2,7 @@
 /**
  * 后台初始化静态检查（纯静态，不依赖浏览器环境）
  *
- * 背景（20261019N）：删掉 js/admin-marketing.js 后，admin.js 的初始化绑定数组里
+ * 背景（20261019O）：删掉 js/admin-marketing.js 后，admin.js 的初始化绑定数组里
  * 仍写着 bindMarketing / bindSuperTabs 这两个已不存在的标识符。数组字面量求值
  * 会抛 ReferenceError，导致【整个】绑定序列一条都不执行 —— 表现为：进后台后
  * 智能打标的「关闭」、Esc、「退出全屏」、「退出登录」全部点击无反应。
@@ -54,7 +54,9 @@ ok("全部有实现（无悬空标识符）", undef.length === 0, undef.join(", 
 
 console.log("\n=== 4. 已下线模块不得再被绑定 ===");
 ok("数组中不再绑定 bindMarketing", !/bindMarketing/.test(codeLines.join("\n").replace(/\/\/.*$/gm, "")));
-ok("数组中不再绑定 bindSuperTabs", !/bindSuperTabs/.test(codeLines.join("\n").replace(/\/\/.*$/gm, "")));
+// 20261019O：超管子页签的绑定已在本文件重新实现，因此它「必须」被绑定且必须有实现
+ok("数组中重新绑定了 bindSuperTabs（超管子页签必须有人绑）", /bindSuperTabs/.test(codeLines.join("\n").replace(/\/\/.*$/gm, "")));
+ok("bindSuperTabs 有实现", /function\s+bindSuperTabs\s*\(/.test(allJs));
 
 console.log("\n=== 5. 关键按钮元素必须在页面里存在 ===");
 const adminHtml = rd("admin.html");
