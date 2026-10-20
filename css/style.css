@@ -2955,7 +2955,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   --mk-line: var(--line);
   --mk-line2: #d9d3c7;
   --mk-danger: var(--danger);
-  /* 20261019J：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
+  /* 20261019K：前台铺满整屏，两侧不再留白（原来 max-width:1920px 居中，宽屏左右空） */
   max-width: none; width: 100%; margin: 0; box-sizing: border-box;
   padding: 14px clamp(14px, 1.4vw, 26px) 56px;
   display: grid; grid-template-columns: 300px minmax(0, 1fr);
@@ -3259,8 +3259,49 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 @keyframes mkPop { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
 
 /* 响应式 */
+/* ---------- 开发进度筛选 + 版面尺度（更舒展、更大气） ---------- */
+.mkzone { grid-template-columns: 320px minmax(0, 1fr); gap: 26px; padding: 26px clamp(18px, 1.9vw, 40px) 84px; }
+.mkzone .mk-head { padding-bottom: 20px; gap: 22px; }
+.mkzone .mk-head-l h1 { font-size: 27px; letter-spacing: 3.2px; }
+.mkzone .mk-head-l h1::before { width: 6px; height: 21px; margin-right: 12px; vertical-align: -3px; }
+.mkzone .mk-head-l p { font-size: 13.5px; margin-top: 8px; }
+.mkzone .seg { padding: 5px; }
+.mkzone .seg button { padding: 8px 19px; font-size: 13.5px; }
+
+.mkzone .sidebar { padding: 22px 18px 24px; }
+.mkzone .side-sec { margin-bottom: 26px; }
+.mkzone .side-sec h3 { font-size: 11.5px; letter-spacing: .18em; margin-bottom: 12px; }
+.mkzone .chips { gap: 7px; }
+.mkzone .chip { padding: 7px 13px; font-size: 12.5px; border-radius: 9px; }
+
+/* 开发进度：四个选项竖排、整宽，右侧带数量 */
+.mkzone .prog-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.mkzone .prog-chip { justify-content: space-between; width: 100%; padding: 8px 12px; }
+.mkzone .prog-chip .pl { white-space: nowrap; }
+.mkzone .prog-chip .pn { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--mk-ink3); background: var(--mk-paper2); border-radius: 999px; padding: 1px 7px; min-width: 22px; text-align: center; }
+.mkzone .prog-chip.active .pn { color: var(--gold); background: #fff; }
+.mkzone .prog-tip { font-size: 11px; line-height: 1.6; color: var(--mk-ink3); margin-top: 9px; }
+
+.mkzone .stats { gap: 14px; margin-bottom: 30px; }
+.mkzone .stat { padding: 20px 22px; border-radius: 16px; }
+.mkzone .stat .k { font-size: 11px; letter-spacing: .16em; }
+.mkzone .stat .v { font-size: 34px; margin: 9px 0 4px; }
+.mkzone .stat .s { font-size: 12px; }
+
+.mkzone .view-tabs { margin-bottom: 24px; gap: 8px; }
+.mkzone .view-tabs button { padding: 11px 22px; font-size: 13.5px; }
+.mkzone .filterbar { margin-bottom: 24px; }
+.mkzone .sec-head { margin: 0 0 20px; gap: 15px; }
+.mkzone .sec-head h2 { font-size: 20px; letter-spacing: 1.4px; }
+.mkzone .sec-head .sub { font-size: 12.5px; }
+.mkzone .fcard { padding: 18px 18px 16px; border-radius: 17px; }
+.mkzone .fest-grid { gap: 11px; }
+.mkzone .fest { padding: 12px 15px; border-radius: 12px; }
+.mkzone .month-block { margin-bottom: 26px; }
+.mkzone .chart-wrap { padding: 22px 24px; border-radius: 16px; margin-bottom: 24px; }
+
 @media (max-width: 1280px) {
-  .mkzone { grid-template-columns: 262px minmax(0, 1fr); gap: 16px; }
+  .mkzone { grid-template-columns: 280px minmax(0, 1fr); gap: 18px; }
   .mkzone .stats { grid-template-columns: repeat(2, 1fr); }
   .mkzone .gantt-head, .mkzone .grow { grid-template-columns: 190px 1fr; }
 }
@@ -3332,7 +3373,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================
-   20261019J · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
+   20261019K · 营销日历「所见即所得」编辑层（仅 ?mode=edit 生效）
    前台与管理端共用同一套渲染；编辑入口只在编辑模式下出现。
    ============================================================ */
 .mkzone .mk-editbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; flex-wrap: wrap;

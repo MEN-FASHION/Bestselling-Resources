@@ -8,7 +8,7 @@ var state = {
   festivals: [],
   settings: { useCustom:true, sample:45, produce:30, ship:15 },
   view: 'cards',
-  filters: { regions:[], cats:[], starMin:0 }
+  filters: { regions:[], cats:[], starMin:0, prog:'all' }
 };
 
 function defaultFestivals(){
@@ -113,6 +113,16 @@ function urgency(startDaysLeft){
 }
 
 /* ============ 数据装配 ============ */
+/* 最近一次「已经过去」的节期：用于「已过期」筛选（每年重复的往前退一年） */
+function lastOccurrence(h, today){
+  var occ = nextOccurrence(h, today);
+  var guard = 0;
+  while(occ > today && guard++ < 6){
+    occ = new Date(occ.getFullYear() - 1, occ.getMonth(), occ.getDate());
+  }
+  return occ;
+}
+
 function buildList(){
   var today = todayStart();
   var f = state.filters;
@@ -122,12 +132,23 @@ function buildList(){
     if(f.regions.length && f.regions.indexOf(h.region) < 0) continue;
     if(f.cats.length && f.cats.indexOf(h.cat) < 0) continue;
     if((h.star|0) < (f.starMin|0)) continue;
-    var occ = nextOccurrence(h, today);
-    var dl = daysBetween(today, occ);
-    if(dl < 0 || dl > 400) continue;
+    var prog = f.prog || 'all';
+    var occ, dl;
+    if(prog === 'expired'){
+      occ = lastOccurrence(h, today);
+      dl = daysBetween(today, occ);
+      if(dl >= 0) continue;                       /* 还没过期，跳过 */
+    } else {
+      occ = nextOccurrence(h, today);
+      dl = daysBetween(today, occ);
+      if(dl < 0 || dl > 400) continue;
+    }
     var lead = leadDays(h);
     var start = new Date(occ.getTime() - lead*DAY);
     var sdl = daysBetween(today, start);
+    /* 30 天内需启动：启动日还没到但已经很近；已过启动点：节期未到、启动日已过 */
+    if(prog === 'soon30' && !(sdl >= 0 && sdl <= 30)) continue;
+    if(prog === 'late' && !(dl >= 0 && sdl < 0)) continue;
     var dur = durDays(h);
     out.push({ h:h, occ:occ, daysLeft:dl, lead:lead, start:start, startDaysLeft:sdl,
                dur:dur, end:festEndDate(occ, dur), u:urgency(sdl) });
@@ -266,6 +287,46 @@ function renderFilters(){
     sh += '<button class="chip '+(state.filters.starMin===opts[j].v?'active':'')+'" data-star="'+opts[j].v+'">'+opts[j].t+'</button>';
   }
   sc.innerHTML = sh;
+
+  /* 开发进度：全部 / 已过期 / 30天内需启动 / 已过启动点（带数量，便于一眼判断） */
+  var pcEl = document.getElementById('progChips');
+  if(pcEl){
+    var cnt = progCounts();
+    var popts = [
+      { v:'all',      t:'全部',        n:cnt.all },
+      { v:'expired',  t:'已过期',      n:cnt.expired },
+      { v:'soon30',   t:'30天内需启动', n:cnt.soon30 },
+      { v:'late',     t:'已过启动点',   n:cnt.late }
+    ];
+    var ph = '';
+    var cur = state.filters.prog || 'all';
+    for(var pj=0; pj<popts.length; pj++){
+      ph += '<button class="chip prog-chip '+(cur===popts[pj].v?'active':'')+'" data-prog="'+popts[pj].v+'">'
+          + '<span class="pl">'+popts[pj].t+'</span><span class="pn">'+popts[pj].n+'</span></button>';
+    }
+    pcEl.innerHTML = ph;
+  }
+}
+
+/* 开发进度计数：与列表口径一致（地区 / 类别 / 重要度先筛，再按节期与启动点归类） */
+function progCounts(){
+  var today = todayStart(), f = state.filters;
+  var r = { all:0, expired:0, soon30:0, late:0 };
+  for(var i=0;i<state.festivals.length;i++){
+    var h = state.festivals[i];
+    if(f.regions.length && f.regions.indexOf(h.region) < 0) continue;
+    if(f.cats.length && f.cats.indexOf(h.cat) < 0) continue;
+    if((h.star|0) < (f.starMin|0)) continue;
+    var occ = nextOccurrence(h, today);
+    var dl = daysBetween(today, occ);
+    var lead = leadDays(h);
+    var sdl = daysBetween(today, new Date(occ.getTime() - lead*DAY));
+    if(dl >= 0 && dl <= 400) r.all++;
+    if(daysBetween(today, lastOccurrence(h, today)) < 0) r.expired++;
+    if(sdl >= 0 && sdl <= 30) r.soon30++;
+    if(dl >= 0 && sdl < 0) r.late++;
+  }
+  return r;
 }
 function esc(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -859,6 +920,14 @@ function bindGlobal(){
     if(i>=0) state.filters.cats.splice(i,1); else state.filters.cats.push(v);
     render();
   });
+  var pcHit = document.getElementById('progChips');
+  if(pcHit) pcHit.addEventListener('click', function(e){
+    var b = e.target.closest('button');
+    if(!b || !b.hasAttribute('data-prog')) return;
+    state.filters.prog = b.getAttribute('data-prog');
+    render();
+  });
+
   document.getElementById('starChips').addEventListener('click', function(e){
     var b = e.target.closest('.chip');
     if(!b) return;

@@ -52,7 +52,7 @@ ok('页面引入编辑层脚本（放在主脚本之后）',
   ok('营销页侧栏钉死整宽、不写竖排', /\.mkzone \.sidebar \{[^}]*width: 100%/.test(css)
     && /\.mkzone \.sidebar \{[^}]*writing-mode: horizontal-tb/.test(css));
   ok('营销页侧栏高度随内容（不写死 118px 小把手）', /\.mkzone \.sidebar \{[^}]*max-height: calc\(100vh - var\(--mk-top\)/.test(css));
-  ok('桌面栅格给侧栏独立列宽', /\.mkzone \{[^}]*grid-template-columns: 300px minmax\(0, 1fr\)/.test(css));
+  ok('桌面栅格给侧栏独立列宽', /\.mkzone \{[^}]*grid-template-columns: 320px minmax\(0, 1fr\)/.test(css));
 }
 
 const ids = ['viewTabs', 'todayText', 'sidebar', 'filterbar', 'regionList', 'catChips',
@@ -79,7 +79,7 @@ eq('页面 id 无重复', dupIds.length, 0);
   eq('div 标签完全闭合', depth, 0);
 })();
 ok('粘性偏移使用统一变量', /--mk-top/.test(css) && /\.mkzone \.sidebar \{[^}]*var\(--mk-top\)/.test(css));
-ok('侧栏吸顶不遮挡主区（grid 两列 · 300px）', /\.mkzone \{[^}]*grid-template-columns: 300px minmax\(0, 1fr\)/.test(css));
+ok('侧栏吸顶不遮挡主区（grid 两列 · 320px）', /\.mkzone \{[^}]*grid-template-columns: 320px minmax\(0, 1fr\)/.test(css));
 ok('前台铺满整屏：不再限宽居中、不再留两侧白边',
   /\.mkzone \{[^}]*max-width: none/.test(css) &&
   /\.mkzone \{[^}]*width: 100%/.test(css) &&
@@ -276,6 +276,58 @@ try {
   if (chip2) chip2.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
   ok('再点一次取消该国家', !rname || w.eval('state.filters.regions').indexOf(rname) < 0);
 }
+
+/* ================= 开发进度筛选（已过期 / 30天内需启动 / 已过启动点） ================= */
+ok('侧栏存在开发进度容器', /id="progChips"/.test(html));
+ok('开发进度带说明提示', /class="prog-tip"/.test(html) && /开发提前期自动判定/.test(html));
+ok('开发进度四个选项', (d.querySelectorAll('#progChips .chip').length) === 4);
+ok('开发进度选项文案齐全',
+  ['全部','已过期','30天内需启动','已过启动点'].every(t =>
+    [...d.querySelectorAll('#progChips .pl')].some(el => el.textContent.trim() === t)));
+ok('开发进度每项带数量角标', [...d.querySelectorAll('#progChips .chip')].every(c => /^\d+$/.test(c.querySelector('.pn').textContent.trim())));
+ok('开发进度默认停在「全部」', d.querySelector('#progChips .chip[data-prog="all"]').classList.contains('active'));
+
+/* 口径：已过启动点 = 节期未到但启动日已过 */
+d.querySelector('#progChips .chip[data-prog="late"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+const late = w.eval('buildList()');
+ok('已过启动点：全部条目启动日已过且节期未到',
+  late.every(x => x.startDaysLeft < 0 && x.daysLeft >= 0), late.length);
+ok('已过启动点：选项置为选中', d.querySelector('#progChips .chip.active').getAttribute('data-prog') === 'late');
+const lateCards = d.querySelectorAll('#view-cards .fcard').length;
+ok('已过启动点：卡片与数据条数一致', lateCards === late.length, lateCards + '/' + late.length);
+
+/* 口径：30 天内需启动 */
+d.querySelector('#progChips .chip[data-prog="soon30"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+const soon = w.eval('buildList()');
+ok('30 天内需启动：启动日剩 0~30 天',
+  soon.every(x => x.startDaysLeft >= 0 && x.startDaysLeft <= 30), soon.length);
+ok('两种进度口径互不重叠（late 与 soon30 无交集）',
+  !late.some(a => soon.some(b => b.h.id === a.h.id)));
+
+/* 口径：已过期 = 本年度节期已经过去 */
+d.querySelector('#progChips .chip[data-prog="expired"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+const exp = w.eval('buildList()');
+ok('已过期：节期日期均在今天之前', exp.every(x => x.daysLeft <= 0), exp.length);
+if (exp.length) {
+  ok('已过期：按最近一次节期倒序排列（越近越前）', exp.every((v, i) => i === 0 || v.occ >= exp[i - 1].occ));
+}
+
+/* 与其它筛选叠加 */
+d.querySelector('#progChips .chip[data-prog="all"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+const allN = w.eval('buildList()').length;
+d.querySelector('#progChips .chip[data-prog="late"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+d.querySelector('#starChips .chip[data-star="5"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+const both = w.eval('buildList()');
+ok('进度筛选可与重要度叠加', both.every(x => (x.h.star | 0) >= 5 && x.startDaysLeft < 0), both.length);
+ok('叠加后条目不多于单条件', both.length <= late.length && (late.length === 0 || both.length < late.length || late.every(x => (x.h.star|0) >= 5)));
+d.querySelector('#starChips .chip[data-star="0"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+d.querySelector('#progChips .chip[data-prog="all"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+eq('清掉进度筛选后恢复全部', w.eval('buildList()').length, allN);
+
+/* 样式：进度选项两列排布、整宽、计数右对齐 */
+ok('开发进度选项网格两列且整宽', /\.mkzone \.prog-chips \{[^}]*grid-template-columns: 1fr 1fr/.test(css)
+  && /\.mkzone \.prog-chip \{[^}]*width: 100%/.test(css));
+ok('开发进度计数为等宽数字', /\.mkzone \.prog-chip \.pn \{[^}]*tabular-nums/.test(css));
 
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fails.length) { console.log('失败项：'); fails.forEach(f => console.log(' - ' + f)); }
