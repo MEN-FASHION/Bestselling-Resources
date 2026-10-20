@@ -160,16 +160,21 @@
       + '</div></div>'
       + '<div class="mk-adm-tools">'
       + '<button type="button" class="btn btn-primary" id="mkFestAdd">＋ 新建节日</button>'
-      + '<button type="button" class="btn" id="mkFestImport">导入 JSON</button>'
+      + '<button type="button" class="btn" id="mkFestImport">导入节庆</button>'
       + '<button type="button" class="btn" id="mkFestExport">导出 JSON</button>'
       + '<button type="button" class="btn" id="mkFestRebuild">用内置库重建</button>'
       + '<button type="button" class="btn btn-danger" id="mkFestClear">清空库</button>'
       + '<span class="mk-adm-grow"></span>'
       + '<input type="search" class="mk-adm-search" id="mkFestQ" placeholder="搜索名称 / 英文 / 地区 / 选品方向" value="' + esc(state.q) + '">'
+      + '</div>'
+      + '<p class="hint-inline" style="margin:8px 0 0">'
+      + '「导入节庆」支持 <b>Excel（xlsx / xls）</b>、<b>CSV</b> 与 JSON：把模板（交付包内「节庆批量导入模板.xlsx」）换成你的数据即可，表头用中文、日期填 <code>MM-DD</code> 或 <code>YYYY-MM-DD</code>，同一份表可混装多个国家。缺名称或日期的行会自动跳过。'
+      + '</p>'
+      + '<div class="mk-adm-row">'
       + '<select class="mk-adm-sel" id="mkFestRegion"><option value="">全部地区</option>'
       + regions().map(function (r) { return '<option value="' + esc(r) + '"' + (state.region === r ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('')
       + '</select>'
-      + '<input type="file" id="mkFestFile" accept="application/json,.json" hidden>'
+      + '<input type="file" id="mkFestFile" accept=".xlsx,.xls,.csv,.json,application/json" hidden>'
       + '</div>'
       + '<div class="mk-adm-filters">'
       + '<div class="chips" id="mkFestCats">' + Object.keys(CATS).map(function (k) {
@@ -611,7 +616,136 @@
     toast('已导出 ' + rows.length + ' 条节庆');
   }
 
+  /* ---------- 表格（xlsx / xls / csv）读取：表头中文英文都认 ---------- */
+  var CAT_ALIAS = {
+    '传统节庆':'trad','宗教节日':'rel','国家纪念':'nat','电商大促':'promo','体育赛事':'sport','季节档期':'season',
+    '联邦法定假日':'nat','公众节假日':'nat','地方州节日':'nat','当地节日':'nat','节日庆典':'trad',
+    '基督教节日':'rel','东正教节日':'rel','犹太教节日':'rel','犹太教纪念日':'rel','穆斯林节日':'rel','印度教节日':'rel',
+    trad:'trad', rel:'rel', nat:'nat', promo:'promo', sport:'sport', season:'season'
+  };
+  /* 去掉表头里的括号说明与空格，便于精确比对 */
+  function normKey(k){ return String(k || '').replace(/[（(][^）)]*[）)]/g, '').replace(/\s|[:：]/g, '').trim(); }
+
+  function pickField(row, names){
+    var want = names.map(normKey), k;
+    for (var i = 0; i < want.length; i++) {
+      for (k in row) { if (normKey(k) === want[i]) return row[k]; }
+    }
+    for (var j = 0; j < want.length; j++) {
+      for (k in row) { if (normKey(k).indexOf(want[j]) >= 0) return row[k]; }
+    }
+    return '';
+  }
+
+  function pad2(n){ n = String(n); return n.length < 2 ? '0' + n : n; }
+
+  function normDateCell(v){
+    if (v instanceof Date) return pad2(v.getMonth() + 1) + '-' + pad2(v.getDate());
+    var s = String(v == null ? '' : v).trim().replace(/[\/\.年月]/g, '-').replace(/日/g, '').replace(/-+$/,'');
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return pad2(m[2]) + '-' + pad2(m[3]);
+    m = s.match(/^(\d{1,2})-(\d{1,2})$/);
+    if (m) return pad2(m[1]) + '-' + pad2(m[2]);
+    return normMMDD(s);
+  }
+
+  function parseStar(v){
+    var raw = String(v == null ? '' : v).trim();
+    var stars = (raw.match(/[★⭐]/g) || []).length;
+    if (stars) return Math.min(5, stars);
+    var n = parseInt(raw.replace(/[^0-9]/g, ''), 10);
+    return n ? Math.min(5, Math.max(1, n)) : 3;
+  }
+
+  /* 把表格行（对象）转成导入结构；缺名称或日期返回 null */
+  function rowFromSheet(r){
+    var name = String(pickField(r, ['节日名称','名称','节日(中)','节日','name']) || '').trim();
+    var date = normDateCell(pickField(r, ['日期','date']));
+    if (!name || !date) return null;
+    var catRaw = String(pickField(r, ['类别','分类','cat']) || '').trim();
+    var leadRaw = parseInt(String(pickField(r, ['提前期','提前天数','lead']) || '').replace(/[^0-9]/g, ''), 10);
+    var durRaw = parseInt(String(pickField(r, ['持续天数','持续','dur']) || '').replace(/[^0-9]/g, ''), 10);
+    return {
+      name: name,
+      en: String(pickField(r, ['英文名','英文','节日(英)','en']) || '').trim(),
+      region: String(pickField(r, ['地区','国家','region']) || '').trim() || '其他',
+      date: date,
+      cat: CAT_ALIAS[catRaw] || 'trad',
+      star: parseStar(pickField(r, ['重要度','星级','star'])),
+      lead: leadRaw >= 0 ? leadRaw : 120,
+      dur: durRaw > 0 ? durRaw : 1,
+      idea: String(pickField(r, ['选品方向','思路','idea']) || '').trim(),
+      note: String(pickField(r, ['备注','note']) || '').trim(),
+      overrides: null
+    };
+  }
+
+  function readSheetRows(file, cb){
+    var rd = new FileReader();
+    rd.onload = function () {
+      var wb;
+      try { wb = XLSX.read(new Uint8Array(rd.result), { type: 'array', cellDates: true }); }
+      catch (e) { toast('表格读不出来，请确认是 xlsx / xls / csv'); return; }
+      /* 优先取「节日数据」页，否则取第一页 */
+      var name = wb.SheetNames.indexOf('节日数据') >= 0 ? '节日数据' : wb.SheetNames[0];
+      var ws = wb.Sheets[name];
+      var aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: false });
+      /* 找到含「名称 / 节日」与「日期」的表头行 */
+      var hi = -1;
+      for (var i = 0; i < Math.min(aoa.length, 12); i++) {
+        var line = (aoa[i] || []).map(normKey).join('|');
+        if (/日期/.test(line) && /名称|节日/.test(line)) { hi = i; break; }
+      }
+      if (hi < 0) { toast('表里没找到表头（需要含「节日名称」与「日期」两列）'); return; }
+      var head = aoa[hi] || [];
+      var list = [];
+      for (var r = hi + 1; r < aoa.length; r++) {
+        var obj = {};
+        for (var c = 0; c < head.length; c++) { if (head[c] !== '') obj[head[c]] = aoa[r][c]; }
+        list.push(obj);
+      }
+      cb(list);
+    };
+    rd.readAsArrayBuffer(file);
+  }
+
+  /* 统一入库：rows 已是标准结构 */
+  function commitRows(rows, skipped) {
+    if (!rows.length) { toast('没有可导入的有效数据（需要名称与日期）'); return; }
+    if (!window.SB || typeof SB.upsertFestivals !== 'function') { toast('接口不可用，无法导入'); return; }
+    var done = 0;
+    function next() {
+      if (done >= rows.length) {
+        toast('已导入 ' + rows.length + ' 条' + (skipped ? ('，跳过 ' + skipped + ' 条缺名称/日期') : ''));
+        reload(true);
+        return;
+      }
+      var slice = rows.slice(done, done + 200);
+      done += slice.length;
+      SB.upsertFestivals(slice).then(function (res) {
+        if (res && res.error) { toast('导入失败：' + (res.error.message || '请检查权限')); return; }
+        next();
+      }).catch(function () { toast('导入失败，请稍后重试'); });
+    }
+    next();
+  }
+
   function doImport(file) {
+    var isSheet = !/\.json$/i.test(file.name || '');
+    if (isSheet) {
+      readSheetRows(file, function (list) {
+        var rows = [], skipped = 0;
+        for (var i = 0; i < list.length; i++) {
+          var one = rowFromSheet(list[i] || {});
+          if (!one) { skipped++; continue; }
+          one.id = 'i' + Date.now().toString(36) + '_' + i;
+          one.sort_no = 0;
+          rows.push(one);
+        }
+        commitRows(rows, skipped);
+      });
+      return;
+    }
     var rd = new FileReader();
     rd.onload = function () {
       var arr;
@@ -635,23 +769,7 @@
           sort_no: 0
         });
       }
-      if (!rows.length) { toast('没有可导入的有效数据（需要 name 与 date）'); return; }
-      if (!window.SB || typeof SB.upsertFestivals !== 'function') { toast('接口不可用，无法导入'); return; }
-      var done = 0;
-      function next() {
-        if (done >= rows.length) {
-          toast('已导入 ' + rows.length + ' 条' + (skipped ? ('，跳过 ' + skipped + ' 条缺名称/日期') : ''));
-          reload(true);
-          return;
-        }
-        var slice = rows.slice(done, done + 200);
-        done += slice.length;
-        SB.upsertFestivals(slice).then(function (res) {
-          if (res && res.error) { toast('导入失败：' + (res.error.message || '请检查权限')); return; }
-          next();
-        }).catch(function () { toast('导入失败，请稍后重试'); });
-      }
-      next();
+      commitRows(rows, skipped);
     };
     rd.readAsText(file);
   }

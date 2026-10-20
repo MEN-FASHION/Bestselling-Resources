@@ -12,7 +12,15 @@ const editJs = read('js/marketing-edit.js');
 const css = read('css/style.css');
 const mkMain = read('js/marketing-main.js');
 
-let pass = 0, fail = 0; const fails = [];
+let pass = 0, fail = 0;
+/* 内置库条数跟着真实数据走，避免库里加条目后断言过时 */
+let LIB_N = 0;
+function libCount() {
+  const _vm = require('vm');
+  const _ctx = {}; _vm.createContext(_ctx);
+  _vm.runInContext(require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'marketing-data.js'), 'utf8'), _ctx);
+  return _ctx.RAW.length;
+} const fails = [];
 function ok(name, cond, extra) {
   if (cond) { pass++; console.log('  ✓ ' + name + (extra !== undefined ? '  [' + extra + ']' : '')); }
   else { fail++; fails.push(name + (extra !== undefined ? '  [' + extra + ']' : '')); console.log('  ✗ ' + name + (extra !== undefined ? '  [' + extra + ']' : '')); }
@@ -54,7 +62,8 @@ function makeHarness(opts) {
   w.currentModalStar = () => 4;
   w.backfillDurations = () => {};
   w.dbRowToFestival = (r) => Object.assign({}, r, { custom: true });
-  w.defaultFestivals = () => new Array(176).fill(0).map((_, i) => ({ id: 'b' + i, name: 'B' + i, date: '02-02' }));
+  LIB_N = libCount();
+  w.defaultFestivals = () => new Array(LIB_N).fill(0).map((_, i) => ({ id: 'b' + i, name: 'B' + i, date: '02-02' }));
   w.openModal = (id) => { calls.open.push(id); };
   w.editingId = opts.editingId === undefined ? null : opts.editingId;
   w.SB = {
@@ -203,7 +212,8 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms || 25));
     eq('重建第一次只问确认', h.calls.upsert.length, 2);
     reb.click();
     await tick();
-    eq('重建把内置库整批写库', (h.calls.upsert[2] || []).length, 176);
+    eq('重建把内置库整批写库', (h.calls.upsert[2] || []).length, LIB_N);
+    ok('内置库条数合理（≥300）', LIB_N >= 300, LIB_N);
 
     const clr = doc.getElementById('ebClear');
     clr.click();
