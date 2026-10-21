@@ -2311,6 +2311,166 @@ async removeTrendRecord(id) {
       return data || [];
     },
 
+    /* 按图片地址批量取「打标维度」：周对比分析报告要用它们做维度差异统计。
+       只取分析需要的几列；表里没有的列不会出现在返回行里（报告会按"未打标"处理）。
+       分片查询：地址列表可能上千条，一次性 in() 会超出请求长度。 */
+    async listImageTags(urls) {
+      const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
+      const out = {};
+      if (!list.length) return out;
+      /* 列名要点：图库的外链列叫 url（setup.sql: alter table images add column url text），
+         并没有 image_url 列。早期这里按 image_url 查询 → Postgres 直接报「列不存在」→
+         整条查询抛错 → 六维永远为空（而且看起来像"没人打标"）。
+         现在先按 url 查，失败再回退 image_url，兼容手工加过该列的老库。 */
+      const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"];
+      const readBy = async (col, cols) => {
+        const res = {};
+        for (let i = 0; i < list.length; i += 80) {
+          const part = list.slice(i, i + 80);
+          const { data, error } = await client.from("images").select(cols).in(col, part);
+          if (error) return null;
+          (data || []).forEach((r) => { res[r[col]] = r; });
+        }
+        return res;
+      };
+      const full = FIELDS.join(",");
+      let got = await readBy("url", "url," + full);
+      if (!got) got = await readBy("image_url", "image_url," + full);
+      if (!got) {
+        /* 连视觉维度列都没有（很老的库）：退化为只取类目，至少能出类目结构一页，不让整份报告失败 */
+        let cat = await readBy("url", "url,category");
+        if (!cat) cat = await readBy("image_url", "image_url,category");
+        if (!cat) throw new Error("读取图片标签失败");
+        Object.assign(out, cat);
+        return out;
+      }
+      Object.assign(out, got);
+      return out;
+    },
+
+    /* ============================================================
+     * 趋势上升榜 · 榜单图独立打标（后台「榜单打标」作业台）
+     * ------------------------------------------------------------
+     * 为什么单独存：
+     *   1) 榜单图只存在于 rank_items（外链地址），图库 images 里没有这些记录；
+     *   2) 把几千张榜单外链图塞进图库，会污染「图片管理」列表与数据看板；
+     *   3) images 的写策略绑死了「视觉专区 + 类目授权 + 只能改自己上传的」，
+     *      与榜单打标的权限口径不同，硬写会出现「图能看、标存不进去」。
+     * 所以标签单独放 rank_image_tags（image_url 唯一），与「图片管理 → 智能打标」
+     * 完全独立、互不影响；周报按地址把两张表的结果合并（榜单表优先）。
+     * ============================================================ */
+    async rankTagReady() {
+      const { error } = await client.from("rank_image_tags").select("image_url", { head: true, count: "exact" }).limit(1);
+      return !error;
+    },
+    async listRankTagRows(urls) {
+      const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
+      const out = {};
+      if (!list.length) return out;
+      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,batch_id,updated_at";
+      for (let i = 0; i < list.length; i += 80) {
+        const part = list.slice(i, i + 80);
+        const { data, error } = await client.from("rank_image_tags").select(COLS).in("image_url", part);
+        if (error) throw new Error(error.message || "读取榜单标签失败");
+        (data || []).forEach((r) => { out[r.image_url] = r; });
+      }
+      return out;
+    },
+    async saveRankTagRows(rows) {
+      const list = (rows || []).filter((r) => r && r.image_url);
+      if (!list.length) return 0;
+      const now = new Date().toISOString();
+      let n = 0;
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100).map((r) => ({
+          image_url: r.image_url,
+          category: r.category || "",
+          style_tags: r.style_tags || [],
+          element_tags: r.element_tags || [],
+          scene_tags: r.scene_tags || [],
+          shoot_tags: r.shoot_tags || [],
+          skin_tags: r.skin_tags || [],
+          tags: r.tags || [],
+          batch_id: r.batch_id || null,
+          updated_by: r.updated_by || null,
+          updated_at: now,
+        }));
+        const { error } = await client.from("rank_image_tags")
+          .upsert(chunk, { onConflict: "image_url", ignoreDuplicates: false });
+        if (error) throw new Error(error.message || "保存榜单标签失败");
+        n += chunk.length;
+      }
+      return n;
+    },
+    /* 按批次回滚：只清空该批次写过的行，不碰其它批次与人工单独改的行（batch_id 为空的保持原样） */
+    async clearRankTagBatch(batchId) {
+      const b = String(batchId || "").trim();
+      if (!b) return 0;
+      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], batch_id: null, updated_at: new Date().toISOString() };
+      const { error } = await client.from("rank_image_tags").update(empty).eq("batch_id", b);
+      if (error) throw new Error(error.message || "回滚失败");
+      return true;
+    },
+    /* 打标队列：榜单图（按地址去重），带出期次/站点/类目/叶子类目/位次
+       filter: { category, period, site, limit } —— 不传即全部 */
+    async listRankTagQueue(filter) {
+      const f = filter || {};
+      let q = client.from("rank_items").select("id,period_type,period_label,category,site,leaf_category,image_url,rank_ratio,rank_abs");
+      if (f.category) q = q.eq("category", f.category);
+      if (f.period) q = q.eq("period_label", f.period);
+      if (f.site) q = q.eq("site", f.site);
+      const { data, error } = await q.order("rank_ratio", { ascending: true }).limit(f.limit || 3000);
+      if (error) throw new Error(error.message || "读取榜单图失败");
+      const map = new Map();
+      (data || []).forEach((r) => {
+        const u = String(r.image_url || "").trim();
+        if (!u) return;
+        const hit = map.get(u);
+        if (hit) { hit.periods.push(r.period_label); return; }
+        map.set(u, {
+          image_url: u,
+          category: r.category || "",
+          leaf_category: r.leaf_category || "",
+          site: r.site || "",
+          period_label: r.period_label || "",
+          periods: [r.period_label || ""],
+          rank_ratio: r.rank_ratio,
+          rank_abs: r.rank_abs,
+        });
+      });
+      return [...map.values()];
+    },
+    /* 周对比报告专用：图库标签 + 榜单独立标签合并。
+       规则：逐维度取"有值的那一边"，榜单表优先（它才是本面板打的标）；
+       两边都有时用榜单表的，避免同一张图在两处被打成不同标签时口径打架。 */
+    async listImageTagsForReport(urls) {
+      const list = Array.isArray(urls) ? urls : [];
+      let base = {};
+      try { base = await this.listImageTags(list); } catch (e) { base = {}; }
+      let rank = {};
+      try { rank = await this.listRankTagRows(list); } catch (e) { rank = {}; }
+      const out = Object.assign({}, base);
+      Object.keys(rank).forEach((u) => {
+        const r = rank[u] || {};
+        const b = base[u] || {};
+        const pick = (k) => {
+          const rv = r[k];
+          if (Array.isArray(rv) ? rv.length : !!rv) return rv;
+          return b[k] !== undefined ? b[k] : (Array.isArray(rv) ? [] : "");
+        };
+        out[u] = {
+          image_url: u,
+          category: (r.category || b.category || ""),
+          style_tags: pick("style_tags"),
+          element_tags: pick("element_tags"),
+          scene_tags: pick("scene_tags"),
+          shoot_tags: pick("shoot_tags"),
+          skin_tags: pick("skin_tags"),
+        };
+      });
+      return out;
+    },
+
     // ============ 前台显隐（哪些国家站点 / 周次在前台展示，由后台控制） ============
     // 存于 site_settings.frontend_dims.rank_hidden = { sites:[名…], periods:[期次…] }，随现有配置列读写，无需改表结构。
     async getRankHidden() {

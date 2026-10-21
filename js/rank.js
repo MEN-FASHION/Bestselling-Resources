@@ -679,6 +679,7 @@
     var cols = (MODE === "v" ? periods.length : sites.length);
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
     h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
+    h += '<button type="button" class="rk-rep-btn" id="rk-week-report" title="按当前选中的两周生成一份对比分析报告（PPT）：款式 / 图案印花与设计元素 / 二次工艺 / 场景与背景构成 / 主图视觉 / 类目结构 六维差异 + 趋势结论">生成周对比分析报告</button>';
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
@@ -699,6 +700,54 @@
 
     var eye = $("#rk-eye-btn");
     if (eye) eye.onclick = openEye;
+
+    /* 生成周对比分析报告：只在「纵向 · 时间对比」且选中 ≥2 周时才有意义。
+       权限口径与「导出图片」「导出 PPT」一致 —— 只给超级管理员。
+       报告里除数据类页面外，还有款式 / 印花 / 工艺 / 场景 / 主图视觉 / 类目 六维差异页，
+       维度数据取自后台给图片打的标签（缺标时该维度页会说明"无打标数据"，不影响成稿）。 */
+    var rep = $("#rk-week-report");
+    if (rep) {
+      var canRep = (MODE === "v" && periods.length >= 2);
+      rep.disabled = !canRep;
+      rep.style.display = "none";   /* 默认不可见，确认是超级管理员后才出现 */
+      rep.title = canRep
+        ? rep.getAttribute("title")
+        : "请先用「纵向 · 时间对比」并选中 2 周以上，再生成对比报告";
+      rep.onclick = function () {
+        if (!window.WeekReport) { toast("报告组件未加载，请刷新页面后重试"); return; }
+        if (MODE !== "v" || activePeriods().length < 2) { toast("请切到「纵向 · 时间对比」并选中两周以上"); return; }
+        var scope = exportScope();
+        var now = new Date();
+        var p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+        rep.disabled = true;
+        var oldTxt = rep.textContent;
+        rep.textContent = "正在生成报告…";
+        var done = function (msg, bad) {
+          rep.disabled = false; rep.textContent = oldTxt;
+          if (msg) toast(msg, bad);
+        };
+        window.WeekReport.run({
+          root: document.querySelector("#rk-pools"),
+          spec: "wide",
+          scope: scope,
+          nowText: now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + " " + p2(now.getHours()) + ":" + p2(now.getMinutes()),
+          v: (function () { var s = document.querySelector('script[src*="js/rank.js"]'); return (s && (String(s.getAttribute("src")).match(/[?&]v=([^&]+)/) || [])[1]) || ""; })(),
+          onProgress: function (t) { rep.textContent = t; },
+          tagOf: function (urls) {
+            if (!SBX) return Promise.resolve({});
+            /* 先读「图库标签 + 榜单独立标签」的合并结果（后台「榜单打标」写的就是后者）；
+               老版本没有合并方法时退回只读图库，保证不会因此报错。 */
+            var fn = SBX.listImageTagsForReport || SBX.listImageTags;
+            if (!fn) return Promise.resolve({});
+            return fn.call(SBX, urls).catch(function () { return {}; });
+          }
+        }).then(function (r) {
+          if (!r || !r.ok) { done((r && r.reason) || "生成失败，请重试", true); return; }
+          done("已生成：" + r.name);
+        }, function () { done("生成失败，请重试", true); });
+      };
+      eyeIsSuper().then(function (ok) { if (ok) rep.style.display = ""; else rep.style.display = "none"; });
+    }
     Array.prototype.forEach.call(el.querySelectorAll("[data-mode]"), function (b) {
       b.onclick = function () {
         var m = b.getAttribute("data-mode");

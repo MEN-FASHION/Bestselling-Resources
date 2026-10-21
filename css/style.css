@@ -2745,6 +2745,14 @@ html.rk-eye-on, html.rk-eye-on body { overflow: hidden; }
   color: #16305e; background: #ffe9a8; border: 1px solid #ffd75e; border-radius: 999px; white-space: nowrap;
 }
 .rk-exp-img.on:hover { filter: brightness(1.05); }
+/* 生成周对比分析报告：与「导出图片」同一行、同一权限口径（默认不可见，确认超管后由脚本显示） */
+.rk-rep-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 12px; font-size: 11px; font-family: inherit; cursor: pointer;
+  color: #ffffff; background: #2f6fd0; border: 1px solid #2a63bb; border-radius: 999px; white-space: nowrap;
+}
+.rk-rep-btn:hover { filter: brightness(1.06); }
+.rk-rep-btn:disabled { cursor: not-allowed; opacity: .55; filter: none; }
 .rk-eye-close {
   flex: 0 0 auto; width: 24px; height: 24px; font-size: 15px; line-height: 1;
   color: #16305e; background: rgba(255,255,255,.85); border: 1px solid rgba(255,255,255,.65);
@@ -3506,3 +3514,93 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 @media (max-width:720px){ .mk-data-bar{font-size:12.5px;padding:10px 12px} }
 
 .mkzone .cr .mk-build{margin-left:10px;padding:2px 8px;border-radius:999px;background:rgba(120,90,60,.07);color:#9a8f80;font-size:11.5px;letter-spacing:.4px;font-variant-numeric:tabular-nums}
+
+/* ============================================================================
+ * 趋势上升榜 · 榜单打标作业台（后台独立面板 #rank-tag-card）
+ * 设计取向：左边一张大图、右边六维标签横排，键盘走完一张；
+ * 与「图片管理 → 智能打标」不共用任何选择器，互不影响。
+ * ==========================================================================*/
+.rt-warn{margin:0 0 14px;padding:12px 14px;border-radius:10px;border:1px solid #e6c9a8;background:#fdf6ec;color:#7a5a34;font-size:13px;line-height:1.7}
+.rt-warn.hidden{display:none}
+.rt-warn code{padding:1px 6px;border-radius:5px;background:rgba(139,115,85,.12);font-size:12.5px}
+.rt-warn-sub{display:inline-block;margin-top:4px;color:#9a8b78;font-size:12px}
+.rt-batch{padding:4px 10px;border-radius:999px;background:rgba(139,115,85,.08);color:var(--gold);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* 筛选条 */
+.rt-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg2)}
+.rt-filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#8b8378}
+.rt-filters select{min-width:130px;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;color:var(--ink,#3a342c)}
+.rt-filters .btn-primary.small{height:32px;padding:0 14px;font-size:13px}
+
+/* 进度 */
+.rt-progress{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg2)}
+.rt-progress-top{display:flex;align-items:center;gap:14px;font-size:13px;color:#5a5147}
+.rt-progress-top b{white-space:nowrap;font-weight:600}
+.rt-bar{flex:1;height:8px;border-radius:999px;background:rgba(139,115,85,.12);overflow:hidden}
+.rt-bar i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--gold),var(--gold2));transition:width .25s ease}
+.rt-pg-dims{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.rt-pg-dim{padding:3px 9px;border-radius:999px;background:rgba(139,115,85,.06);color:#7a7167;font-size:11.5px;font-variant-numeric:tabular-nums}
+.rt-pg-dim b{color:var(--gold);font-weight:600}
+.rt-pg-dim i{margin-left:3px;font-style:normal;color:#b3a99b}
+
+/* 工作区：左大图 / 右标签 */
+.rt-work{display:grid;grid-template-columns:minmax(280px,420px) 1fr;gap:16px;align-items:start}
+@media (max-width:1080px){ .rt-work{grid-template-columns:1fr} }
+.rt-stage{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden}
+.rt-stage-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--bg2);font-size:12px}
+.rt-idx{font-weight:600;color:#4a4238;font-variant-numeric:tabular-nums}
+.rt-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:#7a7167}
+.rt-tagcat{padding:2px 8px;border-radius:999px;background:rgba(139,115,85,.1);color:var(--gold)}
+.rt-leaf,.rt-site,.rt-period{padding:2px 8px;border-radius:999px;background:rgba(0,0,0,.04);color:#8b8378}
+.rt-count{padding:2px 8px;border-radius:999px;background:rgba(120,160,120,.14);color:#4f7a4f}
+.rt-count--none{background:rgba(180,180,180,.14);color:#9a938a}
+.rt-st{font-style:normal;padding:2px 8px;border-radius:999px;font-size:11.5px}
+.rt-st--ing{background:rgba(200,160,80,.16);color:#8a6a1f}
+.rt-st--ok{background:rgba(120,170,120,.16);color:#3f7a3f}
+.rt-st--bad{background:rgba(200,90,80,.16);color:#a33}
+
+.rt-photo{position:relative;display:flex;align-items:center;justify-content:center;min-height:340px;max-height:62vh;background:#f6f4f0}
+.rt-photo img{display:block;max-width:100%;max-height:62vh;object-fit:contain}
+.rt-photo-empty{padding:24px;color:#9c938a;font-size:12.5px;line-height:1.8;text-align:center}
+.rt-stage-act{display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.rt-stage-act .btn-primary,.rt-stage-act .btn-ghost{height:32px;padding:0 12px;font-size:13px}
+.rt-open-src{display:inline-flex;align-items:center;text-decoration:none}
+.rt-keys{padding:8px 12px 12px;color:#a09889;font-size:11.5px;line-height:1.7}
+.rt-keys b{color:#7a7167}
+
+/* 标签区 */
+.rt-search{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}
+.rt-search input{flex:1;min-width:200px;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:13px}
+.rt-search-hint{color:#a09889;font-size:11.5px}
+.rt-dims{display:flex;flex-direction:column;gap:10px}
+.rt-dim{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.rt-dim.active{border-color:var(--gold);box-shadow:0 0 0 2px rgba(139,115,85,.1)}
+.rt-dim-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg2);cursor:pointer;user-select:none}
+.rt-dim.active .rt-dim-head{background:rgba(139,115,85,.08)}
+.rt-dim-head b{font-size:13px;color:#4a4238}
+.rt-dim-hint{flex:1;color:#a89f92;font-size:11.5px}
+.rt-dim-n{padding:1px 8px;border-radius:999px;background:rgba(0,0,0,.05);color:#7a7167;font-size:11.5px;font-variant-numeric:tabular-nums}
+.rt-dim-body{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;max-height:168px;overflow:auto}
+.rt-dim-empty{color:#a89f92;font-size:12px}
+.rt-tag{position:relative;display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#5a5147;font-size:12.5px;cursor:pointer;transition:all .12s ease}
+.rt-tag:hover{border-color:var(--gold2);color:var(--gold)}
+.rt-tag.on{border-color:var(--gold);background:linear-gradient(135deg,var(--gold),var(--gold2));color:#fff}
+.rt-k{font-style:normal;font-size:10px;padding:0 4px;border-radius:4px;background:rgba(255,255,255,.35);color:inherit}
+.rt-tag.on .rt-k{background:rgba(255,255,255,.3)}
+
+/* 队列缩略图 */
+.rt-queue-wrap{margin-top:16px}
+.rt-queue-wrap h4{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:13px;color:#4a4238}
+.rt-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px;max-height:320px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--bg2)}
+.rt-thumb{position:relative;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#fff;cursor:pointer;aspect-ratio:3/4}
+.rt-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rt-thumb.cur{border-color:var(--gold);box-shadow:0 0 0 2px rgba(139,115,85,.18)}
+.rt-thumb.done{outline:1px solid rgba(120,170,120,.5)}
+.rt-dot{position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-radius:50%;background:#5aa05a;box-shadow:0 0 0 2px #fff}
+.rt-more{grid-column:1/-1;padding:10px;border:1px dashed var(--line);border-radius:8px;background:#fff;color:#8b8378;font-size:12.5px;cursor:pointer}
+
+/* 批量套用 */
+.rt-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;border:1px dashed var(--line);border-radius:12px;background:var(--bg2)}
+.rt-bulk .hint{flex:1;min-width:220px;color:#9a9288;font-size:12px;line-height:1.7}
+.rt-bulk .btn-primary,.rt-bulk .btn-ghost{height:34px;padding:0 14px;font-size:13px}
+.rt-bulk .hidden{display:none}
