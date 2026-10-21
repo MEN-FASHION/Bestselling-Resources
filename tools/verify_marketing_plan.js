@@ -33,7 +33,8 @@ ok('页面引入编辑层脚本（放在主脚本之后）',
   /js\/marketing-edit\.js\?v=/.test(html) && html.indexOf('js/marketing-main.js') < html.indexOf('js/marketing-edit.js'));
 /* 版本号不做硬编码（硬编码会在每次发版后腐烂）：改为要求全站只有同一个版本号，且不早于本轮 */
 {
-  const vers = new Set((html + css + dataJs + mainJs + (typeof editJs !== "undefined" ? editJs : "")).match(/2026\d{4}[A-Z]/g) || []);
+  /* 只看页面里的 ?v= 运行时版本（源码注释中记录历史版本属正常，不计入） */
+  const vers = new Set((html.match(/\?v=(2026\d{4}[A-Z])/g) || []).map((x) => x.slice(3)));
   ok('版本号全站唯一（不混版）', vers.size === 1, [...vers].join(","));
   const v = [...vers][0] || "";
   ok('版本号未回退（不早于 20261019A）', v >= "20261019A" && !/^20261019B$/.test(v), v);

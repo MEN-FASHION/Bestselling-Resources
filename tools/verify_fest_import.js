@@ -149,7 +149,10 @@ ok('站内美国库无重名同日', [...dupMap.values()].every(v => v === 1));
 
   ok('读取节庆改为分页（range 循环）', /\.range\(from, from \+ PAGE - 1\)/.test(sup));
   ok('分页页大小 1000', /const PAGE = 1000/.test(sup));
-  ok('分页排序稳定（sort_no + id）', /\.order\("sort_no"[\s\S]{0,120}\.order\("id"/.test(sup));
+  ok('分页排序稳定（sort_no + id，缺列时逐级降级）',
+    /run\(\["sort_no", "id"\]\)/.test(sup)
+    && /for \(const o of orders\) q = q\.order\(o/.test(sup)
+    && /run\(\["id"\]\)/.test(sup));
   ok('读取节庆不再单次 select 全表', !/\.select\("\*"\)\s*\.order\("sort_no", \{ ascending: true \}\)\s*\.order\("date"/.test(sup));
 
   ok('后台有导入进度条 DOM', /id="mkFestProg"/.test(adm) && /mk-prog-bar/.test(adm));
@@ -172,7 +175,10 @@ ok('站内美国库无重名同日', [...dupMap.values()].every(v => v === 1));
 /* ============ 运行时：分页真能把 1000 行上限拉完 ============ */
 (async () => {
   const sup = fs.readFileSync(path.join(__dirname, '..', 'js', 'supabase.js'), 'utf8');
-  const m = sup.match(/async listFestivals\(\) \{([\s\S]*?)\n    \},\n    async upsertFestivals/);
+  const _s = sup.indexOf('async listFestivals() {');
+  const _next = sup.indexOf('\n    async ', _s + 5);      // 下一个方法定义（不假设它叫什么）
+  const _e = _next > _s ? sup.lastIndexOf('\n    }', _next) : -1;  // 该方法之前的收尾大括号
+  const m = (_s >= 0 && _e > _s) ? [null, sup.slice(_s + 'async listFestivals() {'.length, _e)] : null;
   ok('能切出 listFestivals 实现', !!m);
   if (m) {
     const BODY = 'return (async () => {' + m[1] + '})();';

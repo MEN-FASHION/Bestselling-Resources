@@ -61,6 +61,19 @@ function toDate(y,m,d){ var x=new Date(y,m-1,d); x.setHours(0,0,0,0); return x; 
 function parseISO(s){ var p=s.split('-'); return toDate(+p[0],+p[1],+p[2]); }
 function daysBetween(a,b){ return Math.round((b-a)/DAY); }
 function pad2(n){ return (n<10?'0':'')+n; }
+/* 日期归一化：支持 02-17 / 2-17 / 2027-02-17 / 2027/2/17
+ * 必须放在文件顶层：读库时由 dbRowToFestival 调用，
+ * 若嵌在某个绑定函数内部，这里就会拿不到它（ReferenceError），整页读库失败。 */
+function normMMDD(v){
+  if(typeof v !== 'string') return '';
+  var s = v.trim().replace(/[\/.]/g, '-');
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if(!m) m = /^(\d{1,2})-(\d{1,2})$/.exec(s);
+  if(!m) return '';
+  var mo = parseInt(m[m.length-2], 10), d = parseInt(m[m.length-1], 10);
+  if(!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return '';
+  return (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+}
 var WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
 
 function fmtFull(d){
@@ -1017,18 +1030,6 @@ function bindGlobal(){
     }
     /* 前台只读：点卡片不再打开编辑弹窗（维护在后台「营销日历」） */
   });
-
-  /* 日期归一化：支持 02-17 / 2-17 / 2027-02-17 / 2027/2/17 */
-function normMMDD(v){
-  if(typeof v !== 'string') return '';
-  var s = v.trim().replace(/[\/.]/g, '-');
-  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
-  if(!m) m = /^(\d{1,2})-(\d{1,2})$/.exec(s);
-  if(!m) return '';
-  var mo = parseInt(m[m.length-2], 10), d = parseInt(m[m.length-1], 10);
-  if(!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return '';
-  return (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
-}
 
 /* 数据管理（导出 / 导入 / 恢复默认）已迁到后台「营销日历」，前台只读，这里不再有任何写入口。 */
 }

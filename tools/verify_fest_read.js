@@ -152,6 +152,16 @@ function makeApi(opts) {
   ok(/js\/supabase\.js/.test(html) && html.indexOf('supabase.js') < html.indexOf('marketing-main.js'), '接口脚本先于页面脚本加载');
   ok(/id="mkDataBar"/.test(html), '数据状态条容器存在');
 
+  console.log('— 6. 作用域：读库链路函数必须在顶层 —');
+  (function(){
+    const src = read('js/marketing-main.js');
+    ok(/^function normMMDD\(/m.test(src), 'normMMDD 定义在文件顶层（未被嵌套进其它函数）');
+    ok((src.match(/function normMMDD\(/g) || []).length === 1, 'normMMDD 只有一处定义（无重复）');
+    const i = src.indexOf('function dbRowToFestival');
+    ok(i > 0 && src.slice(i, i + 4000).indexOf('normMMDD') > 0, 'dbRowToFestival 确实调用 normMMDD');
+    ok(!/^\s{2,}function normMMDD\(/m.test(src), '不再存在缩进（嵌套）版本的 normMMDD');
+  })();
+
   console.log('\n结果: 通过 ' + pass + ' / 失败 ' + fail);
   process.exit(fail ? 1 : 0);
 })();

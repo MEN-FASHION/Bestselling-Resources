@@ -1060,8 +1060,8 @@ function bindSmartModal() {
     const smartBackBtn = document.querySelector("#smart-back-btn");
     if (smartBackBtn) smartBackBtn.addEventListener("click", () => backToSmartTag());
     bindSmartUpload();
-    // 保护非关键调用：即使 bindSmartUrlMatch 异常，也不阻断后续拖放/上传绑定
-    try { bindSmartUrlMatch(); } catch (e) { /* 忽略，不影响拖放 */ }
+    /* 「上传链接Excel」的点击与文件解析统一由文档级委托处理（见下方 click / change 委托），
+     * 此处无需再绑定；原先调用的是一个定义在别处的空函数，会抛 ReferenceError（被 try 吞掉），已移除。 */
     bindSmartDrop();
   }
 
@@ -1111,9 +1111,6 @@ function bindSmartModal() {
       }
     };
     reader.readAsArrayBuffer(file);
-  }
-  function bindSmartUrlMatch() {
-    // 「上传链接Excel」点击与文件解析统一由文档级委托处理（见下方 bindUrlMatchDelegate），此处不再重复绑定
   }
   // 文档级点击委托：正确分流两个「上传链接Excel」按钮到各自文件输入（绕开绑定时机/覆盖问题）
   document.addEventListener("click", (e) => {
