@@ -3452,7 +3452,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .mkzone .mk-head.mk-toolbar .mk-head-r { margin-left: 0; width: 100%; justify-content: space-between; }
 }
 
-/* ===== 节庆库：导入进度 + 分批加载（20261021C） ===== */
+/* ===== 节庆库：导入进度 + 分批加载（20261021D） ===== */
 .mk-prog{display:none;margin:14px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:#fff8f0}
 .mk-prog.on{display:block}
 .mk-prog-bar{height:8px;border-radius:99px;background:#efe7dd;overflow:hidden}

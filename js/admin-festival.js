@@ -109,12 +109,55 @@
   function isVariable(h) { return !!(h.overrides && Object.keys(h.overrides).length); }
 
   /* ---------------- 装配：筛选 + 计算 ---------------- */
+  /* 同国同名分组：返回 [[key, [row, row...]], ...] */
+  function dupGroups(list) {
+    var map = Object.create(null), keys = [];
+    for (var i = 0; i < list.length; i++) {
+      var h = list[i];
+      if (!h || !h.name) continue;
+      var k = dedupeKey(h.region, h.name);
+      if (!map[k]) { map[k] = []; keys.push(k); }
+      map[k].push(h);
+    }
+    var out = [];
+    for (var j = 0; j < keys.length; j++) if (map[keys[j]].length > 1) out.push([keys[j], map[keys[j]]]);
+    return out;
+  }
+  /* 重复的「多余条数」 */
+  function dupCount() {
+    var g = dupGroups(state.list), n = 0;
+    for (var i = 0; i < g.length; i++) n += g[i][1].length - 1;
+    return n;
+  }
+  /* 组内挑「保留哪条」：字段更全的优先，其次先入库的（sort_no 小的更靠前） */
+  function pickKeeper(rows) {
+    function score(h) {
+      var n = 0;
+      if (h.en) n += 2;
+      if (h.idea && h.idea !== '待补充') n += 2;
+      if (h.note) n += 1;
+      if (h.overrides) n += 1;
+      if (h.lead != null) n += 1;
+      return n;
+    }
+    var best = rows[0];
+    for (var i = 1; i < rows.length; i++) {
+      var a = score(rows[i]), b = score(best);
+      if (a > b || (a === b && (rows[i].sort_no | 0) < (best.sort_no | 0))) best = rows[i];
+    }
+    return best;
+  }
+
   function build() {
     var today = todayStart(), out = [];
     var q = (state.q || '').trim().toLowerCase();
+    var seen = Object.create(null);              /* 同国同名只展示第一条，避免列表里一串重复 */
     for (var i = 0; i < state.list.length; i++) {
       var h = state.list[i];
       if (!h || !h.name || !h.date) continue;
+      var dk = dedupeKey(h.region, h.name);
+      if (seen[dk]) continue;
+      seen[dk] = 1;
       if (state.region && h.region !== state.region) continue;
       var catOn = Object.keys(state.cats).filter(function (k) { return state.cats[k]; });
       if (catOn.length && catOn.indexOf(h.cat) < 0) continue;
@@ -158,13 +201,15 @@
       + '<div class="mk-head-l"><h1>节庆库</h1>'
       + '<p>在这里直接改 · 保存即写库 · 前台刷新即见（与前台同一份数据、同一套版式）</p></div>'
       + '<div class="mk-head-r">' + seg
-      + '<span class="today-pill" id="mkFestCount"><span>共 <b class="num">' + state.list.length + '</b> 条</span></span>'
+      + '<span class="today-pill" id="mkFestCount"><span>共 <b class="num">' + state.list.length + '</b> 条'
+        + (dupCount() ? ('（其中重复 <b class="num">' + dupCount() + '</b> 条）') : '') + '</span></span>'
       + '<span class="today-pill" id="mkFestSrc"><span class="dot"></span><span>数据来源：内置库</span></span>'
       + '</div></div>'
       + '<div class="mk-adm-tools">'
       + '<button type="button" class="btn btn-primary" id="mkFestAdd">＋ 新建节日</button>'
       + '<button type="button" class="btn" id="mkFestImport">导入节庆</button>'
       + '<button type="button" class="btn" id="mkFestExport">导出 JSON</button>'
+      + '<button type="button" class="btn" id="mkFestDedupe">清理重复</button>'
       + '<button type="button" class="btn" id="mkFestRebuild">用内置库重建</button>'
       + '<button type="button" class="btn btn-danger" id="mkFestClear">清空库</button>'
       + '<span class="mk-adm-grow"></span>'
@@ -422,6 +467,9 @@
 
     var rg = $('mkFestRegion');
     if (rg) rg.addEventListener('change', function () { state.region = this.value; render(); });
+
+    var dd = $('mkFestDedupe');
+    if (dd) dd.onclick = function () { doDedupe(this); };
 
     var add = $('mkFestAdd');
     if (add) add.onclick = function () { openEdit(null); };
@@ -869,6 +917,49 @@
       commitRowsChecked(rows, skipped);
     };
     rd.readAsText(file);
+  }
+
+  /* 一次性清掉历史重复（早期导入没有判重，或「内置库重建」与导入用了不同 id，会叠加出重复） */
+  function doDedupe(btn) {
+    var groups = dupGroups(state.list);
+    var extra = dupCount();
+    if (!extra) { toast('没有重复项，不需要清理'); return; }
+    if (btn.getAttribute('data-confirm') !== '1') {
+      btn.setAttribute('data-confirm', '1');
+      btn.textContent = '再点一次确认（删 ' + extra + ' 条）';
+      setTimeout(function () { btn.setAttribute('data-confirm', '0'); btn.textContent = '清理重复'; }, 5000);
+      return;
+    }
+    btn.setAttribute('data-confirm', '0'); btn.textContent = '清理重复';
+    if (typeof SB === 'undefined' || typeof SB.deleteFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法清理'); return; }
+    var kill = [];
+    for (var i = 0; i < groups.length; i++) {
+      var keep = pickKeeper(groups[i][1]);
+      for (var j = 0; j < groups[i][1].length; j++) {
+        var h = groups[i][1][j];
+        if (!keep || h.id !== keep.id) kill.push(h.id);
+      }
+    }
+    if (!kill.length) { toast('没有需要删除的重复项'); return; }
+    var done = 0;
+    setProgress(0, '准备清理 0 / ' + kill.length + ' 条重复…');
+    function next() {
+      if (done >= kill.length) {
+        setProgress(1, '完成：已清理 ' + kill.length + ' 条重复');
+        hideProgress(1600);
+        toast('已清理 ' + kill.length + ' 条重复，保留 ' + (groups.length) + ' 组各一条');
+        reload(true);
+        return;
+      }
+      var slice = kill.slice(done, done + 200);
+      SB.deleteFestivals(slice).then(function (res) {
+        if (res && res.error) { hideProgress(0); toast('清理失败：' + dbHint(res.error)); return; }
+        done += slice.length;
+        setProgress(done / kill.length, '已清理 ' + done + ' / ' + kill.length + ' 条（' + Math.round(done / kill.length * 100) + '%）');
+        next();
+      }).catch(function () { hideProgress(0); toast('清理失败，请稍后重试'); });
+    }
+    next();
   }
 
   function doRebuild(btn) {

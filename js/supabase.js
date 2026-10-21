@@ -1046,6 +1046,12 @@ async removeTrendRecord(id) {
       const { error } = await client.from("marketing_festivals").delete().eq("id", String(id));
       return { error };
     },
+    async deleteFestivals(ids) {
+      const list = (ids || []).filter(Boolean).map(String);
+      if (!list.length) return { error: null };
+      const { error } = await client.from("marketing_festivals").delete().in("id", list);
+      return { error };
+    },
     async clearFestivals() {
       const { error } = await client.from("marketing_festivals").delete().neq("id", "");
       return { error };

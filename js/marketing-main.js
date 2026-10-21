@@ -125,12 +125,24 @@ function lastOccurrence(h, today){
   return occ;
 }
 
+/* 同国同名归一化键：去空白与常见标点，用于展示去重 */
+function _dupKey(region, name){
+  function norm(v){
+    return String(v == null ? '' : v).replace(/[\s\u3000·・\-—–_\(\)（）\[\]【】]/g, '').toLowerCase();
+  }
+  return norm(region) + '|' + norm(name);
+}
+
 function buildList(){
   var today = todayStart();
   var f = state.filters;
   var out = [];
+  var _seen = {};                              /* 同国同名只出第一条（历史重复数据不影响展示） */
   for(var i=0;i<state.festivals.length;i++){
     var h = state.festivals[i];
+    var _k = _dupKey(h.region, h.name);
+    if(_seen[_k]) continue;
+    _seen[_k] = 1;
     if(f.regions.length && f.regions.indexOf(h.region) < 0) continue;
     if(f.cats.length && f.cats.indexOf(h.cat) < 0) continue;
     if((h.star|0) < (f.starMin|0)) continue;
