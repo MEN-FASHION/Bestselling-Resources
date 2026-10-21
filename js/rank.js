@@ -680,6 +680,7 @@
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
     h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
     h += '<button type="button" class="rk-rep-btn" id="rk-week-report" title="按当前选中的两周生成一份对比分析报告（PPT）：款式 / 图案印花与设计元素 / 二次工艺 / 场景与背景构成 / 主图视觉 / 类目结构 六维差异 + 趋势结论">生成周对比分析报告</button>';
+    h += '<button type="button" class="rk-batch-fav hidden" id="rk-batch-fav">批量收藏（0）</button>';
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
@@ -775,6 +776,10 @@
       if (share) eyeTags.push("共 " + share.length + " 国同款");
     }
     var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '"'
+      + ' data-period="' + esc(it.period_label || "") + '" data-ptype="' + esc(it.period_type || "week") + '"'
+      + ' data-title="' + esc(it.title || "") + '" data-leaf="' + esc(it.leaf_category || "") + '"'
+      + ' data-cat="' + esc(it.category || "") + '" data-site="' + esc(it.site || "") + '"'
+      + ' data-ratio="' + esc(it.ratio == null ? "" : it.ratio) + '" data-rank="' + esc(it.rank_abs == null ? "" : it.rank_abs) + '"'
       + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
     h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '"' +
@@ -783,6 +788,9 @@
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
       if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
       if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
+      /* 我的收藏：右上角星标（点一次收藏/取消），左上角多选勾选（攒够一次批量收藏） */
+      h += '<button type="button" class="rk-fav" data-fav="0" title="收藏到「我的收藏」">☆</button>';
+      h += '<span class="rk-pick" data-pick="0" title="选中，稍后批量收藏"></span>';
     }
     /* 天眼标签（可开关）：文字一律放在【图片下方】的独立栏里，绝不叠在图上、不盖图。
        顶栏固定蓝栏里的「眼睛」按钮随时开关；关掉后整条隐藏，图片区自然变大。 */
@@ -998,6 +1006,257 @@
     });
 
     fitPoolsSoon();
+    syncFavUI();
+  }
+
+  /* ================= 我的收藏：收藏 / 多选批量 / 取消 =================
+     · 星标状态按「期次 + 图地址」判定：同一张图在 W40 与 W41 各算一条，
+       所以在 W40 收藏了不会把 W41 那一列也点亮（用户明确要求两条）。
+     · 未登录、或建表脚本还没执行 → 只提示，不发任何写请求。 */
+  var FAV = { ready: null, uid: null, cats: [], keys: {}, sel: {}, rows: [], batch: false, catId: null, pop: null };
+  var FAV_COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f", "#8a6fa8", "#4f8f8a", "#a0685a"];
+
+  function favKey(period, url) { return String(period || "") + "\u0001" + String(url || ""); }
+  function favColorOf(i) { return FAV_COLORS[((i % FAV_COLORS.length) + FAV_COLORS.length) % FAV_COLORS.length]; }
+  function favColorFor(cat, idx) { return (cat && cat.color) || favColorOf(idx); }
+
+  async function loadFavState() {
+    FAV.ready = false;
+    if (!SBX || typeof SBX.favReady !== "function") return;
+    try { FAV.ready = await SBX.favReady(); } catch (e) { FAV.ready = false; }
+    try { FAV.uid = (await SBX.favUid()) || null; } catch (e) { FAV.uid = null; }
+    if (!FAV.uid || !FAV.ready) return;
+    try { FAV.cats = await SBX.listFavCategories(); } catch (e) { FAV.cats = []; }
+    try {
+      var rows = await SBX.listFavKeys();
+      var m = {};
+      (rows || []).forEach(function (r) { m[favKey(r.period_label, r.image_url)] = r.id || 1; });
+      FAV.keys = m;
+    } catch (e) { FAV.keys = {}; }
+  }
+
+  function syncFavUI() {
+    var box = $("#rk-body");
+    if (box) {
+      Array.prototype.forEach.call(box.querySelectorAll(".rk-card[data-url]"), function (fig) {
+        var k = favKey(fig.getAttribute("data-period"), fig.getAttribute("data-url"));
+        var on = !!FAV.keys[k];
+        var b = fig.querySelector(".rk-fav");
+        if (b) { b.setAttribute("data-fav", on ? "1" : "0"); b.textContent = on ? "★" : "☆"; }
+        var p = fig.querySelector(".rk-pick");
+        if (p) p.setAttribute("data-pick", FAV.sel[k] ? "1" : "0");
+      });
+    }
+    var n = Object.keys(FAV.sel).length;
+    var bb = $("#rk-batch-fav");
+    if (bb) {
+      bb.textContent = "批量收藏（" + n + "）";
+      bb.classList.toggle("hidden", !n || !FAV.uid);
+    }
+  }
+
+  function favCardData(fig) {
+    return {
+      image_url: fig.getAttribute("data-url") || "",
+      period_label: fig.getAttribute("data-period") || "",
+      period_type: fig.getAttribute("data-ptype") || "week",
+      title: fig.getAttribute("data-title") || "",
+      leaf_category: fig.getAttribute("data-leaf") || "",
+      rank_category: fig.getAttribute("data-cat") || "",
+      site: fig.getAttribute("data-site") || "",
+      ratio: fig.getAttribute("data-ratio") || null,
+      rank_abs: fig.getAttribute("data-rank") || null
+    };
+  }
+
+  function favNeedLogin() {
+    if (!FAV.uid) { toast("请先登录后再收藏"); return true; }
+    if (!FAV.ready) { toast("收藏功能还没准备好：请先让管理员执行一次建表脚本"); return true; }
+    return false;
+  }
+
+  function closeFavPop() {
+    if (FAV.pop && FAV.pop.parentNode) FAV.pop.parentNode.removeChild(FAV.pop);
+    FAV.pop = null; FAV.rows = []; FAV.batch = false; FAV.catId = null;
+  }
+
+  function openFavPop(rows, opt) {
+    var o = opt || {};
+    closeFavPop();
+    FAV.rows = rows || [];
+    if (!FAV.rows.length) return;
+    FAV.batch = !!o.batch;
+    FAV.catId = null;
+    var already = (!FAV.batch && FAV.rows.length === 1)
+      ? !!FAV.keys[favKey(FAV.rows[0].period_label, FAV.rows[0].image_url)] : false;
+
+    var head = already ? "已收藏" : (FAV.batch ? "批量收藏 " + FAV.rows.length + " 张" : "收藏到「我的收藏」");
+    var h = '<div class="fp-mask" data-fp="mask"></div><div class="fp-box" role="dialog" aria-label="我的收藏">';
+    h += '<div class="fp-head"><span class="fp-t">' + esc(head) + '</span>'
+      + '<button type="button" class="fp-x" data-fp="close" aria-label="关闭">×</button></div>';
+    if (already) {
+      h += '<div class="fp-body"><div class="fp-done">这张图已经收藏过了（' + esc(FAV.rows[0].period_label || "本批") + '）。</div>'
+        + '<div class="fp-hint">同一个分类下想调整位置，可以到「我的收藏」里拖拽。</div></div>';
+      h += '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">关闭</button>'
+        + '<button type="button" class="fp-del" data-fp="unfav">取消收藏</button></div>';
+    } else {
+      h += '<div class="fp-body"><div class="fp-sub">选择分类</div><div class="fp-cats">';
+      FAV.cats.forEach(function (c, i) {
+        h += '<button type="button" class="fp-cat' + (FAV.catId === c.id ? " is-on" : "") + '" data-cat="' + c.id + '">'
+          + '<i class="fp-dot" style="background:' + favColorFor(c, i) + '"></i>'
+          + '<span class="fp-cn">' + esc(c.name) + '</span></button>';
+      });
+      h += '<button type="button" class="fp-cat is-none" data-cat=""><i class="fp-dot is-empty"></i><span class="fp-cn">不分类（直接收藏）</span></button>';
+      h += '</div>';
+      h += '<div class="fp-new"><input class="fp-input" maxlength="40" placeholder="或者新建一个分类…" data-fp="name">'
+        + '<button type="button" class="fp-addbtn" data-fp="newcat">新建并收藏</button></div>';
+      h += '</div>';
+      h += '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">取消</button>'
+        + '<button type="button" class="fp-ok" data-fp="ok">收藏</button></div>';
+    }
+    h += '</div>';
+
+    var wrap = document.createElement("div");
+    wrap.className = "fav-pop-wrap";
+    wrap.id = "rk-fav-pop";
+    wrap.innerHTML = h;
+    document.body.appendChild(wrap);
+    FAV.pop = wrap;
+
+    wrap.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-fp="mask"]') || t.closest('[data-fp="close"]')) { closeFavPop(); return; }
+      var cat = t.closest(".fp-cat");
+      if (cat) {
+        var v = cat.getAttribute("data-cat");
+        FAV.catId = v ? Number(v) : null;
+        Array.prototype.forEach.call(wrap.querySelectorAll(".fp-cat"), function (x) { x.classList.remove("is-on"); });
+        cat.classList.add("is-on");
+        return;
+      }
+      if (t.closest('[data-fp="newcat"]')) { favCreateAndSave(wrap); return; }
+      if (t.closest('[data-fp="ok"]')) { favSave(wrap, FAV.catId); return; }
+      if (t.closest('[data-fp="unfav"]')) { favRemoveOne(wrap); return; }
+    });
+    wrap.addEventListener("keydown", function (e) {
+      if (!e || !e.key) return;
+      if (e.key === "Escape") { closeFavPop(); return; }
+      if (e.key === "Enter" && e.target && e.target.getAttribute && e.target.getAttribute("data-fp") === "name") {
+        favCreateAndSave(wrap);
+      }
+    });
+  }
+
+  async function favSave(wrap, catId) {
+    if (favNeedLogin()) { closeFavPop(); return; }
+    var btn = wrap.querySelector('[data-fp="ok"]');
+    if (btn) { btn.disabled = true; btn.textContent = "收藏中…"; }
+    try {
+      var n = await SBX.addFavItems(FAV.rows, catId);
+      FAV.rows.forEach(function (r) { FAV.keys[favKey(r.period_label, r.image_url)] = 1; });
+      var wasBatch = FAV.batch;
+      if (wasBatch) FAV.sel = {};
+      closeFavPop();
+      syncFavUI();
+      toast("已收藏 " + n + " 张");
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = "收藏"; }
+      toast((e && e.message) ? e.message : "收藏失败");
+    }
+  }
+
+  async function favCreateAndSave(wrap) {
+    var inp = wrap.querySelector('[data-fp="name"]');
+    var name = inp ? String(inp.value || "").trim() : "";
+    if (!name) { toast("先给新分类起个名字"); if (inp && inp.focus) inp.focus(); return; }
+    if (favNeedLogin()) { closeFavPop(); return; }
+    var add = wrap.querySelector('[data-fp="newcat"]');
+    if (add) { add.disabled = true; add.textContent = "新建中…"; }
+    try {
+      var c = await SBX.createFavCategory(name, favColorOf(FAV.cats.length));
+      try { FAV.cats = await SBX.listFavCategories(); } catch (e2) { FAV.cats = FAV.cats.concat([c]); }
+      await favSave(wrap, (c && c.id) ? c.id : null);
+    } catch (e) {
+      if (add) { add.disabled = false; add.textContent = "新建并收藏"; }
+      toast((e && e.message) ? e.message : "新建分类失败");
+    }
+  }
+
+  async function favRemoveOne(wrap) {
+    var r = FAV.rows[0];
+    if (!r) { closeFavPop(); return; }
+    try {
+      var id = FAV.keys[favKey(r.period_label, r.image_url)];
+      if (!id || id === 1) {
+        var list = await SBX.listFavItems({ period: r.period_label });
+        var hit = (list || []).filter(function (x) { return x.image_url === r.image_url; })[0];
+        if (hit) id = hit.id;
+      }
+      if (id) await SBX.removeFavItems([id]);
+      delete FAV.keys[favKey(r.period_label, r.image_url)];
+      closeFavPop(); syncFavUI();
+      toast("已取消收藏");
+    } catch (e) {
+      toast((e && e.message) ? e.message : "取消收藏失败");
+    }
+  }
+
+  function bindFav() {
+    var box = $("#rk-body");
+    if (box && !box.__favBound) {
+      box.__favBound = true;
+      /* 捕获阶段拦截：卡片自身有「点击开灯箱」，星标与勾选必须先被我们吃掉 */
+      box.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var favBtn = t.closest(".rk-fav");
+        if (favBtn) {
+          e.preventDefault(); e.stopPropagation();
+          var fig = favBtn.closest(".rk-card");
+          if (!fig) return;
+          if (favNeedLogin()) return;
+          openFavPop([favCardData(fig)], {});
+          return;
+        }
+        var pick = t.closest(".rk-pick");
+        if (pick) {
+          e.preventDefault(); e.stopPropagation();
+          var fig2 = pick.closest(".rk-card");
+          if (!fig2) return;
+          if (favNeedLogin()) return;
+          var k = favKey(fig2.getAttribute("data-period"), fig2.getAttribute("data-url"));
+          if (FAV.sel[k]) delete FAV.sel[k]; else FAV.sel[k] = 1;
+          syncFavUI();
+          return;
+        }
+      }, true);
+    }
+    if (!document.__favBatchBound) {
+      document.__favBatchBound = true;
+      document.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        if (!t.closest("#rk-batch-fav")) return;
+        if (favNeedLogin()) return;
+        var rows = [];
+        var box2 = $("#rk-body");
+        if (box2) {
+          Array.prototype.forEach.call(box2.querySelectorAll(".rk-card[data-url]"), function (fig) {
+            var k = favKey(fig.getAttribute("data-period"), fig.getAttribute("data-url"));
+            if (FAV.sel[k]) rows.push(favCardData(fig));
+          });
+        }
+        if (!rows.length) { toast("先点图左上角的勾选，再批量收藏"); return; }
+        openFavPop(rows, { batch: true });
+      });
+    }
+  }
+
+  async function initFav() {
+    bindFav();
+    await loadFavState();
+    syncFavUI();
   }
 
   /* ---------------- 对比池：横向铺满 + 纵向自然向下排 ----------------
@@ -1662,6 +1921,9 @@
     }
 
     await load();
+    /* 收藏状态（星标点亮 + 分类清单）在榜单渲染完之后再同步一次：
+       否则首屏渲染时还不知道哪些图已收藏，星标会全部是空心。 */
+    try { await initFav(); } catch (e) { /* 收藏不可用不影响榜单本身 */ }
 
     // 未登录 / 无数据时的兜底提示
     if (!CACHE || !CACHE.items.length) {

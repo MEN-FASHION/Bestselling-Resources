@@ -121,6 +121,7 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "trend",         label: "趋势专区",      href: "trends.html" },
   { key: "recruit",       label: "招品回品",      href: "trends.html#recruit" },
   { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
+  { key: "fav",           label: "我的收藏",     href: "fav.html" },
   { key: "notice",        label: "公告",        href: "" }
 ];
 
