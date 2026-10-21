@@ -387,7 +387,6 @@ function renderTimeline(list){
     byKey[k].push(list[i]);
   }
   var html = '';
-  html += '<div class="sec-head"><h2>年度时间轴</h2><span class="sub">未来 12 个月 · 共 '+list.length+' 个节点</span><span class="line"></span></div>';
 
   for(var m=0;m<12;m++){
     var d = new Date(startMonth.getFullYear(), startMonth.getMonth()+m, 1);
@@ -443,7 +442,6 @@ function renderGantt(list){
   for(var c=0;c<12;c++){ if(monthCounts[c]>maxC) maxC = monthCounts[c]; }
 
   var html = '';
-  html += '<div class="sec-head"><h2>开发倒推推演</h2><span class="sub">每根色带 = 从最晚启动日 → 节日当天</span><span class="line"></span></div>';
 
   html += '<div class="chart-wrap">';
   html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;flex-wrap:wrap;gap:8px">'
@@ -532,7 +530,6 @@ function renderGantt(list){
 /* ============ 渲染：卡片 ============ */
 function renderCards(list){
   var html = '';
-  html += '<div class="sec-head"><h2>节庆机会卡片</h2><span class="sub">含选品方向 · 按提前期倒推最晚启动日</span><span class="line"></span></div>';
   if(!list.length){
     html += '<div style="padding:50px;text-align:center;color:var(--ink-3);font-size:13px;letter-spacing:.05em">当前筛选条件下没有符合条件的节庆</div>';
   }
@@ -583,9 +580,26 @@ document.addEventListener('click', function(e){
 });
 
 /* ============ 主渲染 ============ */
+/* 视图标题随视图变化，统一显示在工具条（与视图切换同一行） */
+function renderViewTitle(list){
+  var t = document.getElementById('mkViewTitle'), sub = document.getElementById('mkViewSub');
+  if(!t || !sub) return;
+  if(state.view === 'timeline'){
+    t.textContent = '年度时间轴';
+    sub.textContent = '未来 12 个月 · 共 ' + list.length + ' 个节点';
+  } else if(state.view === 'gantt'){
+    t.textContent = '开发倒推推演';
+    sub.textContent = '每根色带 = 从最晚启动日 → 节日当天';
+  } else {
+    t.textContent = '节庆机会卡片';
+    sub.textContent = '含选品方向 · 按提前期倒推最晚启动日';
+  }
+}
+
 function render(){
   var list = buildList();
   renderFilters();
+  renderViewTitle(list);
   renderStats(list);
   document.getElementById('view-timeline').classList.toggle('hidden', state.view!=='timeline');
   document.getElementById('view-gantt').classList.toggle('hidden', state.view!=='gantt');
@@ -1052,24 +1066,109 @@ function dbRowToFestival(r){
     custom: true
   };
 }
-function loadFestivalsFromDb(){
-  if(!window.SB || typeof SB.listFestivals !== 'function') return;
+/* 读库状态：loaded / empty / failed / none；用于在主区给出可读的原因，而不是静默回落 */
+var dbMeta = { status:'none', count:0, past:0, err:'' };
+
+/* 本年度节期是否已经过去（下一次出现在 400 天之后，说明今年这一场已经过了） */
+function countPast(list){
+  var today = todayStart(), n = 0;
+  for(var i=0;i<list.length;i++){
+    var h = list[i];
+    var occ = nextOccurrence(h, today);
+    if(daysBetween(today, occ) > 400) n++;
+  }
+  return n;
+}
+
+/* 把后端错误翻成人话（不暴露内部细节） */
+function dbReason(err){
+  if(!err) return '读取失败';
+  var msg = String(err.message || err.error_description || err);
+  if(/permission denied|42501|row-level security/i.test(msg)) return '当前账号没有读取节庆库的权限';
+  if(/column .* does not exist|42703/i.test(msg)) return '节庆库缺少字段（需要在后台补一次字段）';
+  if(/does not exist|42P01/i.test(msg)) return '节庆库还没建好（需要在后台执行一次初始化脚本）';
+  if(/JWT|token|401/i.test(msg)) return '登录状态已过期，请重新登录';
+  if(/fetch|network|Failed to fetch/i.test(msg)) return '网络中断，暂时读不到数据';
+  return '读取失败';
+}
+
+function renderDataBar(){
+  var el = document.getElementById('mkDataBar');
+  if(!el) return;
+  var html = '';
+  if(dbMeta.status === 'failed'){
+    html = '<span class="mkdb-ico">!</span>'
+         + '<span class="mkdb-txt"><b>节庆数据读取失败</b>：' + escHtml(dbMeta.err) + '。当前显示的是内置节庆库（' + state.festivals.length + ' 条），后台导入的内容尚未载入。</span>'
+         + '<button type="button" class="mkdb-btn" id="mkDbRetry">重试</button>';
+  } else if(dbMeta.status === 'noguest'){
+    html = '<span class="mkdb-ico">·</span>'
+         + '<span class="mkdb-txt">当前是<b>访客（未登录）</b>状态，节庆库不允许匿名读取，所以这里显示的是内置节庆库（' + state.festivals.length + ' 条）。'
+         + '若后台已经导入过节庆，需在数据库放行「匿名只读」（执行一次补丁脚本），或登录后查看。</span>';
+  } else if(dbMeta.status === 'empty'){
+    html = '<span class="mkdb-ico">·</span>'
+         + '<span class="mkdb-txt">后台节庆库还是空的，当前显示内置节庆库（' + state.festivals.length + ' 条）。后台「营销日历 → 导入节庆」导入后，这里会自动换成库里的数据。</span>';
+  } else if(dbMeta.status === 'loaded' && dbMeta.past > 0){
+    html = '<span class="mkdb-ico">·</span>'
+         + '<span class="mkdb-txt">已从后台载入 <b>' + dbMeta.count + '</b> 条节庆，其中 <b>' + dbMeta.past + '</b> 条本年度节期已过 —— 默认视图只显示未来节期，所以看不到它们。</span>'
+         + '<button type="button" class="mkdb-btn" id="mkDbShowPast">查看已过期</button>';
+  }
+  if(!html){ el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+  var rt = document.getElementById('mkDbRetry');
+  if(rt) rt.onclick = function(){ loadFestivalsFromDb(true); };
+  var sp = document.getElementById('mkDbShowPast');
+  if(sp) sp.onclick = function(){
+    state.filters.prog = 'expired';
+    render();
+  };
+}
+
+function escHtml(s){
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function loadFestivalsFromDb(manual){
+  if(!window.SB || typeof SB.listFestivals !== 'function'){
+    dbMeta = { status:'failed', count:0, past:0, err:'页面还没准备好数据接口，请刷新重试' };
+    renderDataBar();
+    return;
+  }
   Promise.resolve()
     .then(function(){ return SB.listFestivals(); })
-    .then(function(res){
+    .then(async function(res){
+      if(res && res.error){
+        dbMeta = { status:'failed', count:0, past:0, err:dbReason(res.error) };
+        renderDataBar();
+        return;
+      }
       var rows = (res && res.data) || [];
-      if(!rows.length) return;                       /* 后台还没维护过 → 保留内置库 */
       var list = [];
       for(var i=0;i<rows.length;i++){
         var f = dbRowToFestival(rows[i]);
         if(f.name && f.date) list.push(f);
       }
-      if(!list.length) return;
+      if(!list.length){
+        /* 一条都没读到：要分清「后台确实没数据」和「访客没有读取权限」 */
+        var guest = true;
+        if(typeof SB.getSession === 'function'){
+          try { var ses = await SB.getSession(); guest = !ses; } catch (e) { guest = true; }
+        }
+        dbMeta = { status: guest ? 'noguest' : 'empty', count:0, past:0, err:'' };
+        renderDataBar();
+        return;
+      }
       backfillDurations(list);
       state.festivals = list;
+      dbMeta = { status:'loaded', count:list.length, past:countPast(list), err:'' };
       render();
+      renderDataBar();
+      if(manual) console.log('[marketing] 重新载入完成：' + list.length + ' 条');
     })
-    .catch(function(){ /* 读不到就用内置库，绝不让页面报错 */ });
+    .catch(function(e){
+      dbMeta = { status:'failed', count:0, past:0, err:dbReason(e) };
+      renderDataBar();
+    });
 }
 
 /* ============ 启动 ============ */

@@ -3446,13 +3446,24 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
  * 顶部导航已有「营销日历」页签，页内不再重复一份大标题页头；
  * 只留一条精简工具条：视图切换 + 今日日期，右对齐、不占高度。
  * ============================================================ */
-.mkzone .mk-head.mk-toolbar { align-items: center; padding-bottom: 0; border-bottom: 0; margin-bottom: 0; }
-.mkzone .mk-head.mk-toolbar .mk-head-r { margin-left: auto; gap: 10px; }
+/* 工具条 = 视图标题行（标题在左、视图切换与今日日期在右，同一行） */
+.mkzone .mk-head.mk-toolbar {
+  align-items: baseline; gap: 15px; flex-wrap: wrap;
+  padding-bottom: 14px; border-bottom: 1px solid var(--mk-line);
+  margin-bottom: 22px;
+}
+.mkzone .mk-head.mk-toolbar .mk-head-l { display: flex; align-items: baseline; gap: 13px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+.mkzone .mk-head.mk-toolbar h2 { font-size: 20px; font-weight: 600; letter-spacing: 1.4px; margin: 0; }
+.mkzone .mk-head.mk-toolbar .sub { font-size: 12.5px; color: var(--mk-ink3); }
+.mkzone .mk-head.mk-toolbar .line { flex: 1; height: 1px; background: transparent; min-width: 20px; }
+.mkzone .mk-head.mk-toolbar .mk-head-r { margin-left: auto; gap: 10px; flex: 0 0 auto; }
 @media (max-width: 720px) {
+  .mkzone .mk-head.mk-toolbar { gap: 10px; }
   .mkzone .mk-head.mk-toolbar .mk-head-r { margin-left: 0; width: 100%; justify-content: space-between; }
+  .mkzone .mk-head.mk-toolbar h2 { font-size: 17px; letter-spacing: 1px; }
 }
 
-/* ===== 节庆库：导入进度 + 分批加载（20261021D） ===== */
+/* ===== 节庆库：导入进度 + 分批加载（20261021F） ===== */
 .mk-prog{display:none;margin:14px 0 0;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:#fff8f0}
 .mk-prog.on{display:block}
 .mk-prog-bar{height:8px;border-radius:99px;background:#efe7dd;overflow:hidden}
@@ -3460,3 +3471,25 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mk-prog-txt{margin-top:8px;font-size:12.5px;letter-spacing:.04em;color:#6b5b48}
 .mk-more-wrap,.load-more-wrap{display:flex;justify-content:center;margin:26px 0 8px}
 .btn.load-more{padding:11px 26px;border-radius:99px;letter-spacing:.08em}
+
+/* ===== 营销日历 · 数据状态提示条（读库失败/空库/已过期条数） ===== */
+.mk-data-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:0 0 14px;padding:11px 14px;border-radius:12px;
+  background:#fff8ec;border:1px solid #f0dcc0;color:#7a5a2e;
+  font-size:13.5px;line-height:1.6;
+}
+.mk-data-bar.hidden{display:none}
+.mk-data-bar b{color:#5a3f1c}
+.mkdb-ico{
+  flex:0 0 18px;width:18px;height:18px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#e8b96a;color:#fff;font-size:12px;font-weight:700;
+}
+.mkdb-txt{flex:1 1 320px;min-width:0}
+.mkdb-btn{
+  flex:0 0 auto;padding:5px 12px;border-radius:999px;cursor:pointer;
+  border:1px solid #d9b98a;background:#fff;color:#7a5a2e;font-size:12.5px;
+}
+.mkdb-btn:hover{background:#fdf1df}
+@media (max-width:720px){ .mk-data-bar{font-size:12.5px;padding:10px 12px} }

@@ -51,6 +51,13 @@ create policy "authenticated read marketing_festivals"
   to authenticated
   using (true);
 
+-- 前台营销日历是公开页面，访客（未登录）也要能读到节庆库，否则前台只显示内置库
+drop policy if exists "public read marketing_festivals" on public.marketing_festivals;
+create policy "public read marketing_festivals"
+  on public.marketing_festivals for select
+  to anon, authenticated
+  using (true);
+
 drop policy if exists "admin all marketing_festivals" on public.marketing_festivals;
 create policy "admin all marketing_festivals"
   on public.marketing_festivals for all
@@ -66,7 +73,7 @@ create policy "admin all marketing_festivals"
 
 -- ------------------------------------------------------------
 -- 跑完自检：三列都应满足
---   表在不在 = true；登录用户可读 = true；匿名可读 = false
+--   表在不在 = true；登录用户可读 = true；匿名可读 = true
 -- ------------------------------------------------------------
 select
   (select count(*) from information_schema.tables
