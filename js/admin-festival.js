@@ -18,9 +18,11 @@
   var CATS = window.CATS || {};
   var GROUPS = window.REGION_GROUPS || [];
 
+  var SHOW_STEP = 120;                 /* 一次渲染多少张卡片，多的按「加载更多」追加 */
   var state = {
     list: [], view: 'cards', loaded: false, fromDb: false,
-    q: '', cats: {}, starMin: 0, region: '', editing: null
+    q: '', cats: {}, starMin: 0, region: '', editing: null,
+    showN: SHOW_STEP
   };
 
   /* ---------------- 小工具 ---------------- */
@@ -156,6 +158,7 @@
       + '<div class="mk-head-l"><h1>节庆库</h1>'
       + '<p>在这里直接改 · 保存即写库 · 前台刷新即见（与前台同一份数据、同一套版式）</p></div>'
       + '<div class="mk-head-r">' + seg
+      + '<span class="today-pill" id="mkFestCount"><span>共 <b class="num">' + state.list.length + '</b> 条</span></span>'
       + '<span class="today-pill" id="mkFestSrc"><span class="dot"></span><span>数据来源：内置库</span></span>'
       + '</div></div>'
       + '<div class="mk-adm-tools">'
@@ -209,9 +212,10 @@
   /* ---------------- 渲染：三种视图 ---------------- */
   function cardsHTML(list) {
     if (!list.length) return '<div class="mk-adm-empty">当前筛选条件下没有符合条件的节庆。清空搜索或点「不限重要度」可以看回全部。</div>';
+    var shown = list.slice(0, state.showN);
     var html = '<div class="card-grid">';
-    for (var i = 0; i < list.length; i++) {
-      var it = list[i];
+    for (var i = 0; i < shown.length; i++) {
+      var it = shown[i];
       var c = CATS[it.h.cat] ? CATS[it.h.cat].color : '#9aa0aa';
       var pctCirc = 2 * Math.PI * 24;
       var dash = (pctCirc * (it.daysLeft / 365)).toFixed(1);
@@ -238,7 +242,12 @@
         + (it.startDaysLeft >= 0 ? '（' + it.startDaysLeft + ' 天后）' : '') + '</div>'
         + '</article>';
     }
-    return html + '</div>';
+    html += '</div>';
+    if (list.length > shown.length) {
+      html += '<div class="mk-more-wrap"><button type="button" class="btn" id="mkFestMore">'
+        + '加载更多（已显示 ' + shown.length + ' / 共 ' + list.length + ' 条）</button></div>';
+    }
+    return html;
   }
 
   function timelineHTML(list) {
@@ -283,6 +292,7 @@
   }
 
   function ganttHTML(list) {
+    if (list.length > state.showN) list = list.slice(0, state.showN);
     var today = todayStart(), WIN = 365;
     var html = '<div class="sec-head"><h2>开发倒推推演</h2><span class="sub">每根色带 = 从最晚启动日 → 节日当天</span><span class="line"></span></div>';
     html += '<div class="gantt"><div class="gantt-head"><div class="gh-l">节日节点</div><div class="gh-r">';
@@ -325,8 +335,13 @@
 
     zone.innerHTML = headHTML() + statsHTML(list)
       + '<div class="view mk-adm-view" id="mkFestView">' + viewHTML + '</div>'
+      + '<div class="mk-prog" id="mkFestProg" hidden><div class="mk-prog-bar"><i></i></div>'
+      + '<div class="mk-prog-txt" id="mkFestProgTxt"></div></div>'
       + '<div class="backdrop" id="mkFestMask"><div class="modal" id="mkFestModal"></div></div>'
       + '<div class="mktoast" id="mkFestToast"></div>';
+
+    var more = $('mkFestMore');
+    if (more) more.onclick = function () { state.showN += SHOW_STEP; render(); };
 
     var src = $('mkFestSrc');
     if (src) src.innerHTML = '<span class="dot"></span><span>数据来源：' + (state.fromDb ? '数据库' : '内置库（库里还没有数据）') + '</span>';
@@ -768,13 +783,33 @@
     });
   }
 
+  /* 导入进度：ratio 0~1 */
+  function setProgress(ratio, label){
+    var box = $('mkFestProg'), txt = $('mkFestProgTxt');
+    if (!box) return;
+    box.hidden = false;
+    box.classList.add('on');
+    var i = box.querySelector('.mk-prog-bar i');
+    if (i) i.style.width = Math.max(0, Math.min(100, Math.round(ratio * 1000) / 10)) + '%';
+    if (txt) txt.textContent = label || '';
+  }
+  function hideProgress(delay){
+    setTimeout(function () {
+      var box = $('mkFestProg');
+      if (box) { box.classList.remove('on'); box.hidden = true; }
+    }, delay || 1400);
+  }
+
   /* 统一入库：rows 已是标准结构 */
   function commitRows(rows, skipped, dup) {
     if (!rows.length) { toast('没有可导入的有效数据（需要名称与日期）'); return; }
     if (typeof SB === 'undefined' || typeof SB.upsertFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法导入'); return; }
     var done = 0;
+    setProgress(0, '准备写入 0 / ' + rows.length + ' 条…');
     function next() {
       if (done >= rows.length) {
+        setProgress(1, '完成：共写入 ' + rows.length + ' 条');
+        hideProgress(1600);
         toast('新增 ' + rows.length + ' 条'
           + (skipped ? ('，跳过 ' + skipped + ' 条缺名称/日期') : '')
           + (dup ? ('，跳过 ' + dup + ' 条重复（同国同名，未覆盖原有）') : ''));
@@ -782,11 +817,12 @@
         return;
       }
       var slice = rows.slice(done, done + 200);
-      done += slice.length;
       SB.upsertFestivals(slice).then(function (res) {
-        if (res && res.error) { toast('导入失败：' + dbHint(res.error)); return; }
+        if (res && res.error) { hideProgress(0); toast('导入失败：' + dbHint(res.error)); return; }
+        done += slice.length;
+        setProgress(done / rows.length, '已写入 ' + done + ' / ' + rows.length + ' 条（' + Math.round(done / rows.length * 100) + '%）');
         next();
-      }).catch(function () { toast('导入失败，请稍后重试'); });
+      }).catch(function () { hideProgress(0); toast('导入失败，请稍后重试'); });
     }
     next();
   }

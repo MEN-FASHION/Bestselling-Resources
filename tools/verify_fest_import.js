@@ -140,5 +140,77 @@ ok('站内美国库无重名同日', [...dupMap.values()].every(v => v === 1));
   ok('完成提示会报出重复条数', /跳过 '\s*\+\s*dup\s*\+\s*' 条重复/.test(srcNow));
 }
 
-console.log('\n通过 ' + pass + ' / 失败 ' + fail);
-process.exit(fail ? 1 : 0);
+
+/* ============ 3000+ 条：千行上限、进度、分批渲染（本轮新增） ============ */
+{
+  const sup = fs.readFileSync(path.join(__dirname, '..', 'js', 'supabase.js'), 'utf8');
+  const adm = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-festival.js'), 'utf8');
+  const mkt = fs.readFileSync(path.join(__dirname, '..', 'js', 'marketing-main.js'), 'utf8');
+
+  ok('读取节庆改为分页（range 循环）', /\.range\(from, from \+ PAGE - 1\)/.test(sup));
+  ok('分页页大小 1000', /const PAGE = 1000/.test(sup));
+  ok('分页排序稳定（sort_no + id）', /\.order\("sort_no"[\s\S]{0,120}\.order\("id"/.test(sup));
+  ok('读取节庆不再单次 select 全表', !/\.select\("\*"\)\s*\.order\("sort_no", \{ ascending: true \}\)\s*\.order\("date"/.test(sup));
+
+  ok('后台有导入进度条 DOM', /id="mkFestProg"/.test(adm) && /mk-prog-bar/.test(adm));
+  ok('后台写库逐批推进度', /setProgress\(done \/ rows\.length/.test(adm));
+  ok('后台进度文案含「已写入 X / Y」', /已写入 ' \+ done \+ ' \/ ' \+ rows\.length/.test(adm));
+  ok('后台完成时进度置满并收起', /setProgress\(1, '完成：共写入/.test(adm) && /hideProgress\(1600\)/.test(adm));
+  ok('后台写库失败会收起进度', /res\.error\) \{ hideProgress\(0\)/.test(adm));
+
+  ok('后台列表分批渲染', /list\.slice\(0, state\.showN\)/.test(adm) && /mkFestMore/.test(adm));
+  ok('后台顶部显示总条数', /id="mkFestCount"/.test(adm));
+  ok('后台甘特限量渲染', /function ganttHTML\(list\) \{\s*\n\s*if \(list\.length > state\.showN\)/.test(adm));
+
+  ok('前台卡片分批渲染', /list\.slice\(0, state\.showN\)/.test(mkt) && /mkCardsMore/.test(mkt));
+  ok('前台甘特限量渲染', /if\(list\.length > state\.showN\) list = list\.slice\(0, state\.showN\);/.test(mkt));
+  ok('前台「加载更多」是事件委托（重绘后仍可用）', /addEventListener\('click', function\(e\)[\s\S]{0,220}mkCardsMore/.test(mkt));
+  ok('样式含进度条与加载更多', /\.mk-prog-bar/.test(fs.readFileSync(path.join(__dirname, '..', 'css', 'style.css'), 'utf8')));
+}
+
+
+/* ============ 运行时：分页真能把 1000 行上限拉完 ============ */
+(async () => {
+  const sup = fs.readFileSync(path.join(__dirname, '..', 'js', 'supabase.js'), 'utf8');
+  const m = sup.match(/async listFestivals\(\) \{([\s\S]*?)\n    \},\n    async upsertFestivals/);
+  ok('能切出 listFestivals 实现', !!m);
+  if (m) {
+    const BODY = 'return (async () => {' + m[1] + '})();';
+    // 模拟服务端：即使 range 要更多，单页最多给 1000 行（真实行为）
+    function mockClient(total, cap) {
+      const rows = Array.from({ length: total }, (_, i) => ({ id: 'f' + i, name: 'n' + i }));
+      let asked = [];
+      const q = {
+        from: null, select() { return q; }, order() { return q; },
+        range(a, b) {
+          asked.push([a, b]);
+          const end = Math.min(b, a + cap - 1, total - 1);
+          return Promise.resolve({ data: a > total - 1 ? [] : rows.slice(a, end + 1), error: null });
+        },
+      };
+      return { client: { from: () => q }, asked: () => asked };
+    }
+
+    const c1 = mockClient(2500, 1000);
+    const r1 = await new Function('client', BODY)(c1.client);
+    ok('2500 行能全部读完（不再停在 1000）', (r1.data || []).length === 2500, (r1.data || []).length);
+    ok('按 1000 一页发了 3 次请求', c1.asked().length === 3, c1.asked());
+    ok('分页区间连续无重叠', JSON.stringify(c1.asked()) === '[[0,999],[1000,1999],[2000,2999]]', c1.asked());
+    ok('顺序未被打乱', r1.data[0].id === 'f0' && r1.data[2499].id === 'f2499');
+
+    const c2 = mockClient(3091, 1000);
+    const r2 = await new Function('client', BODY)(c2.client);
+    ok('3091 行（本轮导入量）能全部读完', (r2.data || []).length === 3091, (r2.data || []).length);
+
+    const c3 = mockClient(0, 1000);
+    const r3 = await new Function('client', BODY)(c3.client);
+    ok('空库返回空数组且不报错', (r3.data || []).length === 0 && !r3.error);
+
+    const c4 = mockClient(1200, 1000);
+    const r4 = await new Function('client', BODY)(c4.client);
+    ok('正好跨界（1200 行）也不漏', (r4.data || []).length === 1200, (r4.data || []).length);
+  }
+
+  console.log('\n通过 ' + pass + ' / 失败 ' + fail);
+  process.exit(fail ? 1 : 0);
+})();

@@ -1009,12 +1009,24 @@ async removeTrendRecord(id) {
     },
     /* ---- 营销日历 · 节庆库（前台只读，后台「营销日历」维护） ---- */
     async listFestivals() {
-      const { data, error } = await client
-        .from("marketing_festivals")
-        .select("*")
-        .order("sort_no", { ascending: true })
-        .order("date", { ascending: true });
-      return { data: data || [], error };
+      // 单次查询会被服务端截断在 1000 行（这也是「导入了 3000 条只显示 1000 条」的原因），
+      // 这里用 range 分页把整张表拉完；排序必须稳定（sort_no + id），否则分页会漏行/重行。
+      const PAGE = 1000, MAX = 50000;
+      let from = 0, all = [];
+      for (let guard = 0; guard < 60; guard++) {
+        const { data, error } = await client
+          .from("marketing_festivals")
+          .select("*")
+          .order("sort_no", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) return { data: all, error };
+        const rows = data || [];
+        all = all.concat(rows);
+        if (rows.length < PAGE || all.length >= MAX) break;
+        from += PAGE;
+      }
+      return { data: all, error: null };
     },
     async upsertFestivals(rows) {
       const list = (rows || []).filter(Boolean);

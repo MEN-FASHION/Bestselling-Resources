@@ -8,8 +8,10 @@ var state = {
   festivals: [],
   settings: { useCustom:true, sample:45, produce:30, ship:15 },
   view: 'cards',
-  filters: { regions:[], cats:[], starMin:0, prog:'all' }
+  filters: { regions:[], cats:[], starMin:0, prog:'all' },
+  showN: 120            /* 首屏渲染条数；其余按「加载更多」追加（3000+ 条一次画会卡） */
 };
+var SHOW_STEP = 120;
 
 function defaultFestivals(){
   var out = [];
@@ -408,6 +410,8 @@ function renderTimeline(list){
 
 /* ============ 渲染：倒推推演 ============ */
 function renderGantt(list){
+  var totalRows = list.length;
+  if(list.length > state.showN) list = list.slice(0, state.showN);
   var today = todayStart();
   var WIN = 365;
   var monthCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
@@ -510,7 +514,7 @@ function renderGantt(list){
     html += '</div>';
   }
   html += '</div>';
-  document.getElementById('view-gantt').innerHTML = html;
+  document.getElementById('view-gantt').innerHTML = (totalRows > state.showN ? ('<div class="load-more-wrap"><button type="button" class="btn load-more" id="mkGanttMore">加载更多（已显示 '+list.length+' / 共 '+totalRows+' 条）</button></div>') : '') + html;
 }
 
 /* ============ 渲染：卡片 ============ */
@@ -520,9 +524,10 @@ function renderCards(list){
   if(!list.length){
     html += '<div style="padding:50px;text-align:center;color:var(--ink-3);font-size:13px;letter-spacing:.05em">当前筛选条件下没有符合条件的节庆</div>';
   }
+  var shown = list.slice(0, state.showN);
   html += '<div class="card-grid">';
-  for(var i=0;i<list.length;i++){
-    var it = list[i];
+  for(var i=0;i<shown.length;i++){
+    var it = shown[i];
     var c = CATS[it.h.cat] ? CATS[it.h.cat].color : '#9aa0aa';
     var pct = Math.max(0, Math.min(1, 1 - it.daysLeft/365));
     var circ = 2*Math.PI*24;
@@ -548,8 +553,22 @@ function renderCards(list){
     html += '</article>';
   }
   html += '</div>';
+  if(list.length > shown.length){
+    html += '<div class="load-more-wrap"><button type="button" class="btn load-more" id="mkCardsMore">'
+      + '加载更多（已显示 '+shown.length+' / 共 '+list.length+' 条）</button></div>';
+  }
   document.getElementById('view-cards').innerHTML = html;
 }
+
+/* 「加载更多」：卡片与甘特共用（事件委托，重绘后无需重绑） */
+document.addEventListener('click', function(e){
+  var t = e.target;
+  if(!t || !t.id) return;
+  if(t.id === 'mkCardsMore' || t.id === 'mkGanttMore'){
+    state.showN += SHOW_STEP;
+    render();
+  }
+});
 
 /* ============ 主渲染 ============ */
 function render(){
