@@ -100,5 +100,45 @@ const dupMap = new Map();
 usLib.forEach(r => { const k = r[0] + '|' + r[3]; dupMap.set(k, (dupMap.get(k) || 0) + 1); });
 ok('站内美国库无重名同日', [...dupMap.values()].every(v => v === 1));
 
+
+/* ============ 导入去重：同一国家同名节日不覆盖（本轮新增） ============ */
+{
+  const dd = new Function('console',
+    slice('function dedupeKey(', '/* 导入前先读库里现有清单') + '\nreturn { dedupeKey, splitByDup };')(console);
+
+  const k1 = dd.dedupeKey('美国', '感恩节');
+  ok('去重键：国家+名称', k1 === '美国|感恩节', k1);
+  ok('去重键：空格与标点归一', dd.dedupeKey('美国 ', ' 感恩 节 ') === k1, dd.dedupeKey('美国 ', ' 感恩 节 '));
+  ok('去重键：不同国家不相等', dd.dedupeKey('英国', '感恩节') !== k1);
+  ok('去重键：不同节日不相等', dd.dedupeKey('美国', '圣诞节') !== k1);
+
+  const rowsIn = [
+    { region: '美国', name: '感恩节', date: '11-26' },
+    { region: '美国', name: '感恩 节', date: '11-26' },   // 同国同名（写法差异）→ 文件内重复
+    { region: '英国', name: '感恩节', date: '11-26' },     // 他国同名 → 保留
+    { region: '美国', name: '圣诞节', date: '12-25' }      // 同国他节 → 保留
+  ];
+  const r1 = dd.splitByDup(rowsIn, Object.create(null));
+  ok('文件内同国同名只留一条', r1.keep.length === 3 && r1.dup === 1, r1);
+
+  const existing = Object.create(null);
+  existing[dd.dedupeKey('美国', '圣诞节')] = 1;
+  const r2 = dd.splitByDup(rowsIn, existing);
+  ok('库里已有的同国同名被跳过（不覆盖）', r2.dup === 2 && !r2.keep.some(x => x.region === '美国' && x.name === '圣诞节'), r2);
+  ok('库里没有的照常导入', r2.keep.some(x => x.region === '英国'), r2.keep);
+
+  const all = dd.splitByDup(rowsIn, (() => { const m = Object.create(null); rowsIn.forEach(x => { m[dd.dedupeKey(x.region, x.name)] = 1; }); return m; })());
+  ok('全部重复时一条也不留（调用方便于提示「未覆盖」）', all.keep.length === 0 && all.dup === 4, all);
+
+  // 静态：两条导入路径都必须走查重入口，且提示文案说明去重规则
+  const srcNow = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-festival.js'), 'utf8');
+  ok('templates/panel 说明含「重复…不覆盖」', /同名.{0,8}重复.{0,20}不覆盖/.test(srcNow));
+  const importBlock = srcNow.slice(srcNow.indexOf('function doImport('), srcNow.indexOf('function doRebuild('));
+  ok('Excel/CSV 路径走 commitRowsChecked', importBlock.indexOf('commitRowsChecked(rows, skipped)') >= 0);
+  ok('doImport 内不再直接提交（防绕过查重）', importBlock.indexOf('commitRows(rows, skipped)') < 0);
+  ok('读库失败时取消导入而非盲写', /读取现有节庆失败.{0,40}取消本次导入/.test(srcNow));
+  ok('完成提示会报出重复条数', /跳过 '\s*\+\s*dup\s*\+\s*' 条重复/.test(srcNow));
+}
+
 console.log('\n通过 ' + pass + ' / 失败 ' + fail);
 process.exit(fail ? 1 : 0);

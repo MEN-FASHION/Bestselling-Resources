@@ -2317,3 +2317,6 @@ async removeTrendRecord(id) {
     },
   };
 })();
+
+// 经典脚本里的 const 不会自动挂到 window 上；显式暴露，供其它模块的 `window.SB` 守卫使用。
+try { window.SB = SB; } catch (e) {}

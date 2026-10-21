@@ -263,7 +263,7 @@ function openPreviewInNewTab() {
 
 /* 超管权限面板：子页签切换（公告管理 / 权限管理 / 前台访问设置 / 数据导出 / 存量图片压缩池）
  * 说明：这一段的绑定原先放在已下线的旧营销脚本里，模块删除后子页签就点不动了，
- * 现改为在本文件内实现，并由初始化清单统一绑定（20261019O 修复）。 */
+ * 现改为在本文件内实现，并由初始化清单统一绑定（20261021A 修复）。 */
 function bindSuperTabs() {
   const tabs = Array.prototype.slice.call(document.querySelectorAll("#super-tabs .super-tab"));
   if (!tabs.length) return;
@@ -643,7 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!window.__authReady) { window.__authReady = true; showLoginView(); }
     }, 3000);
     // 各项 UI 绑定单独容错：单个元素缺失只影响对应功能，绝不断开登录链路
-    // 必须用 typeof 守卫（历史缺陷，20261019O 修复）：若直接写函数名而某模块已被删除，
+    // 必须用 typeof 守卫（历史缺陷，20261021A 修复）：若直接写函数名而某模块已被删除，
     // 数组字面量求值会抛 ReferenceError，导致整个绑定序列不执行
     // （表现为「关闭 / Esc / 退出 / 修改密码」全部无反应）。
     const INITERS = [

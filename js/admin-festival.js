@@ -168,7 +168,7 @@
       + '<input type="search" class="mk-adm-search" id="mkFestQ" placeholder="搜索名称 / 英文 / 地区 / 选品方向" value="' + esc(state.q) + '">'
       + '</div>'
       + '<p class="hint-inline" style="margin:8px 0 0">'
-      + '「导入节庆」支持 <b>Excel（xlsx / xls）</b>、<b>CSV</b> 与 JSON：把模板（交付包内「节庆批量导入模板.xlsx」）换成你的数据即可，表头用中文、日期填 <code>MM-DD</code> 或 <code>YYYY-MM-DD</code>，同一份表可混装多个国家。缺名称或日期的行会自动跳过。'
+      + '「导入节庆」支持 <b>Excel（xlsx / xls）</b>、<b>CSV</b> 与 JSON：把模板（交付包内「节庆批量导入模板.xlsx」）换成你的数据即可，表头用中文、日期填 <code>MM-DD</code> 或 <code>YYYY-MM-DD</code>，同一份表可混装多个国家。缺名称或日期的行会自动跳过；<b>同一国家同名的节日视为重复，导入时跳过、不覆盖库里原有那条</b>。'
       + '</p>'
       + '<div class="mk-adm-row">'
       + '<select class="mk-adm-sel" id="mkFestRegion"><option value="">全部地区</option>'
@@ -331,6 +331,24 @@
     var src = $('mkFestSrc');
     if (src) src.innerHTML = '<span class="dot"></span><span>数据来源：' + (state.fromDb ? '数据库' : '内置库（库里还没有数据）') + '</span>';
     bind();
+  }
+
+  /* 把数据库错误翻译成可执行的下一步（避免只报一个英文 message） */
+  function dbHint(err) {
+    var msg = String((err && err.message) || '');
+    var code = String((err && err.code) || '');
+    if (code === '42P01' || /does not exist|找不到|不存在/.test(msg) && /relation|table|表/.test(msg)) {
+      return '数据表未建：请先在 SQL Editor 运行 tools/setup_marketing.sql';
+    }
+    if (code === '42703' || /column .* does not exist/.test(msg)) {
+      return '表缺字段：请运行 tools/patch_20261021A.sql 补齐后再试';
+    }
+    if (code === '42501' || /row-level security|permission denied|权限/.test(msg)) {
+      return '当前账号没有写入权限（仅管理员可维护节庆库）';
+    }
+    if (code === '23505') return '主键冲突，请重试';
+    if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return '网络中断，请检查连接后重试';
+    return msg || '请检查权限与建表脚本';
   }
 
   function toast(msg) {
@@ -562,11 +580,11 @@
       sort_no: 0
     };
 
-    if (!window.SB || typeof SB.upsertFestivals !== 'function') { toast('未登录或接口不可用，无法保存'); return; }
+    if (typeof SB === 'undefined' || typeof SB.upsertFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法保存'); return; }
     btn.disabled = true; btn.textContent = '保存中…';
     Promise.resolve().then(function () { return SB.upsertFestivals([row]); }).then(function (res) {
       btn.disabled = false; btn.textContent = '保存';
-      if (res && res.error) { toast('保存失败：' + (res.error.message || '请检查权限与建表脚本')); return; }
+      if (res && res.error) { toast('保存失败：' + dbHint(res.error)); return; }
       var local = dbRowToFestival(row);
       var hit = -1;
       for (var i = 0; i < state.list.length; i++) { if (state.list[i].id === local.id) { hit = i; break; } }
@@ -587,10 +605,10 @@
       btn.textContent = '再点一次确认删除';
       return;
     }
-    if (!window.SB || typeof SB.deleteFestival !== 'function') { toast('接口不可用，无法删除'); return; }
+    if (typeof SB === 'undefined' || typeof SB.deleteFestival !== 'function') { toast('接口未就绪（请刷新页面），无法删除'); return; }
     btn.disabled = true;
     Promise.resolve().then(function () { return SB.deleteFestival(f.id); }).then(function (res) {
-      if (res && res.error) { btn.disabled = false; toast('删除失败：' + (res.error.message || '请检查权限')); return; }
+      if (res && res.error) { btn.disabled = false; toast('删除失败：' + dbHint(res.error)); return; }
       state.list = state.list.filter(function (x) { return x.id !== f.id; });
       var mask = $('mkFestMask'); if (mask) mask.classList.remove('open');
       render();
@@ -709,21 +727,64 @@
     rd.readAsArrayBuffer(file);
   }
 
-  /* 统一入库：rows 已是标准结构 */
-  function commitRows(rows, skipped) {
+  /* ---------------- 重复判定：同一国家 + 同一节日名 = 重复，导入时不覆盖 ---------------- */
+  function dedupeKey(region, name){
+    var r = String(region || '').replace(/\s+/g, '').toLowerCase();
+    var n = String(name || '').replace(/[\s·・\-—_()（）\[\]【】]/g, '').toLowerCase();
+    return r + '|' + n;
+  }
+  /* 与库里已有的、以及本文件内前面的行比对，重复的丢弃（保留库里原有的，不覆盖） */
+  function splitByDup(rows, existingKeys){
+    var seen = Object.create(null), keep = [], dup = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var k = dedupeKey(rows[i].region, rows[i].name);
+      if (existingKeys[k] || seen[k]) { dup++; continue; }
+      seen[k] = 1;
+      keep.push(rows[i]);
+    }
+    return { keep: keep, dup: dup };
+  }
+  /* 导入前先读库里现有清单，命中「同国同名」的直接跳过，绝不覆盖 */
+  function commitRowsChecked(rows, skipped){
     if (!rows.length) { toast('没有可导入的有效数据（需要名称与日期）'); return; }
-    if (!window.SB || typeof SB.upsertFestivals !== 'function') { toast('接口不可用，无法导入'); return; }
+    if (typeof SB === 'undefined' || typeof SB.listFestivals !== 'function' || typeof SB.upsertFestivals !== 'function') {
+      toast('接口未就绪（请刷新页面），无法导入'); return;
+    }
+    Promise.resolve().then(function () { return SB.listFestivals(); }).then(function (res) {
+      if (res && res.error) { toast('读取现有节庆失败，为避免产生重复，已取消本次导入，请稍后重试'); return; }
+      var keys = Object.create(null);
+      var list = (res && res.data) || [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].name) keys[dedupeKey(list[i].region, list[i].name)] = 1;
+      }
+      var r = splitByDup(rows, keys);
+      if (!r.keep.length) {
+        toast('这 ' + rows.length + ' 条在库里都已存在（同一国家、同一节日），未覆盖任何数据');
+        return;
+      }
+      commitRows(r.keep, skipped, r.dup);
+    }).catch(function () {
+      toast('读取现有节庆失败，为避免产生重复，已取消本次导入，请稍后重试');
+    });
+  }
+
+  /* 统一入库：rows 已是标准结构 */
+  function commitRows(rows, skipped, dup) {
+    if (!rows.length) { toast('没有可导入的有效数据（需要名称与日期）'); return; }
+    if (typeof SB === 'undefined' || typeof SB.upsertFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法导入'); return; }
     var done = 0;
     function next() {
       if (done >= rows.length) {
-        toast('已导入 ' + rows.length + ' 条' + (skipped ? ('，跳过 ' + skipped + ' 条缺名称/日期') : ''));
+        toast('新增 ' + rows.length + ' 条'
+          + (skipped ? ('，跳过 ' + skipped + ' 条缺名称/日期') : '')
+          + (dup ? ('，跳过 ' + dup + ' 条重复（同国同名，未覆盖原有）') : ''));
         reload(true);
         return;
       }
       var slice = rows.slice(done, done + 200);
       done += slice.length;
       SB.upsertFestivals(slice).then(function (res) {
-        if (res && res.error) { toast('导入失败：' + (res.error.message || '请检查权限')); return; }
+        if (res && res.error) { toast('导入失败：' + dbHint(res.error)); return; }
         next();
       }).catch(function () { toast('导入失败，请稍后重试'); });
     }
@@ -742,7 +803,7 @@
           one.sort_no = 0;
           rows.push(one);
         }
-        commitRows(rows, skipped);
+        commitRowsChecked(rows, skipped);
       });
       return;
     }
@@ -769,7 +830,7 @@
           sort_no: 0
         });
       }
-      commitRows(rows, skipped);
+      commitRowsChecked(rows, skipped);
     };
     rd.readAsText(file);
   }
@@ -789,14 +850,14 @@
         note: '', overrides: f.overrides, sort_no: 0
       };
     });
-    if (!window.SB || typeof SB.upsertFestivals !== 'function') { toast('接口不可用，无法重建'); return; }
+    if (typeof SB === 'undefined' || typeof SB.upsertFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法重建'); return; }
     var done = 0;
     (function next() {
       if (done >= rows.length) { toast('已写入 ' + rows.length + ' 条内置节庆'); reload(true); return; }
       var slice = rows.slice(done, done + 200);
       done += slice.length;
       SB.upsertFestivals(slice).then(function (res) {
-        if (res && res.error) { toast('写入失败：' + (res.error.message || '请先跑 setup_marketing.sql')); return; }
+        if (res && res.error) { toast('写入失败：' + dbHint(res.error)); return; }
         next();
       }).catch(function () { toast('写入失败，请稍后重试'); });
     })();
@@ -810,9 +871,9 @@
       return;
     }
     btn.setAttribute('data-confirm', '0'); btn.textContent = '清空库';
-    if (!window.SB || typeof SB.clearFestivals !== 'function') { toast('接口不可用，无法清空'); return; }
+    if (typeof SB === 'undefined' || typeof SB.clearFestivals !== 'function') { toast('接口未就绪（请刷新页面），无法清空'); return; }
     Promise.resolve().then(function () { return SB.clearFestivals(); }).then(function (res) {
-      if (res && res.error) { toast('清空失败：' + (res.error.message || '请检查权限')); return; }
+      if (res && res.error) { toast('清空失败：' + dbHint(res.error)); return; }
       state.list = []; state.fromDb = true;
       render();
       toast('已清空节庆库（可点「用内置库重建」恢复）');
@@ -823,7 +884,7 @@
   function reload(force) {
     if (state.loaded && !force) return;
     state.loaded = true;
-    if (!window.SB || typeof SB.listFestivals !== 'function') {
+    if (typeof SB === 'undefined' || typeof SB.listFestivals !== 'function') {
       state.list = defaults();
       render();
       return;

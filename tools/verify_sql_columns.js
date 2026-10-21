@@ -317,17 +317,23 @@ function functionBodies(sqlText) {
     }
     const pDDL = ddlSet(pSql);
     const pNeed = needSet(pSql);
-    check(pDDL.size >= 40, '补丁脚本补列清单可解析（' + pDDL.size + ' 个字段）', '只解析到 ' + pDDL.size + ' 个');
+    const expectSize = [...aligned2].filter((x) => cols.has(x.split('.')[0])).length;
+    check(pDDL.size >= Math.min(40, expectSize),
+      '补丁脚本补列清单可解析（' + pDDL.size + ' 个字段，白名单期望 ' + expectSize + ' 个）',
+      '只解析到 ' + pDDL.size + ' 个');
     check(pNeed.size >= 40, '补丁脚本自检清单可解析（' + pNeed.size + ' 个字段）', '只解析到 ' + pNeed.size + ' 个');
 
-    const d1 = [...aligned2].filter((x) => !pDDL.has(x));
+    // 只比对「依赖表白名单」内的表：images / data_backups / profiles 等不作统计依赖，
+    // ddlSet 会按白名单跳过它们，若这里仍要求全等，任何覆盖全表的补丁都会被误判。
+    const inWhite = (x) => cols.has(x.split('.')[0]);
+    const d1 = [...aligned2].filter((x) => inWhite(x) && !pDDL.has(x));
     const d2 = [...pDDL].filter((x) => !aligned2.has(x));
     check(d1.length === 0 && d2.length === 0,
       '补丁脚本补列清单与统计脚本 5.5 段完全一致（' + pDDL.size + ' 个字段）',
       '统计脚本有而补丁没有：' + d1.join('、') + '；补丁有而统计脚本没有：' + d2.join('、'));
 
     const n1 = [...pDDL].filter((x) => !pNeed.has(x));
-    const n2 = [...pNeed].filter((x) => !pDDL.has(x));
+    const n2 = [...pNeed].filter((x) => inWhite(x) && !pDDL.has(x));
     check(n1.length === 0 && n2.length === 0,
       '自检清单与补列清单同源（无漏项、无幽灵字段）',
       '自检漏了：' + n1.join('、') + '；自检多出（幽灵字段）：' + n2.join('、'));
