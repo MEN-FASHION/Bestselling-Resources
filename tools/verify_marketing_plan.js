@@ -245,6 +245,14 @@ try {
   ok('洲以横排胶囊逐一列出', pills.length > 1, pills.length);
   const rowCss = (css.match(/\.mkzone \.rg-row \{[^}]*\}/) || [''])[0];
   ok('洲行使用横向弹性布局（不纵向堆叠）', /display:\s*flex/.test(rowCss) && /flex-wrap:\s*wrap/.test(rowCss) && !/flex-direction:\s*column/.test(rowCss));
+  /* 必须显式写 row：全局 .rg-row 是 column，只写 display:flex 会被它带成竖排（曾因此线上竖排） */
+  ok('洲行显式声明 flex-direction: row（避免被全局 .rg-row 带成竖排）', /flex-direction:\s*row/.test(rowCss), rowCss);
+  const globalRowCss = (css.match(/(?:^|\n)\.rg-row \{[^}]*\}/) || [''])[0];
+  ok('确实存在会干扰的全局 .rg-row（column），故洲行必须显式覆盖',
+    /flex-direction:\s*column/.test(globalRowCss), globalRowCss.slice(0, 80));
+  /* 悬停展开的洲胶囊选择器必须与当前类名一致（曾因改名后仍用旧类名导致悬停失效） */
+  ok('洲悬停处理使用当前类名 .rgp', /closest\(\s*'\.rgp'/.test(mainJs), '未匹配到 .rgp');
+  ok('洲悬停处理不再只认旧类名 .rgc', !/closest\('\.rgc'\)\s*:\s*null/.test(mainJs));
   ok('国家区在洲行之后（正下方）', list.lastElementChild && list.lastElementChild.id === 'rgBody');
   ok('默认只有一个洲展开或全收起', pills.filter(x => x.classList.contains('open')).length <= 1);
 
@@ -329,7 +337,43 @@ ok('开发进度选项网格两列且整宽', /\.mkzone \.prog-chips \{[^}]*grid
   && /\.mkzone \.prog-chip \{[^}]*width: 100%/.test(css));
 ok('开发进度计数为等宽数字', /\.mkzone \.prog-chip \.pn \{[^}]*tabular-nums/.test(css));
 
+/* ================= 悬停自动展开该洲国家（真实事件） ================= */
+{
+  /* 先收起，模拟“什么都没展开”的初始态 */
+  w.eval('openGroups.active = null; refreshRegionDetail();');
+  const rowPills = [...d.getElementById('rgList').querySelectorAll('.rg-row .rgp')];
+  const target = rowPills[2];
+  const targetLab = target.querySelector('.rgc-name').getAttribute('data-whole');
+  /* 鼠标移到大洲上（可能只是经过名字按钮，也应触发） */
+  target.querySelector('.rgc-name').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+  setTimeout(() => {
+    ok('悬停大洲后该洲自动展开', w.eval('openGroups.active') === targetLab, w.eval('openGroups.active') + ' vs ' + targetLab);
+    const body = d.getElementById('rgBody');
+    ok('悬停后国家区出现在洲行下方', !!body && body.querySelectorAll('.rchip').length > 0);
+    ok('悬停展开的国家数量与该洲一致',
+      body.querySelectorAll('.rchip').length === w.eval('GROUPS_CACHE')[targetLab].length);
+    ok('悬停展开时胶囊标记为展开态',
+      [...d.getElementById('rgList').querySelectorAll('.rgp')]
+        .filter(x => x.classList.contains('open')).length === 1);
+    /* 移动到另一个大洲 → 切换到那个洲 */
+    const other = [...d.getElementById('rgList').querySelectorAll('.rg-row .rgp')][4];
+    const otherLab = other.querySelector('.rgc-name').getAttribute('data-whole');
+    other.querySelector('.rgc-name').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    setTimeout(() => {
+      ok('悬停另一个大洲会切换展开内容', w.eval('openGroups.active') === otherLab, w.eval('openGroups.active'));
+      /* 移出大洲区 → 缓冲后收起 */
+      d.getElementById('regionList').dispatchEvent(new w.MouseEvent('mouseleave', { bubbles: false }));
+      setTimeout(() => {
+        ok('鼠标移出后国家区自动收起', !w.eval('openGroups.active'));
+        report();
+      }, 800);
+    }, 160);
+  }, 160);
+}
+
+function report() {
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fails.length) { console.log('失败项：'); fails.forEach(f => console.log(' - ' + f)); }
 w.close();
 process.exit(fail ? 1 : 0);
+}

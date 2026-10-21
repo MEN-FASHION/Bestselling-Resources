@@ -1065,17 +1065,17 @@
     ctx.closePath();
   }
 
-  /* 一段文字：按元素宽度折行，最多排到元素高度（不会画到别人身上） */
-  function drawTextOp(ctx, op, S) {
-    var txt = String(op.text == null ? "" : op.text);
-    if (!txt) return;
-    var size = Math.max(1, (op.size || 12) * S);
-    var bold = op.weight && Number(op.weight) >= 600;
-    ctx.font = (bold ? "bold " : "") + size + "px " + FONT;
-    ctx.fillStyle = op.color || "#1a1a1a";
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "left";
-    var x = op.x * S, w = Math.max(1, op.w * S), h = Math.max(1, op.h * S);
+  /* 一段文字：按元素宽度折行，最多排到元素高度（不会画到别人身上）。
+     两条硬约束（曾经因此丢字）：
+     ① 网页上本来只占一行、完整显示的短标签（如周次「W42」），导出时必须整段画出来；
+        原来的做法是按元素宽度逐字折行，只要某个字比框宽一点点就掉到第二行，
+        而「最多排到元素高度」会把第二行整行丢掉 —— 于是「W42」变成「W4」。
+        现在改为：先逐级缩小字号去适配（最多缩到 55%），仍放不下时对短标签宁可整段画出，也不许少字。
+     ② 确实很长的文字才允许折行；折行后仍有余量时补省略号，不再是静默吞掉结尾。 */
+  var TEXT_SHRINK_MIN = 0.55;   /* 最小缩到原字号的 55%，再小就看不清了 */
+  var TEXT_SHRINK_STEP = 0.05;
+
+  function wrapByWidth(ctx, txt, w) {
     var lines = [], cur = "";
     for (var i = 0; i < txt.length; i++) {
       var t = cur + txt.charAt(i);
@@ -1083,9 +1083,55 @@
       else cur = t;
     }
     if (cur) lines.push(cur);
-    var lh = size * 1.34;
-    var maxLines = Math.max(1, Math.floor(h / lh));
-    if (lines.length > maxLines) lines = lines.slice(0, maxLines);
+    return lines;
+  }
+  function ellipsizeTo(ctx, txt, w) {
+    var s = txt;
+    while (s.length > 1 && ctx.measureText(s + "…").width > w) s = s.slice(0, -1);
+    return s + "…";
+  }
+
+  function drawTextOp(ctx, op, S) {
+    var txt = String(op.text == null ? "" : op.text);
+    if (!txt) return;
+    var baseSize = Math.max(1, (op.size || 12) * S);
+    var bold = op.weight && Number(op.weight) >= 600;
+    ctx.fillStyle = op.color || "#1a1a1a";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    var x = op.x * S, w = Math.max(1, op.w * S) + S, h = Math.max(1, op.h * S);
+
+    function setFont(sz) { ctx.font = (bold ? "bold " : "") + sz + "px " + FONT; }
+    function lineH(sz) { return sz * 1.34; }
+
+    /* 第一轮：从原字号开始按 5% 递减，找第一个「整段文字能装进可用行数」的字号 */
+    var size = baseSize, lines = null;
+    for (var k = 0; k * TEXT_SHRINK_STEP <= 1 - TEXT_SHRINK_MIN + 1e-6; k++) {
+      var sz = baseSize * (1 - k * TEXT_SHRINK_STEP);
+      setFont(sz);
+      var ls = wrapByWidth(ctx, txt, w);
+      var allow = op.nowrap ? 1 : Math.max(1, Math.floor(h / lineH(sz)));
+      if (ls.length <= allow) { size = sz; lines = ls; break; }
+    }
+
+    if (!lines) {
+      /* 缩到最小仍放不下：短标签整段画出（宁可轻微出框，也不能少了数字）；
+         长文本按可用行数截断并明确加省略号。 */
+      size = baseSize * TEXT_SHRINK_MIN;
+      setFont(size);
+      if (op.nowrap) {
+        lines = [txt];
+      } else {
+        lines = wrapByWidth(ctx, txt, w);
+        var cap = Math.max(1, Math.floor(h / lineH(size)));
+        if (lines.length > cap) {
+          lines = lines.slice(0, cap);
+          lines[cap - 1] = ellipsizeTo(ctx, lines[cap - 1], w);
+        }
+      }
+    }
+
+    var lh = lineH(size);
     var top = op.y * S + Math.max(lh / 2, (h - lines.length * lh) / 2 + lh / 2);
     for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], x, top + j * lh);
   }
@@ -1258,6 +1304,7 @@
       makeEyePPT: makeEyePPT, assembleEye: assembleEye, eyeSlice: eyeSlice,
       readPoolsFrom: readPoolsFrom, imgDataUrl: imgDataUrl, hud: hud, exportEye: exportEye,
       exportImages: exportImages, jobStart: jobStart, IMG_EXP: IMG_EXP, isSuperNow: isSuperNow,
+      drawTextOp: drawTextOp, wrapByWidth: wrapByWidth, TEXT_SHRINK_MIN: TEXT_SHRINK_MIN,
       EYE_PPT: EYE_PPT, EYE_GRID: EYE_GRID,
       cfg: CFG, getFmt: function () { return FMT; }, getScope: function () { return SCOPE; },
       ROW_PER_SLIDE: ROW_PER_SLIDE, TABLE_MAX_ROWS: TABLE_MAX_ROWS

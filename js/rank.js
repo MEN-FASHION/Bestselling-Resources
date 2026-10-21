@@ -126,11 +126,17 @@
           fill: hasBg ? bg : "", stroke: lw > 0 ? cs.borderTopColor : "", lw: lw,
           radius: parseFloat(cs.borderTopLeftRadius) || 0 });
       }
-      /* 只画叶子节点的文字，避免父节点把同一句重复画一遍 */
+      /* 只画叶子节点的文字，避免父节点把同一句重复画一遍。
+         同时记下「这行文字在网页上是不是单行显示」：单行短标签（周次、计数、位次）在导出时
+         必须整段完整绘制，不能被折行后截断（曾出现 W42 → W4 的丢字）。 */
       var txt = (el.textContent || "").trim();
       if (txt && (!el.children || !el.children.length)) {
+        var fs = parseFloat(cs.fontSize) || 12;
+        var lh = parseFloat(cs.lineHeight) || fs * 1.4;
+        var oneLine = (rr.h <= lh * 1.6);
         texts.push({ k: "text", x: rr.x, y: rr.y, w: rr.w, h: rr.h, text: txt,
-          size: parseFloat(cs.fontSize) || 12, weight: cs.fontWeight, color: cs.color });
+          size: fs, weight: cs.fontWeight, color: cs.color,
+          nowrap: oneLine && txt.length <= 16 });   /* 短的单行标签：整段画，宁可缩字号也不丢字 */
       }
     });
 

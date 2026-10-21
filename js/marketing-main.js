@@ -905,16 +905,21 @@ function bindGlobal(){
     fbEl.addEventListener('mouseleave', function(){ fbClose(340); });
     fbPanel.addEventListener('mouseenter', function(){ clearTimeout(fbCloseTimer); });
     fbPanel.addEventListener('mouseleave', function(){ fbClose(340); });
-
-    /* 悬停到某个洲 → 自动展开该洲国家；移出国家区 → 缓冲收起 */
+  }
+  /* 悬停到某个洲 → 自动展开该洲国家；移出 → 缓冲收起。
+     不依赖 canHover 判定（个别环境 matchMedia 取不到 hover 能力），有鼠标就生效。 */
+  {
     var rgOpenTimer = null, rgCloseTimer = null;
     var rgList = document.getElementById('regionList');
     if(rgList){
       rgList.addEventListener('mouseover', function(e){
         clearTimeout(rgCloseTimer);
-        var card = (e.target && e.target.closest) ? e.target.closest('.rgc') : null;
+        var t = e.target;
+        if(!t || !t.closest) return;
+        /* 洲胶囊：现在的类名是 .rgp；顺带兼容旧的 .rgc，避免改名后悬停失效 */
+        var card = t.closest('.rgp') || t.closest('.rgc') || t.closest('[data-whole]');
         if(!card) return;
-        var nm = card.querySelector('.rgc-name');
+        var nm = card.querySelector('.rgc-name') || (card.hasAttribute && card.hasAttribute('data-whole') ? card : null);
         var lab = nm ? nm.getAttribute('data-whole') : null;
         if(!lab || lab === openGroups.active) return;
         clearTimeout(rgOpenTimer);
@@ -923,12 +928,21 @@ function bindGlobal(){
           refreshRegionDetail();   /* 切到哪个洲，下面就直接展开那个洲的国家 */
         }, 60);
       });
+      /* 鼠标停在那块国家区里时保持展开，不要一移出洲名就收起 */
       rgList.addEventListener('mouseleave', function(){
         clearTimeout(rgOpenTimer);
         rgCloseTimer = setTimeout(function(){
           openGroups.active = null;
           refreshRegionDetail();
         }, 700);   /* 给足时间从洲名移到国家区，不要一离开就收起 */
+      });
+      /* 鼠标一旦落到国家区里，就取消“收起”计时；离开国家区再重新计时 */
+      document.addEventListener('mouseover', function(e){
+        var body = document.getElementById('rgBody');
+        if(!body || !e.target || !e.target.closest) return;
+        var pl = e.target.closest('.rgp');
+        if(pl){ clearTimeout(rgCloseTimer); return; }
+        if(body.contains(e.target)) clearTimeout(rgCloseTimer);
       });
     }
     fbTrigger.addEventListener('focus', function(){ fbOpen(0); });

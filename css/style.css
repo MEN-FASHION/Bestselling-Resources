@@ -2196,8 +2196,12 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   position: sticky; top: 0; z-index: 3; background: var(--card);
   padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line);
 }
-.rk-pool-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--txt); }
-.rk-pool-name .rk-n { font-size: 11.5px; font-weight: 400; color: var(--sub); }
+/* 列头一行：左「周次 / 国家」，右「N 张」。
+   两段都禁止收缩、禁止换行 —— 原来窄列时周次会被挤成「W4」（末位丢失），
+   计数也会被顶出可视区。放不下时让整行折行，而不是压缩文字。 */
+.rk-pool-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13.5px; font-weight: 600; color: var(--txt); }
+.rk-pool-name > span:first-child { flex: 0 0 auto; white-space: nowrap; }
+.rk-pool-name .rk-n { flex: 0 0 auto; white-space: nowrap; font-size: 11.5px; font-weight: 400; color: var(--sub); }
 .rk-pool-meta { margin-top: 3px; font-size: 11.5px; color: var(--sub); line-height: 1.55; }
 .rk-pool-grid { display: grid; grid-template-columns: repeat(var(--rk-r, 4), minmax(0, 1fr)); gap: 6px; align-content: start; }
 .rk-pool-grid.sz-s { --rk-r: 5; }
@@ -3091,8 +3095,9 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .region-list { max-height: 62vh; overflow: auto; }
 /* 地区：一个洲一个区块，国家直接长在该洲下面（手风琴），不要堆到最底部 */
 .mkzone .rg-list { display: flex; flex-direction: column; gap: 10px; }
-/* 洲：横排一行，自动换行 */
-.mkzone .rg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 洲：横排一行，自动换行（必须显式 row —— 全局 .rg-row 是 column，会把它带成竖排） */
+.mkzone .rg-row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mkzone .rg-list > .rg-row + .rg-body { margin-top: 8px; }
 .mkzone .rgp { display: inline-flex; align-items: stretch; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-paper); overflow: hidden; }
 .mkzone .rgp.on { border-color: var(--gold); background: rgba(139,115,85,.10); }
 .mkzone .rgp.part { border-color: var(--gold2); }
