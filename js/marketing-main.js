@@ -338,9 +338,15 @@ function renderFilters(){
 /* 开发进度计数：与列表口径一致（地区 / 类别 / 重要度先筛，再按节期与启动点归类） */
 function progCounts(){
   var today = todayStart(), f = state.filters;
-  var r = { all:0, expired:0, soon30:0, late:0 };
+  var r = { all:0, expired:0, soon30:0, late:0, uniq:0, rows:0 };
+  var _seenC = {};
   for(var i=0;i<state.festivals.length;i++){
     var h = state.festivals[i];
+    r.rows++;
+    var _k = _dupKey(h.region, h.name);
+    if(_seenC[_k]) continue;                   /* 历史重复行不参与计数：与列表口径保持一致 */
+    _seenC[_k] = 1;
+    r.uniq++;
     if(f.regions.length && f.regions.indexOf(h.region) < 0) continue;
     if(f.cats.length && f.cats.indexOf(h.cat) < 0) continue;
     if((h.star|0) < (f.starMin|0)) continue;
