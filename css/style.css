@@ -2636,6 +2636,14 @@ body.front .tf-trigger { padding: 7px 14px; }
 .rp-foot { margin-top: 3mm; padding-top: 2mm; border-top: .6pt solid var(--line); display: flex; justify-content: space-between; gap: 4mm; font-size: 7.5pt; color: #8a857c; }
 
 /* ---- 抓图（生成 PPT 时把对比池还原成不滚动、不吸顶的完整版式） ---- */
+/* 周列自适应：某周该「国家 + 类目」没有图时整列不输出，剩余列由 flex 均分铺满 */
+.rk-dropnote {
+  margin: 0 2px 8px; padding: 7px 11px; border-radius: 9px;
+  background: rgba(198,160,86,.10); border: 1px dashed rgba(198,160,86,.45);
+  font-size: 11.5px; line-height: 1.6; color: var(--sub);
+}
+.rk-dropnote b { color: var(--txt); font-weight: 600; }
+.rk-pools > .rk-pool { flex: 1 1 0; }        /* 只剩一列时也铺满整行，不留右侧空白 */
 .rk-pools.rp-capture { max-height: none !important; overflow: visible !important; }
 .rk-pool.rp-capture { max-width: none !important; }
 .rp-capture .rk-pool-head { position: static !important; }
@@ -3207,16 +3215,6 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .cact button.del:hover { border-color: rgba(194,94,90,.5); color: var(--mk-danger); }
 
 /* 已发布素材（数据库） */
-.mkzone .mk-db { margin-top: 30px; }
-.mkzone .db-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
-.mkzone .db-card { display: flex; flex-direction: column; background: var(--mk-paper); border: 1px solid var(--mk-line); border-radius: 13px; overflow: hidden; cursor: pointer; transition: transform .2s, box-shadow .2s, border-color .2s; text-align: left; padding: 0; }
-.mkzone .db-card:hover { transform: translateY(-3px); border-color: var(--gold2); box-shadow: 0 16px 32px -26px rgba(60,52,42,.95); }
-.mkzone .db-img { aspect-ratio: 3 / 4; background: var(--mk-paper2); overflow: hidden; }
-.mkzone .db-img img { width: 100%; height: 100%; object-fit: cover; }
-.mkzone .db-body { padding: 11px 12px 13px; }
-.mkzone .db-date { font-size: 10.5px; letter-spacing: .1em; color: var(--gold); font-weight: 600; }
-.mkzone .db-title { font-size: 13.5px; margin-top: 4px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.mkzone .db-desc { font-size: 11px; color: var(--mk-ink3); margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* 页脚 */
 .mkzone .footer { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--mk-line); font-size: 11px; color: var(--mk-ink3); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

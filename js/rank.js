@@ -763,7 +763,7 @@
     var src = opts.items || (CACHE && CACHE.items) || [];
     var all = src.filter(hitTags);
     EXPORT_ITEMS = [];                                   /* 每次重排都重新累计，避免残留上一次的范围 */
-    var html = "", maxLen = 0, kept = 0;
+    var html = "", maxLen = 0, kept = 0, cols = 0, dropped = 0, dropKind = "";
 
     /* ===== 横向 · 国家对比：每国一列 ===== */
     if (MODE === "h") {
@@ -795,10 +795,14 @@
           ? ("与 " + (others.length <= 2 ? others.join("、") : ("另 " + others.length + " 国")) + " 重合 " + over + " 张 · 重合度 " + rate + "%")
           : (_gp ? ("地区合并 · 含 " + _gp.members.length + " 国，同名商品只保留一条") : "单国视图");
         var list = sortItems(mine);
+        /* 该国这一期在这个类目下没有图 → 整列不输出（横向国家对比同理：
+           选了几个国家、但其中某个国家本期没上传，留一个空列既难看又白占宽度）。
+           去掉后剩下的列由 flex 均分：只剩 1 国就整行铺满，2 国就两等分。 */
+        if (!list.length) { dropped++; dropKind = "site"; return; }
         if (list.length > maxLen) maxLen = list.length;
         var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager, eye: opts.eye }); }).join("");
         html += poolHtml(s, meta, total, cards, opts.noFoot ? null : Math.min(limit, total));
-        kept += list.length;
+        kept += list.length; cols++;
         /* 导出用清单：整列（不按「每列最多展示」截断）；横向按国家比，没有位次标签 */
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
@@ -811,10 +815,13 @@
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
       var site = sites[0];
+      /* 纵向只比「当前这一个国家（或地区合并池）」的周次：别的国家的数据若混进来，
+         会给本不存在的周次凑出一列（列里全是别国的图），既误导又和筛选对不上。 */
+      var mineOnly = all.filter(function (it) { return (it.site || "") === site; });
       var basePeriods = withBasePeriods(periods);
       var byPeriod = {};
       basePeriods.forEach(function (p) { byPeriod[p] = []; });
-      all.forEach(function (it) { if (byPeriod[it.period_label]) byPeriod[it.period_label].push(it); });
+      mineOnly.forEach(function (it) { if (byPeriod[it.period_label]) byPeriod[it.period_label].push(it); });
 
       var hasOf = {}, rankOf = {};
       basePeriods.forEach(function (p) {
@@ -855,12 +862,16 @@
         if (list.length > maxLen) maxLen = list.length;
         var meta = site + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
         if (ONLY !== "off") meta += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
+        /* 该周在这个「国家 + 类目」下没有任何图 → 不输出这一列：
+           各国家/类目的周度本来就不齐，留一个空列既难看又占宽；
+           去掉后剩下的列由 flex 均分，1 列就铺满、2 列就两等分。 */
+        if (!list.length) { dropped++; dropKind = "period"; return; }
         var cards = list.slice(0, limit).map(function (it) {
           var mv = moveOf(it, p, prev, hasOf, rankOf);
           return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
         html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
-        kept += list.length;
+        kept += list.length; cols++;
         /* 导出用清单：整列（不按「每列最多展示」截断），带站点 / 期次 / 类目 / 位次标签 */
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
@@ -871,7 +882,7 @@
         });
       });
     }
-    return { html: html, maxLen: maxLen, kept: kept };
+    return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind };
   }
 
   function renderBody() {
@@ -899,7 +910,20 @@
       box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
       return;
     }
-    var html = '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
+    /* 选中的周列里有几列在本组合下确实没有图 → 已折叠；全部为空时给出空态而不是大片留白 */
+    if (!R.cols) {
+      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据（所选周次在这个国家 / 类目下都没有上传）。换一个周次或国家试试。</div>';
+      return;
+    }
+    var html = '';
+    if (R.dropped) {
+      var _dtxt = R.dropKind === "site"
+        ? ('已自动隐藏 <b>' + R.dropped + '</b> 个国家列（该国这一期在这个类目下没有上传）')
+        : ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的周列（该周这个国家 / 类目没有上传）');
+      html += '<div class="rk-dropnote">' + _dtxt + '，'
+        + '剩余 <b>' + R.cols + '</b> 列已铺满宽度。</div>';
+    }
+    html += '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
     var maxLen = R.maxLen;
 
     if (maxLen > CAP) {

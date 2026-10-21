@@ -19,11 +19,18 @@ console.log('二、各视图不再重复输出标题');
 ok('renderCards 不再输出 sec-head', !/function renderCards\(list\)\{[\s\S]{0,200}sec-head/.test(js));
 ok('renderTimeline 不再输出 sec-head', !/function renderTimeline\(list\)\{[\s\S]{0,200}sec-head/.test(js));
 ok('renderGantt 不再输出 sec-head', !/function renderGantt\(list\)\{[\s\S]{0,300}sec-head/.test(js));
-ok('全文仅剩「已发布营销素材」一处 sec-head', (js.match(/class="sec-head"/g) || []).length === 0, '（营销素材那块在 HTML 里）');
+ok('全文不再有 sec-head 区块标题', (js.match(/class="sec-head"/g) || []).length === 0);
 ok('标题随视图切换的函数存在', /function renderViewTitle\(list\)\{/.test(js));
 ok('三档标题文案齐全', /'年度时间轴'/.test(js) && /'开发倒推推演'/.test(js) && /'节庆机会卡片'/.test(js));
 ok('时间轴副标题带节点数', /未来 12 个月 · 共 ' \+ list\.length/.test(js));
 ok('render() 内调用标题刷新', /renderFilters\(\);\s*\n\s*renderViewTitle\(list\);/.test(js));
+
+console.log('二·补：前台「已发布营销素材」区块已下线');
+ok('HTML 里没有该区块标题', !/已发布营销素材/.test(html));
+ok('HTML 里没有该区块副标题', !/后台「营销日历」中已发布的节点与文章/.test(html));
+ok('HTML 里没有素材容器', !/id="mk-publish/.test(html) && !/id="mk-timeline"/.test(html) && !/id="mk-cards"/.test(html));
+ok('脚本：容器不在就不再请求节点/文章', /_hasPub/.test(fs.readFileSync(path.join(R, 'js/marketing.js'), 'utf8')));
+ok('页面不再引用旧素材样式类 mk-node', !/class="mk-node/.test(html));
 
 console.log('三、样式');
 ok('工具条有下边线与间距', /\.mkzone \.mk-head\.mk-toolbar \{[\s\S]{0,200}border-bottom: 1px solid/.test(css));

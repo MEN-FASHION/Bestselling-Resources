@@ -239,6 +239,10 @@
   async function loadMarketing() {
     // 容错取数：任一环节失败均不弹错，回退为空继续渲染（空态由 render* 自行显示）
     try { await ensureZoneVis(); } catch (e) { zoneVis = {}; }
+    /* 「已发布营销素材」（时间节点 + 趋势文章）已按要求从前台下线：
+       容器不在就不再发这两个请求，避免白跑两次查询（前台只保留节庆库）。 */
+    var _hasPub = !!(document.getElementById("mk-timeline") || document.getElementById("mk-cards") || document.getElementById("mk-publish"));
+    if (!_hasPub) { nodes = []; articles = []; setHeroYear(); return; }
     try {
       if (typeof SB.listMarketingNodes === "function") {
         const nodeRes = await SB.listMarketingNodes();
