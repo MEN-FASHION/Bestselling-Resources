@@ -1080,16 +1080,21 @@ function countPast(list){
   return n;
 }
 
-/* 把后端错误翻成人话（不暴露内部细节） */
+/* 把后端错误翻成人话（不暴露内部细节），并保留可定位的错误码 */
 function dbReason(err){
-  if(!err) return '读取失败';
-  var msg = String(err.message || err.error_description || err);
-  if(/permission denied|42501|row-level security/i.test(msg)) return '当前账号没有读取节庆库的权限';
-  if(/column .* does not exist|42703/i.test(msg)) return '节庆库缺少字段（需要在后台补一次字段）';
-  if(/does not exist|42P01/i.test(msg)) return '节庆库还没建好（需要在后台执行一次初始化脚本）';
-  if(/JWT|token|401/i.test(msg)) return '登录状态已过期，请重新登录';
-  if(/fetch|network|Failed to fetch/i.test(msg)) return '网络中断，暂时读不到数据';
-  return '读取失败';
+  if(!err) return '读取失败（没拿到错误详情）';
+  var code = String((err && err.code) || '');
+  var msg  = String((err && (err.message || err.error_description)) || err || '');
+  if(/SUPABASE_NOT_READY|NO_CLIENT/i.test(msg)) return '页面还没准备好数据接口，刷新一次即可';
+  if(code === 'CONFIG' || /页面数据库配置不完整/.test(msg)) return '页面数据库配置不完整（缺少地址或密钥），需要检查配置后再试';
+  if(code === '42501' || /permission denied|row-level security/i.test(msg)) return '当前账号没有读取节庆库的权限';
+  var col = (msg.match(/Could not find the '([^']+)' column/i) || msg.match(/column\s+["']?([A-Za-z0-9_]+)["']?\s+does not exist/i) || [])[1];
+  if(col) return '节庆库缺少字段「' + col + '」，读不全（建议在后台补一次字段）';
+  if(/Could not find the table|42P01|relation\s+["']?[A-Za-z0-9_.]+["']?\s+does not exist/i.test(msg)) return '节庆库还没建好（需要执行一次初始化脚本）';
+  if(code === '401' || /JWT|token expired|401/i.test(msg)) return '登录状态已过期，请重新登录';
+  if(/fetch|network|Load failed|Failed to fetch/i.test(msg)) return '网络中断，暂时读不到数据';
+  if(/PGRST103|range not satisfiable|416/i.test(msg)) return '分页读取越界（点重试再读一次）';
+  return '读取失败：' + msg.replace(/\s+/g,' ').slice(0,120) + (code ? '（代码 ' + code + '）' : '');
 }
 
 function renderDataBar(){
@@ -1099,7 +1104,9 @@ function renderDataBar(){
   if(dbMeta.status === 'failed'){
     html = '<span class="mkdb-ico">!</span>'
          + '<span class="mkdb-txt"><b>节庆数据读取失败</b>：' + escHtml(dbMeta.err) + '。当前显示的是内置节庆库（' + state.festivals.length + ' 条），后台导入的内容尚未载入。</span>'
-         + '<button type="button" class="mkdb-btn" id="mkDbRetry">重试</button>';
+         + '<button type="button" class="mkdb-btn" id="mkDbRetry">重试</button>'
+         + '<button type="button" class="mkdb-btn" id="mkDbProbe">诊断</button>'
+         + '<pre class="mkdb-probe hidden" id="mkDbProbeOut"></pre>';
   } else if(dbMeta.status === 'noguest'){
     html = '<span class="mkdb-ico">·</span>'
          + '<span class="mkdb-txt">当前是<b>访客（未登录）</b>状态，节庆库不允许匿名读取，所以这里显示的是内置节庆库（' + state.festivals.length + ' 条）。'
@@ -1117,11 +1124,39 @@ function renderDataBar(){
   el.classList.remove('hidden');
   var rt = document.getElementById('mkDbRetry');
   if(rt) rt.onclick = function(){ loadFestivalsFromDb(true); };
+  var pb = document.getElementById('mkDbProbe');
+  if(pb) pb.onclick = function(){ runDbProbe(pb); };
   var sp = document.getElementById('mkDbShowPast');
   if(sp) sp.onclick = function(){
     state.filters.prog = 'expired';
     render();
   };
+}
+
+/* 诊断：把「接口/登录/表/字段/可读行数」一次查清，让失败能自证原因 */
+function runDbProbe(btn){
+  var el = document.getElementById('mkDbProbeOut');
+  if(!window.SB || typeof SB.probeFestivals !== 'function'){
+    if(el){ el.textContent = '数据接口未就绪：请刷新页面后重试。'; el.classList.remove('hidden'); }
+    return;
+  }
+  btn.disabled = true; btn.textContent = '诊断中…';
+  Promise.resolve().then(function(){ return SB.probeFestivals(); }).then(function(r){
+    var lines = [];
+    lines.push('数据接口：' + (r.client ? '已初始化' : '未初始化'));
+    lines.push('配置自检：' + (r.config || '未知'));
+    lines.push('登录状态：' + (r.loggedIn ? '已登录' : '未登录（访客）'));
+    lines.push('节庆表：' + (r.table || '未知') + (r.code ? '（代码 ' + r.code + '）' : ''));
+    if(r.count !== null && r.count !== undefined) lines.push('可读行数：' + r.count);
+    var miss = (r.missing && r.missing.length) ? r.missing : [];
+    lines.push('缺少字段：' + (miss.length ? miss.join('、') : '无'));
+    if(r.raw) lines.push('原始信息：' + String(r.raw).replace(/\s+/g,' ').slice(0,160));
+    if(el){ el.textContent = lines.join('\n'); el.classList.remove('hidden'); }
+    btn.disabled = false; btn.textContent = '重新诊断';
+  }).catch(function(){
+    if(el){ el.textContent = '诊断失败：请稍后重试。'; el.classList.remove('hidden'); }
+    btn.disabled = false; btn.textContent = '诊断';
+  });
 }
 
 function escHtml(s){

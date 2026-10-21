@@ -47,7 +47,9 @@ ok('缺表 → 提示需初始化', /初始化/.test(r('relation "marketing_fest
 ok('缺字段 → 提示补字段', /补一次字段/.test(r('column "overrides" does not exist')));
 ok('登录过期 → 提示重登', /重新登录/.test(r('JWT expired')));
 ok('网络 → 提示网络', /网络/.test(r('Failed to fetch')));
-ok('未知错误不抛出原文以外的内部细节', r('boom') === '读取失败');
+ok('未知错误 → 标记为读取失败并带上可定位原文', /^读取失败：boom/.test(r('boom')));
+ok('原文过长时截断，避免整段刷屏', r('x'.repeat(400)).length <= 140);
+ok('未知错误不会被误报成权限问题', !/权限/.test(r('boom')));
 
 console.log('四、已过期计数（运行时）');
 const countSrc = cutFn(js, 'function countPast(list){');

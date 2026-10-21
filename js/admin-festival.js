@@ -397,11 +397,14 @@
   function dbHint(err) {
     var msg = String((err && err.message) || '');
     var code = String((err && err.code) || '');
-    if (code === '42P01' || /does not exist|找不到|不存在/.test(msg) && /relation|table|表/.test(msg)) {
+    if (code === '42P01' || /Could not find the table/i.test(msg) || /does not exist|找不到|不存在/.test(msg) && /relation|table|表/.test(msg)) {
       return '数据表未建：请先在 SQL Editor 运行 tools/setup_marketing.sql';
     }
-    if (code === '42703' || /column .* does not exist/.test(msg)) {
-      return '表缺字段：请运行 tools/patch_20261021A.sql 补齐后再试';
+    var colName = '';
+    var ci = String(msg).indexOf('Could not find the ');
+    if (ci >= 0) colName = (String(msg).slice(ci + 19).split(String.fromCharCode(39))[1] || '');
+    if (code === '42703' || code === 'PGRST204' || colName || /column .* does not exist/.test(msg)) {
+      return '表缺字段（' + (colName || '部分字段') + '）：请运行 tools/patch_20261021A.sql 补齐后再试';
     }
     if (code === '42501' || /row-level security|permission denied|权限/.test(msg)) {
       return '当前账号没有写入权限（仅管理员可维护节庆库）';

@@ -40,6 +40,33 @@ const SB = (() => {
     return { ok: problems.length === 0, problems, refFromUrl, refFromKey, role };
   }
 
+  /* ---------- 数据库错误的「可定位」解析 ----------
+   * 不同版本的接口服务对"缺字段/缺表"给的文案不同：
+   *   旧版：column "sort_no" does not exist / relation "xxx" does not exist
+   *   新版：Could not find the 'sort_no' column of 'xxx' in the schema cache（PGRST204）
+   *         Could not find the table 'public.xxx' in the schema cache（PGRST205）
+   * 只按旧文案判断会漏判，前端就只能笼统提示"读取失败"——所以统一在这里识别。
+   */
+  function errText(e) {
+    if (!e) return "";
+    if (typeof e === "string") return e;
+    return [e.message, e.details, e.hint, e.code].filter(Boolean).join(" | ");
+  }
+  function missingColumn(e) {
+    const t = errText(e);
+    let m = t.match(/Could not find the '([^']+)' column/i);
+    if (m) return m[1];
+    m = t.match(/column\s+["']?([A-Za-z0-9_]+)["']?\s+does not exist/i);
+    if (m) return m[1];
+    return "";
+  }
+  function missingTable(e) {
+    const t = errText(e);
+    return /Could not find the table/i.test(t)
+      || /relation\s+["']?[A-Za-z0-9_.]+["']?\s+does not exist/i.test(t)
+      || /42P01/.test(t);
+  }
+
   // 取当前登录令牌（会话里是过期令牌时先用 refresh token 续期，确保拿到新鲜 token）
   async function freshAccessToken() {
     const readSess = async () => {
@@ -1011,26 +1038,71 @@ async removeTrendRecord(id) {
     async listFestivals() {
       // 单次查询会被服务端截断在 1000 行（这也是「导入了 3000 条只显示 1000 条」的原因），
       // 这里用 range 分页把整张表拉完；排序必须稳定（sort_no + id），否则分页会漏行/重行。
+      // 兼容旧表：老库里没有 sort_no 时，按 sort_no 排序会整体报错→整页读不出来，
+      // 因此这里按「sort_no+id → id → 不排序」逐级降级，宁可顺序差一点也不能一条都读不到。
+      if (!client) return { data: [], error: { message: "SUPABASE_NOT_READY", code: "NO_CLIENT" } };
+      // 先做一次本地配置自检：缺地址/缺密钥/密钥与地址不同项目时，
+      // 请求会在网关层被拒，报错文本与"没有权限"很像，容易把超管引向改权限的错误方向。
+      try {
+        const h = checkConfigHealth();
+        if (!h.ok) return { data: [], error: { message: "页面数据库配置不完整：" + h.problems.join("；"), code: "CONFIG" } };
+      } catch (e) { /* 自检本身失败不阻断读取 */ }
       const PAGE = 1000, MAX = 50000;
-      let from = 0, all = [];
-      for (let guard = 0; guard < 60; guard++) {
-        const { data, error } = await client
-          .from("marketing_festivals")
-          .select("*")
-          .order("sort_no", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) return { data: all, error };
-        const rows = data || [];
-        all = all.concat(rows);
-        if (rows.length < PAGE || all.length >= MAX) break;
-        from += PAGE;
+      const run = async (orders) => {
+        let from = 0, all = [];
+        for (let guard = 0; guard < 60; guard++) {
+          let q = client.from("marketing_festivals").select("*");
+          for (const o of orders) q = q.order(o, { ascending: true });
+          const { data, error } = await q.range(from, from + PAGE - 1);
+          if (error) {
+            // 翻到表尾时个别网关会回 416，当作正常结束
+            if (/PGRST103|range not satisfiable|416/i.test(errText(error))) return { data: all, error: null, orders };
+            return { data: all, error, orders };
+          }
+          const rows = data || [];
+          all = all.concat(rows);
+          if (rows.length < PAGE || all.length >= MAX) break;
+          from += PAGE;
+        }
+        return { data: all, error: null, orders };
+      };
+      let res = await run(["sort_no", "id"]);
+      if (res.error && missingColumn(res.error) === "sort_no") res = await run(["id"]);
+      if (res.error && missingColumn(res.error) === "id") res = await run([]);
+      if (res.error) return { data: res.data || [], error: res.error };
+      const degraded = (res.orders || []).join(",") !== "sort_no,id";
+      return { data: res.data || [], error: null, degraded };
+    },
+    /* 诊断：把「表在不在、都有哪些字段、能读多少行」一次性查清，供页面自证原因 */
+    async probeFestivals() {
+      const out = { client: !!client, config: "", loggedIn: false, table: "", code: "", count: null, columns: {}, missing: [] };
+      try { const h = checkConfigHealth(); out.config = h.ok ? "正常" : h.problems.join("；"); } catch (e) { out.config = "未知"; }
+      if (!client) { out.table = "数据接口未初始化"; return out; }
+      try {
+        const s = await client.auth.getSession();
+        out.loggedIn = !!(s && s.data && s.data.session);
+      } catch (e) { out.loggedIn = false; }
+      try {
+        const r = await client.from("marketing_festivals").select("id", { count: "exact", head: true });
+        if (r.error) { out.table = "读不到"; out.code = r.error.code || ""; out.raw = errText(r.error); return out; }
+        out.table = "正常";
+        out.count = r.count == null ? null : r.count;
+      } catch (e) { out.table = "请求失败"; out.raw = errText(e); return out; }
+      const cols = ["id", "name", "date", "region", "cat", "star", "lead", "dur", "idea", "note", "overrides", "sort_no", "updated_at"];
+      for (const c of cols) {
+        try {
+          const r = await client.from("marketing_festivals").select(c).limit(1);
+          if (r.error) { out.columns[c] = "缺"; out.missing.push(c); }
+          else out.columns[c] = "有";
+        } catch (e) { out.columns[c] = "未知"; }
       }
-      return { data: all, error: null };
+      if (missingTable({ message: out.raw || "" })) out.table = "不存在";
+      return out;
     },
     async upsertFestivals(rows) {
       const list = (rows || []).filter(Boolean);
       if (!list.length) return { error: null };
+      if (!client) return { error: { message: "SUPABASE_NOT_READY", code: "NO_CLIENT" } };
       const clean = list.map((r) => ({
         id: String(r.id), name: r.name, date: r.date,
         en: r.en || "", region: r.region || "其他", cat: r.cat || "trad",
@@ -1039,8 +1111,21 @@ async removeTrendRecord(id) {
         overrides: r.overrides || null, sort_no: r.sort_no || 0,
         updated_at: new Date().toISOString(),
       }));
-      const { error } = await client.from("marketing_festivals").upsert(clean, { onConflict: "id" });
-      return { error };
+      // 老库可能缺 note / overrides / sort_no / updated_at：缺哪个就去掉哪个重试，
+      // 不能因为一个可选字段让整批 3091 条全部写不进去。
+      let attempt = clean, dropped = [], err = null;
+      for (let i = 0; i < 5; i++) {
+        const { error } = await client.from("marketing_festivals").upsert(attempt, { onConflict: "id" });
+        if (!error) {
+          return { error: null, note: dropped.length ? ("已写入，但库里缺少字段：" + dropped.join("、") + "（建议执行一次补字段脚本，否则这些内容下次会被丢弃）") : null };
+        }
+        err = error;
+        const col = missingColumn(error);
+        if (!col || dropped.indexOf(col) >= 0) return { error };
+        dropped.push(col);
+        attempt = attempt.map((r) => { const c = Object.assign({}, r); delete c[col]; return c; });
+      }
+      return { error: err, note: dropped.length ? ("库里缺少字段：" + dropped.join("、")) : null };
     },
     async deleteFestival(id) {
       const { error } = await client.from("marketing_festivals").delete().eq("id", String(id));
