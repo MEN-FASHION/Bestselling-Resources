@@ -3090,19 +3090,20 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .mkzone .fb-clear.dim { opacity: .45; }
 .mkzone .region-list { max-height: 62vh; overflow: auto; }
 /* 地区：一个洲一个区块，国家直接长在该洲下面（手风琴），不要堆到最底部 */
-.mkzone .rg-list { display: flex; flex-direction: column; gap: 6px; }
-.mkzone .rgc { display: block; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-paper); overflow: hidden; }
-.mkzone .rgc.on { border-color: var(--gold); background: rgba(139,115,85,.08); }
-.mkzone .rgc.part { border-color: var(--gold2); }
-.mkzone .rgc.open { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(139,115,85,.09); }
-.mkzone .rgc-h { display: flex; align-items: stretch; }
-.mkzone .rgc-name { flex: 1 1 auto; text-align: left; padding: 8px 12px; font-size: 12.5px; color: var(--mk-ink2); background: transparent; border: 0; cursor: pointer; white-space: nowrap; }
-.mkzone .rgc.on .rgc-name, .mkzone .rgc.open .rgc-name { color: var(--gold); font-weight: 600; }
+.mkzone .rg-list { display: flex; flex-direction: column; gap: 10px; }
+/* 洲：横排一行，自动换行 */
+.mkzone .rg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.mkzone .rgp { display: inline-flex; align-items: stretch; border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-paper); overflow: hidden; }
+.mkzone .rgp.on { border-color: var(--gold); background: rgba(139,115,85,.10); }
+.mkzone .rgp.part { border-color: var(--gold2); }
+.mkzone .rgp.open { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(139,115,85,.09); }
+.mkzone .rgc-name { flex: 1 1 auto; text-align: left; padding: 6px 12px; font-size: 12.5px; color: var(--mk-ink2); background: transparent; border: 0; cursor: pointer; white-space: nowrap; }
+.mkzone .rgp.on .rgc-name, .mkzone .rgp.open .rgc-name { color: var(--gold); font-weight: 600; }
 .mkzone .rgc-cnt { margin-left: 6px; font-size: 10px; color: var(--mk-ink3); }
-.mkzone .rgc-tog { width: 32px; flex: 0 0 32px; border: 0; border-left: 1px solid var(--mk-line); background: transparent; cursor: pointer; position: relative; }
+.mkzone .rgc-tog { width: 26px; flex: 0 0 26px; border: 0; border-left: 1px solid var(--mk-line); background: transparent; cursor: pointer; position: relative; }
 .mkzone .rgc-tog::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-right: 1.4px solid var(--mk-ink3); border-bottom: 1.4px solid var(--mk-ink3); transform: translate(-50%,-70%) rotate(45deg); }
 .mkzone .rgc-tog[aria-expanded="true"]::after { transform: translate(-50%,-30%) rotate(225deg); }
-.mkzone .rg-body { padding: 10px 11px 12px; border-top: 1px solid var(--mk-line); }
+.mkzone .rg-body { padding: 10px 11px 12px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-paper); }
 .mkzone .rg-body:empty { border-top: 0; }
 .mkzone .rg-detail { display: none; }
 .mkzone .rg-detail.show { display: block; }

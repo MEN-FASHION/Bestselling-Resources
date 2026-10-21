@@ -238,42 +238,41 @@ try {
   ok('自定义周期有说明提示', !!tip && /自己的开发打样节奏/.test(tip.textContent));
   ok('提示说明三段相加为提前期', !!tip && /三段相加/.test(tip.textContent));
 
-  /* 地区：国家长在所属洲下面，而不是所有洲的最底部 */
+  /* 地区：洲横排一行；点开某洲后，其国家直接出现在洲行正下方 */
   const list = d.getElementById('rgList');
-  ok('地区面板为洲块列表结构', !!list && list.querySelectorAll('.rgc').length > 1);
-  ok('不再有独立的底部国家区（rgDetail 已移除）', d.getElementById('rgDetail') === null && d.querySelector('.rg-row') === null);
-  const blocks = [...list.querySelectorAll('.rgc')];
-  ok('每个洲块自带国家容器', blocks.every(b => b.querySelector('.rg-body') !== null));
-  ok('同时最多只有一个洲展开（手风琴不串开）', blocks.filter(b => b.classList.contains('open')).length <= 1);
+  ok('地区面板为「洲横排 + 国家区」结构', !!list && !!list.querySelector('.rg-row') && !!d.getElementById('rgBody'));
+  const pills = [...list.querySelectorAll('.rg-row .rgp')];
+  ok('洲以横排胶囊逐一列出', pills.length > 1, pills.length);
+  const rowCss = (css.match(/\.mkzone \.rg-row \{[^}]*\}/) || [''])[0];
+  ok('洲行使用横向弹性布局（不纵向堆叠）', /display:\s*flex/.test(rowCss) && /flex-wrap:\s*wrap/.test(rowCss) && !/flex-direction:\s*column/.test(rowCss));
+  ok('国家区在洲行之后（正下方）', list.lastElementChild && list.lastElementChild.id === 'rgBody');
+  ok('默认只有一个洲展开或全收起', pills.filter(x => x.classList.contains('open')).length <= 1);
 
-  /* 点第二个洲的展开箭头 → 只有该洲内部出现国家 */
-  const target = blocks[1];
-  target.querySelector('.rgc-tog').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  const blocks2 = [...d.getElementById('rgList').querySelectorAll('.rgc')];
-  const openedIdx = blocks2.findIndex(b => b.classList.contains('open'));
-  ok('点箭头后该洲展开', openedIdx === 1, 'openedIdx=' + openedIdx);
-  const chipsInOpen = blocks2[1].querySelectorAll('.rg-body .rchip').length;
-  ok('国家渲染在该洲块内部', chipsInOpen > 0, chipsInOpen);
-  ok('其它洲块内部没有国家', blocks2.filter((b, i) => i !== 1).every(b => b.querySelectorAll('.rg-body .rchip').length === 0));
-  ok('展开洲的国家数量与该洲国家数一致',
-    chipsInOpen === w.eval('GROUPS_CACHE')[blocks2[1].querySelector('.rgc-name').getAttribute('data-whole')].length,
-    chipsInOpen);
-  ok('展开箭头 aria 状态同步', blocks2[1].querySelector('.rgc-tog').getAttribute('aria-expanded') === 'true'
-    && blocks2.filter((b, i) => i !== 1).every(b => b.querySelector('.rgc-tog').getAttribute('aria-expanded') === 'false'));
+  /* 点第二个洲的展开箭头 → 国家出现在洲行下方，且内容属于该洲 */
+  pills[1].querySelector('.rgc-tog').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const pills2 = [...d.getElementById('rgList').querySelectorAll('.rgp')];
+  const lab2 = pills2[1].querySelector('.rgc-name').getAttribute('data-whole');
+  const bodyEl = d.getElementById('rgBody');
+  const chipsInOpen = bodyEl.querySelectorAll('.rchip').length;
+  ok('点箭头后该洲处于展开态', pills2[1].classList.contains('open'));
+  ok('国家渲染在洲行下方的国家区', chipsInOpen > 0, chipsInOpen);
+  ok('国家数量与该洲国家数一致', chipsInOpen === w.eval('GROUPS_CACHE')[lab2].length, chipsInOpen + ' vs ' + w.eval('GROUPS_CACHE')[lab2].length);
+  ok('国家区标题写明所属洲', new RegExp(lab2).test(bodyEl.querySelector('.rg-dname').textContent));
+  ok('展开箭头 aria 状态同步', pills2[1].querySelector('.rgc-tog').getAttribute('aria-expanded') === 'true'
+    && pills2.filter((x, i) => i !== 1).every(x => x.querySelector('.rgc-tog').getAttribute('aria-expanded') === 'false'));
+  ok('同时最多一个洲展开（不串开）', pills2.filter(x => x.classList.contains('open')).length === 1);
 
-  /* 该洲内部点一个国家 → 正常进入筛选，且仍在该洲块内高亮 */
-  const chip = blocks2[1].querySelector('.rg-body .rchip');
-  if (!chip) { ok('点洲内国家可选中', false, '该洲块内没有国家（国家没长在洲下面）'); }
+  /* 点洲内国家 → 进入筛选，并保持该洲展开 */
+  const chip = bodyEl.querySelector('.rchip');
   const rname = chip ? chip.getAttribute('data-region') : null;
   if (chip) chip.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
   const picked = w.eval('state.filters.regions');
-  ok('点洲内国家可选中', picked.indexOf(rname) >= 0, picked.join('|'));
-  const stillOpen = d.getElementById('rgList').querySelectorAll('.rgc')[1];
-  ok('选中后该洲仍展开（便于继续挑）', stillOpen.classList.contains('open'));
-  ok('选中后该洲计数显示 已选/总数', /\/\d+$/.test(stillOpen.querySelector('.rgc-cnt').textContent));
-  /* 点击会触发重绘：必须重新取节点（旧节点已脱离文档） */
+  ok('点洲内国家可选中', !!rname && picked.indexOf(rname) >= 0, picked.join('|'));
+  const pills3 = [...d.getElementById('rgList').querySelectorAll('.rgp')];
+  ok('选中后该洲仍展开（便于继续挑）', pills3.some(x => x.classList.contains('open') && x.querySelector('.rgc-name').getAttribute('data-whole') === lab2));
+  ok('选中后该洲计数显示 已选/总数', pills3.some(x => x.querySelector('.rgc-name').getAttribute('data-whole') === lab2 && /\/\d+$/.test(x.querySelector('.rgc-cnt').textContent)));
   const chip2 = rname ? d.querySelector('#regionList .rchip[data-region="' + rname + '"]') : null;
-  ok('重绘后该国家仍在所属洲块内', !!chip2 && !!chip2.closest('.rg-body'));
+  ok('重绘后该国家仍在国家区内', !!chip2 && !!chip2.closest('#rgBody'));
   if (chip2) chip2.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
   ok('再点一次取消该国家', !rname || w.eval('state.filters.regions').indexOf(rname) < 0);
 }

@@ -213,22 +213,22 @@ function regionDetailHTML(lab){
   return h + '</div>';
 }
 
-/* 悬停切换洲：就地开合该洲下面的国家块，不重建整列（避免鼠标下方元素被替换） */
+/* 悬停切换洲：只在洲行下方那块国家区里换内容，不重建洲行（避免鼠标下方元素被替换） */
 function refreshRegionDetail(){
   var lab = (openGroups.active && GROUPS_CACHE[openGroups.active]) ? openGroups.active : null;
   var listEl = document.getElementById('rgList');
   if(listEl){
-    var cols = listEl.querySelectorAll('.rgc');
-    for(var i=0; i<cols.length; i++){
-      var nm = cols[i].querySelector('.rgc-name');
+    var pills = listEl.querySelectorAll('.rgp');
+    for(var i=0; i<pills.length; i++){
+      var nm = pills[i].querySelector('.rgc-name');
       var l = nm ? nm.getAttribute('data-whole') : null;
       var hit = !!l && l === lab;
-      cols[i].classList.toggle('open', hit);
-      var tog = cols[i].querySelector('.rgc-tog');
+      pills[i].classList.toggle('open', hit);
+      var tog = pills[i].querySelector('.rgc-tog');
       if(tog) tog.setAttribute('aria-expanded', hit ? 'true' : 'false');
-      var body = cols[i].querySelector('.rg-body');
-      if(body) body.innerHTML = hit ? regionDetailHTML(l) : '';
     }
+    var body = document.getElementById('rgBody');
+    if(body) body.innerHTML = lab ? regionDetailHTML(lab) : '';
   }
 }
 function renderFilters(){
@@ -261,8 +261,8 @@ function renderFilters(){
 
   var activeLab = (openGroups.active && GROUPS_CACHE[openGroups.active]) ? openGroups.active : null;
 
-  /* 每个洲一个独立区块：国家直接长在该洲下面（手风琴），不再堆到所有洲的最底部 */
-  var blocks = '';
+  /* 洲横排一行；当前展开的洲，其国家直接出现在这一行的正下方 */
+  var pills = '';
   for(var g4=0; g4<order.length; g4++){
     var lab = order[g4];
     var items = GROUPS_CACHE[lab];
@@ -270,17 +270,16 @@ function renderFilters(){
     for(var s2=0; s2<items.length; s2++){ if(state.filters.regions.indexOf(items[s2])>=0) selN++; }
     var cls = selN===0 ? '' : (selN===items.length ? 'on' : 'part');
     var isOpen = (lab === activeLab);
-    blocks += '<div class="rgc ' + cls + (isOpen?' open':'') + '">'
-        +  '<div class="rgc-h">'
+    pills += '<div class="rgp ' + cls + (isOpen?' open':'') + '">'
         +    '<button class="rgc-name" data-whole="'+esc(lab)+'">'+esc(lab)
         +    '<span class="rgc-cnt">' + (selN ? selN+'/' : '') + items.length + '</span></button>'
         +    '<button class="rgc-tog" data-chev="'+esc(lab)+'" aria-label="展开 '+esc(lab)+' 的国家" aria-expanded="'+(isOpen?'true':'false')+'"></button>'
-        +  '</div>'
-        +  '<div class="rg-body">' + (isOpen ? regionDetailHTML(lab) : '') + '</div>'
         +  '</div>';
   }
-
-  document.getElementById('regionList').innerHTML = '<div class="rg-list" id="rgList">' + blocks + '</div>';
+  var bodyHTML = activeLab ? regionDetailHTML(activeLab) : '';
+  document.getElementById('regionList').innerHTML = '<div class="rg-list" id="rgList">'
+      + '<div class="rg-row">' + pills + '</div>'
+      + '<div class="rg-body" id="rgBody">' + bodyHTML + '</div></div>';
 
   var selAll = state.filters.regions;
   var hintEl = document.getElementById('regionHint');

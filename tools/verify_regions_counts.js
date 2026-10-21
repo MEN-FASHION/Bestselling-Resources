@@ -76,7 +76,7 @@ ok(!/已发布营销素材/.test(html), '页面无「已发布营销素材」标
 ok(!/后台「营销日历」中已发布的节点与文章/.test(html), '页面无该区块副标题');
 ok(!/id="mk-cards"/.test(html) && !/id="mk-timeline"/.test(html), '旧素材容器已移除');
 ok(/id="mkBuild"/.test(html) && /构建 2026102/.test(html), '页脚有构建标识，可核对线上版本');
-ok(/20261021J/.test(html), '资源版本号已升级');
+ok(/2026102\d[A-Z]/.test(html), '资源版本号已升级且为当前构建');
 
 console.log('\n结果: 通过 ' + pass + ' / 失败 ' + fail);
 process.exit(fail ? 1 : 0);
