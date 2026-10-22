@@ -637,7 +637,9 @@
       if (Common.zones.applyNav) Common.zones.applyNav(); else Common.zones.renderNav();
     }
     if (vis && vis.fav === false) { gate("全站开关：该专区已在后台「前台访问设置」中被关闭"); return; }
-    if (logged && Array.isArray(myz) && myz.length && myz.indexOf("fav") === -1) {
+    /* 「我的收藏」是个人专区：不再用账号的专区白名单挡它（白名单只管公共业务专区）。
+       否则会出现"收藏成功了但打不开收藏页"。此处保留判断入口便于以后回滚。 */
+    if (false && logged && Array.isArray(myz) && myz.length && myz.indexOf("fav") === -1) {
       gate("账号授权：你的账号未获授权访问本专区"); return;
     }
 

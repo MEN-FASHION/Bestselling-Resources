@@ -3904,3 +3904,133 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
   font-size: 11px; word-break: break-all;
 }
+
+/* ============================================================================
+   趋势上升榜 · 右侧「我的收藏」抽屉（20261021U）
+   —— 为什么是 fixed 浮层：多列对比池是 grid 布局，任何占位的侧栏都会压缩列宽、
+      少掉一列，所以抽屉必须脱离文档流，只浮在右侧。
+   —— 为什么不加全屏遮罩：遮罩会挡住对比池的点击，等于"影响了对比池"。
+      关闭只靠 ×、Esc、再次点右侧标签。
+   ========================================================================== */
+
+/* 右侧竖排标签（入口） */
+.fv-tab {
+  position: fixed; right: 0; top: 46%; transform: translateY(-50%);
+  z-index: 58;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 7px;
+  border: 1px solid var(--line); border-right: none;
+  border-radius: 12px 0 0 12px;
+  background: var(--card, #fff); color: var(--sub);
+  box-shadow: -6px 0 18px rgba(20,20,20,.07);
+  cursor: pointer; font-family: inherit;
+  transition: color .18s, border-color .18s, box-shadow .18s, transform .18s;
+}
+.fv-tab:hover, .fv-tab.is-open {
+  color: var(--gold); border-color: var(--gold);
+  box-shadow: -8px 0 24px rgba(156,139,116,.20);
+}
+.fv-tab.is-open { transform: translateY(-50%) translateX(2px); }
+.fv-tab-t {
+  writing-mode: vertical-rl; text-orientation: upright;
+  letter-spacing: 3px; font-size: 12.5px; font-weight: 600;
+}
+.fv-tab-n {
+  min-width: 18px; height: 18px; line-height: 18px; padding: 0 4px;
+  border-radius: 999px; font-size: 10.5px; font-weight: 700;
+  background: var(--gold); color: #fff; text-align: center;
+}
+
+/* 抽屉本体：脱离文档流，占位为零，不影响对比池列宽 */
+.fv-drawer {
+  position: fixed; right: 0; top: 66px; bottom: 0;
+  width: 380px; max-width: 92vw;
+  z-index: 60;
+  display: flex; flex-direction: column;
+  background: var(--bg2, #fff); color: var(--txt);
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 48px rgba(20,20,20,.14);
+  transform: translateX(calc(100% + 24px));
+  transition: transform .24s cubic-bezier(.4,0,.2,1);
+  will-change: transform;
+}
+.fv-drawer.is-open { transform: translateX(0); }
+
+.fv-d-head {
+  flex: 0 0 auto; padding: 12px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.fv-d-title { font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+.fv-d-count { margin-left: 6px; font-size: 11.5px; font-weight: 500; color: var(--sub); }
+.fv-d-acts { display: flex; align-items: center; gap: 8px; }
+.fv-d-open { font-size: 12px; color: var(--gold); text-decoration: none; white-space: nowrap; }
+.fv-d-open:hover { text-decoration: underline; }
+.fv-d-x {
+  width: 26px; height: 26px; line-height: 1; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--sub);
+  font-size: 16px; cursor: pointer;
+}
+.fv-d-x:hover { border-color: var(--gold); color: var(--gold); }
+
+/* 分类筛选条 */
+.fv-d-filter {
+  flex: 0 0 auto; display: flex; gap: 6px; overflow-x: auto;
+  padding: 9px 12px; border-bottom: 1px solid var(--line);
+}
+.fv-d-filter::-webkit-scrollbar { height: 0; }
+.fv-d-chip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--sub); font-size: 12px; font-family: inherit; white-space: nowrap;
+  transition: .16s;
+}
+.fv-d-chip:hover { border-color: var(--gold); color: var(--txt); }
+.fv-d-chip.is-on { border-color: var(--gold); background: rgba(200,164,92,.12); color: var(--txt); font-weight: 600; }
+.fv-d-chip i { font-style: normal; font-size: 10.5px; color: var(--sub); }
+.fv-d-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; }
+
+/* 列表 */
+.fv-d-body { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px 24px; }
+.fv-d-body::-webkit-scrollbar { width: 7px; }
+.fv-d-body::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 4px; }
+.fv-d-empty {
+  padding: 26px 8px; text-align: center; font-size: 12.5px; color: var(--sub); line-height: 1.9;
+}
+.fv-d-empty code {
+  background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; font-size: 11px; word-break: break-all;
+}
+.fv-d-bad { color: var(--danger, #e5484d); }
+
+.fv-d-week { margin-bottom: 16px; }
+.fv-d-week-h {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 4px 2px 8px; border-bottom: 1px solid var(--line); margin-bottom: 9px;
+}
+.fv-d-week-t { font-size: 12.5px; font-weight: 700; letter-spacing: 1px; color: var(--gold); }
+.fv-d-week-n { font-size: 11px; color: var(--sub); }
+
+.fv-d-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.fv-d-cell {
+  position: relative; margin: 0; border-radius: 9px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--shade, #f3f1ee);
+  cursor: zoom-in; transition: border-color .16s, transform .16s;
+}
+.fv-d-cell:hover { border-color: var(--gold); transform: translateY(-2px); }
+.fv-d-cell img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+.fv-d-cell figcaption {
+  padding: 4px 5px; font-size: 10px; color: var(--sub);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-d-tag {
+  position: absolute; left: 4px; top: 4px; max-width: calc(100% - 8px);
+  padding: 1px 5px; border-radius: 4px;
+  font-size: 9.5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .fv-drawer { top: 0; width: 100vw; max-width: 100vw; }
+  .fv-d-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fv-tab { padding: 10px 5px; }
+}

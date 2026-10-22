@@ -303,7 +303,7 @@ function bootFavPage(db, opts) {
   window.eval(read("js/supabase.js") + "\n;window.SB=SB;");
 
   /* 专区可见性配置来自 site_settings，本套件不验证它，直接给"全部可用" */
-  window.SB.getFrontendZoneVisibility = async () => ({});
+  window.SB.getFrontendZoneVisibility = async () => (opts.zoneOff ? { fav: false } : {});
   window.SB.myFrontendZones = async () => (opts.noAuth ? ["rank"] : ["fav"]);
   window.SB.getSession = async () => (opts.notLogged ? null : { user: { id: ME, email: "me@x.com" } });
   window.SB.favUid = async () => (opts.notLogged ? null : ME);
@@ -559,12 +559,25 @@ async function testGuards() {
       ok("表建好后点重新检测：直接显示收藏列表（不用刷新页面）", false, "没找到按钮");
     }
 
+    /* 口径变更（20261021U）：「我的收藏」是个人专区，不再被账号的专区白名单挡住。
+       原因：用户收藏成功后打不开收藏页／找不到入口，白名单是用来管公共业务专区的。
+       全站开关（前台访问设置里关掉整个专区）仍然有效，这一条继续守着。 */
     const db3 = makeDB(seedFav());
     const win3 = bootFavPage(db3, { noAuth: true });
     await new Promise((r) => setTimeout(r, 200));
     const doc3 = win3.document;
-    ok("无专区权限时给出守门说明", /暂无法查看/.test(doc3.querySelector("#fv-body").textContent || ""));
-    ok("无权限时不加载收藏数据", db3.state.reads === 0, String(db3.state.reads));
+    ok("个人专区不被账号白名单挡住（能正常出图，不再弹「暂无法查看」）",
+      !/暂无法查看/.test(doc3.querySelector("#fv-body").textContent || "")
+      && doc3.querySelectorAll(".fv-card").length > 0,
+      doc3.querySelector("#fv-body").textContent.slice(0, 40));
+    ok("个人专区照常读取收藏数据", db3.state.reads > 0, String(db3.state.reads));
+
+    /* 全站开关仍然要守：vis.fav === false 时必须拦住 */
+    const db5 = makeDB(seedFav());
+    const win5 = bootFavPage(db5, { zoneOff: true });
+    await new Promise((r) => setTimeout(r, 200));
+    ok("全站开关关闭时仍然守门", /暂无法查看/.test(win5.document.querySelector("#fv-body").textContent || ""));
+    ok("全站开关关闭时不读取收藏数据", db5.state.reads === 0, String(db5.state.reads));
   }
 }
 

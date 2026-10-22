@@ -1187,7 +1187,8 @@
       if (wasBatch) FAV.sel = {};
       closeFavPop();
       syncFavUI();
-      toast("已收藏 " + n + " 张");
+      favDrawerSync();
+      toast("已收藏 " + n + " 张 · 右侧「我的收藏」可查看");
     } catch (e) {
       if (btn) { btn.disabled = false; btn.textContent = "收藏"; }
       toast((e && e.message) ? e.message : "收藏失败");
@@ -1211,6 +1212,11 @@
     }
   }
 
+  /* 收藏变动后同步右侧抽屉：抽屉开着即时刷新，关着只更新角标 */
+  function favDrawerSync() {
+    try { if (window.FavDrawer && FavDrawer.refresh) FavDrawer.refresh(); } catch (e) { /* 抽屉异常不影响收藏主流程 */ }
+  }
+
   async function favRemoveOne(wrap) {
     var r = FAV.rows[0];
     if (!r) { closeFavPop(); return; }
@@ -1224,6 +1230,7 @@
       if (id) await SBX.removeFavItems([id]);
       delete FAV.keys[favKey(r.period_label, r.image_url)];
       closeFavPop(); syncFavUI();
+      favDrawerSync();
       toast("已取消收藏");
     } catch (e) {
       toast((e && e.message) ? e.message : "取消收藏失败");
