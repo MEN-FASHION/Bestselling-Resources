@@ -1279,8 +1279,9 @@
     }
     if (box && !box.__favDragBound) {
       box.__favDragBound = true;
-      /* 直接从榜单把图拖到右侧收藏抽屉的某个分类上 = 收藏并归类。
-         拖动一开始就把抽屉摊开，让五个分类显示成可放的"文件夹"。 */
+      /* 直接从榜单把图拖到某个分类上 = 收藏并归类。
+         拖动一开始就把分类以「扇形文件夹」摊在对比池上方（一步到位，不用先滑抽屉）；
+         右侧抽屉若已展开，其分类按钮仍是有效落点，两条路径都通。 */
       box.addEventListener("dragstart", function (e) {
         var t = e.target;
         if (!t || !t.closest) return;
@@ -1295,8 +1296,8 @@
           e.dataTransfer.effectAllowed = "copy";
         } catch (x) {}
         fig.classList.add("is-fav-dragging");
-        if (window.FavDrawer && typeof FavDrawer.openForDrop === "function") {
-          try { FavDrawer.openForDrop(); } catch (x) {}
+        if (window.FavFan && typeof FavFan.show === "function") {
+          try { FavFan.show(); } catch (x) {}
         }
       }, true);
       box.addEventListener("dragend", function (e) {
@@ -1304,6 +1305,9 @@
         var fig = (t && t.closest) ? t.closest(".rk-card") : null;
         if (fig) fig.classList.remove("is-fav-dragging");
         FAV.dragRow = null;
+        if (window.FavFan && typeof FavFan.hide === "function") {
+          try { FavFan.hide(); } catch (x) {}
+        }
         if (window.FavDrawer && typeof FavDrawer.endDropMode === "function") {
           try { FavDrawer.endDropMode(); } catch (x) {}
         }

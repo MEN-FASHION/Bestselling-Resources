@@ -2686,6 +2686,19 @@ async removeTrendRecord(id) {
       if (e2) throw new Error(this.favErrMsg(e2) || "删除分类失败");
       return true;
     },
+    /* tags 列在不在（patch_20261021Y 才有）。
+       不在时 addFavItems 会降级成"能收藏但丢标签"，所以必须能被探测到并提示。 */
+    async favTagsReady() {
+      if (this.__favTagsReady !== undefined) return this.__favTagsReady;
+      try {
+        const { error } = await client.from("fav_items").select("tags", { head: true, count: "exact" }).limit(1);
+        this.__favTagsReady = !error;
+      } catch (e) {
+        this.__favTagsReady = false;
+      }
+      return this.__favTagsReady;
+    },
+
     async listFavItems(opt) {
       const uid = await this.favUid();
       if (!uid) return [];

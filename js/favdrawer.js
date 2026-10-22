@@ -34,6 +34,9 @@
     error: "",
     built: false,
     dragId: null,
+    tagsReady: null,   /* null=还没探测 / true=库里有 tags 列 / false=补丁没执行 */
+    liveTags: null,    /* 当前榜单上同图的标签，用来兜底显示补丁前的旧收藏 */
+    liveHit: 0,        /* 有多少条旧收藏是靠兜底补上标签的 */
   };
 
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -124,6 +127,12 @@
       if (!ST.uid) { ST.items = []; ST.cats = []; ST.loading = false; return; }
       try { ST.ready = await SB.favReady(); } catch (e) { ST.ready = false; }
       if (!ST.ready) { ST.items = []; ST.cats = []; ST.loading = false; return; }
+      /* 探测 tags 列在不在：不在就在面板上明说，别让"没标签"看起来像"功能没做" */
+      if (typeof SB.favTagsReady === "function") {
+        try { ST.tagsReady = await SB.favTagsReady(); } catch (e) { ST.tagsReady = null; }
+      } else {
+        ST.tagsReady = null;
+      }
       try { ST.cats = (await SB.listFavCategories()) || []; } catch (e) { ST.cats = []; }
       /* 五个默认大类：只在一条分类都没有时创建，且不影响读取收藏本身 */
       if (!(ST.cats || []).length && typeof SB.ensureDefaultFavCats === "function") {
@@ -444,10 +453,26 @@
       : ((it.rank_abs != null && it.rank_abs !== "") ? it.rank_abs : null);
     var tags = [];
     if (Array.isArray(it.tags)) tags = it.tags.filter(function (x) { return String(x || "").trim(); });
+    var liveFallback = false;
+    if (!tags.length && ST.liveTags) {
+      var kp = (it.period_label || "") + "|" + (it.image_url || "");
+      var lv = ST.liveTags[kp] || ST.liveTags["*|" + (it.image_url || "")];
+      if (lv && lv.length) { tags = lv.slice(); liveFallback = true; }
+    }
     var meta = "";
     if (rk != null) meta += '<span class="fv-d-rank">#' + esc(rk) + '</span>';
-    tags.slice(0, 2).forEach(function (tg) { meta += '<span class="fv-d-tg">' + esc(tg) + '</span>'; });
-    var full = [it.title, it.leaf_category, cname, rk != null ? ("第 " + rk + " 位") : "", tags.join(" ")]
+    /* 卡片上原本显示的信息（周度激增 / 新上榜 / 上升 12 位 / 共 3 国同款）全部带过来；
+       位置有限，最多铺 4 个，再多收成 +N，鼠标悬停看全文。 */
+    var SHOW_TG = 4;
+    tags.slice(0, SHOW_TG).forEach(function (tg) {
+      var kind = (/位$/.test(tg) ? " is-move" : "") + (liveFallback ? " is-live" : "");
+      meta += '<span class="fv-d-tg' + kind + '">' + esc(tg) + '</span>';
+    });
+    if (tags.length > SHOW_TG) {
+      meta += '<span class="fv-d-tg is-more" title="' + esc(tags.slice(SHOW_TG).join(" · ")) + '">+' + (tags.length - SHOW_TG) + '</span>';
+    }
+    var full = [it.title, it.leaf_category, cname, rk != null ? ("第 " + rk + " 位") : "", tags.join(" "),
+      liveFallback ? "（这些标签来自当前榜单的临时显示，重新收藏一次即可存下来）" : ""]
       .filter(Boolean).join(" · ");
     return '<figure class="fv-d-cell' + (opts.drag ? " is-drag" : "") + '" data-url="' + esc(it.image_url) + '"'
       + (opts.drag ? ' draggable="true" data-id="' + esc(it.id) + '"' : '')
@@ -596,8 +621,64 @@
     if (side) side.hidden = ST.view !== "full";
   }
 
+  /* 收藏标签（新上榜 / 周度激增 / 上升 N 位）存在 fav_items.tags 列里。
+     老库没执行补丁时，写入会静默降级成"能收藏但没标签"——这个降级必须让人看见，
+     否则用户会以为功能没做。 */
+  function renderWarn() {
+    var box = $("#fv-d-warn");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "fv-d-warn";
+      box.className = "fv-d-warn";
+      var host = $("#fv-drawer");
+      var filt = $("#fv-d-filter");
+      if (host && filt) host.insertBefore(box, filt);
+    }
+    var hasItems = (ST.items || []).length > 0;
+    var on = (ST.tagsReady === false) && hasItems;
+    var live = (ST.tagsReady !== false) && hasItems && ST.liveHit > 0;
+    box.hidden = !(on || live);
+    if (on) {
+      box.innerHTML = '<b>收藏标签未启用</b>：现在只能存图，<b>新上榜 / 周度激增 / 上升 N 位</b>不会跟着存。'
+        + '在数据库执行一次 <code>tools/patch_20261021Y.sql</code>（末尾会通知接口重载），刷新本页后重新收藏即可带上标签。'
+        + '已经收藏的图不会自动补——需要重新收藏一次。';
+    } else if (live) {
+      box.innerHTML = '有 <b>' + ST.liveHit + '</b> 条收藏是补丁前存的，自己没带标签；'
+        + '现在显示的标签取自<b>当前榜单</b>（临时，换期就会消失）。想让它们真正存下来，重新收藏一次即可。';
+    }
+  }
+
+  /* 补丁之前收藏的记录，库里 tags 为空 —— 一律显示"没有标签"会让人以为功能没做。
+     这里从当前排行榜的卡片上取同图的标签做「临时显示」（不写库），并明确告知是临时的。
+     一旦离开这一期榜单，兜底自然失效，不会假装数据还在。 */
+  function scanLiveTags() {
+    var m = {};
+    var hit = 0;
+    var box = document.getElementById("rk-body");
+    if (box) {
+      all(".rk-card[data-url]", box).forEach(function (fig) {
+        var url = fig.getAttribute("data-url") || "";
+        if (!url) return;
+        var per = fig.getAttribute("data-period") || "";
+        var ts = String(fig.getAttribute("data-tags") || "").split("|").filter(function (x) { return x && x.trim(); });
+        if (!ts.length) return;
+        m[per + "|" + url] = ts;
+        if (!m["*|" + url]) m["*|" + url] = ts;
+      });
+    }
+    ST.liveTags = m;
+    (ST.items || []).forEach(function (it) {
+      if (Array.isArray(it.tags) && it.tags.length) return;
+      var k1 = (it.period_label || "") + "|" + (it.image_url || "");
+      if (m[k1] || m["*|" + (it.image_url || "")]) hit++;
+    });
+    ST.liveHit = hit;
+  }
+
   function render() {
     ensureDom();
+    scanLiveTags();
+    renderWarn();
     renderHead();
     renderCount();
     renderSide();

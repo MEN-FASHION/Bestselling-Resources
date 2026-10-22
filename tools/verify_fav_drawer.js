@@ -61,6 +61,7 @@ function makeSB(seed) {
       return list.map((n, i) => ({ id: 100 + i, name: n, color: "#8b7355", sort: i * 10 }));
     },
     favReady: async () => (s.ready === undefined ? true : s.ready),
+    favTagsReady: async () => (s.tagsReady === undefined ? true : s.tagsReady),
     listFavCategories: async () => { call.listCats++; if (s.catsError) throw new Error("分类读取失败"); return cats; },
     listFavItems: async (opt) => {
       call.listItems++; call.lastOpt = opt || null;
@@ -783,8 +784,9 @@ function bootDom(sb) {
     ok("榜单卡片可拖动收藏（draggable 已加）", /draggable="true" data-tags="/.test(RANK_JS));
     ok("榜单卡片把原标签快照进 data-tags", /var cardTags = \[\];/.test(RANK_JS) && /cardTags\.push\(b\.txt\)/.test(RANK_JS));
     ok("收藏数据带上 tags 与 rank_pos", /tags: String\(fig\.getAttribute\("data-tags"\)/.test(RANK_JS) && /rank_pos: fig\.getAttribute\("data-rank"\)/.test(RANK_JS));
-    ok("拖动开始就打开抽屉并进入接收态",
-      /FavDrawer\.openForDrop/.test(RANK_JS) && /FavDrawer\.endDropMode/.test(RANK_JS));
+    ok("拖动一开始就把分类摊成扇形文件夹（不再先滑右侧抽屉）",
+      /FavFan\.show\(\)/.test(RANK_JS) && !/FavDrawer\.openForDrop\(\)/.test(RANK_JS));
+    ok("拖动结束收起扇形（拖到窗口外也收得干净）", /FavFan\.hide\(\)/.test(RANK_JS));
     ok("抽屉对外暴露 openForDrop / endDropMode / unfav",
       /openForDrop: openForDrop/.test(DRAWER) && /endDropMode: endDropMode/.test(DRAWER) && /unfav: unfav/.test(DRAWER));
     ok("收藏页也显示位次与标签（fv-meta）", /fv-meta/.test(FAV_JS) && /it\.rank_pos/.test(FAV_JS) && /it\.tags/.test(FAV_JS));
@@ -833,7 +835,7 @@ function bootDom(sb) {
 
       /* ② 去掉位次与标签徽标 */
       let srcB = dropLine(DRAWER, 'class="fv-d-rank"');
-      srcB = dropLine(srcB, "tags.slice(0, 2)");
+      srcB = srcB.replace("var SHOW_TG = 4;", "var SHOW_TG = 0;");
       const sbB = makeSB({ cats: [{ id: 1, name: "x" }], items: [{ id: 41, period_label: "W42", image_url: "u/y.jpg", title: "t", category_id: 1, rank_pos: 3, tags: ["趋势爆款"] }] });
       const { w: wB } = bootSrc(srcB, sbB);
       await tick(10);
@@ -874,6 +876,27 @@ function bootDom(sb) {
       ok("[反向] 关掉外部拖入识别后，拖进来不会被收藏（说明这条真的在管事）",
         sbD.calls.added.length === 0, String(sbD.calls.added.length));
     }
+      /* ⑤ 去掉「旧收藏兜底显示」 */
+      {
+        const srcZ = DRAWER.replace("scanLiveTags();", "void 0;");
+        const sbZ = makeSB({
+          cats: [{ id: 1, name: "x" }],
+          items: [{ id: 93, period_label: "W42", image_url: "https://x/z.jpg", title: "z", category_id: 1 }],
+          tagsReady: true,
+        });
+        const domZ = new JSDOM('<!doctype html><html><body class="front">'
+          + '<main id="rk-body"><figure class="rk-card" data-url="https://x/z.jpg" data-period="W42" data-tags="周度激增"></figure></main>'
+          + '</body></html>', { runScripts: "outside-only", pretendToBeVisual: true });
+        const wZ = domZ.window;
+        wZ.SB = sbZ;
+        wZ.eval(srcZ);
+        await tick(10);
+        await wZ.FavDrawer.open();
+        await tick(10);
+        const cz = wZ.document.querySelector('.fv-d-cell[data-url="https://x/z.jpg"]');
+        ok("[反向] 去掉兜底扫描后，旧收藏确实看不到标签（说明兜底这条在管事）",
+          !!cz && !/周度激增/.test(cz.textContent));
+      }
     const backup = {};
     try {
       /* 1) 抽屉改成占位（进 grid） */
@@ -976,6 +999,119 @@ function bootDom(sb) {
         && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js5;
     })());
   }
+
+    console.log("\n--- 收藏后要保留榜单卡片上的标签与位次 ---");
+    {
+      const sbT = makeSB({
+        cats: [{ id: 1, name: "印花" }],
+        items: [{
+          id: 71, period_label: "W42", image_url: "https://x/full.jpg", title: "连帽卫衣",
+          category_id: 1, rank_pos: 4,
+          tags: ["周度激增", "新上榜", "上升 12 位", "共 3 国同款", "潜力机会"],
+        }],
+      });
+      const { w: wT } = bootDom(sbT);
+      await tick(10);
+      await wT.FavDrawer.open();
+      await tick(10);
+      const cell = wT.document.querySelector('.fv-d-cell[data-url="https://x/full.jpg"]');
+      ok("收藏卡片渲染出来了", !!cell);
+      const txt = cell ? cell.textContent : "";
+      ok("卡片上保留排位（#4）", /#4/.test(txt), txt);
+      ok("卡片上保留趋势标签（周度激增）", /周度激增/.test(txt), txt);
+      ok("卡片上保留位次变化（上升 12 位）", /上升 12 位/.test(txt), txt);
+      ok("卡片上保留新上榜", /新上榜/.test(txt), txt);
+      ok("位次类标签用独立样式，与趋势标签区分",
+        !!cell && cell.querySelectorAll(".fv-d-tg.is-move").length >= 1,
+        String(cell ? cell.querySelectorAll(".fv-d-tg.is-move").length : -1));
+      ok("最多铺 4 个标签，第 5 个收成 +1（不无限挤）",
+        !!cell && cell.querySelectorAll(".fv-d-tg").length === 5 &&
+        /\+1/.test(cell.querySelector(".fv-d-tg.is-more").textContent),
+        String(cell ? cell.querySelectorAll(".fv-d-tg").length : -1));
+      ok("收起的那个能用悬停看到全文", !!cell && /潜力机会/.test(cell.querySelector(".fv-d-tg.is-more").getAttribute("title") || ""));
+      ok("标签齐全时不出现「+N」", (function () {
+        const more = cell ? cell.querySelectorAll(".fv-d-tg.is-more").length : 0;
+        return more === 1;     /* 本例确实有 5 个，应出现 1 个 +1 */
+      })());
+    }
+
+    console.log("\n--- 老库缺 tags 列时必须明说，不能静默丢标签 ---");
+    {
+      const sbN = makeSB({
+        cats: [{ id: 1, name: "印花" }],
+        items: [{ id: 81, period_label: "W42", image_url: "https://x/n.jpg", title: "旧库图", category_id: 1 }],
+        tagsReady: false,
+      });
+      const { w: wN } = bootDom(sbN);
+      await tick(10);
+      await wN.FavDrawer.open();
+      await tick(10);
+      const warn = wN.document.getElementById("fv-d-warn");
+      ok("缺列时面板上有提示条", !!warn && warn.hidden === false);
+      ok("提示条写清了要执行哪个补丁", /patch_20261021Y\.sql/.test(warn.textContent), warn.textContent);
+      ok("提示条说明已收藏的图不会自动补", /重新收藏/.test(warn.textContent));
+    }
+    {
+      const sbY = makeSB({
+        cats: [{ id: 1, name: "印花" }],
+        items: [{ id: 82, period_label: "W42", image_url: "https://x/y.jpg", title: "新库图", category_id: 1, tags: ["周度激增"] }],
+        tagsReady: true,
+      });
+      const { w: wY } = bootDom(sbY);
+      await tick(10);
+      await wY.FavDrawer.open();
+      await tick(10);
+      const warn2 = wY.document.getElementById("fv-d-warn");
+      ok("列已就绪时不出提示条", !warn2 || warn2.hidden === true);
+    }
+    {
+      const sbE = makeSB({ cats: [{ id: 1, name: "印花" }], items: [], tagsReady: false });
+      const { w: wE } = bootDom(sbE);
+      await tick(10);
+      await wE.FavDrawer.open();
+      await tick(10);
+      const warn3 = wE.document.getElementById("fv-d-warn");
+      ok("一条收藏都没有时不弹缺列提示（避免空面板一片黄）", !warn3 || warn3.hidden === true);
+    }
+
+    console.log("\n--- 补丁前的旧收藏：临时兜底显示，并说明是临时的 ---");
+    {
+      const sbO = makeSB({
+        cats: [{ id: 1, name: "印花" }],
+        items: [{ id: 91, period_label: "W42", image_url: "https://x/old.jpg", title: "旧收藏", category_id: 1 }],
+        tagsReady: true,
+      });
+      const { w: wO } = bootDom(sbO);
+      wO.document.body.insertAdjacentHTML("beforeend",
+        '<main id="rk-body"><figure class="rk-card" data-url="https://x/old.jpg" data-period="W42" data-tags="周度激增|上升 12 位"></figure></main>');
+      await tick(10);
+      await wO.FavDrawer.open();
+      await tick(10);
+      const cell = wO.document.querySelector('.fv-d-cell[data-url="https://x/old.jpg"]');
+      ok("库里没存标签、但榜单还在时，卡片上能看到标签", !!cell && /周度激增/.test(cell.textContent), cell ? cell.textContent : "");
+      ok("兜底的标签用虚线样式区分（不冒充已存）",
+        !!cell && cell.querySelectorAll(".fv-d-tg.is-live").length === 2,
+        String(cell ? cell.querySelectorAll(".fv-d-tg.is-live").length : -1));
+      ok("悬停说明这是临时显示", !!cell && /临时显示/.test(cell.getAttribute("title") || ""));
+      const warn = wO.document.getElementById("fv-d-warn");
+      ok("顶部提示说明有多少条是补丁前存的", !!warn && warn.hidden === false && /补丁前/.test(warn.textContent), warn ? warn.textContent : "");
+    }
+    {
+      const sbP = makeSB({
+        cats: [{ id: 1, name: "印花" }],
+        items: [{ id: 92, period_label: "W38", image_url: "https://x/gone.jpg", title: "过期收藏", category_id: 1 }],
+        tagsReady: true,
+      });
+      const { w: wP } = bootDom(sbP);
+      await tick(10);
+      await wP.FavDrawer.open();
+      await tick(10);
+      const cell2 = wP.document.querySelector('.fv-d-cell[data-url="https://x/gone.jpg"]');
+      ok("榜单已换期时不凭空补标签（宁可不显示）",
+        !!cell2 && cell2.querySelectorAll(".fv-d-tg").length === 0,
+        String(cell2 ? cell2.querySelectorAll(".fv-d-tg").length : -1));
+    }
+
 
   console.log("\n================ 汇总 ================");
   console.log("PASS " + pass + " / FAIL " + fail);

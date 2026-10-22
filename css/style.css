@@ -3906,7 +3906,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   趋势上升榜 · 右侧「我的收藏」抽屉（20261021Y）
+   趋势上升榜 · 右侧「我的收藏」抽屉（20261021Z）
    —— 为什么是 fixed 浮层：多列对比池是 grid 布局，任何占位的侧栏都会压缩列宽、
       少掉一列，所以抽屉必须脱离文档流，只浮在右侧。
    —— 为什么不加全屏遮罩：遮罩会挡住对比池的点击，等于"影响了对比池"。
@@ -4035,7 +4035,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021Y）
+   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021Z）
    —— 全屏 = 铺满视口，左栏分类 + 右栏内容；Esc 分级退出（全屏 → 抽屉 → 关闭）
    —— 平铺 = 同类相邻 + 每组下方一条框横跨该组；未分类不进平铺
    ========================================================================== */
@@ -4180,7 +4180,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 
 /* =====================================================================
-   我的收藏 · 标签/位次快照 + 取消收藏 + 从榜单拖入（20261021Y）
+   我的收藏 · 标签/位次快照 + 取消收藏 + 从榜单拖入（20261021Z）
    ===================================================================== */
 
 /* 卡片上保留原图的排位与标签（收藏当时的快照） */
@@ -4197,6 +4197,30 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 .fv-d-rank { font-weight: 700; letter-spacing: .2px; }
 .fv-d-tg { background: rgba(255, 255, 255, .9); color: #3a3733; border: 1px solid rgba(0, 0, 0, .08); }
+/* 位次变化（上升 12 位 / 新上榜）用区别于趋势标签的底色，扫一眼就能分清 */
+.fv-d-tg.is-move { background: rgba(42, 96, 148, .92); color: #fff; border-color: transparent; }
+.fv-d-tg.is-more { background: rgba(24, 22, 19, .62); color: #fff; border-color: transparent; }
+/* 临时兜底（取自当前榜单、库里没存）：虚线框，一眼看出"还没固化" */
+.fv-d-tg.is-live { border: 1px dashed rgba(200, 162, 74, .9); background: rgba(255, 248, 230, .95); }
+
+/* 标签列没启用时的提示条：说清楚「为什么没有标签」和「怎么补」 */
+.fv-d-warn {
+  margin: 0 12px 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid #e0c37a;
+  background: #fdf6e3;
+  color: #6b5320;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.fv-d-warn[hidden] { display: none; }
+.fv-d-warn b { color: #8a5d00; }
+.fv-d-warn code {
+  padding: 1px 4px; border-radius: 3px;
+  background: rgba(138, 93, 0, .1);
+  font-size: 11.5px;
+}
 
 /* 取消收藏：卡片右上角，平时半隐，hover/聚焦才明显，避免误触 */
 .fv-d-unfav {
@@ -4242,7 +4266,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   font-size: 11px; color: var(--gold); letter-spacing: .3px;
 }
 
-/* 收藏页卡片：位次与标签快照（20261021Y） */
+/* 收藏页卡片：位次与标签快照（20261021Z） */
 .fv-meta {
   position: absolute; left: 4px; right: 4px; bottom: 18px;
   display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
@@ -4253,3 +4277,133 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 .fv-m-rk { font-weight: 700; }
 .fv-m-tg { background: rgba(255, 255, 255, .9); color: #3a3733; border: 1px solid rgba(0, 0, 0, .08); }
+.fv-m-tg.is-move { background: rgba(42, 96, 148, .92); color: #fff; border-color: transparent; }
+.fv-m-tg.is-more { background: rgba(24, 22, 19, .62); color: #fff; border-color: transparent; }
+
+/* ===================================================================
+ * 拖动收藏：扇形文件夹（favfan.js）
+ * 拖动榜单图时把分类摊在对比池上方，松手即收藏到该分类。
+ * 约束：外层 fixed + pointer-events:none，不占布局、不推挤列宽。
+ * =================================================================== */
+.fv-fan {
+  position: fixed;
+  inset: 0;
+  z-index: 78;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;            /* 只有文件夹本身收事件，其余交给对比池 */
+  transition: opacity .12s ease, visibility .12s ease;
+  font-family: inherit;
+}
+.fv-fan.is-open { opacity: 1; visibility: visible; }
+
+.fv-fan-hint {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(38, 32, 26, .86);
+  color: #f6efe4;
+  font-size: 12.5px;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .22);
+}
+.fv-fan-hint b { color: #f0c66a; font-weight: 700; }
+
+.fv-fan-ring { position: absolute; inset: 0; }
+
+.fv-fan-cell {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 108px;
+  height: 86px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid rgba(120, 104, 84, .34);
+  border-left: 6px solid var(--fv-c, #8b7355);
+  border-radius: 10px;
+  background: #fffdf8;
+  box-shadow: 0 8px 20px rgba(52, 42, 30, .2);
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0;
+  user-select: none;
+  transition: opacity .16s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+}
+.fv-fan.is-open .fv-fan-cell { opacity: 1; }
+
+/* 文件夹上沿的小标签，让它看起来像个马尼拉纸袋而不是普通方块 */
+.fv-fan-cell::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: -8px;
+  width: 40px;
+  height: 10px;
+  border-radius: 5px 5px 0 0;
+  background: var(--fv-c, #8b7355);
+  opacity: .9;
+}
+.fv-fan-cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 62%);
+  pointer-events: none;
+}
+
+.fv-fan-nm {
+  font-size: 13px;
+  font-weight: 700;
+  color: #3a3126;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fv-fan-n { font-size: 11px; color: #8a7c68; }
+
+/* 悬停放大用独立的 scale 属性：不覆盖 JS 写入的 transform，位置不会跳 */
+.fv-fan-cell.is-over {
+  scale: 1.14;
+  background: #fffaf0;
+  border-color: #c8a24a;
+  box-shadow: 0 12px 28px rgba(52, 42, 30, .3), 0 0 0 3px rgba(200, 162, 74, .38);
+}
+.fv-fan-cell.is-saving {
+  border-color: #4a9c6d;
+  box-shadow: 0 12px 28px rgba(52, 42, 30, .26), 0 0 0 3px rgba(74, 156, 109, .4);
+}
+
+.fv-fan-empty,
+.fv-fan-more {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(255, 253, 248, .96);
+  border: 1px dashed rgba(120, 104, 84, .4);
+  color: #6b5f4f;
+  font-size: 12.5px;
+  line-height: 1.7;
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .fv-fan-cell { width: 92px; height: 74px; }
+  .fv-fan-nm { font-size: 12px; }
+}

@@ -127,7 +127,15 @@
     var tags = Array.isArray(it.tags) ? it.tags.filter(function (x) { return String(x || "").trim(); }) : [];
     var meta = "";
     if (rk != null) meta += '<span class="fv-m-rk">#' + esc(rk) + '</span>';
-    tags.slice(0, 2).forEach(function (t) { meta += '<span class="fv-m-tg">' + esc(t) + '</span>'; });
+    /* 与抽屉同口径：最多 4 个，多的收成 +N，鼠标悬停看全文 */
+    var SHOW_TG = 4;
+    tags.slice(0, SHOW_TG).forEach(function (t) {
+      var kind = /位$/.test(t) ? " is-move" : "";
+      meta += '<span class="fv-m-tg' + kind + '">' + esc(t) + '</span>';
+    });
+    if (tags.length > SHOW_TG) {
+      meta += '<span class="fv-m-tg is-more" title="' + esc(tags.slice(SHOW_TG).join(" · ")) + '">+' + (tags.length - SHOW_TG) + '</span>';
+    }
     var tips = [it.title || it.leaf_category || "",
       rk != null ? ("第 " + rk + " 位") : "",
       it.rank_category ? ("榜单类目 " + it.rank_category) : "",
