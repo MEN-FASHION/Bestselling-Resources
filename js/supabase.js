@@ -2579,6 +2579,40 @@ async removeTrendRecord(id) {
       return ok;
     },
 
+    /* ---------- 收藏错误的统一翻译 ----------
+     * 建表脚本没执行、或执行了但接口缓存没刷新，接口会返回 404 /
+     * "Could not find the table ... in the schema cache"。
+     * 这类原始报错对使用者毫无意义，统一翻译成「该执行哪个脚本」。 */
+    _favIsMissingTable(err) {
+      // 状态码有的在 code、有的在 status（Supabase 两种都出现过），都要看
+      const s = String((err && (err.message || err.details || err.hint)) || "")
+        + " " + String((err && err.code) || "")
+        + " " + String((err && err.status) || "");
+      return /PGRST20[0-9]|schema cache|does not exist|relation .* does not exist|\b404\b|not found/i.test(s);
+    },
+    favErrMsg(err) {
+      if (this._favIsMissingTable(err)) {
+        return "收藏表还没建好：请在数据库执行一次 tools/patch_20261021R.sql（执行完会刷新接口缓存），然后刷新本页。";
+      }
+      const raw = (err && (err.message || err.details)) || "";
+      const s = raw + " " + String((err && err.code) || "");
+      if (/JWT|token|not authenticated|permission denied|42501|\b401\b|\b403\b/i.test(s)) {
+        return "登录状态已失效，请重新登录后再试。";
+      }
+      if (/duplicate|unique/i.test(s)) return "已经有同名分类了，换个名字";
+      return raw || "操作失败，请稍后重试";
+    },
+    /* 诊断：给「重新检测」按钮用。返回缺表原因，便于页面给出准确指引。 */
+    async favDiag() {
+      try {
+        const { error } = await client.from("fav_items").select("id", { head: true, count: "exact" }).limit(1);
+        if (!error) return { ok: true, missing: false, msg: "" };
+        const missing = this._favIsMissingTable(error);
+        return { ok: false, missing: missing, msg: this.favErrMsg(error) };
+      } catch (e) {
+        return { ok: false, missing: false, msg: this.favErrMsg(e) };
+      }
+    },
     /* ============================================================
      * 我的收藏（前台专区）
      *  - 每人一套分类、一套收藏，全部按登录用户隔离
@@ -2586,10 +2620,8 @@ async removeTrendRecord(id) {
      *  - 同一张图出现在不同期次 → 各存一条（不是按图去重）
      * ============================================================ */
     async favReady() {
-      try {
-        const { error } = await client.from("fav_items").select("id", { head: true, count: "exact" }).limit(1);
-        return !error;
-      } catch (e) { return false; }
+      const d = await this.favDiag();
+      return !!d.ok;
     },
     async favUid() {
       try {
@@ -2605,7 +2637,7 @@ async removeTrendRecord(id) {
         .eq("user_id", uid)
         .order("sort", { ascending: true })
         .order("id", { ascending: true });
-      if (error) throw new Error(error.message || "读取收藏分类失败");
+      if (error) throw new Error(this.favErrMsg(error) || "读取收藏分类失败");
       return data || [];
     },
     async createFavCategory(name, color) {
@@ -2621,7 +2653,7 @@ async removeTrendRecord(id) {
       if (error) {
         // 唯一键冲突 = 同名分类已存在，给出人话提示而不是原始的约束报错
         if (/duplicate|unique/i.test(error.message || "")) throw new Error("已经有同名分类了，换个名字");
-        throw new Error(error.message || "新建分类失败");
+        throw new Error(this.favErrMsg(error) || "新建分类失败");
       }
       return data;
     },
@@ -2640,7 +2672,7 @@ async removeTrendRecord(id) {
       const { error } = await client.from("fav_categories").update(body).eq("id", id).eq("user_id", uid);
       if (error) {
         if (/duplicate|unique/i.test(error.message || "")) throw new Error("已经有同名分类了，换个名字");
-        throw new Error(error.message || "修改分类失败");
+        throw new Error(this.favErrMsg(error) || "修改分类失败");
       }
       return true;
     },
@@ -2649,9 +2681,9 @@ async removeTrendRecord(id) {
       const uid = await this.favUid();
       if (!uid) throw new Error("请先登录");
       const { error: e1 } = await client.from("fav_items").update({ category_id: null }).eq("user_id", uid).eq("category_id", id);
-      if (e1) throw new Error(e1.message || "把图退回未分类失败，分类未删除");
+      if (e1) throw new Error(this.favErrMsg(e1) || "把图退回未分类失败，分类未删除");
       const { error: e2 } = await client.from("fav_categories").delete().eq("id", id).eq("user_id", uid);
-      if (e2) throw new Error(e2.message || "删除分类失败");
+      if (e2) throw new Error(this.favErrMsg(e2) || "删除分类失败");
       return true;
     },
     async listFavItems(opt) {
@@ -2667,7 +2699,7 @@ async removeTrendRecord(id) {
         .order("period_label", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(o.limit || 5000);
-      if (error) throw new Error(error.message || "读取收藏失败");
+      if (error) throw new Error(this.favErrMsg(error) || "读取收藏失败");
       return data || [];
     },
     /* 收藏（可批量）：同一用户 + 同一期 + 同一图 只保留一条；跨期各一条 */
@@ -2698,7 +2730,7 @@ async removeTrendRecord(id) {
         // 已存在则更新快照与分类（用户重新收藏同一张图时，视为"移动到这个分类"）
         const { error } = await client.from("fav_items")
           .upsert(chunk, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
-        if (error) throw new Error(error.message || "收藏失败");
+        if (error) throw new Error(this.favErrMsg(error) || "收藏失败");
         n += chunk.length;
       }
       return n;
@@ -2709,7 +2741,7 @@ async removeTrendRecord(id) {
       const list = (ids || []).map((x) => Number(x)).filter((x) => x > 0);
       if (!list.length) return 0;
       const { error } = await client.from("fav_items").delete().eq("user_id", uid).in("id", list);
-      if (error) throw new Error(error.message || "取消收藏失败");
+      if (error) throw new Error(this.favErrMsg(error) || "取消收藏失败");
       return list.length;
     },
     /* 改分类：categoryId 传 null 即退回「未分类」 */
@@ -2720,7 +2752,7 @@ async removeTrendRecord(id) {
       if (!list.length) return 0;
       const cid = (categoryId == null || categoryId === "") ? null : Number(categoryId);
       const { error } = await client.from("fav_items").update({ category_id: cid }).eq("user_id", uid).in("id", list);
-      if (error) throw new Error(error.message || "移动失败");
+      if (error) throw new Error(this.favErrMsg(error) || "移动失败");
       return list.length;
     },
     /* 榜单星标状态：返回已收藏的「期次 + 图地址」清单，前端据此点亮星标 */

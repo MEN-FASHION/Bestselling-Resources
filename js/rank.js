@@ -1071,7 +1071,7 @@
 
   function favNeedLogin() {
     if (!FAV.uid) { toast("请先登录后再收藏"); return true; }
-    if (!FAV.ready) { toast("收藏功能还没准备好：请先让管理员执行一次建表脚本"); return true; }
+    if (!FAV.ready) { toast("收藏表还没建好，请先执行 tools/patch_20261021R.sql"); return true; }
     return false;
   }
 
@@ -1094,7 +1094,16 @@
     var h = '<div class="fp-mask" data-fp="mask"></div><div class="fp-box" role="dialog" aria-label="我的收藏">';
     h += '<div class="fp-head"><span class="fp-t">' + esc(head) + '</span>'
       + '<button type="button" class="fp-x" data-fp="close" aria-label="关闭">×</button></div>';
-    if (already) {
+    if (!FAV.ready) {
+      /* 表还没建好：不要等用户点「收藏」才报错，进来就把原因和下一步说清楚 */
+      h += '<div class="fp-body">'
+        + '<div class="fp-miss">收藏功能还没启用。</div>'
+        + '<div class="fp-hint">需要管理员在数据库执行一次建表脚本 <code>tools/patch_20261021R.sql</code>。'
+        + '脚本末尾会刷新接口缓存，执行完点下面的按钮即可，不用重新部署。</div>'
+        + '</div>'
+        + '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">关闭</button>'
+        + '<button type="button" class="fp-ok" data-fp="recheck">我建好了，重新检测</button></div>';
+    } else if (already) {
       h += '<div class="fp-body"><div class="fp-done">这张图已经收藏过了（' + esc(FAV.rows[0].period_label || "本批") + '）。</div>'
         + '<div class="fp-hint">同一个分类下想调整位置，可以到「我的收藏」里拖拽。</div></div>';
       h += '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">关闭</button>'
@@ -1135,6 +1144,7 @@
         cat.classList.add("is-on");
         return;
       }
+      if (t.closest('[data-fp="recheck"]')) { favRecheck(wrap); return; }
       if (t.closest('[data-fp="newcat"]')) { favCreateAndSave(wrap); return; }
       if (t.closest('[data-fp="ok"]')) { favSave(wrap, FAV.catId); return; }
       if (t.closest('[data-fp="unfav"]')) { favRemoveOne(wrap); return; }
@@ -1146,6 +1156,24 @@
         favCreateAndSave(wrap);
       }
     });
+  }
+
+  /* 用户执行完建表脚本后，不刷新页面直接重新检测一次 */
+  async function favRecheck(wrap) {
+    var btn = wrap.querySelector('[data-fp="recheck"]');
+    if (btn) { btn.disabled = true; btn.textContent = "检测中…"; }
+    var rows = FAV.rows.slice();
+    var batch = FAV.batch;
+    await loadFavState();
+    if (FAV.ready) {
+      syncFavUI();
+      closeFavPop();
+      openFavPop(rows, { batch: batch });
+      toast("收藏功能已就绪");
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = "我建好了，重新检测"; }
+      toast("还是连不上：请确认脚本执行在这个站点对应的数据库里");
+    }
   }
 
   async function favSave(wrap, catId) {

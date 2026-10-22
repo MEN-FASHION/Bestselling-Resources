@@ -307,7 +307,6 @@ function bootFavPage(db, opts) {
   window.SB.myFrontendZones = async () => (opts.noAuth ? ["rank"] : ["fav"]);
   window.SB.getSession = async () => (opts.notLogged ? null : { user: { id: ME, email: "me@x.com" } });
   window.SB.favUid = async () => (opts.notLogged ? null : ME);
-  if (opts.noTable) window.SB.favReady = async () => false;
   window.confirm = () => true;
   window.prompt = () => null;
 
@@ -527,13 +526,38 @@ async function testGuards() {
     ok("未登录时提示要登录", /登录/.test(doc.querySelector("#fv-body").textContent));
     ok("未登录时不显示任何收藏卡片", doc.querySelectorAll(".fv-card").length === 0);
 
-    const db2 = makeDB(seedFav());
+    const db2 = makeDB(Object.assign(seedFav(), { fail: "noTable" }));
     const win2 = bootFavPage(db2, { noTable: true });
     await new Promise((r) => setTimeout(r, 200));
     const doc2 = win2.document;
     ok("缺表时提示要执行建表脚本", /建表脚本|patch_20261021R/.test(doc2.querySelector("#fv-body").textContent),
       doc2.querySelector("#fv-body").textContent.slice(0, 60));
     ok("缺表时不显示列表、也不发写请求", doc2.querySelectorAll(".fv-card").length === 0 && db2.state.writes === 0);
+    /* 报错必须可自己排查：不能只甩一句「失败」让人去猜 */
+    ok("缺表页给出「重新检测」按钮", !!doc2.querySelector("[data-fv-recheck]"));
+    const rcBtn = doc2.querySelector("[data-fv-recheck]");
+    if (rcBtn) {
+      rcBtn.dispatchEvent(new win2.Event("click", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 120));
+      const stillMiss = /建表脚本|patch_20261021R/.test(doc2.querySelector("#fv-body").textContent);
+      ok("仍缺表时点重新检测：不崩、继续提示（且零写入）", stillMiss && db2.state.writes === 0);
+    }
+    /* 表建好后点重新检测：应直接进入正常列表，无需刷新页面 */
+    const db4 = makeDB(seedFav());
+    const win4 = bootFavPage(db4, { noTable: true });
+    win4.SB.favReady = async () => false;
+    await new Promise((r) => setTimeout(r, 200));
+    win4.SB.favReady = win4.SB.favDiag ? async () => (await win4.SB.favDiag()).ok : async () => true;
+    const rc4 = win4.document.querySelector("[data-fv-recheck]");
+    if (rc4) {
+      rc4.dispatchEvent(new win4.Event("click", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 250));
+      ok("表建好后点重新检测：直接显示收藏列表（不用刷新页面）",
+        win4.document.querySelectorAll(".fv-card").length > 0,
+        String(win4.document.querySelectorAll(".fv-card").length));
+    } else {
+      ok("表建好后点重新检测：直接显示收藏列表（不用刷新页面）", false, "没找到按钮");
+    }
 
     const db3 = makeDB(seedFav());
     const win3 = bootFavPage(db3, { noAuth: true });
@@ -621,6 +645,63 @@ function testWiring() {
   ok("收藏页引入了数据层", /js\/supabase\.js/.test(favHtml));
 }
 
+
+/* ============================================================
+ * 六、报错可读性：404 / 缓存未刷新必须翻译成「该执行哪个脚本」
+ *   背景：真实事故——建表脚本缺 notify pgrst，接口一直 404，
+ *        用户只看到 "点击收藏报错"，无从判断该做什么。
+ * ============================================================ */
+async function testErrorVoice() {
+  console.log("\n[15] 报错可读性：缺表 / 登录失效 / 重名都要说人话");
+  const db = makeDB(seedFav());
+  const win = bootFavPage(db, {});
+  const SB = win.SB;
+
+  const miss1 = SB.favErrMsg({ message: 'relation "public.fav_items" does not exist' });
+  ok("表不存在 → 指向 patch_20261021R.sql", /patch_20261021R\.sql/.test(miss1), miss1);
+  ok("表不存在 → 不把原始 SQL 报错甩给用户", !/relation .* does not exist/i.test(miss1), miss1);
+
+  const miss2 = SB.favErrMsg({ message: "Could not find the table 'public.fav_categories' in the schema cache", code: "PGRST205" });
+  ok("接口缓存未刷新（PGRST205）→ 同样给出脚本指引", /patch_20261021R\.sql/.test(miss2), miss2);
+
+  const miss3 = SB.favErrMsg({ message: "Request failed", status: 404 });
+  ok("404 也归到「缺表/缓存」这一类", /patch_20261021R\.sql/.test(miss3), miss3);
+
+  const auth = SB.favErrMsg({ message: "JWT expired", code: "401" });
+  ok("登录失效 → 提示重新登录", /重新登录/.test(auth), auth);
+
+  const dup = SB.favErrMsg({ message: "duplicate key value violates unique constraint" });
+  ok("分类重名 → 提示换个名字", /同名|换个名字/.test(dup), dup);
+
+  const other = SB.favErrMsg({ message: "网络开小差了" });
+  ok("其它错误原样透出，不被乱翻译", other === "网络开小差了", other);
+
+  const d1 = await SB.favDiag();
+  ok("正常库：favDiag 返回可用", d1.ok === true && d1.missing === false, JSON.stringify(d1));
+
+  const db2 = makeDB(Object.assign(seedFav(), { fail: "noTable" }));
+  const win2 = bootFavPage(db2, {});
+  const d2 = await win2.SB.favDiag();
+  ok("缺表库：favDiag 判定为缺表（missing=true）", d2.ok === false && d2.missing === true, JSON.stringify(d2));
+  ok("缺表库：favReady 随之为 false", (await win2.SB.favReady()) === false);
+
+  /* 榜单侧弹窗：表没建好时不该显示「收藏」提交按钮，而应给指引 + 重新检测 */
+  const rankSrc = read("js/rank.js");
+  const missBranch = rankSrc.indexOf('if (!FAV.ready) {');
+  const alreadyBranch = rankSrc.indexOf('} else if (already) {');
+  ok("榜单弹窗先判「表未建好」，再判「已收藏」", missBranch > 0 && alreadyBranch > missBranch);
+  ok("榜单弹窗缺表时给出重新检测入口", /data-fp="recheck"/.test(rankSrc));
+  ok("榜单弹窗缺表时文案指向脚本名", /patch_20261021R\.sql/.test(rankSrc.slice(missBranch, alreadyBranch)));
+  ok("重新检测会重新加载收藏状态（不是只改按钮文字）",
+    /async function favRecheck[\s\S]{0,400}loadFavState/.test(rankSrc));
+
+  /* 建表脚本必须刷新接口缓存，否则执行了也照样 404 */
+  const sql = read("tools/patch_20261021R.sql");
+  ok("建表脚本通知接口重载（notify pgrst）", /notify pgrst, 'reload schema'/i.test(sql));
+  ok("notify 在脚本末尾（建完表才刷新）",
+    sql.search(/notify pgrst/i) > sql.search(/create table if not exists public\.fav_items/i));
+}
+
 (async function main() {
   console.log("== 我的收藏：功能与口径验证 ==" + (REVERSE ? "（反向验证模式）" : ""));
   await testDataLayer();
@@ -629,6 +710,7 @@ function testWiring() {
   await testGuards();
   testRankCard();
   testWiring();
+  await testErrorVoice();
 
   console.log("\n================ 汇总 ================");
   console.log("PASS " + pass + " / FAIL " + fail);

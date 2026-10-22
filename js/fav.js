@@ -247,7 +247,11 @@
       return;
     }
     if (!ST.ready) {
-      box.innerHTML = '<div class="fv-empty">收藏功能还没准备好：请先让管理员执行一次建表脚本（tools/patch_20261021R.sql），执行后刷新本页。</div>';
+      box.innerHTML = '<div class="fv-empty">'
+        + '<div><b>收藏功能还没启用。</b>需要管理员在数据库执行一次建表脚本 '
+        + '<code>tools/patch_20261021R.sql</code>（脚本末尾会刷新接口缓存）。</div>'
+        + '<button type="button" class="fv-ok" data-fv-recheck>我建好了，重新检测</button>'
+        + '</div>';
       return;
     }
     var items = ST.items.filter(function (it) {
@@ -301,6 +305,15 @@
   /* ============================================================
    * 四、操作
    * ============================================================ */
+  /* 用户执行完建表脚本后，不刷新页面直接重新检测一次 */
+  async function recheckReady() {
+    var b = document.querySelector("[data-fv-recheck]");
+    if (b) { b.disabled = true; b.textContent = "检测中…"; }
+    try { ST.ready = await SBX.favReady(); } catch (e) { ST.ready = false; }
+    if (ST.ready) { await reload(); toast("收藏功能已就绪"); }
+    else { render(); }
+  }
+
   async function reload() {
     try { ST.cats = await SBX.listFavCategories(); } catch (e) { ST.cats = []; }
     try { ST.items = await SBX.listFavItems(); } catch (e) { ST.items = []; toast((e && e.message) || "读取收藏失败"); }
@@ -391,6 +404,9 @@
     body.addEventListener("click", function (e) {
       var t = e.target;
       if (!t || !t.closest) return;
+
+      var rc = t.closest("[data-fv-recheck]");
+      if (rc) { recheckReady(); return; }
 
       var wt = t.closest("[data-wtog]");
       if (wt) {

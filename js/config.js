@@ -206,13 +206,47 @@ window.CAT_SEARCH = (function () {
     var el = doc.getElementById(id);
     if (!el) {
       el = document.createElement("input");
-      el.id = id; el.type = "search"; el.className = "cat-search";
+      el.id = id;
+      /* 用 text + inputmode 而不是 type=search：type=search 会被部分浏览器的
+         账号自动填充当成"搜索账号"，把登录邮箱直接填进类目搜索框，
+         看起来就像"侧边栏里显示了账号"。 */
+      el.type = "text"; el.inputMode = "search";
+      el.className = "cat-search";
       el.autocomplete = "off";
+      el.setAttribute("autocapitalize", "off");
+      el.setAttribute("autocorrect", "off");
+      el.setAttribute("spellcheck", "false");
+      /* 给密码管理器明确的"别填这里"信号（Chrome / 1Password / LastPass） */
+      el.setAttribute("data-form-type", "other");
+      el.setAttribute("data-lpignore", "true");
+      el.setAttribute("data-1p-ignore", "");
+      el.setAttribute("aria-autocomplete", "none");
+      /* name 不用 search 之类的通用词，避免被启发式判定成账号框 */
+      el.setAttribute("name", "cat-filter-q");
       el.title = "模糊搜索：忽略大小写与符号，可隔字匹配（如输入「连衣」可搜到「连衣裙」）";
       target.parentNode.insertBefore(el, target);
     }
     el.placeholder = placeholder || "搜索类目…";
-    el.oninput = function () { try { onInput(el.value); } catch (e) { } };
+    el.oninput = function () {
+      /* 标记"这是用户自己敲的"，自动填充兜底逻辑据此判断 */
+      try { el.dataset.typed = "1"; } catch (e) { }
+      try { onInput(el.value); } catch (e) { }
+    };
+    /* 兜底：浏览器/密码管理器在页面加载后偷偷填入的内容要清掉。
+       判据是「框里有值，但用户从未输入过」——正常使用者不可能凭空有值。 */
+    if (!el.dataset.autofillGuard) {
+      el.dataset.autofillGuard = "1";
+      var sweep = function () {
+        try {
+          if (!el.dataset.typed && el.value && el.value !== "") {
+            el.value = "";
+            if (typeof onInput === "function") onInput("");
+          }
+        } catch (e) { }
+      };
+      setTimeout(sweep, 300);
+      setTimeout(sweep, 1200);
+    }
     return el;
   }
   function star(fav) { return fav ? "★" : ""; }

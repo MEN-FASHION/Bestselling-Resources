@@ -2450,69 +2450,38 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
    —— 展开时浮在内容之上，不推挤右侧图片，所以图片始终占满可用空间。
    ========================================================================== */
 
-/* ---------- 一、左侧类目菜单：细轨 ⇄ 展开面板 ---------- */
+/* ---------- 一、左侧类目菜单：常显侧栏（20261021T 恢复） ----------
+   —— 20261021 那一版把它改成了「54px 细轨 + 鼠标移入才展开」的悬浮抽屉，
+      带来三个问题：① 类目看不见，要先去左上角碰一下；② 展开时 z-index 压过
+      顶部菜单，类目像"跑到了菜单上面"；③ 拿不到"当前有哪些类目"的整体感。
+      这里恢复成常显侧栏：进来就能看到全部类目，滚动时跟随，不做抽屉。 */
 @media (min-width: 901px) {
-  /* 布局列宽按「细轨」算，图片区多出约 158px */
-  body.front:not(.mk-page) .gallery-layout { grid-template-columns: 54px 1fr; gap: 10px; }
+  body.front:not(.mk-page) .gallery-layout { grid-template-columns: 210px 1fr; gap: 14px; }
 
   body.front:not(.mk-page) .sidebar {
     position: sticky; top: 78px;
-    width: 54px; padding: 14px 0;
-    max-height: 118px;                    /* 收起态：只留一张小卡片当把手 */
-    overflow: hidden;
-    transition: width .22s cubic-bezier(.4,0,.2,1),
-                max-height .24s cubic-bezier(.4,0,.2,1),
-                padding .22s cubic-bezier(.4,0,.2,1),
-                box-shadow .22s ease;
-    transition-delay: .12s;               /* 鼠标匆匆划过不误触发；移出后有 120ms 缓冲 */
-  }
-
-  /* 收起态：标题竖排，menu 隐去 */
-  body.front:not(.mk-page) .sidebar .side-head {
-    writing-mode: vertical-rl; text-orientation: upright;
-    letter-spacing: 4px; font-size: 12px; font-weight: 600;
-    color: var(--gold); text-transform: none; white-space: nowrap;
-    width: auto; margin: 0 auto; padding: 0 0 10px;
-    border-bottom: none;
-  }
-  body.front:not(.mk-page) .sidebar .cat-menu { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
-
-  /* 右侧边缘的小把手，提示「可以展开」 */
-  body.front:not(.mk-page) .sidebar::after {
-    content: "›";
-    position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-    width: 17px; height: 32px; display: grid; place-items: center;
-    font-size: 14px; line-height: 1; color: var(--gold);
-    background: var(--bg2); border: 1px solid var(--line); border-radius: 999px;
-    pointer-events: none; transition: opacity .16s ease, transform .16s ease;
-  }
-
-  /* 展开态 */
-  body.front:not(.mk-page) .sidebar:hover,
-  body.front:not(.mk-page) .sidebar:focus-within,
-  body.front:not(.mk-page) .sidebar.rail-open {          /* .rail-open 由 js/rail.js 按「整列命中」加上 */
-    width: 212px; padding: 16px 12px;
+    width: auto; padding: 16px 12px;
     max-height: calc(100vh - 100px);
     overflow-y: auto;
-    z-index: 55;
-    box-shadow: 0 20px 48px rgba(20,20,20,.18);
-    transition-delay: 0s;
+    /* 不给 z-index：侧栏与内容同级，永远压不到顶部菜单（菜单 z-index 是 50） */
+    z-index: auto;
   }
-  body.front:not(.mk-page) .sidebar:hover .side-head,
-  body.front:not(.mk-page) .sidebar:focus-within .side-head,
-  body.front:not(.mk-page) .sidebar.rail-open .side-head {
-    writing-mode: horizontal-tb; letter-spacing: 2px;
+
+  /* 标题正常横排，不做竖排文字 */
+  body.front:not(.mk-page) .sidebar .side-head {
+    writing-mode: horizontal-tb; text-orientation: mixed;
+    letter-spacing: 2px; font-size: 13px; font-weight: 600;
     margin: 0 0 8px; padding: 4px 8px 12px;
     border-bottom: 1px solid var(--line);
   }
-  body.front:not(.mk-page) .sidebar:hover .cat-menu,
-  body.front:not(.mk-page) .sidebar:focus-within .cat-menu,
-  body.front:not(.mk-page) .sidebar.rail-open .cat-menu { opacity: 1; pointer-events: auto; }
-  body.front:not(.mk-page) .sidebar:hover::after,
-  body.front:not(.mk-page) .sidebar:focus-within::after,
-  body.front:not(.mk-page) .sidebar.rail-open::after { opacity: 0; transform: translateY(-50%) translateX(6px); }
 
-  /* 滚动条收细，展开态更干净 */
+  /* 类目常显，不做透明度隐藏 */
+  body.front:not(.mk-page) .sidebar .cat-menu { opacity: 1; pointer-events: auto; }
+
+  /* 去掉右侧那个「›」小把手（它是抽屉的提示符） */
+  body.front:not(.mk-page) .sidebar::after { content: none; display: none; }
+
+  /* 细滚动条 */
   body.front:not(.mk-page) .sidebar::-webkit-scrollbar { width: 6px; }
   body.front:not(.mk-page) .sidebar::-webkit-scrollbar-thumb { background: rgba(156,139,116,.35); border-radius: 3px; }
 }
@@ -3917,4 +3886,21 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-foot {
   padding: 10px 20px 22px; text-align: center;
   font-size: 11px; color: #a9a29a; letter-spacing: .02em;
+}
+
+/* 收藏未启用时的说明块（含「重新检测」按钮），以及榜单弹窗内的同款提示 */
+.fv-empty code, .fp-miss + .fp-hint code {
+  background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+  font-size: 11px; word-break: break-all;
+}
+.fv-ok {
+  margin-top: 10px; padding: 7px 14px; border: 0; border-radius: 6px;
+  background: #2f2a25; color: #fff; font-size: 12px; cursor: pointer;
+}
+.fv-ok:disabled { opacity: .6; cursor: default; }
+
+.fp-miss { font-size: 14px; font-weight: 700; color: #2f2a25; margin-bottom: 6px; }
+.fp-body .fp-hint code {
+  background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+  font-size: 11px; word-break: break-all;
 }

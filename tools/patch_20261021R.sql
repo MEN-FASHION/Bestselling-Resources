@@ -111,3 +111,15 @@ create policy "own delete fav_items"
 
 -- 说明：收藏只对登录用户开放（策略限定 to authenticated）。
 -- 未登录访客在前台点星标会提示「请先登录」，不会产生任何写入。
+
+
+-- ---------- 3) 刷新接口缓存（关键，不能省）----------
+-- PostgREST 会缓存表结构。新建的表如果不通知它重载，
+-- 前端请求会一直返回 404（"Could not find the table in the schema cache"），
+-- 表现就是"脚本明明执行了，点收藏还是报错"。
+notify pgrst, 'reload schema';
+
+
+-- ---------- 4) 自检（执行完应看到两行）----------
+-- select table_name from information_schema.tables
+--  where table_schema = 'public' and table_name in ('fav_categories', 'fav_items');
