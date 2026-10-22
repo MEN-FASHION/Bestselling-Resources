@@ -50,6 +50,10 @@
   }
 
   var COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f", "#8a6fa8", "#4f8f8a", "#a0685a"];
+  /* 首次使用自动建好的五个默认大类（用户可改名、可删除；删了不会被自动塞回来） */
+  var DEFAULT_CATS = ["印花", "面料", "图案", "工艺", "视觉"];
+  /* 从榜单卡片拖进来时用的自定义数据类型（浏览器在 dragover 阶段只允许读 types） */
+  var EXT_TYPE = "application/x-fav-row";
   function colorAt(i) { return COLORS[((i % COLORS.length) + COLORS.length) % COLORS.length]; }
 
   /* ---------------------------------------------------------------- DOM */
@@ -121,6 +125,10 @@
       try { ST.ready = await SB.favReady(); } catch (e) { ST.ready = false; }
       if (!ST.ready) { ST.items = []; ST.cats = []; ST.loading = false; return; }
       try { ST.cats = (await SB.listFavCategories()) || []; } catch (e) { ST.cats = []; }
+      /* 五个默认大类：只在一条分类都没有时创建，且不影响读取收藏本身 */
+      if (!(ST.cats || []).length && typeof SB.ensureDefaultFavCats === "function") {
+        try { ST.cats = (await SB.ensureDefaultFavCats(DEFAULT_CATS)) || []; } catch (e) { /* 建不了也能继续浏览 */ }
+      }
       ST.items = (await SB.listFavItems({ limit: MAX_ITEMS })) || [];
     } catch (e) {
       ST.error = (e && e.message) ? String(e.message) : "读取收藏失败";
@@ -275,16 +283,27 @@
     if (!el || el.dataset.dropBound === "1") return;
     el.dataset.dropBound = "1";
     el.addEventListener("dragover", function (e) {
-      if (ST.dragId == null) return;
+      var back = hasExt(e);
+      if (ST.dragId == null && !back) return;
       e.preventDefault();
-      if (e.dataTransfer) { try { e.dataTransfer.dropEffect = "move"; } catch (x) { } }
+      if (e.dataTransfer) { try { e.dataTransfer.dropEffect = back ? "copy" : "move"; } catch (x) { } }
       el.classList.add("is-drop");
     });
     el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
     el.addEventListener("drop", function (e) {
+      el.classList.remove("is-drop");
+      /* ① 从榜单卡片直接拖进来 = 收藏到该分类 */
+      if (hasExt(e)) {
+        e.preventDefault(); e.stopPropagation();
+        var row = extRow(e);
+        var cidExt = resolveCid();
+        endDropMode();
+        if (row && cidExt !== "__skip__") addDropped(row, cidExt);
+        return;
+      }
+      /* ② 抽屉里的图改分类 */
       e.preventDefault();
       e.stopPropagation();
-      el.classList.remove("is-drop");
       if (ST.dragId == null) return;
       var id = ST.dragId;
       if (resolveCid() === "__skip__") { clearDragState(id); return; }
@@ -292,6 +311,82 @@
       clearDragState(id);        /* 先收状态：drop 之后不一定有 dragend */
       moveTo(id, cid);
     });
+  }
+
+  /* ---------- 从榜单卡片拖进来（收藏） ---------- */
+  function hasExt(e) {
+    var dt = e && e.dataTransfer;
+    if (!dt) return false;
+    var types = dt.types || [];
+    for (var i = 0; i < types.length; i++) { if (types[i] === EXT_TYPE) return true; }
+    return false;
+  }
+
+  function extRow(e) {
+    try {
+      var s = e.dataTransfer && e.dataTransfer.getData(EXT_TYPE);
+      if (!s) return null;
+      var o = JSON.parse(s);
+      return (o && o.image_url) ? o : null;
+    } catch (x) { return null; }
+  }
+
+  async function addDropped(row, cid) {
+    var SB = SBX();
+    if (!SB || typeof SB.addFavItems !== "function") { toast("数据服务未就绪，请刷新页面重试"); return; }
+    var realCid = (cid == null || cid === "__none__" || cid === undefined) ? null : Number(cid);
+    var c = realCid == null ? null : catOf(realCid);
+    try {
+      var n = await SB.addFavItems([row], realCid);
+      /* 立刻本地插入，不必等整表重读 */
+      await refresh();
+      flashSaved("已收藏 " + (n || 1) + " 张到「" + (c ? c.name : "未分类") + "」");
+    } catch (e) {
+      toast((e && e.message) ? e.message : "收藏失败");
+    }
+  }
+
+  /* 拖动榜单图时把抽屉摊开、让分类变成"文件夹"落点 */
+  function openForDrop() {
+    ensureDom();
+    if (!ST.open) {
+      ST.open = true;
+      ST.view = "drawer";
+      var t0 = $("#fv-tab");
+      if (t0) { t0.classList.add("is-open"); t0.setAttribute("aria-expanded", "true"); }
+      /* 先把抽屉推出来（拖动只有几秒，不能等网络），数据回来再补渲染 */
+      ST.loading = true;
+      render();
+      load().then(function () { render(); });
+    }
+    markDropMode();
+  }
+  function markDropMode() {
+    var d = $("#fv-drawer");
+    if (!d) return;
+    d.classList.add("is-open", "is-drop-ready");
+    d.setAttribute("aria-hidden", "false");
+  }
+  function endDropMode() {
+    var d = $("#fv-drawer");
+    if (d) d.classList.remove("is-drop-ready");
+    all(".is-drop", document).forEach(function (e) { e.classList.remove("is-drop"); });
+  }
+
+  /* 取消收藏：从收藏里移除这一条（不删图、不删分类） */
+  async function unfav(id) {
+    var SB = SBX();
+    if (!SB || typeof SB.removeFavItems !== "function" || id == null) return false;
+    try {
+      await SB.removeFavItems([Number(id)]);
+      ST.items = (ST.items || []).filter(function (it) { return Number(it.id) !== Number(id); });
+      render();
+      flashSaved("已取消收藏");
+      return true;
+    } catch (e) {
+      toast((e && e.message) ? e.message : "取消收藏失败");
+      return false;
+    }
   }
 
   /* 拖拽收尾：清 id、清抽屉标记、清所有高亮。
@@ -338,15 +433,30 @@
     };
   }
 
+  /* 收藏卡片：保留原图的「排位」与「标签」，并带一个取消收藏按钮。
+     tags 是收藏当时的快照（趋势爆款 / 上升 12 位 / 共 3 国同款…），
+     榜单换期后仍然能看到当时是什么状态。 */
   function cellHtml(it, opts) {
     opts = opts || {};
     var cname = "", cid = it.category_id;
     if (cid != null) { var c = catOf(cid); cname = c ? c.name : ""; }
+    var rk = (it.rank_pos != null && it.rank_pos !== "") ? it.rank_pos
+      : ((it.rank_abs != null && it.rank_abs !== "") ? it.rank_abs : null);
+    var tags = [];
+    if (Array.isArray(it.tags)) tags = it.tags.filter(function (x) { return String(x || "").trim(); });
+    var meta = "";
+    if (rk != null) meta += '<span class="fv-d-rank">#' + esc(rk) + '</span>';
+    tags.slice(0, 2).forEach(function (tg) { meta += '<span class="fv-d-tg">' + esc(tg) + '</span>'; });
+    var full = [it.title, it.leaf_category, cname, rk != null ? ("第 " + rk + " 位") : "", tags.join(" ")]
+      .filter(Boolean).join(" · ");
     return '<figure class="fv-d-cell' + (opts.drag ? " is-drag" : "") + '" data-url="' + esc(it.image_url) + '"'
       + (opts.drag ? ' draggable="true" data-id="' + esc(it.id) + '"' : '')
-      + ' title="' + esc((it.title || "") + (cname ? " · " + cname : "")) + '">'
+      + ' data-cid="' + esc(cid == null ? "" : cid) + '"'
+      + ' title="' + esc(full) + '">'
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
+      + '<button type="button" class="fv-d-unfav" data-unfav="' + esc(it.id) + '" title="取消收藏">×</button>'
+      + (meta ? '<span class="fv-d-meta">' + meta + '</span>' : '')
       + '<figcaption>' + esc(String(it.title || "").slice(0, 16)) + '</figcaption>'
       + '</figure>';
   }
@@ -354,6 +464,12 @@
   function bindCells() {
     var body = $("#fv-d-body");
     if (!body) return;
+    all("[data-unfav]", body).forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        unfav(b.getAttribute("data-unfav"));
+      });
+    });
     all(".fv-d-cell", body).forEach(function (c) {
       c.addEventListener("click", function () {
         if (c.getAttribute("data-dragged") === "1") { c.removeAttribute("data-dragged"); return; }
@@ -620,6 +736,8 @@
   window.FavDrawer = {
     open: open, close: close, toggle: toggle, refresh: refresh, render: render,
     setView: setView, setFlat: setFlat,
+    openForDrop: openForDrop, endDropMode: endDropMode, unfav: unfav,
+    DEFAULT_CATS: DEFAULT_CATS,
     isOpen: function () { return ST.open; },
     view: function () { return ST.view; },
     state: function () { return ST; },

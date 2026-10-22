@@ -121,13 +121,24 @@
    * ============================================================ */
   function cardHtml(it) {
     var cap = [it.period_label, it.site].filter(Boolean).join(" · ");
-    var tips = [it.title || it.leaf_category || "", it.rank_category ? ("榜单类目 " + it.rank_category) : ""].filter(Boolean).join("\n");
+    /* 保留收藏当时的「排位」与「标签」快照（趋势爆款 / 上升 12 位 / 共 3 国同款…） */
+    var rk = (it.rank_pos != null && it.rank_pos !== "") ? it.rank_pos
+      : ((it.rank_abs != null && it.rank_abs !== "") ? it.rank_abs : null);
+    var tags = Array.isArray(it.tags) ? it.tags.filter(function (x) { return String(x || "").trim(); }) : [];
+    var meta = "";
+    if (rk != null) meta += '<span class="fv-m-rk">#' + esc(rk) + '</span>';
+    tags.slice(0, 2).forEach(function (t) { meta += '<span class="fv-m-tg">' + esc(t) + '</span>'; });
+    var tips = [it.title || it.leaf_category || "",
+      rk != null ? ("第 " + rk + " 位") : "",
+      it.rank_category ? ("榜单类目 " + it.rank_category) : "",
+      tags.join(" ")].filter(Boolean).join("\n");
     return ''
       + '<figure class="fv-card" draggable="true" data-id="' + it.id + '" data-cat="' + (it.category_id || "") + '"'
       + ' data-url="' + esc(it.image_url) + '" title="' + esc(tips) + '">'
       +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
       +   '<button type="button" class="fv-del" data-del="1" title="取消收藏">×</button>'
+      +   (meta ? '<span class="fv-meta">' + meta + '</span>' : '')
       +   (cap ? '<figcaption class="fv-cap">' + esc(cap) + '</figcaption>' : '')
       + '</figure>';
   }
@@ -316,6 +327,10 @@
 
   async function reload() {
     try { ST.cats = await SBX.listFavCategories(); } catch (e) { ST.cats = []; }
+    /* 五个默认大类：只在一条分类都没有时自动创建（与抽屉同一口径） */
+    if (!(ST.cats || []).length && typeof SBX.ensureDefaultFavCats === "function") {
+      try { ST.cats = (await SBX.ensureDefaultFavCats(["印花", "面料", "图案", "工艺", "视觉"])) || []; } catch (e) { /* 忽略 */ }
+    }
     try { ST.items = await SBX.listFavItems(); } catch (e) { ST.items = []; toast((e && e.message) || "读取收藏失败"); }
     render();
   }

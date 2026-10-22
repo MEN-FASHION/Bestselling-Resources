@@ -2690,17 +2690,69 @@ async removeTrendRecord(id) {
       const uid = await this.favUid();
       if (!uid) return [];
       const o = opt || {};
-      let q = client.from("fav_items")
-        .select("id,category_id,image_url,title,leaf_category,rank_category,site,period_type,period_label,ratio,rank_abs,created_at")
-        .eq("user_id", uid);
-      if (o.period) q = q.eq("period_label", o.period);
-      if (o.categoryId != null && o.categoryId !== "") q = q.eq("category_id", o.categoryId);
-      const { data, error } = await q
-        .order("period_label", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(o.limit || 5000);
+      const BASE = "id,category_id,image_url,title,leaf_category,rank_category,site,period_type,period_label,ratio,rank_abs,created_at";
+      const WITH_TAGS = BASE + ",tags,rank_pos";
+      const run = (cols) => {
+        let q = client.from("fav_items").select(cols).eq("user_id", uid);
+        if (o.period) q = q.eq("period_label", o.period);
+        if (o.categoryId != null && o.categoryId !== "") q = q.eq("category_id", o.categoryId);
+        return q
+          .order("period_label", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(o.limit || 5000);
+      };
+      let { data, error } = await run(WITH_TAGS);
+      /* 老库还没执行 patch_20261021Y（没有 tags/rank_pos 列）→ 退回旧列，别让整页读不出来 */
+      if (error && /column .*(tags|rank_pos)/i.test(String(error.message || "") + String(error.details || ""))) {
+        const r2 = await run(BASE);
+        data = r2.data; error = r2.error;
+      }
       if (error) throw new Error(this.favErrMsg(error) || "读取收藏失败");
       return data || [];
+    },
+
+    /* 首次使用自动建好五个默认大类；已有分类时不动（避免把用户删掉的分类又塞回来）。
+       返回最新的分类列表。 */
+    async ensureDefaultFavCats(names) {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const want = (names && names.length) ? names.slice() : ["印花", "面料", "图案", "工艺", "视觉"];
+      const { data: exist, error: e1 } = await client.from("fav_categories")
+        .select("id,name,color,sort,created_at").eq("user_id", uid)
+        .order("sort", { ascending: true }).order("id", { ascending: true });
+      if (e1) throw new Error(this.favErrMsg(e1) || "读取收藏分类失败");
+      const list = exist || [];
+      if (list.length) return list;
+      const COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f"];
+      const rows = want.map((n, i) => ({
+        user_id: uid, name: n, color: COLORS[i % COLORS.length], sort: i * 10,
+      }));
+      const { error: e2 } = await client.from("fav_categories").insert(rows);
+      if (e2) throw new Error(this.favErrMsg(e2) || "创建默认分类失败");
+      const { data: after } = await client.from("fav_categories")
+        .select("id,name,color,sort,created_at").eq("user_id", uid)
+        .order("sort", { ascending: true }).order("id", { ascending: true });
+      return after || [];
+    },
+
+    /* 补齐五个默认大类：只补当前分类里缺的名字，不删不改已有分类 */
+    async topUpDefaultFavCats(names) {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const want = (names && names.length) ? names.slice() : ["印花", "面料", "图案", "工艺", "视觉"];
+      const cur = await this.listFavCategories();
+      const have = {};
+      (cur || []).forEach((c) => { have[String(c.name || "").trim()] = 1; });
+      const miss = want.filter((n) => !have[n]);
+      if (!miss.length) return cur;
+      const COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f"];
+      const base = (cur || []).length;
+      const rows = miss.map((n, i) => ({
+        user_id: uid, name: n, color: COLORS[(base + i) % COLORS.length], sort: (base + i) * 10,
+      }));
+      const { error } = await client.from("fav_categories").insert(rows);
+      if (error) throw new Error(this.favErrMsg(error) || "补齐默认分类失败");
+      return await this.listFavCategories();
     },
     /* 收藏（可批量）：同一用户 + 同一期 + 同一图 只保留一条；跨期各一条 */
     async addFavItems(rows, categoryId) {
@@ -2722,14 +2774,28 @@ async removeTrendRecord(id) {
         period_label: String(r.period_label || ""),
         ratio: (r.ratio == null || r.ratio === "") ? null : Number(r.ratio),
         rank_abs: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
+        tags: Array.isArray(r.tags) ? r.tags.filter((x) => String(x || "").trim()).map((x) => String(x).trim()) : [],
+        rank_pos: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
         created_at: now,
       }));
       let n = 0;
       for (let i = 0; i < payload.length; i += 100) {
         const chunk = payload.slice(i, i + 100);
         // 已存在则更新快照与分类（用户重新收藏同一张图时，视为"移动到这个分类"）
-        const { error } = await client.from("fav_items")
+        let { error } = await client.from("fav_items")
           .upsert(chunk, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
+        /* 老库还没执行 patch_20261021Y（缺 tags / rank_pos 列）→ 去掉这两列重试，
+           保证"能不能存标签"不影响"能不能收藏"。 */
+        if (error && /column .*(tags|rank_pos)|'(tags|rank_pos)'/i.test(String(error.message || "") + " " + String(error.details || ""))) {
+          const slim = chunk.map((it) => {
+            const o = Object.assign({}, it);
+            delete o.tags; delete o.rank_pos;
+            return o;
+          });
+          const r2 = await client.from("fav_items")
+            .upsert(slim, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
+          error = r2.error;
+        }
         if (error) throw new Error(this.favErrMsg(error) || "收藏失败");
         n += chunk.length;
       }

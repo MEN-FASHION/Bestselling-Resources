@@ -3906,7 +3906,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   趋势上升榜 · 右侧「我的收藏」抽屉（20261021X）
+   趋势上升榜 · 右侧「我的收藏」抽屉（20261021Y）
    —— 为什么是 fixed 浮层：多列对比池是 grid 布局，任何占位的侧栏都会压缩列宽、
       少掉一列，所以抽屉必须脱离文档流，只浮在右侧。
    —— 为什么不加全屏遮罩：遮罩会挡住对比池的点击，等于"影响了对比池"。
@@ -4035,7 +4035,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021X）
+   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021Y）
    —— 全屏 = 铺满视口，左栏分类 + 右栏内容；Esc 分级退出（全屏 → 抽屉 → 关闭）
    —— 平铺 = 同类相邻 + 每组下方一条框横跨该组；未分类不进平铺
    ========================================================================== */
@@ -4177,3 +4177,79 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .fv-d-flat-cells { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
   .fv-d-flat { margin-bottom: 10px; }
 }
+
+
+/* =====================================================================
+   我的收藏 · 标签/位次快照 + 取消收藏 + 从榜单拖入（20261021Y）
+   ===================================================================== */
+
+/* 卡片上保留原图的排位与标签（收藏当时的快照） */
+.fv-d-meta {
+  position: absolute; left: 5px; bottom: 26px; right: 5px;
+  display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
+}
+.fv-d-rank,
+.fv-d-tg {
+  display: inline-block; padding: 1px 5px; border-radius: 4px;
+  font-size: 10px; line-height: 15px; white-space: nowrap;
+  background: rgba(24, 22, 19, .74); color: #fff;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.fv-d-rank { font-weight: 700; letter-spacing: .2px; }
+.fv-d-tg { background: rgba(255, 255, 255, .9); color: #3a3733; border: 1px solid rgba(0, 0, 0, .08); }
+
+/* 取消收藏：卡片右上角，平时半隐，hover/聚焦才明显，避免误触 */
+.fv-d-unfav {
+  position: absolute; top: 4px; right: 4px; z-index: 3;
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
+  font-size: 14px; line-height: 22px; text-align: center; cursor: pointer;
+  color: #fff; background: rgba(24, 22, 19, .52);
+  opacity: .28; transition: opacity .15s, background .15s, transform .15s;
+}
+.fv-d-cell:hover .fv-d-unfav,
+.fv-d-unfav:focus-visible { opacity: 1; }
+.fv-d-unfav:hover { background: #c25e5a; transform: scale(1.06); }
+
+/* 拖动榜单卡片时的可拖起提示 */
+.rk-card[draggable="true"] { cursor: grab; }
+.rk-card.is-fav-dragging { opacity: .5; }
+.rk-card[draggable="true"]:active { cursor: grabbing; }
+
+/* 抽屉进入"接收拖入"状态：分类显示成可放的文件夹，明显放大、虚线高亮 */
+.fv-drawer.is-drop-ready .fv-d-chip,
+.fv-drawer.is-drop-ready .fv-d-cat {
+  min-height: 44px;
+  border: 1px dashed var(--gold);
+  background: rgba(139, 115, 85, .08);
+  border-radius: 9px;
+  transition: transform .12s, background .12s, border-color .12s;
+}
+.fv-drawer.is-drop-ready .fv-d-chip:hover,
+.fv-drawer.is-drop-ready .fv-d-cat:hover,
+.fv-drawer.is-drop-ready .fv-d-chip.is-drop,
+.fv-drawer.is-drop-ready .fv-d-cat.is-drop {
+  transform: translateY(-1px);
+  border-color: var(--gold);
+  border-style: solid;
+  background: rgba(139, 115, 85, .18);
+}
+.fv-drawer.is-drop-ready .fv-d-filter,
+.fv-drawer.is-drop-ready .fv-d-cats { position: relative; padding-top: 17px; }
+.fv-drawer.is-drop-ready .fv-d-filter::before,
+.fv-drawer.is-drop-ready .fv-d-cats::before {
+  content: "松手即收藏到这个分类";
+  position: absolute; top: 0; left: 0;
+  font-size: 11px; color: var(--gold); letter-spacing: .3px;
+}
+
+/* 收藏页卡片：位次与标签快照（20261021Y） */
+.fv-meta {
+  position: absolute; left: 4px; right: 4px; bottom: 18px;
+  display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
+}
+.fv-m-rk, .fv-m-tg {
+  padding: 1px 5px; border-radius: 4px; font-size: 10px; line-height: 15px;
+  white-space: nowrap; background: rgba(24, 22, 19, .74); color: #fff;
+}
+.fv-m-rk { font-weight: 700; }
+.fv-m-tg { background: rgba(255, 255, 255, .9); color: #3a3733; border: 1px solid rgba(0, 0, 0, .08); }

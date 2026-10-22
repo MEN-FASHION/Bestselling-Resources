@@ -775,7 +775,14 @@
       if (opt.move) eyeTags.push(opt.move);
       if (share) eyeTags.push("共 " + share.length + " 国同款");
     }
+    /* 收藏要保留卡片上原本显示的「标签」：趋势爆款 / 上升 12 位 / 共 3 国同款 …
+       直接快照到 data-tags，收藏时一并落库，进收藏后这些信息不会消失。 */
+    var cardTags = [];
+    if (b) cardTags.push(b.txt);
+    if (opt.move) cardTags.push(opt.move);
+    if (share) cardTags.push("共 " + share.length + " 国同款");
     var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '"'
+      + ' draggable="true" data-tags="' + esc(cardTags.join("|")) + '"'
       + ' data-period="' + esc(it.period_label || "") + '" data-ptype="' + esc(it.period_type || "week") + '"'
       + ' data-title="' + esc(it.title || "") + '" data-leaf="' + esc(it.leaf_category || "") + '"'
       + ' data-cat="' + esc(it.category || "") + '" data-site="' + esc(it.site || "") + '"'
@@ -1065,7 +1072,10 @@
       rank_category: fig.getAttribute("data-cat") || "",
       site: fig.getAttribute("data-site") || "",
       ratio: fig.getAttribute("data-ratio") || null,
-      rank_abs: fig.getAttribute("data-rank") || null
+      rank_abs: fig.getAttribute("data-rank") || null,
+      rank_pos: fig.getAttribute("data-rank") || null,
+      tags: String(fig.getAttribute("data-tags") || "").split("|")
+        .filter(function (x) { return x && x.trim(); })
     };
   }
 
@@ -1267,6 +1277,39 @@
         }
       }, true);
     }
+    if (box && !box.__favDragBound) {
+      box.__favDragBound = true;
+      /* 直接从榜单把图拖到右侧收藏抽屉的某个分类上 = 收藏并归类。
+         拖动一开始就把抽屉摊开，让五个分类显示成可放的"文件夹"。 */
+      box.addEventListener("dragstart", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var fig = t.closest(".rk-card");
+        if (!fig) return;
+        if (favNeedLogin()) { try { e.preventDefault(); } catch (x) {} return; }
+        var row = favCardData(fig);
+        FAV.dragRow = row;
+        try {
+          e.dataTransfer.setData("application/x-fav-row", JSON.stringify(row));
+          e.dataTransfer.setData("text/plain", row.title || row.image_url);
+          e.dataTransfer.effectAllowed = "copy";
+        } catch (x) {}
+        fig.classList.add("is-fav-dragging");
+        if (window.FavDrawer && typeof FavDrawer.openForDrop === "function") {
+          try { FavDrawer.openForDrop(); } catch (x) {}
+        }
+      }, true);
+      box.addEventListener("dragend", function (e) {
+        var t = e.target;
+        var fig = (t && t.closest) ? t.closest(".rk-card") : null;
+        if (fig) fig.classList.remove("is-fav-dragging");
+        FAV.dragRow = null;
+        if (window.FavDrawer && typeof FavDrawer.endDropMode === "function") {
+          try { FavDrawer.endDropMode(); } catch (x) {}
+        }
+      }, true);
+    }
+
     if (!document.__favBatchBound) {
       document.__favBatchBound = true;
       document.addEventListener("click", function (e) {

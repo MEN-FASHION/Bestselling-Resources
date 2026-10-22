@@ -47,9 +47,19 @@ function makeSB(seed) {
   const call = { listItems: 0, listCats: 0, lastOpt: null };
   const cats = (s.cats || []).map((c, i) => Object.assign({ color: "#8b7355" }, c, { id: c.id || i + 1 }));
   const items = (s.items || []).map((r, i) => Object.assign({ id: i + 1, category_id: null, title: "图" + (i + 1) }, r));
+  const added = [], removed = [];
+  call.added = added; call.removed = removed; call.ensured = 0;
   return {
     calls: call,
     favUid: async () => (s.uid === undefined ? "u-1" : s.uid),
+    addFavItems: async (rows, cid) => { added.push([(rows || []).slice(), cid]); return (rows || []).length; },
+    removeFavItems: async (ids) => { removed.push((ids || []).slice()); return (ids || []).length; },
+    /* 默认分类：只有一条分类都没有时才会被调用；这里模拟"建好五个" */
+    ensureDefaultFavCats: async (names) => {
+      call.ensured++;
+      const list = (names && names.length ? names : ["印花", "面料", "图案", "工艺", "视觉"]);
+      return list.map((n, i) => ({ id: 100 + i, name: n, color: "#8b7355", sort: i * 10 }));
+    },
     favReady: async () => (s.ready === undefined ? true : s.ready),
     listFavCategories: async () => { call.listCats++; if (s.catsError) throw new Error("分类读取失败"); return cats; },
     listFavItems: async (opt) => {
@@ -660,9 +670,210 @@ function bootDom(sb) {
     ok("脏数据不会被算进任何分类组", r.groups.every((g) => g.items.every((it) => it.category_id != null && it.category_id < 90)));
   }
 
+  /* ========== ⑫-b 取消收藏 / 标签与位次 / 默认分类 / 从榜单拖入 ========== */
+  {
+    /* A. 五个默认大类 */
+    const sbA = makeSB({ cats: [], items: [] });
+    const { w: wA } = bootDom(sbA);
+    await tick(10);
+    ok("一条分类都没有时自动建好五个默认大类", sbA.calls.ensured >= 1, String(sbA.calls.ensured));
+    ok("默认分类名与要求一致（印花/面料/图案/工艺/视觉）",
+      JSON.stringify(wA.FavDrawer.DEFAULT_CATS || []) === JSON.stringify(["印花", "面料", "图案", "工艺", "视觉"]),
+      JSON.stringify(wA.FavDrawer.DEFAULT_CATS));
+    ok("建好后直接采用，不必刷新页面", (wA.FavDrawer.state().cats || []).length === 5);
+  }
+  {
+    /* B. 已有分类时不再自动建（不能把用户删掉的分类塞回来） */
+    const sbB = makeSB({ cats: [{ id: 1, name: "自建A" }], items: [] });
+    bootDom(sbB);
+    await tick(10);
+    ok("已有分类时不调用默认建类（用户删掉的不会被塞回来）", sbB.calls.ensured === 0, String(sbB.calls.ensured));
+  }
+  {
+    /* C. 标签 + 位次快照 + 取消收藏 */
+    const sb = makeSB({
+      cats: [{ id: 1, name: "印花" }],
+      items: [{
+        id: 31, period_label: "W42", image_url: "u/x.jpg", title: "连帽卫衣",
+        category_id: 1, rank_pos: 3, rank_abs: 3, tags: ["趋势爆款", "上升 12 位"],
+      }],
+    });
+    const { w } = bootDom(sb);
+    await tick(10);
+    await w.FavDrawer.open();
+    await tick(5);
+    const doc = w.document;
+    const cell = doc.querySelector('.fv-d-cell[data-id="31"]');
+    ok("收藏卡片保留原图位次（显示 #3）", !!cell && /#3/.test(cell.textContent));
+    ok("收藏卡片保留原图标签快照（趋势爆款 / 上升 12 位）",
+      !!cell && /趋势爆款/.test(cell.textContent) && /上升 12 位/.test(cell.textContent));
+    const ub = cell && cell.querySelector("[data-unfav]");
+    ok("卡片上有取消收藏按钮（不用回榜单才能取消）", !!ub);
+    if (ub) {
+      ub.dispatchEvent(new w.Event("click", { bubbles: true, cancelable: true }));
+      await tick(40);
+      ok("点取消收藏真的调删除接口（只删这一条）",
+        sb.calls.removed.length === 1 && sb.calls.removed[0][0] === 31, JSON.stringify(sb.calls.removed));
+      ok("取消后立刻从列表消失（不必刷新页面）", !doc.querySelector('.fv-d-cell[data-id="31"]'));
+      ok("取消后右侧角标同步隐藏", (doc.querySelector("#fv-tab-n") || {}).hidden === true,
+        String((doc.querySelector("#fv-tab-n") || {}).hidden));
+    } else {
+      ok("点取消收藏真的调删除接口（只删这一条）", false, "无按钮");
+      ok("取消后立刻从列表消失（不必刷新页面）", false, "无按钮");
+      ok("取消后右侧角标同步隐藏", false, "无按钮");
+    }
+  }
+  {
+    /* D. 从榜单卡片直接拖进分类 = 收藏并归类 */
+    const sb = makeSB({ cats: [{ id: 5, name: "工艺" }], items: [] });
+    const { w } = bootDom(sb);
+    await tick(10);
+    w.FavDrawer.openForDrop();
+    await tick(20);
+    const doc = w.document;
+    const dr = doc.getElementById("fv-drawer");
+    ok("拖动榜单图时抽屉自动推开（不必先点开）", dr.classList.contains("is-open"));
+    ok("拖动时进入接收态（分类显示成可放的文件夹）", dr.classList.contains("is-drop-ready"));
+
+    const row = {
+      image_url: "u/rank.jpg", title: "榜单款", period_label: "W42",
+      leaf_category: "卫衣", site: "US", ratio: 12.5, rank_abs: "7", rank_pos: "7", tags: ["趋势爆款"],
+    };
+    const mkDt = () => ({
+      data: { "application/x-fav-row": JSON.stringify(row) },
+      types: ["application/x-fav-row", "text/plain"],
+      setData(k, v) { this.data[k] = v; if (this.types.indexOf(k) < 0) this.types.push(k); },
+      getData(k) { return this.data[k]; },
+      effectAllowed: "", dropEffect: "",
+    });
+    const dt = mkDt();
+    const chip = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="5"]');
+    ok("默认分类本身就是放置目标", !!chip);
+    if (chip) {
+      chip.dispatchEvent(Object.assign(new w.Event("dragover", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+      ok("拖到分类上高亮，说明松手能放", chip.classList.contains("is-drop"));
+      chip.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+      await tick(60);
+      const a = sb.calls.added;
+      ok("从榜单拖进分类 = 收藏到该分类（分类 id 正确）",
+        a.length === 1 && a[0][1] === 5, JSON.stringify(a.map((x) => [x[0].length, x[1]])));
+      ok("收藏时原图标签一起落库（不会丢）",
+        a.length === 1 && Array.isArray(a[0][0][0].tags) && a[0][0][0].tags.indexOf("趋势爆款") >= 0,
+        JSON.stringify(a.length ? a[0][0][0].tags : null));
+      ok("收藏时位次一起落库", a.length === 1 && String(a[0][0][0].rank_pos) === "7");
+      ok("松手后退出接收态（抽屉恢复正常外观）", !dr.classList.contains("is-drop-ready"));
+    } else {
+      ["从榜单拖进分类 = 收藏到该分类（分类 id 正确）", "收藏时原图标签一起落库（不会丢）",
+        "收藏时位次一起落库", "松手后退出接收态（抽屉恢复正常外观）", "拖到分类上高亮，说明松手能放"]
+        .forEach((n) => ok(n, false, "无 chip"));
+    }
+
+    /* E. 拖到「全部」不是收藏目标 */
+    const before = sb.calls.added.length;
+    w.FavDrawer.openForDrop();
+    await tick(10);
+    const chipAll = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="all"]');
+    const dt2 = mkDt();
+    chipAll.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt2 }));
+    await tick(40);
+    ok("拖到「全部」不产生收藏（它不是归类目标）", sb.calls.added.length === before);
+  }
+  {
+    /* F. 接线与静态口径 */
+    ok("榜单卡片可拖动收藏（draggable 已加）", /draggable="true" data-tags="/.test(RANK_JS));
+    ok("榜单卡片把原标签快照进 data-tags", /var cardTags = \[\];/.test(RANK_JS) && /cardTags\.push\(b\.txt\)/.test(RANK_JS));
+    ok("收藏数据带上 tags 与 rank_pos", /tags: String\(fig\.getAttribute\("data-tags"\)/.test(RANK_JS) && /rank_pos: fig\.getAttribute\("data-rank"\)/.test(RANK_JS));
+    ok("拖动开始就打开抽屉并进入接收态",
+      /FavDrawer\.openForDrop/.test(RANK_JS) && /FavDrawer\.endDropMode/.test(RANK_JS));
+    ok("抽屉对外暴露 openForDrop / endDropMode / unfav",
+      /openForDrop: openForDrop/.test(DRAWER) && /endDropMode: endDropMode/.test(DRAWER) && /unfav: unfav/.test(DRAWER));
+    ok("收藏页也显示位次与标签（fv-meta）", /fv-meta/.test(FAV_JS) && /it\.rank_pos/.test(FAV_JS) && /it\.tags/.test(FAV_JS));
+    ok("收藏页同样会建默认分类", /ensureDefaultFavCats/.test(FAV_JS));
+
+    const SUPABASE = read("js/supabase.js");
+    ok("数据层提供默认分类创建接口", /ensureDefaultFavCats/.test(SUPABASE));
+    ok("读取收藏带 tags/rank_pos，老库缺列自动退回旧列",
+      /WITH_TAGS/.test(SUPABASE) && /const BASE = "id,category_id/.test(SUPABASE) && /run\(BASE\)/.test(SUPABASE));
+    ok("写入收藏时老库缺列也能存进去（去列重试）",
+      /delete o\.tags; delete o\.rank_pos;/.test(SUPABASE));
+
+    let SQLY = "";
+    try { SQLY = read("tools/patch_20261021Y.sql"); } catch (e) { SQLY = ""; }
+    ok("补丁脚本给 fav_items 加 tags / rank_pos",
+      /add column if not exists tags text\[\]/.test(SQLY) && /add column if not exists rank_pos integer/.test(SQLY));
+    ok("补丁脚本带结构重载通知（否则前端一直 404）", /notify pgrst, 'reload schema'/.test(SQLY));
+  }
+
   /* ========== ⑬ 反向验证 ========== */
   if (REVERSE) {
     console.log("\n--- 反向验证：把关键保护拆掉，看断言是否真的报错 ---");
+
+    /* 本段全部在内存里做：只改字符串、不写磁盘文件，避免把仓库改坏 */
+    {
+      const bootSrc = (src, sb) => {
+        const dom = new JSDOM('<!doctype html><html><body class="front"><div class="gallery-layout"><main class="grid-wrap" id="pool"></main></div></body></html>', {
+          runScripts: "outside-only", pretendToBeVisual: true,
+        });
+        const w = dom.window;
+        if (sb) w.SB = sb;
+        w.eval(src);
+        return { dom, w };
+      };
+      const dropLine = (src, needle) => src.split("\n").filter((l) => l.indexOf(needle) < 0).join("\n");
+
+      /* ① 去掉「取消收藏」按钮 */
+      const srcA = dropLine(DRAWER, 'class="fv-d-unfav"');
+      const sbA = makeSB({ cats: [{ id: 1, name: "x" }], items: [{ id: 31, period_label: "W42", image_url: "u/x.jpg", title: "t", category_id: 1, rank_pos: 3, tags: ["趋势爆款"] }] });
+      const { w: wA } = bootSrc(srcA, sbA);
+      await tick(10);
+      await wA.FavDrawer.open();
+      await tick(5);
+      ok("[反向] 去掉取消收藏按钮后，断言确实能发现（否则这条保护是空的）",
+        !wA.document.querySelector("[data-unfav]"));
+
+      /* ② 去掉位次与标签徽标 */
+      let srcB = dropLine(DRAWER, 'class="fv-d-rank"');
+      srcB = dropLine(srcB, "tags.slice(0, 2)");
+      const sbB = makeSB({ cats: [{ id: 1, name: "x" }], items: [{ id: 41, period_label: "W42", image_url: "u/y.jpg", title: "t", category_id: 1, rank_pos: 3, tags: ["趋势爆款"] }] });
+      const { w: wB } = bootSrc(srcB, sbB);
+      await tick(10);
+      await wB.FavDrawer.open();
+      await tick(5);
+      const cellB = wB.document.querySelector('.fv-d-cell[data-id="41"]');
+      ok("[反向] 去掉位次/标签徽标后，卡片上确实看不到这些信息",
+        !!cellB && !/#3/.test(cellB.textContent) && !/趋势爆款/.test(cellB.textContent));
+
+      /* ③ 拖动时不进入接收态 */
+      const srcC = DRAWER.replace('d.classList.add("is-open", "is-drop-ready");', 'd.classList.add("is-open");');
+      const sbC = makeSB({ cats: [{ id: 5, name: "工艺" }], items: [] });
+      const { w: wC } = bootSrc(srcC, sbC);
+      await tick(10);
+      wC.FavDrawer.openForDrop();
+      await tick(20);
+      ok("[反向] 去掉接收态标记后，抽屉不会摆出放置提示",
+        !wC.document.getElementById("fv-drawer").classList.contains("is-drop-ready"));
+
+      /* ④ 从榜单拖入失效 */
+      const srcD = DRAWER.replace("function hasExt(e) {", "function hasExt(e) { return false;");
+      const sbD = makeSB({ cats: [{ id: 5, name: "工艺" }], items: [] });
+      const { w: wD } = bootSrc(srcD, sbD);
+      await tick(10);
+      wD.FavDrawer.openForDrop();
+      await tick(20);
+      const docD = wD.document;
+      const dtD = {
+        data: { "application/x-fav-row": JSON.stringify({ image_url: "u/r.jpg", title: "r", period_label: "W42" }) },
+        types: ["application/x-fav-row"],
+        setData(k, v) { this.data[k] = v; }, getData(k) { return this.data[k]; },
+      };
+      const chipD = docD.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="5"]');
+      if (chipD) {
+        chipD.dispatchEvent(Object.assign(new wD.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dtD }));
+        await tick(40);
+      }
+      ok("[反向] 关掉外部拖入识别后，拖进来不会被收藏（说明这条真的在管事）",
+        sbD.calls.added.length === 0, String(sbD.calls.added.length));
+    }
     const backup = {};
     try {
       /* 1) 抽屉改成占位（进 grid） */
