@@ -3906,7 +3906,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   趋势上升榜 · 右侧「我的收藏」抽屉（20261021U）
+   趋势上升榜 · 右侧「我的收藏」抽屉（20261021W）
    —— 为什么是 fixed 浮层：多列对比池是 grid 布局，任何占位的侧栏都会压缩列宽、
       少掉一列，所以抽屉必须脱离文档流，只浮在右侧。
    —— 为什么不加全屏遮罩：遮罩会挡住对比池的点击，等于"影响了对比池"。
@@ -3943,16 +3943,15 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 /* 抽屉本体：脱离文档流，占位为零，不影响对比池列宽 */
 .fv-drawer {
-  position: fixed; right: 0; top: 66px; bottom: 0;
+  position: fixed; top: 0; right: 0; bottom: 0;
   width: 380px; max-width: 92vw;
-  z-index: 60;
   display: flex; flex-direction: column;
-  background: var(--bg2, #fff); color: var(--txt);
+  background: var(--panel, var(--bg, #fff));
   border-left: 1px solid var(--line);
-  box-shadow: -18px 0 48px rgba(20,20,20,.14);
-  transform: translateX(calc(100% + 24px));
-  transition: transform .24s cubic-bezier(.4,0,.2,1);
-  will-change: transform;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, .12);
+  transform: translateX(calc(100% + 12px));
+  transition: transform .26s ease;
+  z-index: 60; overflow: hidden;
 }
 .fv-drawer.is-open { transform: translateX(0); }
 
@@ -4033,4 +4032,137 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .fv-drawer { top: 0; width: 100vw; max-width: 100vw; }
   .fv-d-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fv-tab { padding: 10px 5px; }
+}
+
+/* ============================================================================
+   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021W）
+   —— 全屏 = 铺满视口，左栏分类 + 右栏内容；Esc 分级退出（全屏 → 抽屉 → 关闭）
+   —— 平铺 = 同类相邻 + 每组下方一条框横跨该组；未分类不进平铺
+   ========================================================================== */
+
+/* 头部按钮（平铺 / 全屏） */
+.fv-d-btn {
+  padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--sub);
+  font-size: 12px; font-family: inherit; white-space: nowrap;
+  transition: border-color .16s, color .16s, background .16s;
+}
+.fv-d-btn:hover { border-color: var(--gold); color: var(--txt); }
+.fv-d-btn.is-on { border-color: var(--gold); color: var(--gold); background: rgba(200,164,92,.12); font-weight: 600; }
+.fv-d-btn.ok { border-color: var(--gold); color: #fff; background: var(--gold); }
+
+/* 主体：抽屉形态只有内容区；全屏形态变成左右两栏 */
+.fv-d-main { flex: 1 1 auto; display: flex; min-height: 0; }
+.fv-d-side { display: none; }
+.fv-drawer.is-full .fv-d-side {
+  display: flex; flex-direction: column;
+  flex: 0 0 208px; width: 208px; min-width: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg2, #fff);
+}
+.fv-drawer.is-full .fv-d-body { flex: 1 1 auto; min-width: 0; }
+
+/* 全屏：铺满视口 */
+.fv-drawer.is-full {
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100vw; max-width: 100vw;
+  border-left: none;
+  z-index: 70;
+}
+.fv-drawer.is-full .fv-d-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+.fv-drawer.is-full .fv-d-body { padding: 12px 18px 32px; }
+
+/* 左栏 */
+.fv-d-side-h {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 12px 8px; font-size: 12.5px; font-weight: 700; letter-spacing: .5px;
+}
+.fv-d-newbtn {
+  padding: 3px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--gold);
+  font-size: 11.5px; font-family: inherit;
+}
+.fv-d-newbtn:hover { border-color: var(--gold); }
+.fv-d-newbox { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.fv-d-newbox input {
+  width: 100%; box-sizing: border-box; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--txt); font-size: 12px; font-family: inherit;
+}
+.fv-d-newbox input:focus { outline: none; border-color: var(--gold); }
+.fv-d-newrow { display: flex; gap: 6px; }
+.fv-d-newrow .fv-d-btn { flex: 1 1 0; text-align: center; }
+
+.fv-d-cats { flex: 1 1 auto; overflow-y: auto; padding: 0 8px 8px; }
+.fv-d-cats::-webkit-scrollbar { width: 6px; }
+.fv-d-cats::-webkit-scrollbar-thumb { background: rgba(156,139,116,.3); border-radius: 4px; }
+.fv-d-cat {
+  position: relative;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 8px; margin-bottom: 3px;
+  border-radius: 7px; border: 1px solid transparent;
+  cursor: pointer; font-size: 12.5px; color: var(--txt);
+  transition: background .14s, border-color .14s;
+}
+.fv-d-cat:hover { background: rgba(156,139,116,.09); }
+.fv-d-cat.is-on { background: rgba(200,164,92,.14); border-color: rgba(200,164,92,.5); font-weight: 600; }
+.fv-d-cat.is-drop { border-color: var(--gold); border-style: dashed; background: rgba(200,164,92,.18); }
+.fv-d-cdot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
+.fv-d-cname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-d-cn { font-style: normal; font-size: 10.5px; color: var(--sub); flex: 0 0 auto; }
+.fv-d-cdel {
+  flex: 0 0 auto; width: 16px; height: 16px; line-height: 1; padding: 0;
+  border: none; border-radius: 999px; background: transparent; color: var(--sub);
+  font-size: 13px; cursor: pointer; opacity: 0; transition: opacity .14s, color .14s;
+}
+.fv-d-cat:hover .fv-d-cdel { opacity: 1; }
+.fv-d-cdel:hover { color: var(--danger, #e5484d); }
+.fv-d-side-tip { flex: 0 0 auto; padding: 8px 12px 12px; font-size: 10.5px; color: var(--sub); line-height: 1.6; border-top: 1px solid var(--line); }
+
+/* 拖拽中的图 */
+.fv-d-cell.is-drag { cursor: grab; }
+.fv-d-cell.is-dragging { opacity: .45; }
+
+/* 平铺：同类相邻 + 每组一条框 */
+.fv-d-flat { margin-bottom: 14px; }
+.fv-d-flat-cells {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+.fv-d-flat-band {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 6px; padding: 6px 10px;
+  border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 7px;
+}
+.fv-d-flat-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; }
+.fv-d-flat-name { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; letter-spacing: .3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-d-flat-n { font-size: 11px; color: var(--sub); flex: 0 0 auto; }
+.fv-d-flat-none { padding: 10px 2px; font-size: 11.5px; color: var(--sub); }
+.fv-d-flat-others { margin: 8px 0 14px; }
+.fv-d-flat-others > summary {
+  cursor: pointer; font-size: 11.5px; color: var(--sub);
+  padding: 6px 2px; list-style: none;
+}
+.fv-d-flat-others > summary::-webkit-details-marker { display: none; }
+.fv-d-flat-others > summary::before { content: "▸ "; }
+.fv-d-flat-others[open] > summary::before { content: "▾ "; }
+.fv-d-flat-others .fv-d-grid { margin-top: 8px; }
+
+/* 操作反馈（归类成功等） */
+.fv-d-save {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(8px);
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(30,28,26,.9); color: #fff; font-size: 12px;
+  opacity: 0; transition: opacity .22s, transform .22s; pointer-events: none;
+  white-space: nowrap; z-index: 2;
+}
+.fv-d-save.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.fv-drawer { position: fixed; }   /* 兜底：确保 fv-d-save 的定位基准 */
+
+@media (max-width: 720px) {
+  .fv-drawer.is-full .fv-d-side { flex: 0 0 150px; width: 150px; }
+  .fv-drawer.is-full .fv-d-grid,
+  .fv-d-flat-cells { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .fv-d-flat { margin-bottom: 10px; }
 }

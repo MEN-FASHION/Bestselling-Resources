@@ -121,46 +121,60 @@ console.log("\n[3] 抽屉控制器不再加载");
 
 /* ---------------------------------------------------------------
  * 四、类目搜索框：不许被浏览器当成账号框自动填充
+ *     （2026-10-22 线上问题：首次进入类目正常，点一下侧栏就全没了 ——
+ *       Chrome 在首次交互时把登录邮箱填进这个框，关键字变成邮箱，
+ *       类目全被过滤掉，页面显示"没有匹配的类目"。）
  * ------------------------------------------------------------- */
 console.log("\n[4] 类目搜索框：拿掉自动填充");
 {
   const cfg = read("js/config.js");
   const i = cfg.indexOf("function mountBox(");
   ok("能找到 mountBox 实现", i > 0);
-  const seg = cfg.slice(i, i + 2600);
+  const seg = cfg.slice(i, i + 4200);
 
   ok("不再使用 type=\"search\"（会被账号填充误判）", !/el\.type\s*=\s*"search"/.test(seg));
   ok("改用 type=\"text\" + inputmode=search", /el\.type\s*=\s*"text"/.test(seg) && /inputMode\s*=\s*"search"/.test(seg));
-  ok("保留 autocomplete=off", /el\.autocomplete\s*=\s*"off"/.test(seg));
+  ok("autocomplete 用 new-password（off 对 Chrome 填充无效）",
+    /el\.autocomplete\s*=\s*"new-password"/.test(seg) && !/el\.autocomplete\s*=\s*"off"/.test(seg));
   ok("给密码管理器忽略标记（data-lpignore / data-1p-ignore）",
     /data-lpignore/.test(seg) && /data-1p-ignore/.test(seg));
   ok("声明 data-form-type=other", /data-form-type".*other|data-form-type.*other/.test(seg));
   ok("name 不用通用词（改为 cat-filter-q）", /cat-filter-q/.test(seg));
 
+  ok("初始只读，聚焦才可输入（只读框不会被填充）",
+    /setAttribute\("readonly",\s*"readonly"\)/.test(seg) && /addEventListener\("focus"/.test(seg)
+    && /removeAttribute\("readonly"\)/.test(seg));
+
   /* 兜底：用户没敲过却有值 → 一律清空 */
-  ok("有「用户没输入却有值就清空」的兜底", /dataset\.typed/.test(seg) && /el\.value\s*=\s*""/.test(seg), "");
-  ok("兜底在页面加载后执行（setTimeout）", /setTimeout\(sweep/.test(seg));
-  ok("用户真实输入后不会被误清（oninput 打标记）", /el\.dataset\.typed\s*=\s*"1"/.test(seg));
+  ok("有「用户没按键却有值就清空」的兜底", /dataset\.typed/.test(seg) && /el\.value\s*=\s*""/.test(seg));
+  ok("typed 只由键盘/粘贴置位（input 事件不算，自动填充会触发 input）",
+    /addEventListener\("keydown"/.test(seg) && /addEventListener\("paste"/.test(seg)
+    && !/el\.oninput\s*=\s*function\s*\(\)\s*\{[^}]*dataset\.typed/.test(seg));
+  ok("兜底不只扫一两次，改为持续守护（setInterval）", /setInterval\(/.test(seg), "");
+  ok("守护有上限，不会一直跑", /clearInterval\(timer\)/.test(seg));
+
+  /* 行为层硬兜底：邮箱绝不可能作为类目关键字生效 */
+  const fe = read("js/frontend.js");
+  ok("类目关键字含 @ 时直接丢弃（防止列表被过滤成空）",
+    fe.indexOf('rawKw.indexOf("@"') >= 0 && fe.indexOf('CATS.kw("front", "")') >= 0);
+  ok("兜底后把搜索框同步清空", /sb\.value !== CATS\.kw\("front"\)/.test(fe));
 }
 
 /* ---------------------------------------------------------------
- * 五、真跑一把兜底逻辑：模拟浏览器自动填充
+ * 五、真跑：模拟浏览器自动填充后是否被清掉
  * ------------------------------------------------------------- */
 console.log("\n[5] 真跑：模拟自动填充后是否被清掉");
 {
-  /* 用一个极小的假 DOM 驱动真正的 mountBox 代码，避免只查字符串 */
   const code = read("js/config.js");
-  /* 当前生效的假文档：mountBox 里的 target.ownerDocument 会指到它，
-     同时也兜住实现里直接引用 document 的情况 */
   let CURRENT = null;
   const docProxy = {
     getElementById: () => (CURRENT ? CURRENT.doc.getElementById.apply(null, arguments) : null),
     createElement: () => CURRENT.doc.createElement(),
   };
   const winProxy = { document: docProxy };
-  const fn = new Function("window", "document", "setTimeout", "clearTimeout",
+  const fn = new Function("window", "document", "setTimeout", "clearTimeout", "setInterval", "clearInterval",
     code + "\nreturn window.CAT_SEARCH;");
-  const CAT = fn(winProxy, docProxy, setTimeout, clearTimeout);
+  const CAT = fn(winProxy, docProxy, setTimeout, clearTimeout, setInterval, clearInterval);
   ok("CAT_SEARCH 导出可调用", !!CAT && typeof CAT.mountBox === "function");
 
   function makeDom() {
@@ -170,9 +184,12 @@ console.log("\n[5] 真跑：模拟自动填充后是否被清掉");
       createElement: () => {
         const el = {
           id: "", type: "", value: "", className: "", placeholder: "", title: "",
-          dataset: {}, attrs: {},
+          dataset: {}, attrs: {}, handlers: {},
           setAttribute(k, v) { this.attrs[k] = v; },
           getAttribute(k) { return this.attrs[k]; },
+          removeAttribute(k) { delete this.attrs[k]; },
+          addEventListener(t, f) { (this.handlers[t] = this.handlers[t] || []).push(f); },
+          dispatch(t, ev) { (this.handlers[t] || []).forEach((f) => f(ev || {})); },
         };
         return el;
       },
@@ -180,7 +197,7 @@ console.log("\n[5] 真跑：模拟自动填充后是否被清掉");
     const parent = { insertBefore(el) { created.push(el); } };
     const target = { parentNode: parent, ownerDocument: doc };
     const box = { doc, target, created };
-    CURRENT = box;                       /* 让 docProxy 指到这份假文档 */
+    CURRENT = box;
     return box;
   }
 
@@ -190,6 +207,9 @@ console.log("\n[5] 真跑：模拟自动填充后是否被清掉");
   ok("挂载返回输入框", !!el);
   ok("输入框带抗填充属性", el && el.attrs["data-lpignore"] === "true" && el.getAttribute("name") === "cat-filter-q");
   ok("输入框不是 type=search", el && el.type === "text", el && el.type);
+  ok("挂载后处于只读态", el && el.attrs["readonly"] === "readonly");
+  el.dispatch("focus");
+  ok("聚焦后解除只读", el.attrs["readonly"] === undefined);
 
   /* 模拟浏览器在 300ms 内把邮箱填进去 */
   el.value = "1062443632@qq.com";
@@ -197,18 +217,29 @@ console.log("\n[5] 真跑：模拟自动填充后是否被清掉");
   ok("自动填充的邮箱被清空", el.value === "", JSON.stringify(el.value));
   ok("清空后同步触发了筛选回调（列表回到全部）", calls.indexOf("") >= 0, JSON.stringify(calls));
 
+  /* 模拟 Chrome 在首次交互之后才填（这正是线上漏网的那次） */
+  calls.length = 0;
+  el.value = "1062443632@qq.com";
+  el.dispatch("input");                 /* 自动填充会触发 input，但不会有 keydown */
+  await new Promise((r) => setTimeout(r, 700));
+  ok("交互之后才被填充的邮箱同样被清掉", el.value === "", JSON.stringify(el.value));
+  ok("并且不会因为 input 事件就认为用户输入过", !el.dataset.typed);
+
   /* 用户真实输入：不能被误清 */
   const d2 = makeDom();
   const el2 = CAT.mountBox(d2.target, "cat-search2", "搜索类目…", () => { });
-  el2.value = "连衣";
-  el2.oninput();                       /* 用户敲键 → 打标记 */
+  el2.dispatch("focus");
+  el2.value = "连";
+  el2.dispatch("keydown", { key: "连" });
+  el2.dispatch("input");
   await new Promise((r) => setTimeout(r, 1400));
-  ok("用户自己输入的「连衣」不会被兜底清掉", el2.value === "连衣", el2.value);
+  ok("用户自己输入的「连」不会被兜底清掉", el2.value === "连", el2.value);
 
   /* 复用同一输入框时不该重复挂挂钩子 */
   const el3 = CAT.mountBox(d1.target, "cat-search", "搜索类目…", () => { });
   ok("重复挂载复用同一个输入框", el3 === el);
   ok("重复挂载不重复打兜底标记", el3.dataset.autofillGuard === "1");
+  ok("重复挂载不重复挂键盘钩子", el3.dataset.typedHook === "1");
 }
 
 console.log("\n================ 汇总 ================");

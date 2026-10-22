@@ -403,6 +403,13 @@
     if (!menu) return;
     catMenuCats = (cats || []).slice();
     const CATS = window.CAT_SEARCH;
+    /* 硬兜底：类目关键字里出现 @ —— 类目名不可能带 @，那一定是账号自动填充物。
+       直接丢弃这个关键字，否则整个类目列表会被过滤成空，
+       用户看到的就是"类目筛选不见了"。 */
+    if (CATS) {
+      const rawKw = String(CATS.kw("front") || "");
+      if (rawKw.indexOf("@") >= 0) CATS.kw("front", "");
+    }
     // 搜索框：插在类目菜单上方，只插一次
     if (CATS) {
       CATS.mountBox(menu, "cat-search", "搜索类目…", (v) => { CATS.kw("front", v); renderCatMenu(catMenuCats); });

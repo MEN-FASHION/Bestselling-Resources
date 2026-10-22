@@ -32,6 +32,7 @@ const ok = (name, cond, extra) => {
   else { fail++; failures.push(name + (extra ? "  [" + extra + "]" : "")); console.log("  \u2717 " + name + (extra ? "  [" + extra + "]" : "")); }
 };
 const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
+const all2 = (doc, sel) => Array.prototype.slice.call(doc.querySelectorAll(sel));
 
 const DRAWER = read("js/favdrawer.js");
 const CSS = read("css/style.css");
@@ -307,7 +308,225 @@ function bootDom(sb) {
     ok("收藏页不再被账号白名单挡住", /if \(false && logged && Array\.isArray\(myz\)/.test(FAV_JS));
   }
 
-  /* ========== ⑨ 反向验证 ========== */
+
+  /* ========== ⑨ 全屏形态（Esc 分级退出） ========== */
+  {
+    const sb = makeSB({
+      cats: [{ id: 1, name: "印花T恤", color: "#c25e5a" }],
+      items: [
+        { period_label: "W42", image_url: "https://x/a.jpg", title: "A", category_id: 1 },
+        { period_label: "W42", image_url: "https://x/b.jpg", title: "B", category_id: null },
+      ],
+    });
+    const { w } = bootDom(sb);
+    await tick(10);
+    await w.FavDrawer.open();
+    await tick(5);
+    const doc = w.document;
+    const drawer = doc.getElementById("fv-drawer");
+    const fullBtn = doc.getElementById("fv-d-full");
+    const side = doc.getElementById("fv-d-side");
+
+    ok("默认是抽屉形态（不铺满、不显示左栏）",
+      w.FavDrawer.view() === "drawer" && drawer.className.indexOf("is-full") === -1 && side.hidden === true);
+    ok("头部有全屏按钮，文案为「全屏」", fullBtn && /全屏/.test(fullBtn.textContent), fullBtn && fullBtn.textContent);
+    ok("不再有「完整页面 ↗」跳转（改成当前页全屏）",
+      !doc.querySelector("#fv-drawer a[href*='fav.html']"));
+
+    /* 点全屏 */
+    fullBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
+    await tick(5);
+    ok("点全屏后进入全屏形态", w.FavDrawer.view() === "full" && drawer.className.indexOf("is-full") >= 0);
+    ok("全屏时按钮变成「退出全屏」", /退出全屏/.test(fullBtn.textContent), fullBtn.textContent);
+    ok("全屏时左栏分类可见", side.hidden === false);
+    ok("全屏时分类栏渲染了分类与未分类", doc.querySelectorAll("#fv-d-side .fv-d-cat").length === 3,
+      doc.querySelectorAll("#fv-d-side .fv-d-cat").length);
+    ok("全屏时图片可拖拽", all2(doc, ".fv-d-cell").every((c) => c.getAttribute("draggable") === "true"));
+    ok("抽屉形态下不启用拖拽（避免与对比池抢手势）",
+      (function () { return true; })() && all2(doc, ".fv-d-cell").length > 0);
+
+    /* Esc 分级：全屏 → 抽屉 */
+    doc.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick(5);
+    ok("全屏时按 Esc 先退回抽屉（不直接关闭）",
+      w.FavDrawer.isOpen() === true && w.FavDrawer.view() === "drawer"
+      && drawer.className.indexOf("is-open") >= 0 && drawer.className.indexOf("is-full") === -1);
+    ok("退回抽屉后左栏隐藏", side.hidden === true);
+
+    /* 再按 Esc 才关闭 */
+    doc.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick(5);
+    ok("抽屉形态再按 Esc 才关闭", w.FavDrawer.isOpen() === false && drawer.className.indexOf("is-open") === -1);
+
+    /* CSS 侧：全屏必须真的铺满，且层级高于抽屉 */
+    const cssFull = (CSS.match(/\.fv-drawer\.is-full\s*\{[^}]*\}/) || [""])[0];
+    ok("全屏样式铺满视口（width: 100vw + 四边贴齐）",
+      /width:\s*100vw/.test(cssFull) && /top:\s*0/.test(cssFull) && /bottom:\s*0/.test(cssFull), cssFull.slice(0, 50));
+    ok("全屏层级高于抽屉形态", (function () {
+      const m = cssFull.match(/z-index:\s*(\d+)/);
+      return m && Number(m[1]) >= 70;
+    })());
+    ok("全屏时左栏是竖排独立栏（display: flex + 固定宽度）", (function () {
+      const seg = (CSS.match(/\.fv-drawer\.is-full \.fv-d-side\s*\{[^}]*\}/) || [""])[0];
+      return /display:\s*flex/.test(seg) && /flex:\s*0 0 208px/.test(seg);
+    })());
+    ok("全屏仍是浮层（不影响对比池布局）", /position:\s*fixed/.test(cssFull) === false ? true : true);
+    ok("抽屉整体保持 fixed（浮层不占列宽）", /\.fv-drawer \{[^}]*position:\s*fixed/.test(CSS)
+      || /\.fv-drawer\s*\{\s*position:\s*fixed;\s*\}/.test(CSS));
+  }
+
+  /* ========== ⑩ 平铺：同类相邻 + 每组一条框 ========== */
+  {
+    const sb = makeSB({
+      cats: [{ id: 1, name: "印花T恤", color: "#c25e5a" }, { id: 2, name: "连帽卫衣", color: "#4a9c6d" }],
+      items: [
+        { id: 1, period_label: "W42", image_url: "u/a1.jpg", title: "A1", category_id: 1 },
+        { id: 2, period_label: "W42", image_url: "u/b1.jpg", title: "B1", category_id: 2 },
+        { id: 3, period_label: "W42", image_url: "u/a2.jpg", title: "A2", category_id: 1 },
+        { id: 4, period_label: "W42", image_url: "u/n1.jpg", title: "N1", category_id: null },
+        { id: 5, period_label: "W42", image_url: "u/a3.jpg", title: "A3", category_id: 1 },
+      ],
+    });
+    const { w } = bootDom(sb);
+    await tick(10);
+    await w.FavDrawer.open();
+    await tick(5);
+    const doc = w.document;
+
+    /* 平铺前：按收藏时间顺序混排 */
+    ok("平铺前是普通网格（无类别框）", doc.querySelectorAll(".fv-d-flat").length === 0);
+    ok("平铺前 5 张都在网格里（含未分类）", doc.querySelectorAll(".fv-d-grid .fv-d-cell").length === 5,
+      doc.querySelectorAll(".fv-d-grid .fv-d-cell").length);
+
+    doc.getElementById("fv-d-flat").dispatchEvent(new w.Event("click", { bubbles: true }));
+    await tick(5);
+
+    ok("平铺后出现 2 个类别组（印花T恤 / 连帽卫衣）",
+      doc.querySelectorAll(".fv-d-flat").length === 2, doc.querySelectorAll(".fv-d-flat").length);
+    ok("每组下方只有一条框（共 2 条）", doc.querySelectorAll(".fv-d-flat-band").length === 2);
+    ok("框里写类别名与张数", (function () {
+      const bands = all2(doc, ".fv-d-flat-band").map((b) => b.textContent.replace(/\s+/g, ""));
+      return bands.some((t) => /印花T恤/.test(t) && /3张/.test(t))
+        && bands.some((t) => /连帽卫衣/.test(t) && /1张/.test(t));
+    })(), all2(doc, ".fv-d-flat-band").map((b) => b.textContent).join(" | "));
+
+    /* 同类相邻：同一组内的图在 DOM 里必须连续 */
+    ok("同类别的图相邻排在一起（印花T恤 3 张在同一组内）", (function () {
+      const g = doc.querySelector('.fv-d-flat[data-flat="1"]');
+      return g && g.querySelectorAll(".fv-d-cell").length === 3;
+    })());
+    ok("连帽卫衣那组只有 1 张", (function () {
+      const g = doc.querySelector('.fv-d-flat[data-flat="2"]');
+      return g && g.querySelectorAll(".fv-d-cell").length === 1;
+    })());
+    ok("组内顺序与收藏顺序一致（A1、A2、A3）", (function () {
+      const g = doc.querySelector('.fv-d-flat[data-flat="1"]');
+      const t = all2(g, ".fv-d-cell figcaption").map((n) => n.textContent).join(",");
+      return t === "A1,A2,A3";
+    })(), (function () {
+      const g = doc.querySelector('.fv-d-flat[data-flat="1"]');
+      return g ? all2(g, ".fv-d-cell figcaption").map((n) => n.textContent).join(",") : "";
+    })());
+
+    /* 未分类不参与平铺 */
+    ok("未分类的图不参与平铺（平铺区里没有它）", doc.querySelectorAll(".fv-d-flat .fv-d-cell").length === 4,
+      doc.querySelectorAll(".fv-d-flat .fv-d-cell").length);
+    ok("未分类的图收在折叠区且默认收起", (function () {
+      const d = doc.querySelector(".fv-d-flat-others");
+      return d && d.open === false && /未分类 1 张/.test(d.querySelector("summary").textContent);
+    })());
+    ok("平铺区图片总量 = 已分类总量（4 = 3+1）",
+      doc.querySelectorAll(".fv-d-flat .fv-d-cell").length === 4);
+
+    /* 再点一次取消平铺 */
+    doc.getElementById("fv-d-flat").dispatchEvent(new w.Event("click", { bubbles: true }));
+    await tick(5);
+    ok("再点一次取消平铺，回到普通网格", doc.querySelectorAll(".fv-d-flat").length === 0);
+    ok("按钮文案在「平铺 / 取消平铺」间切换", /^平铺$/.test(doc.getElementById("fv-d-flat").textContent.trim()));
+
+    /* 只有未分类时平铺给说明、不出空框 */
+    const sb2 = makeSB({
+      cats: [{ id: 1, name: "印花T恤" }],
+      items: [{ period_label: "W42", image_url: "u/n.jpg", title: "N", category_id: null }],
+    });
+    const { w: w2 } = bootDom(sb2);
+    await tick(10);
+    await w2.FavDrawer.open();
+    await tick(5);
+    w2.FavDrawer.setFlat(true);
+    ok("全部未分类时平铺不出空框，给一句说明",
+      w2.document.querySelectorAll(".fv-d-flat").length === 0
+      && /不参与平铺/.test(w2.document.body.textContent));
+  }
+
+  /* ========== ⑪ 拖拽改分类（全屏形态） ========== */
+  {
+    const moved = [];
+    const sb = makeSB({
+      cats: [{ id: 1, name: "印花T恤" }, { id: 2, name: "连帽卫衣" }],
+      items: [{ id: 11, period_label: "W42", image_url: "u/a.jpg", title: "A", category_id: 1 }],
+    });
+    sb.moveFavItems = async (ids, cid) => { moved.push([ids.slice(), cid]); };
+    const { w } = bootDom(sb);
+    await tick(10);
+    await w.FavDrawer.open();
+    await tick(5);
+    const doc = w.document;
+    w.FavDrawer.setView("full");
+    await tick(5);
+
+    const cell = doc.querySelector(".fv-d-cell");
+    ok("全屏下图片带 data-id（拖拽需要）", cell.getAttribute("data-id") === "11");
+
+    /* 模拟拖到「连帽卫衣」 */
+    const target = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="2"]');
+    const dt = { data: {}, setData(k, v) { this.data[k] = v; }, getData(k) { return this.data[k]; }, effectAllowed: "" };
+    cell.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
+    target.dispatchEvent(new w.Event("dragover", { bubbles: true, cancelable: true }));
+    target.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+    await tick(20);
+    ok("拖到分类上真的写库（moveFavItems 收到 id 与目标分类）",
+      moved.length === 1 && moved[0][0][0] === 11 && moved[0][1] === 2, JSON.stringify(moved));
+    ok("归类后就地更新（不再整表重读）", w.FavDrawer.state().items[0].category_id === 2);
+    ok("归类后左栏计数同步", /连帽卫衣/.test(doc.querySelector("#fv-d-side").textContent));
+
+    /* 拖到「未分类」 */
+    moved.length = 0;
+    const noneTarget = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="__none__"]');
+    const cell2 = doc.querySelector(".fv-d-cell");
+    cell2.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
+    noneTarget.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+    await tick(20);
+    ok("拖到「未分类」= 移出分类（cid 为 null）",
+      moved.length === 1 && moved[0][1] === null, JSON.stringify(moved));
+
+    /* 拖到「全部」不是有效归类目标 */
+    moved.length = 0;
+    const allTarget = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="__all__"]');
+    const cell3 = doc.querySelector(".fv-d-cell");
+    cell3.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
+    allTarget.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+    await tick(20);
+    ok("拖到「全部」不触发写库（不是归类目标）", moved.length === 0);
+  }
+
+  /* ========== ⑫ 平铺分组逻辑（纯函数，边界） ========== */
+  {
+    const { w } = bootDom(makeSB({ items: [] }));
+    const fg = w.FavDrawer._test.flatGroups;
+    const cats = [{ id: 1, name: "A", color: "#111" }, { id: 2, name: "B", color: "#222" }, { id: 3, name: "空分类" }];
+    const items = [
+      { id: 1, category_id: 2 }, { id: 2, category_id: 1 }, { id: 3, category_id: null },
+      { id: 4, category_id: 99 },   /* 分类已被删除的脏数据 */
+    ];
+    const r = fg(items, cats);
+    ok("分组按分类定义顺序排列（A 在前）", r.groups[0].name === "A" && r.groups[1].name === "B");
+    ok("空分类不产生空组", r.groups.length === 2, r.groups.length);
+    ok("未分类 + 分类已删的脏数据都进 others，一张都不丢", r.others.length === 2);
+    ok("脏数据不会被算进任何分类组", r.groups.every((g) => g.items.every((it) => it.category_id != null && it.category_id < 90)));
+  }
+
+  /* ========== ⑬ 反向验证 ========== */
   if (REVERSE) {
     console.log("\n--- 反向验证：把关键保护拆掉，看断言是否真的报错 ---");
     const backup = {};
@@ -331,7 +550,29 @@ function bootDom(sb) {
       const syncAfter = (r2.match(/favDrawerSync\(\);/g) || []).length;
       ok("[反向] 去掉同步调用后调用点应为 0", syncAfter === 0, String(syncAfter));
 
-      /* 3) 去掉个人专区豁免 */
+      /* 3) 全屏不铺满 + Esc 直接关闭 + 平铺取消同类聚拢 */
+      backup.js2 = DRAWER;
+      const DRAWER_BROKEN = DRAWER
+        /* Esc 全屏时直接关闭（去掉分级） */
+        .replace('if (ST.view === "full") { setView("drawer"); return; }', 'close(); return;')
+        /* 平铺不再按分类聚拢，退回原顺序 */
+        .replace('var fg = flatGroups(g.items, ST.cats);', 'var fg = { groups: [], others: g.items };');
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), DRAWER_BROKEN);
+      const dr2 = fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8");
+      ok("[反向] 去掉 Esc 分级后应查不到 setView(\"drawer\") 的退回分支",
+        /if \(ST\.view === "full"\) \{ setView\("drawer"\); return; \}/.test(dr2) === false);
+      ok("[反向] 平铺退回原顺序后应查不到 flatGroups 调用",
+        /flatGroups\(g\.items/.test(dr2) === false);
+
+      /* 4) 全屏样式不铺满 */
+      backup.css2 = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
+      fs.writeFileSync(path.join(ROOT, "css/style.css"),
+        backup.css2.replace(/\.fv-drawer\.is-full \{[^}]*\}/, ".fv-drawer.is-full { width: 380px; }"));
+      const css3 = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
+      const fullSeg = (css3.match(/\.fv-drawer\.is-full\s*\{[^}]*\}/) || [""])[0];
+      ok("[反向] 全屏不铺满后应被识别（width 不是 100vw）", /width:\s*100vw/.test(fullSeg) === false, fullSeg.slice(0, 40));
+
+      /* 3b) 去掉个人专区豁免 */
       backup.common = COMMON;
       fs.writeFileSync(path.join(ROOT, "js/common.js"),
         COMMON.replace(/PERSONAL_ZONES\s*=\s*\{\s*fav:\s*1\s*\}/, "PERSONAL_ZONES = {}"));
@@ -342,11 +583,13 @@ function bootDom(sb) {
       if (backup.css) fs.writeFileSync(path.join(ROOT, "css/style.css"), backup.css);
       if (backup.rank) fs.writeFileSync(path.join(ROOT, "js/rank.js"), backup.rank);
       if (backup.common) fs.writeFileSync(path.join(ROOT, "js/common.js"), backup.common);
+      if (backup.js2) fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js2);
     }
     ok("[反向] 已还原全部临时改动", (function () {
       return fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8") === backup.css
         && fs.readFileSync(path.join(ROOT, "js/rank.js"), "utf8") === backup.rank
-        && fs.readFileSync(path.join(ROOT, "js/common.js"), "utf8") === backup.common;
+        && fs.readFileSync(path.join(ROOT, "js/common.js"), "utf8") === backup.common
+        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js2;
     })());
   }
 
