@@ -100,6 +100,7 @@
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
         if (!ST.open) return;
+        /* 分级退出：全屏 → 抽屉 → 关闭，一次 Esc 不会把整层丢光 */
         if (ST.view === "full") { setView("drawer"); return; }
         close();
       });
@@ -196,6 +197,7 @@
         ST.filter = b.getAttribute("data-fv-f");
         render();
       });
+      bindDropTarget(b, catDropValue(b));   /* 直接把图拖到分类 chip 上即可归类 */
     });
   }
 
@@ -264,22 +266,76 @@
     if (nameInp) nameInp.addEventListener("keydown", function (e) { if (e.key === "Enter") createCat(); });
 
     /* 拖放目标：分类 / 未分类（「全部」不是有效归类目标） */
-    all("[data-drop]", box).forEach(function (el) {
-      var tag = el.getAttribute("data-drop");
-      el.addEventListener("dragover", function (e) {
-        if (ST.dragId == null) return;
-        e.preventDefault();
-        el.classList.add("is-drop");
-      });
-      el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
-      el.addEventListener("drop", function (e) {
-        e.preventDefault();
-        el.classList.remove("is-drop");
-        if (ST.dragId == null) return;
-        if (tag === "__all__") return;
-        moveTo(ST.dragId, tag === "__none__" ? null : Number(tag));
-      });
+    all("[data-drop]", box).forEach(function (el) { bindDropTarget(el, catDropValue(el)); });
+  }
+
+  /* 统一的拖放目标绑定：任何承载"一个分类"的元素都能接图。
+     已用于 ①左栏分类 ②顶部筛选 chip ③平铺的类别组与类别框 ④未分类折叠区。 */
+  function bindDropTarget(el, resolveCid) {
+    if (!el || el.dataset.dropBound === "1") return;
+    el.dataset.dropBound = "1";
+    el.addEventListener("dragover", function (e) {
+      if (ST.dragId == null) return;
+      e.preventDefault();
+      if (e.dataTransfer) { try { e.dataTransfer.dropEffect = "move"; } catch (x) { } }
+      el.classList.add("is-drop");
     });
+    el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
+    el.addEventListener("drop", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove("is-drop");
+      if (ST.dragId == null) return;
+      var id = ST.dragId;
+      if (resolveCid() === "__skip__") { clearDragState(id); return; }
+      var cid = resolveCid();
+      clearDragState(id);        /* 先收状态：drop 之后不一定有 dragend */
+      moveTo(id, cid);
+    });
+  }
+
+  /* 拖拽收尾：清 id、清抽屉标记、清所有高亮。
+     drop 之后浏览器不保证一定发 dragend（例如拖到窗口外），所以两端都要收。 */
+  function clearDragState(id) {
+    if (id != null) {
+      var doc0 = document;
+      var c0 = all('.fv-d-cell[data-id="' + id + '"]', doc0)[0];
+      if (c0) {
+        c0.classList.remove("is-dragging");
+        c0.setAttribute("data-dragged", "1");
+        setTimeout(function () { c0.removeAttribute("data-dragged"); }, 260);
+      }
+    }
+    ST.dragId = null;
+    var d = $("#fv-drawer");
+    if (d) {
+      d.classList.remove("is-dragging");
+      all(".is-drop", d).forEach(function (x) { x.classList.remove("is-drop"); });
+    }
+    var doc = (d && d.ownerDocument) || document;
+    all(".is-drop", doc).forEach(function (x) { x.classList.remove("is-drop"); });
+  }
+
+  /* 把 data-drop / data-fv-f / data-flat 上的值翻译成：分类 id / null / "__skip__" */
+  function catDropValue(el) {
+    return function () {
+      var tag = el.getAttribute("data-drop");
+      if (tag != null) {
+        if (tag === "__all__") return "__skip__";
+        if (tag === "__none__") return null;
+        return Number(tag);
+      }
+      var f = el.getAttribute("data-fv-f");
+      if (f != null) {
+        if (f === "all") return "__skip__";
+        if (f === "none") return null;
+        return Number(f);
+      }
+      var fl = el.getAttribute("data-flat");
+      if (fl != null) return Number(fl);
+      if (el.getAttribute("data-flat-none") != null) return null;
+      return "__skip__";
+    };
   }
 
   function cellHtml(it, opts) {
@@ -313,10 +369,16 @@
         c.addEventListener("dragend", function () {
           c.classList.remove("is-dragging");
           ST.dragId = null;
-          setTimeout(function () { c.removeAttribute("data-dragged"); }, 0);
+          var d = $("#fv-drawer");
+          if (d) d.classList.remove("is-dragging");
+          /* 拖完必定会跟一个 click（松手处），在 260ms 内吞掉，避免顺手打开原图 */
+          c.setAttribute("data-dragged", "1");
+          setTimeout(function () { c.removeAttribute("data-dragged"); }, 260);
         });
-        /* 刚拖完不要当成"点图看原图" */
-        c.addEventListener("drop", function () { c.setAttribute("data-dragged", "1"); });
+        c.addEventListener("dragstart", function () {
+          var d = $("#fv-drawer");
+          if (d) d.classList.add("is-dragging");
+        });
       }
     });
   }
@@ -342,7 +404,9 @@
       return;
     }
 
-    var canDrag = ST.view === "full";
+    /* 拖拽在抽屉形态也开放：放置目标是顶部筛选 chip，
+       全屏形态另有左栏分类与平铺组可接。这样"来回拖"不必先进全屏。 */
+    var canDrag = true;
     var h = '';
     groupByPeriod(list).forEach(function (g) {
       h += '<section class="fv-d-week">';
@@ -356,11 +420,11 @@
           h += '<div class="fv-d-flat-none">本批没有已分类的图，平铺无可展示（未分类的图不参与平铺）。</div>';
         }
         fg.groups.forEach(function (grp) {
-          h += '<div class="fv-d-flat" data-flat="' + grp.cid + '">';
+          h += '<div class="fv-d-flat is-droppable" data-flat="' + grp.cid + '">';
           h += '<div class="fv-d-flat-cells">';
           grp.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag }); });
           h += '</div>';
-          h += '<div class="fv-d-flat-band" style="border-color:' + esc(grp.color)
+          h += '<div class="fv-d-flat-band is-droppable" data-flat="' + grp.cid + '" style="border-color:' + esc(grp.color)
             + ';background:' + esc(grp.color) + '1f">'
             + '<span class="fv-d-flat-dot" style="background:' + esc(grp.color) + '"></span>'
             + '<span class="fv-d-flat-name">' + esc(grp.name) + '</span>'
@@ -369,7 +433,7 @@
           h += '</div>';
         });
         if (fg.others.length) {
-          h += '<details class="fv-d-flat-others"><summary>未分类 ' + fg.others.length + ' 张（不参与平铺）</summary>'
+          h += '<details class="fv-d-flat-others is-droppable" data-flat-none="1"><summary>未分类 ' + fg.others.length + ' 张（不参与平铺）</summary>'
             + '<div class="fv-d-grid">';
           fg.others.forEach(function (it) { h += cellHtml(it, { drag: canDrag }); });
           h += '</div></details>';
@@ -383,6 +447,9 @@
     });
     box.innerHTML = h;
     bindCells();
+    all(".fv-d-flat, .fv-d-flat-band, [data-flat-none]", box).forEach(function (el) {
+      bindDropTarget(el, catDropValue(el));
+    });
   }
 
   function renderCount() {
@@ -436,6 +503,14 @@
   async function moveTo(id, cid) {
     var SB = SBX();
     if (!SB || !SB.moveFavItems || !id) return false;
+    var cur = ST.items.filter(function (x) { return Number(x.id) === Number(id); })[0];
+    var target = (cid == null) ? null : Number(cid);
+    /* 拖回原处不发请求：同类互拖（尤其平铺里拖到自己的组）不应产生写库 */
+    if (cur && ((cur.category_id == null ? null : Number(cur.category_id)) === target)) {
+      var same = catOf(target);
+      flashSaved(target == null ? "已经是未分类" : "已在「" + ((same && same.name) || "") + "」里");
+      return true;
+    }
     try {
       await SB.moveFavItems([id], cid == null ? null : Number(cid));
       /* 就地更新，不整表重建：保持滚动位置与筛选态 */

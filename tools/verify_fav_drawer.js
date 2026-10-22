@@ -32,7 +32,7 @@ const ok = (name, cond, extra) => {
   else { fail++; failures.push(name + (extra ? "  [" + extra + "]" : "")); console.log("  \u2717 " + name + (extra ? "  [" + extra + "]" : "")); }
 };
 const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
-const all2 = (doc, sel) => Array.prototype.slice.call(doc.querySelectorAll(sel));
+const all2 = (doc, sel) => (doc ? Array.prototype.slice.call(doc.querySelectorAll(sel)) : []);
 
 const DRAWER = read("js/favdrawer.js");
 const CSS = read("css/style.css");
@@ -510,6 +510,140 @@ function bootDom(sb) {
     ok("拖到「全部」不触发写库（不是归类目标）", moved.length === 0);
   }
 
+  /* ========== ⑪-b 抽屉形态也能拖（不必先进全屏）与多处放置目标 ========== */
+  {
+    const moved = [];
+    const sb = makeSB({
+      cats: [{ id: 1, name: "印花T恤" }, { id: 2, name: "连帽卫衣" }],
+      items: [
+        { id: 21, period_label: "W42", image_url: "u/a.jpg", title: "A", category_id: 1 },
+        { id: 22, period_label: "W42", image_url: "u/b.jpg", title: "B", category_id: 2 },
+        { id: 23, period_label: "W42", image_url: "u/c.jpg", title: "C", category_id: null },
+      ],
+    });
+    sb.moveFavItems = async (ids, cid) => { moved.push([ids.slice(), cid]); };
+    const { w } = bootDom(sb);
+    await tick(10);
+    await w.FavDrawer.open();
+    await tick(5);
+    const doc = w.document;
+    const dt = { data: {}, setData(k, v) { this.data[k] = v; }, getData(k) { return this.data[k]; }, effectAllowed: "" };
+    const fire = (el, type, cancelable) => el.dispatchEvent(Object.assign(new w.Event(type, { bubbles: true, cancelable: !!cancelable }), { dataTransfer: dt }));
+
+    /* ① 抽屉（非全屏）里图就能拖：draggable 与 data-id 都在 */
+    ok("抽屉形态（非全屏）图片也可拖拽，不必先进全屏",
+      w.FavDrawer.state().view !== "full"
+      && doc.querySelectorAll('.fv-d-cell[draggable="true"][data-id]').length === 3);
+
+    /* ② 拖动时抽屉进入 is-dragging，可接收的容器给出提示 */
+    const cell = doc.querySelector('.fv-d-cell[data-id="21"]');
+    fire(cell, "dragstart");
+    ok("开始拖拽时抽屉标记 is-dragging（容器提示可见）",
+      doc.getElementById("fv-drawer").classList.contains("is-dragging"));
+
+    /* ③ 抽屉形态：拖到顶部「连帽卫衣」chip 即可归类 */
+    const chip = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="2"]');
+    ok("顶部筛选 chip 是合法放置目标", !!chip);
+    fire(chip, "dragover", true);
+    ok("悬停 chip 时高亮（is-drop）", chip.classList.contains("is-drop"));
+    fire(chip, "drop", true);
+    await tick(20);
+    ok("拖到分类 chip 上真的写库（抽屉形态）",
+      moved.length === 1 && moved[0][0][0] === 21 && moved[0][1] === 2, JSON.stringify(moved));
+    ok("拖拽结束后清除 is-dragging",
+      !doc.getElementById("fv-drawer").classList.contains("is-dragging"));
+    ok("拖拽结束后 chip 高亮被清掉", !chip.classList.contains("is-drop"));
+
+    /* ④ 拖到「全部」chip 不是归类目标 */
+    moved.length = 0;
+    const chipAll = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="all"]');
+    fire(doc.querySelector('.fv-d-cell[data-id="22"]'), "dragstart");
+    fire(chipAll, "drop", true);
+    await tick(20);
+    ok("拖到「全部」chip 不写库", moved.length === 0);
+
+    /* ⑤ 拖到「未分类」chip = 移出分类 */
+    moved.length = 0;
+    const chipNone = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="none"]');
+    fire(doc.querySelector('.fv-d-cell[data-id="22"]'), "dragstart");
+    fire(chipNone, "drop", true);
+    await tick(20);
+    ok("拖到「未分类」chip = 移出分类（cid 为 null）",
+      moved.length === 1 && moved[0][1] === null, JSON.stringify(moved));
+
+    /* ⑥ 平铺形态：拖到别的类别组即可换组（并且能来回拖） */
+    moved.length = 0;
+    fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+    fire(doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="1"]'), "drop", true);
+    await tick(20);
+    moved.length = 0;
+    fire(doc.querySelector('.fv-d-cell[data-id="22"]'), "dragstart");
+    fire(doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="2"]'), "drop", true);
+    await tick(20);
+    ok("先备好两个分类各一张图", moved.length === 1 && moved[0][1] === 2);
+
+    moved.length = 0;
+    w.FavDrawer.setFlat(true);
+    await tick(10);
+    const grpA = doc.querySelector('.fv-d-flat[data-flat="1"]');
+    const grpB = doc.querySelector('.fv-d-flat[data-flat="2"]');
+    ok("平铺里每个类别组都是放置目标", !!grpA && !!grpB);
+    ok("平铺时图仍可拖拽", doc.querySelectorAll('.fv-d-cell[draggable="true"]').length > 0);
+
+    fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+    fire(grpB, "dragover", true);
+    ok("悬停类别组时该组高亮", grpB.classList.contains("is-drop"));
+    fire(grpB, "drop", true);
+    await tick(20);
+    ok("平铺里拖到另一组即改分类", moved.length === 1 && moved[0][1] === 2, JSON.stringify(moved));
+    ok("改完立刻落到新组（就地更新，不整表重读）",
+      w.FavDrawer.state().items.filter((x) => Number(x.id) === 21)[0].category_id === 2);
+
+    /* ⑦ 反方向拖回，证明可以来回拖 */
+    moved.length = 0;
+    fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+    fire(grpA, "drop", true);
+    await tick(20);
+    ok("反方向拖回原分类也成立（可以来回拖）",
+      moved.length === 1 && moved[0][1] === 1, JSON.stringify(moved));
+
+    /* ⑧ 拖到类别框（band）同样生效 */
+    moved.length = 0;
+    const bandB = doc.querySelector('.fv-d-flat-band[data-flat="2"]');
+    ok("类别框本身也是放置目标", !!bandB);
+    if (bandB) {
+      fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+      fire(bandB, "drop", true);
+      await tick(20);
+      ok("拖到类别框上也能归类（框是组的一部分）",
+        moved.length === 1 && moved[0][1] === 2, JSON.stringify(moved));
+    } else { ok("拖到类别框上也能归类（框是组的一部分）", false, "未找到 band"); }
+
+    /* ⑨ 拖回它已在的分类不写库（同类互拖零请求） */
+    moved.length = 0;
+    fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+    fire(doc.querySelector('.fv-d-flat[data-flat="2"]'), "drop", true);
+    await tick(20);
+    ok("拖回它已在的分类不发请求（同类互拖零写库）", moved.length === 0, JSON.stringify(moved));
+
+    /* ⑩ 未分类折叠区也能接图 */
+    moved.length = 0;
+    const others = doc.querySelector('[data-flat-none]');
+    if (others) {
+      fire(doc.querySelector('.fv-d-cell[data-id="21"]'), "dragstart");
+      fire(others, "drop", true);
+      await tick(20);
+      ok("拖到未分类折叠区 = 移出分类", moved.length === 1 && moved[0][1] === null, JSON.stringify(moved));
+    } else { ok("拖到未分类折叠区 = 移出分类", false, "未找到未分类区"); }
+
+    /* ⑪ 拖完紧跟的 click 不得当成"打开原图" */
+    const c2 = doc.querySelector('.fv-d-cell[data-id="23"]') || doc.querySelector('.fv-d-cell');
+    fire(c2, "dragstart");
+    fire(doc.querySelector('.fv-d-flat[data-flat="1"]') || grpA, "drop", true);
+    await tick(5);
+    ok("拖拽结束后短时间内点击被吞掉（不会误开原图）", c2.getAttribute("data-dragged") === "1");
+  }
+
   /* ========== ⑫ 平铺分组逻辑（纯函数，边界） ========== */
   {
     const { w } = bootDom(makeSB({ items: [] }));
@@ -572,6 +706,39 @@ function bootDom(sb) {
       const fullSeg = (css3.match(/\.fv-drawer\.is-full\s*\{[^}]*\}/) || [""])[0];
       ok("[反向] 全屏不铺满后应被识别（width 不是 100vw）", /width:\s*100vw/.test(fullSeg) === false, fullSeg.slice(0, 40));
 
+      /* 3c) 跨分类拖拽：只留全屏可拖 + 去掉 chip/组 的放置目标 */
+      backup.js3 = backup.js2;   /* 必须用最初备份：此刻文件已被上面破坏 */
+      const NO_DRAG = backup.js3
+        .replace("var canDrag = true;", 'var canDrag = ST.view === "full";')
+        .replace('bindDropTarget(b, catDropValue(b));   /* 直接把图拖到分类 chip 上即可归类 */', "")
+        .replace('all(".fv-d-flat, .fv-d-flat-band, [data-flat-none]", box).forEach(function (el) {\n      bindDropTarget(el, catDropValue(el));\n    });', "");
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), NO_DRAG);
+      const nd = fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8");
+      ok("[反向] 限定全屏才可拖后应查不到 canDrag = true",
+        /var canDrag = true;/.test(nd) === false);
+      ok("[反向] 去掉 chip 放置目标后应查不到对应绑定",
+        /bindDropTarget\(b, catDropValue\(b\)\)/.test(nd) === false);
+      ok("[反向] 去掉平铺组放置目标后应查不到对应绑定",
+        /all\("\.fv-d-flat, \.fv-d-flat-band, \[data-flat-none\]"/.test(nd) === false);
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js3);
+
+      /* 3d) 类别框去掉 data-flat（拖到框上就没反应了） */
+      backup.js4 = backup.js2;
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"),
+        backup.js4.replace('class="fv-d-flat-band is-droppable" data-flat="\' + grp.cid + \'"', 'class="fv-d-flat-band is-droppable"'));
+      const nb = fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8");
+      ok("[反向] 类别框去掉 data-flat 后应无法被识别为归类目标",
+        /fv-d-flat-band is-droppable" data-flat=/.test(nb) === false);
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js4);
+
+      /* 3e) 取消"拖回原分类不写库"保护 */
+      backup.js5 = backup.js2;
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"),
+        backup.js5.replace(/if \(cur && \(\(cur\.category_id == null \? null : Number\(cur\.category_id\)\) === target\)\) \{[\s\S]*?return true;\n    \}/, ""));
+      const ns = fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8");
+      ok("[反向] 去掉同类保护后应查不到该分支", /=== target\)\) \{/.test(ns) === false);
+      fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js5);
+
       /* 3b) 去掉个人专区豁免 */
       backup.common = COMMON;
       fs.writeFileSync(path.join(ROOT, "js/common.js"),
@@ -584,12 +751,18 @@ function bootDom(sb) {
       if (backup.rank) fs.writeFileSync(path.join(ROOT, "js/rank.js"), backup.rank);
       if (backup.common) fs.writeFileSync(path.join(ROOT, "js/common.js"), backup.common);
       if (backup.js2) fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js2);
+      if (backup.js3) fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js3);
+      if (backup.js4) fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js4);
+      if (backup.js5) fs.writeFileSync(path.join(ROOT, "js/favdrawer.js"), backup.js5);
     }
     ok("[反向] 已还原全部临时改动", (function () {
       return fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8") === backup.css
         && fs.readFileSync(path.join(ROOT, "js/rank.js"), "utf8") === backup.rank
         && fs.readFileSync(path.join(ROOT, "js/common.js"), "utf8") === backup.common
-        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js2;
+        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js2
+        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js3
+        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js4
+        && fs.readFileSync(path.join(ROOT, "js/favdrawer.js"), "utf8") === backup.js5;
     })());
   }
 

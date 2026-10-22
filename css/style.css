@@ -3906,7 +3906,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   趋势上升榜 · 右侧「我的收藏」抽屉（20261021W）
+   趋势上升榜 · 右侧「我的收藏」抽屉（20261021X）
    —— 为什么是 fixed 浮层：多列对比池是 grid 布局，任何占位的侧栏都会压缩列宽、
       少掉一列，所以抽屉必须脱离文档流，只浮在右侧。
    —— 为什么不加全屏遮罩：遮罩会挡住对比池的点击，等于"影响了对比池"。
@@ -4035,7 +4035,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 /* ============================================================================
-   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021W）
+   我的收藏抽屉 · 全屏工作台 / 分类栏 / 平铺（20261021X）
    —— 全屏 = 铺满视口，左栏分类 + 右栏内容；Esc 分级退出（全屏 → 抽屉 → 关闭）
    —— 平铺 = 同类相邻 + 每组下方一条框横跨该组；未分类不进平铺
    ========================================================================== */
@@ -4148,6 +4148,17 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-d-flat-others > summary::before { content: "▸ "; }
 .fv-d-flat-others[open] > summary::before { content: "▾ "; }
 .fv-d-flat-others .fv-d-grid { margin-top: 8px; }
+
+/* 拖拽归类：可接收的容器在拖动时给出可见提示，悬停目标再高亮 */
+.fv-drawer.is-dragging .is-droppable { outline: 1px dashed rgba(200,164,92,.45); outline-offset: 2px; }
+.fv-drawer.is-dragging .fv-d-flat-others { outline: 1px dashed rgba(200,164,92,.45); outline-offset: 2px; }
+.fv-d-flat.is-drop, .fv-d-flat-band.is-drop, .fv-d-flat-others.is-drop {
+  background: rgba(200,164,92,.12);
+  outline: 2px dashed var(--gold); outline-offset: 2px;
+}
+.fv-d-flat.is-drop .fv-d-flat-band { border-color: var(--gold) !important; }
+/* 拖到筛选 chip 上也高亮（抽屉形态唯一的放置目标） */
+.fv-d-chip.is-drop { border-color: var(--gold); border-style: dashed; background: rgba(200,164,92,.18); }
 
 /* 操作反馈（归类成功等） */
 .fv-d-save {
