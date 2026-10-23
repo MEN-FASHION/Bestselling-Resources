@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261023C">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261023C">
+<link rel="stylesheet" href="css/style.css?v=20261023D">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261023D">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -114,6 +114,7 @@
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
+        <a class="nav-item" data-target="rank-tag-card">榜单打标</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
           <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
           <a class="nav-item" data-target="backup-card" data-super="1">版本恢复</a>
@@ -959,6 +960,78 @@
         </section>
       </div>
 
+      <!-- ================= 榜单打标（趋势上升榜 · 独立作业台） =================
+           与「图片管理 → 智能打标」完全独立：
+             * 数据源不同 —— 这里取的是 rank_items 里的榜单图（外链），不读图库；
+             * 存储不同 —— 标签单独写 rank_image_tags，不写 images、不进图片管理列表；
+             * 权限口径不同 —— 与「趋势上升榜」一致，任一管理员可用。
+           周报（生成周对比分析报告）会把这里的标签与图库标签合并使用。 -->
+      <div class="panel-card hidden" id="rank-tag-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>趋势上升榜 · 榜单打标作业台</h3>
+            <p class="hint">这里只给<b>榜单图</b>打标，与「图片管理 → 智能打标」<b>完全独立</b>：本页标签单独存一张表，不写图库、不占存储、不出现在图片管理列表里。打完的标签会出现在前台「生成周对比分析报告」的六维页（款式 / 图案印花 → 二次工艺 / 场景 / 主图视觉 / 模特肤色）。</p>
+          </div>
+          <div class="rkadm-head-act">
+            <span id="rt-batch" class="rt-batch">批次 —</span>
+            <button id="rt-refresh" class="btn-ghost" type="button">刷新队列</button>
+          </div>
+        </div>
+
+        <div id="rt-warn" class="rt-warn hidden"></div>
+
+        <section class="rt-filters">
+          <label>类目<select id="rt-f-cat"><option value="">全部</option></select></label>
+          <label>站点<select id="rt-f-site"><option value="">全部</option></select></label>
+          <label>期次<select id="rt-f-period"><option value="">全部</option></select></label>
+          <label>队列<select id="rt-f-scope">
+            <option value="all">全部图</option>
+            <option value="undone">只看未打标</option>
+            <option value="done">只看已打标</option>
+          </select></label>
+          <button id="rt-load" class="btn-primary small" type="button">载入队列</button>
+          <span id="rt-queue-count" class="hint-inline"></span>
+        </section>
+
+        <section class="rt-progress">
+          <div class="rt-progress-top">
+            <b id="rt-pg-count">尚未载入</b>
+            <div class="rt-bar"><i id="rt-pg-bar" style="width:0%"></i></div>
+          </div>
+          <div id="rt-pg-dims" class="rt-pg-dims"></div>
+        </section>
+
+        <div class="rt-work">
+          <div class="rt-stage">
+            <div class="rt-stage-head">
+              <span id="rt-idx" class="rt-idx">—</span>
+              <span id="rt-meta" class="rt-meta"></span>
+            </div>
+            <div class="rt-photo"><img id="rt-photo" alt="榜单图"><div id="rt-photo-empty" class="rt-photo-empty">选择筛选条件后点「载入队列」</div></div>
+            <div class="rt-stage-act">
+              <button id="rt-prev" class="btn-ghost" type="button">← 上一张</button>
+              <button id="rt-next" class="btn-primary" type="button">下一张 →</button>
+              <button id="rt-clear" class="btn-ghost" type="button">清空本张</button>
+              <a id="rt-open-src" class="btn-ghost rt-open-src" href="#" target="_blank" rel="noopener">看原图</a>
+            </div>
+            <div class="rt-keys">快捷键：← → 换图 · <b>1–9</b> 给当前维度打第 n 个标签 · <b>Tab</b> 切维度 · <b>空格</b> 跳过（不写标签）</div>
+          </div>
+
+          <div id="rt-dims" class="rt-dims"></div>
+        </div>
+
+        <section class="rt-queue-wrap">
+          <h4>队列 <span class="rkadm-tip">点缩略图跳到该图 · 右下角绿点 = 已打标</span></h4>
+          <div id="rt-queue" class="rt-queue"></div>
+        </section>
+
+        <section class="rt-bulk">
+          <button id="rt-apply" class="btn-primary" type="button">套用到未打标的图</button>
+          <span class="hint">把当前这张图的标签，一次性套给队列里<b>还没打标</b>的图（同款主图多半是同一批风格）。套用后可一键撤销。</span>
+          <button id="rt-undo-bulk" class="btn-ghost hidden" type="button">撤销上次批量套用</button>
+        </section>
+      </div>
+
       <div class="panel-card hidden" id="insight-card">
         <h2>⑬ 用户动向 <span class="hint-inline">（超级管理员 · 前台访客 + 后台管理员都在干什么）</span></h2>
         <hr class="tag-sub-hr">
@@ -1244,29 +1317,30 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261023C"></script>
-  <script src="vendor/quill.js?v=20261023C"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261023C"></script>
-  <script src="vendor/qrcode.min.js?v=20261023C"></script>
-  <script src="js/config.js?v=20261023C"></script>
-  <script src="js/supabase.js?v=20261023C"></script>
-  <script src="js/track-menu.js?v=20261023C"></script>
+  <script src="vendor/supabase.js?v=20261023D"></script>
+  <script src="vendor/quill.js?v=20261023D"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261023D"></script>
+  <script src="vendor/qrcode.min.js?v=20261023D"></script>
+  <script src="js/config.js?v=20261023D"></script>
+  <script src="js/supabase.js?v=20261023D"></script>
+  <script src="js/track-menu.js?v=20261023D"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261023C"></script>
-  <script src="js/admin.js?v=20261023C"></script>
-  <script src="js/admin-images.js?v=20261023C"></script>
-  <script src="js/admin-smart.js?v=20261023C"></script>
-  <script src="js/admin-trend.js?v=20261023C"></script>
-  <script src="js/admin-notice.js?v=20261023C"></script>
-  <script src="js/marketing-data.js?v=20261023C"></script>
-  <script src="js/admin-festival.js?v=20261023C"></script>
-  <script src="js/admin-tasks.js?v=20261023C"></script>
-  <script src="js/admin-bestseller.js?v=20261023C"></script>
-  <script src="js/admin-perm.js?v=20261023C"></script>
-  <script src="js/admin-pool.js?v=20261023C"></script>
-  <script src="js/admin-rank.js?v=20261023C"></script>
-  <script src="js/admin-insight.js?v=20261023C"></script>
-  <script src="js/admin-backup.js?v=20261023C"></script>
+  <script src="js/admin-dialog.js?v=20261023D"></script>
+  <script src="js/admin.js?v=20261023D"></script>
+  <script src="js/admin-images.js?v=20261023D"></script>
+  <script src="js/admin-smart.js?v=20261023D"></script>
+  <script src="js/admin-trend.js?v=20261023D"></script>
+  <script src="js/admin-notice.js?v=20261023D"></script>
+  <script src="js/marketing-data.js?v=20261023D"></script>
+  <script src="js/admin-festival.js?v=20261023D"></script>
+  <script src="js/admin-tasks.js?v=20261023D"></script>
+  <script src="js/admin-bestseller.js?v=20261023D"></script>
+  <script src="js/admin-perm.js?v=20261023D"></script>
+  <script src="js/admin-pool.js?v=20261023D"></script>
+  <script src="js/admin-rank.js?v=20261023D"></script>
+  <script src="js/admin-ranktag.js?v=20261023D"></script>
+  <script src="js/admin-insight.js?v=20261023D"></script>
+  <script src="js/admin-backup.js?v=20261023D"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

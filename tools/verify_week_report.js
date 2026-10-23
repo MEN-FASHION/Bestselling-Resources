@@ -271,7 +271,7 @@ ok("图片对照墙页保留", /图片对照墙/.test(allText));
   ok("筛选栏加了「生成周对比分析报告」按钮", /id="rk-week-report"/.test(rank));
   ok("按钮只在纵向·时间对比且 ≥2 周时可用", /MODE === "v" && periods\.length >= 2/.test(rank));
   ok("点击时再次校验模式与期次", /MODE !== "v" \|\| activePeriods\(\)\.length < 2/.test(rank));
-  ok("报告走打标取数（按图片地址批量查）", /listImageTags\(urls\)/.test(rank));
+  ok("报告走打标取数（按图片地址批量查、并合并榜单标签）", /listImageTagsForReport|listImageTags\(urls\)/.test(rank) && /fn\.call\(SBX, urls\)/.test(rank));
   ok("报告入口与导出图片同一权限口径（超管才显示）", /eyeIsSuper\(\)\.then\(function \(ok\) \{ if \(ok\) rep\.style\.display/.test(rank));
   ok("生成过程中按钮文案显示进度", /onProgress: function \(t\) \{ rep\.textContent = t; \}/.test(rank));
   const css = read("css/style.css");
@@ -282,8 +282,9 @@ ok("图片对照墙页保留", /图片对照墙/.test(allText));
   ok("报告脚本在 rank.js 之前加载", html.indexOf("js/weekreport.js") < html.indexOf("js/rank.js"));
   const sb = read("js/supabase.js");
   ok("数据层提供按地址批量取打标维度的方法", /async listImageTags\(urls\)/.test(sb));
-  ok("取的是分析需要的六个维度字段", /image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags/.test(sb));
-  ok("缺列时退化为只取类目、不让整份报告失败", /select\("image_url,category"\)/.test(sb));
+  ok("按图库真实列名 url 查询（不是 image_url）", /readBy\("url", "url," \+ full\)/.test(sb));
+  ok("取的是分析需要的六个维度字段", /FIELDS = \["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"\]/.test(sb));
+  ok("缺列时退化为只取类目、不让整份报告失败", /readBy\("url", "url,category"\)/.test(sb));
 }
 
 console.log("\n通过 " + pass + " 项，失败 " + fail + " 项");

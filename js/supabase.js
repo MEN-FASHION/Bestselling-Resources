@@ -2332,22 +2332,160 @@ async removeTrendRecord(id) {
     /* 按图片地址批量取「打标维度」：周对比分析报告要用它们做维度差异统计。
        只取分析需要的几列；表里没有的列不会出现在返回行里（报告会按"未打标"处理）。
        分片查询：地址列表可能上千条，一次性 in() 会超出请求长度。 */
-    async listImageTags(urls) {
+        async listImageTags(urls) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
       const out = {};
-      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags";
+      if (!list.length) return out;
+      /* 列名要点：图库的外链列叫 url（setup.sql: alter table images add column url text），
+         并没有 image_url 列。早期这里按 image_url 查询 → Postgres 直接报「列不存在」→
+         整条查询抛错 → 六维永远为空（而且看起来像"没人打标"）。
+         现在先按 url 查，失败再回退 image_url，兼容手工加过该列的老库。 */
+      const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"];
+      const readBy = async (col, cols) => {
+        const res = {};
+        for (let i = 0; i < list.length; i += 80) {
+          const part = list.slice(i, i + 80);
+          const { data, error } = await client.from("images").select(cols).in(col, part);
+          if (error) return null;
+          (data || []).forEach((r) => { res[r[col]] = r; });
+        }
+        return res;
+      };
+      const full = FIELDS.join(",");
+      let got = await readBy("url", "url," + full);
+      if (!got) got = await readBy("image_url", "image_url," + full);
+      if (!got) {
+        /* 连视觉维度列都没有（很老的库）：退化为只取类目，至少能出类目结构一页，不让整份报告失败 */
+        let cat = await readBy("url", "url,category");
+        if (!cat) cat = await readBy("image_url", "image_url,category");
+        if (!cat) throw new Error("读取图片标签失败");
+        Object.assign(out, cat);
+        return out;
+      }
+      Object.assign(out, got);
+      return out;
+    },
+
+    /* ============================================================
+     * 趋势上升榜 · 榜单图独立打标（后台「榜单打标」作业台）
+     * ------------------------------------------------------------
+     * 为什么单独存：
+     *   1) 榜单图只存在于 rank_items（外链地址），图库 images 里没有这些记录；
+     *   2) 把几千张榜单外链图塞进图库，会污染「图片管理」列表与数据看板；
+     *   3) images 的写策略绑死了「视觉专区 + 类目授权 + 只能改自己上传的」，
+     *      与榜单打标的权限口径不同，硬写会出现「图能看、标存不进去」。
+     * 所以标签单独放 rank_image_tags（image_url 唯一），与「图片管理 → 智能打标」
+     * 完全独立、互不影响；周报按地址把两张表的结果合并（榜单表优先）。
+     * ============================================================ */
+    async rankTagReady() {
+      const { error } = await client.from("rank_image_tags").select("image_url", { head: true, count: "exact" }).limit(1);
+      return !error;
+    },
+    async listRankTagRows(urls) {
+      const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
+      const out = {};
+      if (!list.length) return out;
+      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,batch_id,updated_at";
       for (let i = 0; i < list.length; i += 80) {
         const part = list.slice(i, i + 80);
-        const { data, error } = await client.from("images").select(COLS).in("image_url", part);
-        if (error) {
-          /* 缺列（老库）时退化为只取类目，至少能出类目结构一页，不让整份报告失败 */
-          const r2 = await client.from("images").select("image_url,category").in("image_url", part);
-          if (r2.error) throw new Error(r2.error.message || "读取图片标签失败");
-          (r2.data || []).forEach((r) => { out[r.image_url] = r; });
-          continue;
-        }
+        const { data, error } = await client.from("rank_image_tags").select(COLS).in("image_url", part);
+        if (error) throw new Error(error.message || "读取榜单标签失败");
         (data || []).forEach((r) => { out[r.image_url] = r; });
       }
+      return out;
+    },
+    async saveRankTagRows(rows) {
+      const list = (rows || []).filter((r) => r && r.image_url);
+      if (!list.length) return 0;
+      const now = new Date().toISOString();
+      let n = 0;
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100).map((r) => ({
+          image_url: r.image_url,
+          category: r.category || "",
+          style_tags: r.style_tags || [],
+          element_tags: r.element_tags || [],
+          scene_tags: r.scene_tags || [],
+          shoot_tags: r.shoot_tags || [],
+          skin_tags: r.skin_tags || [],
+          tags: r.tags || [],
+          batch_id: r.batch_id || null,
+          updated_by: r.updated_by || null,
+          updated_at: now,
+        }));
+        const { error } = await client.from("rank_image_tags")
+          .upsert(chunk, { onConflict: "image_url", ignoreDuplicates: false });
+        if (error) throw new Error(error.message || "保存榜单标签失败");
+        n += chunk.length;
+      }
+      return n;
+    },
+    /* 按批次回滚：只清空该批次写过的行，不碰其它批次与人工单独改的行（batch_id 为空的保持原样） */
+    async clearRankTagBatch(batchId) {
+      const b = String(batchId || "").trim();
+      if (!b) return 0;
+      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], batch_id: null, updated_at: new Date().toISOString() };
+      const { error } = await client.from("rank_image_tags").update(empty).eq("batch_id", b);
+      if (error) throw new Error(error.message || "回滚失败");
+      return true;
+    },
+    /* 打标队列：榜单图（按地址去重），带出期次/站点/类目/叶子类目/位次
+       filter: { category, period, site, limit } —— 不传即全部 */
+    async listRankTagQueue(filter) {
+      const f = filter || {};
+      let q = client.from("rank_items").select("id,period_type,period_label,category,site,leaf_category,image_url,rank_ratio,rank_abs");
+      if (f.category) q = q.eq("category", f.category);
+      if (f.period) q = q.eq("period_label", f.period);
+      if (f.site) q = q.eq("site", f.site);
+      const { data, error } = await q.order("rank_ratio", { ascending: true }).limit(f.limit || 3000);
+      if (error) throw new Error(error.message || "读取榜单图失败");
+      const map = new Map();
+      (data || []).forEach((r) => {
+        const u = String(r.image_url || "").trim();
+        if (!u) return;
+        const hit = map.get(u);
+        if (hit) { hit.periods.push(r.period_label); return; }
+        map.set(u, {
+          image_url: u,
+          category: r.category || "",
+          leaf_category: r.leaf_category || "",
+          site: r.site || "",
+          period_label: r.period_label || "",
+          periods: [r.period_label || ""],
+          rank_ratio: r.rank_ratio,
+          rank_abs: r.rank_abs,
+        });
+      });
+      return [...map.values()];
+    },
+    /* 周对比报告专用：图库标签 + 榜单独立标签合并。
+       规则：逐维度取"有值的那一边"，榜单表优先（它才是本面板打的标）；
+       两边都有时用榜单表的，避免同一张图在两处被打成不同标签时口径打架。 */
+    async listImageTagsForReport(urls) {
+      const list = Array.isArray(urls) ? urls : [];
+      let base = {};
+      try { base = await this.listImageTags(list); } catch (e) { base = {}; }
+      let rank = {};
+      try { rank = await this.listRankTagRows(list); } catch (e) { rank = {}; }
+      const out = Object.assign({}, base);
+      Object.keys(rank).forEach((u) => {
+        const r = rank[u] || {};
+        const b = base[u] || {};
+        const pick = (k) => {
+          const rv = r[k];
+          if (Array.isArray(rv) ? rv.length : !!rv) return rv;
+          return b[k] !== undefined ? b[k] : (Array.isArray(rv) ? [] : "");
+        };
+        out[u] = {
+          image_url: u,
+          category: (r.category || b.category || ""),
+          style_tags: pick("style_tags"),
+          element_tags: pick("element_tags"),
+          scene_tags: pick("scene_tags"),
+          shoot_tags: pick("shoot_tags"),
+          skin_tags: pick("skin_tags"),
+        };
+      });
       return out;
     },
 
@@ -2457,6 +2595,271 @@ async removeTrendRecord(id) {
       }
       this._lastBulkFailed = failedIds.size;
       return ok;
+    },
+
+    /* ---------- 收藏错误的统一翻译 ----------
+     * 建表脚本没执行、或执行了但接口缓存没刷新，接口会返回 404 /
+     * "Could not find the table ... in the schema cache"。
+     * 这类原始报错对使用者毫无意义，统一翻译成「该执行哪个脚本」。 */
+    _favIsMissingTable(err) {
+      // 状态码有的在 code、有的在 status（Supabase 两种都出现过），都要看
+      const s = String((err && (err.message || err.details || err.hint)) || "")
+        + " " + String((err && err.code) || "")
+        + " " + String((err && err.status) || "");
+      return /PGRST20[0-9]|schema cache|does not exist|relation .* does not exist|\b404\b|not found/i.test(s);
+    },
+    favErrMsg(err) {
+      if (this._favIsMissingTable(err)) {
+        return "收藏表还没建好：请在数据库执行一次 tools/patch_20261021R.sql（执行完会刷新接口缓存），然后刷新本页。";
+      }
+      const raw = (err && (err.message || err.details)) || "";
+      const s = raw + " " + String((err && err.code) || "");
+      if (/JWT|token|not authenticated|permission denied|42501|\b401\b|\b403\b/i.test(s)) {
+        return "登录状态已失效，请重新登录后再试。";
+      }
+      if (/duplicate|unique/i.test(s)) return "已经有同名分类了，换个名字";
+      return raw || "操作失败，请稍后重试";
+    },
+    /* 诊断：给「重新检测」按钮用。返回缺表原因，便于页面给出准确指引。 */
+    async favDiag() {
+      try {
+        const { error } = await client.from("fav_items").select("id", { head: true, count: "exact" }).limit(1);
+        if (!error) return { ok: true, missing: false, msg: "" };
+        const missing = this._favIsMissingTable(error);
+        return { ok: false, missing: missing, msg: this.favErrMsg(error) };
+      } catch (e) {
+        return { ok: false, missing: false, msg: this.favErrMsg(e) };
+      }
+    },
+    /* ============================================================
+     * 我的收藏（前台专区）
+     *  - 每人一套分类、一套收藏，全部按登录用户隔离
+     *  - 收藏条目存快照：榜单换期 / 旧批次被清理后，收藏里的图仍可看
+     *  - 同一张图出现在不同期次 → 各存一条（不是按图去重）
+     * ============================================================ */
+    async favReady() {
+      const d = await this.favDiag();
+      return !!d.ok;
+    },
+    async favUid() {
+      try {
+        const { data: s } = await client.auth.getSession();
+        return (s && s.session && s.session.user && s.session.user.id) || null;
+      } catch (e) { return null; }
+    },
+    async listFavCategories() {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const { data, error } = await client.from("fav_categories")
+        .select("id,name,color,sort,created_at")
+        .eq("user_id", uid)
+        .order("sort", { ascending: true })
+        .order("id", { ascending: true });
+      if (error) throw new Error(this.favErrMsg(error) || "读取收藏分类失败");
+      return data || [];
+    },
+    async createFavCategory(name, color) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录后再建分类");
+      const n = String(name == null ? "" : name).trim();
+      if (!n) throw new Error("分类名称不能为空");
+      if (n.length > 40) throw new Error("分类名称最多 40 个字");
+      const { data, error } = await client.from("fav_categories")
+        .insert({ user_id: uid, name: n, color: String(color || ""), sort: 0 })
+        .select("id,name,color,sort")
+        .single();
+      if (error) {
+        // 唯一键冲突 = 同名分类已存在，给出人话提示而不是原始的约束报错
+        if (/duplicate|unique/i.test(error.message || "")) throw new Error("已经有同名分类了，换个名字");
+        throw new Error(this.favErrMsg(error) || "新建分类失败");
+      }
+      return data;
+    },
+    async updateFavCategory(id, patch) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录");
+      const body = {};
+      if (patch && patch.name != null) {
+        const n = String(patch.name).trim();
+        if (!n) throw new Error("分类名称不能为空");
+        body.name = n;
+      }
+      if (patch && patch.color != null) body.color = String(patch.color);
+      if (patch && patch.sort != null) body.sort = Number(patch.sort) || 0;
+      if (!Object.keys(body).length) return true;
+      const { error } = await client.from("fav_categories").update(body).eq("id", id).eq("user_id", uid);
+      if (error) {
+        if (/duplicate|unique/i.test(error.message || "")) throw new Error("已经有同名分类了，换个名字");
+        throw new Error(this.favErrMsg(error) || "修改分类失败");
+      }
+      return true;
+    },
+    /* 删除分类：先把里面的条目退回「未分类」，再删分类 —— 图不会跟着消失 */
+    async deleteFavCategory(id) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录");
+      const { error: e1 } = await client.from("fav_items").update({ category_id: null }).eq("user_id", uid).eq("category_id", id);
+      if (e1) throw new Error(this.favErrMsg(e1) || "把图退回未分类失败，分类未删除");
+      const { error: e2 } = await client.from("fav_categories").delete().eq("id", id).eq("user_id", uid);
+      if (e2) throw new Error(this.favErrMsg(e2) || "删除分类失败");
+      return true;
+    },
+    /* tags 列在不在（patch_20261021Y 才有）。
+       不在时 addFavItems 会降级成"能收藏但丢标签"，所以必须能被探测到并提示。 */
+    async favTagsReady() {
+      if (this.__favTagsReady !== undefined) return this.__favTagsReady;
+      try {
+        const { error } = await client.from("fav_items").select("tags", { head: true, count: "exact" }).limit(1);
+        this.__favTagsReady = !error;
+      } catch (e) {
+        this.__favTagsReady = false;
+      }
+      return this.__favTagsReady;
+    },
+
+    async listFavItems(opt) {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const o = opt || {};
+      const BASE = "id,category_id,image_url,title,leaf_category,rank_category,site,period_type,period_label,ratio,rank_abs,created_at";
+      const WITH_TAGS = BASE + ",tags,rank_pos";
+      const run = (cols) => {
+        let q = client.from("fav_items").select(cols).eq("user_id", uid);
+        if (o.period) q = q.eq("period_label", o.period);
+        if (o.categoryId != null && o.categoryId !== "") q = q.eq("category_id", o.categoryId);
+        return q
+          .order("period_label", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(o.limit || 5000);
+      };
+      let { data, error } = await run(WITH_TAGS);
+      /* 老库还没执行 patch_20261021Y（没有 tags/rank_pos 列）→ 退回旧列，别让整页读不出来 */
+      if (error && /column .*(tags|rank_pos)/i.test(String(error.message || "") + String(error.details || ""))) {
+        const r2 = await run(BASE);
+        data = r2.data; error = r2.error;
+      }
+      if (error) throw new Error(this.favErrMsg(error) || "读取收藏失败");
+      return data || [];
+    },
+
+    /* 首次使用自动建好五个默认大类；已有分类时不动（避免把用户删掉的分类又塞回来）。
+       返回最新的分类列表。 */
+    async ensureDefaultFavCats(names) {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const want = (names && names.length) ? names.slice() : ["印花", "面料", "图案", "工艺", "视觉"];
+      const { data: exist, error: e1 } = await client.from("fav_categories")
+        .select("id,name,color,sort,created_at").eq("user_id", uid)
+        .order("sort", { ascending: true }).order("id", { ascending: true });
+      if (e1) throw new Error(this.favErrMsg(e1) || "读取收藏分类失败");
+      const list = exist || [];
+      if (list.length) return list;
+      const COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f"];
+      const rows = want.map((n, i) => ({
+        user_id: uid, name: n, color: COLORS[i % COLORS.length], sort: i * 10,
+      }));
+      const { error: e2 } = await client.from("fav_categories").insert(rows);
+      if (e2) throw new Error(this.favErrMsg(e2) || "创建默认分类失败");
+      const { data: after } = await client.from("fav_categories")
+        .select("id,name,color,sort,created_at").eq("user_id", uid)
+        .order("sort", { ascending: true }).order("id", { ascending: true });
+      return after || [];
+    },
+
+    /* 补齐五个默认大类：只补当前分类里缺的名字，不删不改已有分类 */
+    async topUpDefaultFavCats(names) {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const want = (names && names.length) ? names.slice() : ["印花", "面料", "图案", "工艺", "视觉"];
+      const cur = await this.listFavCategories();
+      const have = {};
+      (cur || []).forEach((c) => { have[String(c.name || "").trim()] = 1; });
+      const miss = want.filter((n) => !have[n]);
+      if (!miss.length) return cur;
+      const COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f"];
+      const base = (cur || []).length;
+      const rows = miss.map((n, i) => ({
+        user_id: uid, name: n, color: COLORS[(base + i) % COLORS.length], sort: (base + i) * 10,
+      }));
+      const { error } = await client.from("fav_categories").insert(rows);
+      if (error) throw new Error(this.favErrMsg(error) || "补齐默认分类失败");
+      return await this.listFavCategories();
+    },
+    /* 收藏（可批量）：同一用户 + 同一期 + 同一图 只保留一条；跨期各一条 */
+    async addFavItems(rows, categoryId) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录后再收藏");
+      const cid = (categoryId == null || categoryId === "") ? null : categoryId;
+      const list = (rows || []).filter((r) => r && String(r.image_url || "").trim());
+      if (!list.length) return 0;
+      const now = new Date().toISOString();
+      const payload = list.map((r) => ({
+        user_id: uid,
+        category_id: cid,
+        image_url: String(r.image_url).trim(),
+        title: String(r.title || ""),
+        leaf_category: String(r.leaf_category || ""),
+        rank_category: String(r.rank_category || ""),
+        site: String(r.site || ""),
+        period_type: String(r.period_type || "week"),
+        period_label: String(r.period_label || ""),
+        ratio: (r.ratio == null || r.ratio === "") ? null : Number(r.ratio),
+        rank_abs: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
+        tags: Array.isArray(r.tags) ? r.tags.filter((x) => String(x || "").trim()).map((x) => String(x).trim()) : [],
+        rank_pos: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
+        created_at: now,
+      }));
+      let n = 0;
+      for (let i = 0; i < payload.length; i += 100) {
+        const chunk = payload.slice(i, i + 100);
+        // 已存在则更新快照与分类（用户重新收藏同一张图时，视为"移动到这个分类"）
+        let { error } = await client.from("fav_items")
+          .upsert(chunk, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
+        /* 老库还没执行 patch_20261021Y（缺 tags / rank_pos 列）→ 去掉这两列重试，
+           保证"能不能存标签"不影响"能不能收藏"。 */
+        if (error && /column .*(tags|rank_pos)|'(tags|rank_pos)'/i.test(String(error.message || "") + " " + String(error.details || ""))) {
+          const slim = chunk.map((it) => {
+            const o = Object.assign({}, it);
+            delete o.tags; delete o.rank_pos;
+            return o;
+          });
+          const r2 = await client.from("fav_items")
+            .upsert(slim, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
+          error = r2.error;
+        }
+        if (error) throw new Error(this.favErrMsg(error) || "收藏失败");
+        n += chunk.length;
+      }
+      return n;
+    },
+    async removeFavItems(ids) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录");
+      const list = (ids || []).map((x) => Number(x)).filter((x) => x > 0);
+      if (!list.length) return 0;
+      const { error } = await client.from("fav_items").delete().eq("user_id", uid).in("id", list);
+      if (error) throw new Error(this.favErrMsg(error) || "取消收藏失败");
+      return list.length;
+    },
+    /* 改分类：categoryId 传 null 即退回「未分类」 */
+    async moveFavItems(ids, categoryId) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录");
+      const list = (ids || []).map((x) => Number(x)).filter((x) => x > 0);
+      if (!list.length) return 0;
+      const cid = (categoryId == null || categoryId === "") ? null : Number(categoryId);
+      const { error } = await client.from("fav_items").update({ category_id: cid }).eq("user_id", uid).in("id", list);
+      if (error) throw new Error(this.favErrMsg(error) || "移动失败");
+      return list.length;
+    },
+    /* 榜单星标状态：返回已收藏的「期次 + 图地址」清单，前端据此点亮星标 */
+    async listFavKeys() {
+      const uid = await this.favUid();
+      if (!uid) return [];
+      const { data, error } = await client.from("fav_items")
+        .select("id,period_label,image_url").eq("user_id", uid).limit(5000);
+      if (error) return [];   // 星标是装饰性状态，读不到不该让榜单白屏
+      return data || [];
     },
   };
 })();

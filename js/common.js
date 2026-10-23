@@ -380,13 +380,17 @@ window.Common = (function () {
     }
     function list() { return rankFirst((defs && defs.length) ? defs : fallback()); }
 
+    /* 个人专区：只对"自己"有意义，不允许被账号的专区白名单挡住，
+       否则收藏成功了却找不到入口（用户级白名单是用来管公共业务专区的）。 */
+    var PERSONAL_ZONES = { fav: 1 };
+
     function visible(zone) {
       if (!zone) return true;
-      if (Array.isArray(mine) && mine.length) {
-        if (vis && vis[zone] === false) return false;
-        return mine.indexOf(zone) !== -1;
-      }
-      return !vis || vis[zone] !== false;
+      var personal = !!PERSONAL_ZONES[zone];
+      if (vis && vis[zone] === false) return false;   /* 全站开关对个人专区仍有效 */
+      if (personal) return true;
+      if (Array.isArray(mine) && mine.length) return mine.indexOf(zone) !== -1;
+      return true;
     }
 
     function setVis(v) { vis = v || {}; }

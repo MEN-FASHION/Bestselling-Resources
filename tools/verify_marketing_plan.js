@@ -39,17 +39,21 @@ ok('页面引入编辑层脚本（放在主脚本之后）',
   const v = [...vers][0] || "";
   ok('版本号未回退（不早于 20261019A）', v >= "20261019A" && !/^20261019B$/.test(v), v);
 }
-/* ---------- 左栏「完整常显」：其它前台专区的细轨收缩不得作用于营销页 ---------- */
+/* ---------- 左栏「完整常显」：营销页与其它前台专区一致，都是常显侧栏 ----------
+   注意：20261021T 起前台侧栏一律常显（54px 细轨抽屉已移除，见 verify_front_layout.js），
+   所以这里不再断言「细轨对其它专区生效」，改为断言「没有任何专区还在用细轨」。 */
 {
   const railBlock = css.slice(
-    css.indexOf('/* ---------- 一、左侧类目菜单：细轨 ⇄ 展开面板 ---------- */'),
-    css.indexOf('/* 滚动条收细，展开态更干净 */')
+    css.indexOf('/* ---------- 一、左侧类目菜单：常显侧栏'),
+    css.indexOf('/* 滚动条收细')
   );
-  ok('营销页 body 带 mk-page 标记（把它从细轨收缩里排除）', /<body class="front mk-page">/.test(html));
-  ok('细轨选择器全部限定 :not(.mk-page)', railBlock.length > 200
+  ok('营销页 body 带 mk-page 标记（沿用原有隔离）', /<body class="front mk-page">/.test(html));
+  ok('侧栏规则全部限定 :not(.mk-page)（不误伤营销页自带布局）', railBlock.length > 200
     && !/body\.front \.sidebar/.test(railBlock) && !/body\.front \.gallery-layout/.test(railBlock));
-  ok('细轨仍对其它前台专区生效（规则未被误删）', /body\.front:not\(\.mk-page\) \.sidebar \{[^}]*width: 54px/.test(railBlock));
-  ok('细轨控制器对营销页直接跳过', /classList\.contains\("mk-page"\)\) return;/.test(railJs));
+  ok('其它前台专区不再使用 54px 细轨（抽屉已彻底移除）', !/width: 54px/.test(railBlock));
+  ok('其它前台专区侧栏同样是常显（width: auto + sticky 跟随）',
+    /body\.front:not\(\.mk-page\) \.sidebar \{[^}]*position: sticky/.test(railBlock)
+    && /body\.front:not\(\.mk-page\) \.sidebar \{[^}]*width: auto/.test(railBlock));
   ok('营销页侧栏钉死整宽、不写竖排', /\.mkzone \.sidebar \{[^}]*width: 100%/.test(css)
     && /\.mkzone \.sidebar \{[^}]*writing-mode: horizontal-tb/.test(css));
   ok('营销页侧栏高度随内容（不写死 118px 小把手）', /\.mkzone \.sidebar \{[^}]*max-height: calc\(100vh - var\(--mk-top\)/.test(css));
