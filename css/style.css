@@ -4772,3 +4772,183 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
     animation: none !important;
   }
 }
+
+/* ============================================================================
+   拖动收藏 · 横向扇形（favfan.js，20261023F）
+   —— 用户要求：扇形要「向右展开」，不是向上摊一摞；并且要明确提示"可以拖进收藏"。
+   —— 位置：贴着右侧收藏入口，扇轴在 deck 右端，五张文件夹由右向左依次铺开，
+      两端略高、整叠轻微旋转，读起来是一手被摊开的牌，而不是竖着的一列。
+   —— 底线不变：fixed 浮层、pointer-events:none，只有文件夹收事件，不挡对比池。
+   ========================================================================== */
+.fv-fan{
+  position: fixed; inset: 0;
+  z-index: 57;
+  pointer-events: none;              /* 整层不拦事件，只有文件夹本身收事件 */
+  opacity: 0; visibility: hidden;
+  transition: opacity .22s ease, visibility 0s linear .22s;
+}
+.fv-fan.is-open{ opacity: 1; visibility: visible; transition: opacity .18s ease, visibility 0s; }
+
+/* 扇轴：右端即收藏入口所在的那条竖线 */
+.fv-fan-deck{
+  position: absolute; right: 22px; top: 50%;
+  width: 0; height: 0;
+}
+
+.fv-fan-cell{
+  position: absolute; left: 0; top: 0;
+  width: 108px; height: 86px;
+  margin: 0; padding: 9px 10px 9px 13px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  border: 1px solid rgba(28,24,18,.09);
+  border-radius: 13px;
+  background: rgba(255,255,255,.9);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    0 18px 34px -16px rgba(34,28,20,.36),
+    0 3px 10px -4px rgba(34,28,20,.16),
+    inset 0 1px 0 rgba(255,255,255,.95);
+  pointer-events: auto;              /* 只有这一层接拖放 */
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) rotate(var(--rot, 0deg)) scale(.92);
+  transform-origin: 100% 50%;        /* 以右侧为轴张开，方向朝右 */
+  transition:
+    transform .44s var(--fv-spring) var(--d, 0ms),
+    opacity .26s ease var(--d, 0ms),
+    box-shadow .22s ease,
+    border-color .22s ease,
+    background .22s ease;
+}
+.fv-fan.is-open .fv-fan-cell{
+  opacity: 1;
+  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) rotate(var(--rot, 0deg)) scale(1);
+}
+
+/* 文件夹的"标签舌"，一小片颜色，位置不抢文字 */
+.fv-fan-fold{
+  position: absolute; left: 11px; top: -5px;
+  width: 34px; height: 8px;
+  border-radius: 5px 5px 0 0;
+  background: var(--fv-c, #8b7355);
+  opacity: .85;
+}
+/* 左侧色条：一眼分辨分类，比整块上色克制 */
+.fv-fan-cell::after{
+  content: ""; position: absolute; left: 0; top: 16px; bottom: 16px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--fv-c, #8b7355);
+  opacity: .9;
+}
+
+.fv-fan-nm{
+  font-size: 13px; font-weight: 600; letter-spacing: .2px; color: #2b2823;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fv-fan-n{ font-size: 10.5px; color: #8d8579; font-variant-numeric: tabular-nums; }
+
+.fv-fan-cell.is-over{
+  border-color: var(--fv-c, #9c8b74);
+  background: #fff;
+  box-shadow: 0 22px 40px -16px rgba(34,28,20,.44), 0 0 0 3px rgba(156,139,116,.28);
+  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) rotate(var(--rot, 0deg)) scale(1.06);
+}
+.fv-fan-cell.is-saving{
+  border-color: #4a9c6d;
+  box-shadow: 0 22px 40px -16px rgba(34,28,20,.4), 0 0 0 3px rgba(74,156,109,.3);
+}
+
+/* 提示条：说清"这里能放" */
+.fv-fan-bar{
+  position: absolute; right: 26px; top: calc(50% + 72px);
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px; border-radius: 999px;
+  background: rgba(28,24,18,.9);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  color: #f4f1ec; font-size: 12px; letter-spacing: .2px; white-space: nowrap;
+  box-shadow: 0 16px 32px -14px rgba(0,0,0,.5);
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .2s ease .12s, transform .34s var(--fv-spring) .12s;
+}
+.fv-fan.is-open .fv-fan-bar{ opacity: 1; transform: translateY(0); }
+.fv-fan-bar b{ font-weight: 600; color: #f0c66a; }
+.fv-fan-bar-dot{
+  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  background: #f0c66a;
+  animation: fv-pulse 1.7s ease-in-out infinite;
+}
+
+.fv-fan-empty, .fv-fan-more{
+  position: absolute; left: 0; top: 0;
+  transform: translate(-100%, -50%);
+  width: 210px; padding: 12px 14px;
+  border-radius: 12px; border: 1px dashed rgba(120,104,84,.42);
+  background: rgba(255,255,255,.94);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: #6b5f4f; font-size: 12px; line-height: 1.7; text-align: center;
+  pointer-events: none;
+  opacity: 0; transition: opacity .2s ease;
+}
+.fv-fan.is-open .fv-fan-empty, .fv-fan.is-open .fv-fan-more{ opacity: 1; }
+
+@media (max-width: 760px){
+  .fv-fan-deck{ right: 14px; }
+  .fv-fan-cell{ width: 92px; height: 74px; padding: 7px 8px 7px 11px; }
+  .fv-fan-nm{ font-size: 12px; }
+  .fv-fan-bar{ right: 14px; font-size: 11.5px; padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .fv-fan-cell, .fv-fan-bar, .fv-fan-empty, .fv-fan-more{ transition-duration: .01ms !important; }
+  .fv-fan-bar-dot{ animation: none !important; }
+}
+
+/* ============================================================================
+   类目对比：列可拖动换序（20261023G）
+   —— 只在列头放一个细把手，卡片本身的拖拽（收藏）完全不受影响。
+   —— 拖到别的列上时，用一条竖线提示"将落在这一侧"，松手即换位。
+   ========================================================================== */
+.rk-pool-grip{
+  position: absolute; left: 6px; top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 26px;
+  border-radius: 4px;
+  font-size: 11px; letter-spacing: -1px; line-height: 1;
+  color: #b3a894;
+  cursor: grab;
+  opacity: 0;                       /* 平时让位给标题，指到列上才出现 */
+  transition: opacity .18s ease, color .18s ease, background .18s ease;
+  user-select: none;
+}
+.rk-pool-dnd{ position: relative; }
+.rk-pool-dnd:hover .rk-pool-grip{ opacity: 1; }
+.rk-pool-grip:hover{ color: #6f6353; background: rgba(120,104,84,.1); }
+.rk-pool-grip:active{ cursor: grabbing; }
+
+/* 被拖起的那一列：整体退一步，让人看清"正在搬哪一列" */
+.rk-pool.is-drag-src{ opacity: .45; }
+.rk-pool.is-drag-src .rk-pool-grip{ opacity: 1; }
+
+/* 落点提示：竖线贴着目标列的一侧 */
+.rk-pool.is-drop-l::before,
+.rk-pool.is-drop-r::after{
+  content: ""; position: absolute; top: 6px; bottom: 6px; width: 3px;
+  border-radius: 3px; background: #c9a24a;
+  box-shadow: 0 0 0 3px rgba(201,162,74,.16);
+  z-index: 3;
+}
+.rk-pool.is-drop-l::before{ left: -5px; }
+.rk-pool.is-drop-r::after{ right: -5px; }
+.rk-pool.is-drop-l, .rk-pool.is-drop-r{ background: rgba(201,162,74,.05); border-radius: 8px; }
+
+/* 列头左侧给把手留一点位置（不挤压标题） */
+.rk-pool-dnd .rk-pool-head{ padding-left: 21px; }
+
+@media (hover: none){
+  .rk-pool-grip{ opacity: .55; }     /* 触屏没有 hover，常显一点，方便发现 */
+}
+@media (prefers-reduced-motion: reduce){
+  .rk-pool-grip{ transition: none; }
+}

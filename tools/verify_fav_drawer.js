@@ -796,11 +796,11 @@ function bootDom(sb) {
     ok("榜单卡片可拖动收藏（draggable 已加）", /draggable="true" data-tags="/.test(RANK_JS));
     ok("榜单卡片把原标签快照进 data-tags", /var cardTags = \[\];/.test(RANK_JS) && /cardTags\.push\(b\.txt\)/.test(RANK_JS));
     ok("收藏数据带上 tags 与 rank_pos", /tags: String\(fig\.getAttribute\("data-tags"\)/.test(RANK_JS) && /rank_pos: fig\.getAttribute\("data-rank"\)/.test(RANK_JS));
-    /* 20261023E：取消扇形文件夹，改成抽屉自右侧滑出、分类变成文件夹落点 */
-    ok("拖动一开始就让右侧抽屉滑出（FavDrawer.openForDrop）",
-      /FavDrawer\.openForDrop\(\)/.test(RANK_JS));
-    ok("拖动逻辑不再引用扇形模块（FavFan 已移除）", !/FavFan/.test(RANK_JS));
-    ok("拖动结束收起落点高亮（endDropMode）", /endDropMode/.test(RANK_JS));
+    /* 20261023F：拖动时由「横向扇形」接管（贴右侧向右展开），抽屉不再自动滑出 */
+    ok("拖动一开始摊开横向扇形（FavFan.show）", /FavFan\.show\(\)/.test(RANK_JS));
+    ok("拖动结束收起扇形（FavFan.hide，拖到窗口外也收得干净）", /FavFan\.hide\(\)/.test(RANK_JS));
+    ok("拖动不会再自动弹出右侧抽屉", !/FavDrawer\.openForDrop\(\)/.test(RANK_JS));
+    ok("抽屉落点高亮仍在清理（endDropMode）", /endDropMode/.test(RANK_JS));
     ok("抽屉对外暴露 openForDrop / endDropMode / unfav",
       /openForDrop: openForDrop/.test(DRAWER) && /endDropMode: endDropMode/.test(DRAWER) && /unfav: unfav/.test(DRAWER));
     ok("收藏页也显示位次与标签（fv-meta）", /fv-meta/.test(FAV_JS) && /it\.rank_pos/.test(FAV_JS) && /it\.tags/.test(FAV_JS));

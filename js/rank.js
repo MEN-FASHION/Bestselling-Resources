@@ -33,7 +33,8 @@
   var FACETS = { sites: [], periods: [], categories: [] };
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
-  var SEL_CATS = [];         // 横向·类目对比：并排显示的几个类目（2–4 个，列数 = 类目数）
+  var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
+  var SEL_CATS_LEN = 0;      // 上一次的类目个数：切类目时保持列数不突然变
   var TAG_INDEX = {};        // 图片打标索引（url → 打标维度），类目对比用它算拍摄方式 / 元素
   var TAG_KEY = "";          // 已加载的索引对应哪一批图，避免重复请求
   var TAG_BUSY = false;
@@ -42,6 +43,7 @@
   var LAST_KEPT = 0;         // 上一次真正画进各列的张数合计（类目对比不含上一周基线）
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
+  var CAT_MAX = 4;           // 类目对比最多四个类目（列数 = 勾选的类目数，不再单独选「几列」）
   var COLS = 3;              // 对比列数：纵向=最近几周、横向=前几个国家，可选 2/3/4（默认 3 = 美国近三周对比）
   var COLS_OPTS = [2, 3, 4];
   var COLS_MAX = 4;          // 列数硬上限（再多就看不清了）
@@ -261,11 +263,11 @@
      用户没手动选就把「当前类目」放第一，其余按后台类目顺序补足。 */
   function activeCats() {
     var list = (SEL_CATS || []).filter(function (c) { return c && c !== ALL; });
-    if (list.length >= 2) return list.slice(0, COLS_MAX);
+    if (list.length) return list.slice(0, CAT_MAX);
     var pool = FACETS.categories || [];
     var out = (CAT && CAT !== ALL) ? [CAT] : (pool[0] ? [pool[0]] : []);
     for (var i = 0; i < pool.length && out.length < 2; i++) if (out.indexOf(pool[i]) < 0) out.push(pool[i]);
-    return out;
+    return out.slice(0, CAT_MAX);
   }
 
   /* ---------------- 地区分组：把多个国家并成一列 ----------------
@@ -321,7 +323,7 @@
     var periods = activePeriods();
     if (!sites.length || !periods.length) return [];
     var cats = MODE === "c" ? activeCats() : [];
-    if (MODE === "c" && cats.length < 2) return [];
+    if (MODE === "c" && !cats.length) return [];
     /* 缓存键必须带上类目数组：否则从「卫衣×毛衣」切到「卫衣×外套」会拿到上一次的图 */
     var key = [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
     if (CACHE && CACHE.key === key) return CACHE.items;
@@ -391,7 +393,8 @@
       /* 类目对比：国家与周次都单选，只有类目是多列 */
       if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
       if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
-      if (!SEL_CATS.length || SEL_CATS.length < 2) SEL_CATS = pickCats(COLS);
+      if (!SEL_CATS.length) SEL_CATS = pickCats(2);      /* 一个都没选时才兜底两个 */
+      SEL_CATS = SEL_CATS.slice(0, CAT_MAX);
     } else {
       if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
       /* 位次标签只存在于「纵向·时间对比」（与上一周比），横向没有可比基线 →
@@ -402,7 +405,7 @@
 
   /* 类目对比的默认选中：当前类目排第一，其余按后台类目顺序补足到 N 个 */
   function pickCats(n) {
-    n = Math.max(2, Math.min(COLS_MAX, n || 2));
+    n = Math.max(1, Math.min(CAT_MAX, n || 2));
     var pool = (FACETS.categories || []).filter(function (c) { return c && c !== ALL; });
     var keep = (SEL_CATS || []).filter(function (c) { return pool.indexOf(c) >= 0; });
     if (CAT && CAT !== ALL && pool.indexOf(CAT) >= 0 && keep.indexOf(CAT) < 0) keep.unshift(CAT);
@@ -429,7 +432,9 @@
       SEL_SITES = oneC ? [oneC] : [];
       var spC = sortPeriods(FACETS.periods);
       SEL_PERIODS = spC.length ? [spC[spC.length - 1]] : [];
-      SEL_CATS = pickCats(n);
+      /* 列数 = 勾选的类目数：这里不再按「几列」重排，只在空选时兜底 */
+      if (!SEL_CATS.length) SEL_CATS = pickCats(2);
+      SEL_CATS = SEL_CATS.slice(0, CAT_MAX);
     } else {
       var all2 = orderedSites();
       var kept = SEL_SITES.filter(function (x) { return all2.indexOf(x) >= 0; });
@@ -460,7 +465,7 @@
       b.onclick = function () {
         CAT = c; CACHE = null; CAP = CAP_STEP;
         /* 类目对比下点左侧类目 = 把它提到第一列，其余照旧补足（导航语义不变，不改成多选器） */
-        if (MODE === "c") { SEL_CATS = []; SEL_CATS = pickCats(COLS); }
+        if (MODE === "c") { SEL_CATS = []; SEL_CATS = pickCats(Math.max(2, SEL_CATS_LEN || 2)); }
         renderCats(); renderPanel(); renderSummary(); load();
       };
       box.appendChild(b);
@@ -557,13 +562,13 @@
       var catChips = (FACETS.categories || []).map(function (c) {
         return chip(c, c, catPick.indexOf(c) >= 0, "data-cat");
       }).join("");
-      catsGroup = '<div class="tag-group"><span class="tag-group-name">对比类目（多选 ' + 2 + '–' + COLS_MAX + ' 个，列数 = 类目数）</span>'
+      catsGroup = '<div class="tag-group"><span class="tag-group-name">对比类目（勾几个就对比几个，最多四个 · 列顺序可拖动调整）</span>'
         + '<div class="tag-chips" id="rk-g-cats">' + catChips + '</div></div>';
     }
 
     box.innerHTML =
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">' + colsLabel + '</span><div class="tag-chips" id="rk-g-cols">' + colsHtml + '</div></div>' +
+      (MODE === "c" ? '' : '<div class="tag-group"><span class="tag-group-name">' + colsLabel + '</span><div class="tag-chips" id="rk-g-cols">' + colsHtml + '</div></div>') +
       groupHtml +
       catsGroup +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
@@ -596,20 +601,21 @@
       };
     });
 
-    /* 类目对比：勾选 / 取消要并排的类目（至少 2 个、最多 COLS_MAX 个） */
+    /* 类目对比：勾选 / 取消要并排的类目（勾几个就几个，最多四个） */
     var catBox = $("#rk-g-cats");
     if (catBox) Array.prototype.forEach.call(catBox.querySelectorAll("[data-cat]"), function (b) {
       b.onclick = function () {
         var v = b.getAttribute("data-cat");
         var i = SEL_CATS.indexOf(v);
         if (i >= 0) {
-          if (SEL_CATS.length <= 2) { toast("类目对比至少要保留 2 个类目"); return; }
+          if (SEL_CATS.length <= 1) { toast("至少保留一个类目"); return; }
           SEL_CATS.splice(i, 1);
         } else {
-          if (SEL_CATS.length >= COLS_MAX) { toast("最多同时对比 " + COLS_MAX + " 个类目，可先取消一个"); return; }
+          if (SEL_CATS.length >= CAT_MAX) { toast("最多四个类目同时对比，可先取消一个"); return; }
           SEL_CATS.push(v);
         }
-        COLS = Math.max(2, Math.min(COLS_MAX, SEL_CATS.length));
+        SEL_CATS_LEN = SEL_CATS.length;
+        COLS = Math.max(1, Math.min(CAT_MAX, SEL_CATS.length));
         CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
@@ -901,9 +907,16 @@
     return h;
   }
 
-  function poolHtml(name, meta, n, cardsHtml, shownN) {
-    var h = '<section class="rk-pool">';
-    h += '<div class="rk-pool-head">' +
+  function poolHtml(name, meta, n, cardsHtml, shownN, o) {
+    o = o || {};
+    /* 类目对比的列可拖动换序：只有 grips 可拖，卡片本身的拖动（收藏）不受影响 */
+    var grip = o.dragKey
+      ? '<span class="rk-pool-grip" draggable="true" data-rk-cat="' + esc(o.dragKey) + '"'
+        + ' title="按住拖动，可调整这一列的位置" aria-label="拖动调整列顺序">⋮⋮</span>'
+      : "";
+    var h = '<section class="rk-pool' + (o.dragKey ? " rk-pool-dnd" : "") + '"'
+      + (o.dragKey ? ' data-rk-cat="' + esc(o.dragKey) + '"' : '') + '>';
+    h += '<div class="rk-pool-head">' + grip +
       '<div class="rk-pool-name"><span>' + esc(name) + '</span><span class="rk-n">' + n + ' 张</span></div>' +
       (meta ? '<div class="rk-pool-meta">' + esc(meta) + '</div>' : "") +
       '</div>';
@@ -911,6 +924,81 @@
     if (shownN != null) h += '<div class="rk-pool-foot">已展示 ' + shownN + ' / ' + n + '</div>';
     h += '</section>';
     return h;
+  }
+
+  /* ---------------- 类目列拖动换序 ----------------
+     为什么只给列头一个把手：卡片本身已经是"可拖动收藏"的来源，
+     整列 draggable 会把卡片的拖拽吞掉。把手单独可拖，两件事互不干扰。
+     换序只改「谁在左边」，不动筛选与数据 → 不重新取数，秒回。 */
+  var POOL_DRAG = { cat: "" };
+
+  function bindPoolDrag(root) {
+    if (MODE !== "c" || !root) return;
+    var pools = Array.prototype.slice.call(root.querySelectorAll("#rk-pools .rk-pool[data-rk-cat]"));
+    if (pools.length < 2) return;
+
+    pools.forEach(function (sec) {
+      var grip = sec.querySelector(".rk-pool-grip");
+      if (grip) {
+        grip.addEventListener("dragstart", function (e) {
+          POOL_DRAG.cat = grip.getAttribute("data-rk-cat") || "";
+          sec.classList.add("is-drag-src");
+          try {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("application/x-rk-cat", POOL_DRAG.cat);
+            e.dataTransfer.setData("text/plain", POOL_DRAG.cat);
+          } catch (x) {}
+        });
+        grip.addEventListener("dragend", function () {
+          POOL_DRAG.cat = "";
+          pools.forEach(function (s2) { s2.classList.remove("is-drag-src", "is-drop-l", "is-drop-r"); });
+        });
+      }
+
+      sec.addEventListener("dragover", function (e) {
+        if (!POOL_DRAG.cat) return;
+        var target = sec.getAttribute("data-rk-cat");
+        if (!target || target === POOL_DRAG.cat) return;
+        e.preventDefault();                       /* 允许放下：不 preventDefault 浏览器会拒绝 */
+        try { e.dataTransfer.dropEffect = "move"; } catch (x) {}
+        var r = sec.getBoundingClientRect();
+        var right = (e.clientX > r.left + r.width / 2);
+        sec.classList.toggle("is-drop-r", right);
+        sec.classList.toggle("is-drop-l", !right);
+      });
+      sec.addEventListener("dragleave", function () {
+        sec.classList.remove("is-drop-l", "is-drop-r");
+      });
+      sec.addEventListener("drop", function (e) {
+        if (!POOL_DRAG.cat) return;
+        var target = sec.getAttribute("data-rk-cat");
+        if (!target || target === POOL_DRAG.cat) return;
+        e.preventDefault();
+        var r = sec.getBoundingClientRect();
+        var after = (e.clientX > r.left + r.width / 2);
+        var src = POOL_DRAG.cat;
+        POOL_DRAG.cat = "";
+        if (moveCatTo(src, target, after)) {
+          renderPanel(); renderSummary(); renderBar(); renderBody();
+          toast("已调整列顺序");
+        }
+      });
+    });
+  }
+
+  /* 把 src 类目移到 target 之前 / 之后（就地改 SEL_CATS 的顺序） */
+  function moveCatTo(src, target, after) {
+    var list = (SEL_CATS || []).slice();
+    var from = list.indexOf(src);
+    if (from < 0) return false;
+    list.splice(from, 1);
+    var to = list.indexOf(target);
+    if (to < 0) return false;
+    list.splice(after ? to + 1 : to, 0, src);
+    SEL_CATS = list;
+    SEL_CATS_LEN = list.length;
+    /* 只换显示顺序：同一批数据重排即可，不必重新取数（也不清缓存，避免整页闪成空态） */
+    return true;
   }
 
   /* ---------------- 主体：多列对比池 ---------------- */
@@ -1024,7 +1112,7 @@
           var emptyTxt = '该类目 ' + esc(pC) + ' 没有上榜数据'
             + (lastP ? '（最近一次有数据是 ' + esc(lastP) + '）' : '')
             + '。换一个周次，或在上面取消勾选这个类目。';
-          html += poolHtml(cat, siteC + " · " + pC + " · 本周无上传", 0, '<div class="rk-empty">' + emptyTxt + '</div>', null);
+          html += poolHtml(cat, siteC + " · " + pC + " · 本周无上传", 0, '<div class="rk-empty">' + emptyTxt + '</div>', null, { dragKey: cat });
           cols++;
           return;
         }
@@ -1032,7 +1120,7 @@
           var mv = moveOf(it, pC, prevC, hasOf, rankOf);
           return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
-        html += poolHtml(cat, metaC, list.length, cardsC, opts.noFoot ? null : Math.min(limit, list.length));
+        html += poolHtml(cat, metaC, list.length, cardsC, opts.noFoot ? null : Math.min(limit, list.length), { dragKey: cat });
         kept += list.length; cols++;
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
@@ -1307,7 +1395,7 @@
       return;
     }
     if (!CAT) { box.innerHTML = '<div class="rk-empty">请先在左侧选择一个类目</div>'; return; }
-    if (MODE === "c" && activeCats().length < 2) { box.innerHTML = '<div class="rk-empty">类目对比至少要选 2 个类目：在上方「对比类目」里再勾一个就能并排比较。</div>'; return; }
+    if (MODE === "c" && !activeCats().length) { box.innerHTML = '<div class="rk-empty">请在上方「对比类目」里勾选要比的类目（最多四个）。</div>'; return; }
     var _gchk = activeGroup();
     if (_gchk && !_gchk.members.length) { box.innerHTML = '<div class="rk-empty">地区「' + esc(_gchk.name) + '」还没有勾选国家。到后台「趋势上升榜 → 地区分组」点 ☑ 把国家勾进去即可。</div>'; return; }
     if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」</div>'; return; }
@@ -1358,6 +1446,8 @@
       CAP = Math.min(CAP_MAX, CAP + CAP_STEP);
       renderBody(); renderBar();
     };
+
+    bindPoolDrag(box);
 
     // 卡片点击 → 灯箱
     Array.prototype.forEach.call(box.querySelectorAll(".rk-card"), function (el) {
@@ -1632,8 +1722,8 @@
     if (box && !box.__favDragBound) {
       box.__favDragBound = true;
       /* 直接从榜单把图拖到某个分类上 = 收藏并归类。
-         拖动一开始就让右侧抽屉滑出（分类变成文件夹落点），不再把文件夹铺在对比池上；
-         抽屉是浮层、不占位，滑出不会推动或遮挡对比池的操作。 */
+         拖动一开始把分类以「横向扇形」贴右侧摊开（向右展开，不压住正在拖的那张图），
+         一步到位；右侧抽屉若已展开，其分类按钮仍是有效落点，两条路径都通。 */
       box.addEventListener("dragstart", function (e) {
         var t = e.target;
         if (!t || !t.closest) return;
@@ -1648,8 +1738,8 @@
           e.dataTransfer.effectAllowed = "copy";
         } catch (x) {}
         fig.classList.add("is-fav-dragging");
-        if (window.FavDrawer && typeof FavDrawer.openForDrop === "function") {
-          try { FavDrawer.openForDrop(); } catch (x) {}
+        if (window.FavFan && typeof FavFan.show === "function") {
+          try { FavFan.show(); } catch (x) {}
         }
       }, true);
       box.addEventListener("dragend", function (e) {
@@ -1657,6 +1747,9 @@
         var fig = (t && t.closest) ? t.closest(".rk-card") : null;
         if (fig) fig.classList.remove("is-fav-dragging");
         FAV.dragRow = null;
+        if (window.FavFan && typeof FavFan.hide === "function") {
+          try { FavFan.hide(); } catch (x) {}
+        }
         if (window.FavDrawer && typeof FavDrawer.endDropMode === "function") {
           try { FavDrawer.endDropMode(); } catch (x) {}
         }
@@ -2341,7 +2434,7 @@
 
     /* 「对比列数」跟着当前实际列数走：分享链接 / 后台预览带参数时也能对上 */
     if (MODE === "v") COLS = Math.max(2, Math.min(COLS_MAX, SEL_PERIODS.length || COLS));
-    else if (MODE === "c") COLS = Math.max(2, Math.min(COLS_MAX, activeCats().length || COLS));
+    else if (MODE === "c") COLS = Math.max(1, Math.min(CAT_MAX, activeCats().length || COLS));
     else COLS = Math.max(2, Math.min(COLS_MAX, SEL_SITES.length || COLS));
 
     renderCats();

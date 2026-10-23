@@ -21,13 +21,14 @@ const HTML = read("rank.html");
 
 console.log("\n=== 收藏抽屉：取消扇形、改为右侧滑出 + macOS 质感 ===\n");
 
-/* ① 扇形彻底移除 */
-ok("js/favfan.js 已删除", !fs.existsSync(path.join(ROOT, "js/favfan.js")));
-ok("rank.html 不再引入 favfan.js", !/favfan\.js/.test(HTML));
-ok("rank.js 不再引用 FavFan", !/FavFan/.test(RANK));
-ok("CSS 里不再有扇形文件夹样式", !/\.fv-fan-cell/.test(CSS));
-ok("拖动榜单图时改为让抽屉滑出", /FavDrawer\.openForDrop\(\)/.test(RANK));
-ok("拖动结束会收起落点（endDropMode）", /endDropMode/.test(RANK));
+/* ① 扇形保留，但必须是"横向向右展开"的那一版（20261023F） */
+ok("js/favfan.js 仍在（扇形保留，改为横向）", fs.existsSync(path.join(ROOT, "js/favfan.js")));
+ok("rank.html 引入 favfan.js", /favfan\.js\?v=/.test(HTML));
+ok("rank.js 拖动时调用 FavFan.show", /FavFan\.show\(\)/.test(RANK));
+ok("CSS 有横向扇形的文件夹样式", /\.fv-fan-cell\{/.test(CSS));
+ok("拖动时不再自动把抽屉滑出（扇形接管拖放）", !/FavDrawer\.openForDrop\(\)/.test(RANK));
+ok("扇形带「可以拖进收藏」提示", /可以拖进收藏/.test(read("js/favfan.js")));
+ok("抽屉的落点清理仍保留（两条路径都收得干净）", /endDropMode/.test(RANK));
 
 /* ② 抽屉仍是"浮层"，不推挤对比池 */
 /* 同名规则有多处：旧稿、本次重做、以及移动端覆盖。
