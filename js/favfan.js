@@ -1,27 +1,24 @@
-/* favfan.js —— 拖动榜单图时，分类以「横向扇形」贴右侧摊开
+/* favfan.js —— 拖动榜单图时，分类以「竖排清单」贴在右侧栏出现
  *
- * 与上一版的区别（用户要求）：
- *   ① 不再向"上"摊开成一摞卡片，改为**横向向右展开**：五张文件夹并排，
- *      从右侧收藏入口一路铺向左边，扇骨左低右高，像被人摊开的一手牌；
- *   ② 加一条明确提示「可以拖进收藏」，让人知道这里能放；
- *   ③ 位置贴着右侧栏，不压在对比池中央正在拖的那张图上。
+ * 这一版按用户要求重做（原来横向摊开的扇形被否掉了）：
+ *   ① 分类改成**竖排**一列，贴屏幕右侧、垂直居中，一列读下来，不用横着找；
+ *   ② 视觉与动效对齐 macOS：玻璃层、细描边、克制阴影，长缓动、错峰滑入；
+ *   ③ 仍然明确提示「可以拖进收藏」。
  *
  * 底线（与「不影响对比池」一致）：
  *   ① 外层 fixed + pointer-events:none，不占布局、不推挤列宽；
- *   ② 只有文件夹本身接收事件，其余区域照旧点得到对比池；
- *   ③ 松手不在文件夹上 = 取消，不产生任何收藏；
+ *   ② 只有每一行本身接收事件，其余区域照旧点得到对比池；
+ *   ③ 松手不在任何一行上 = 取消，不产生收藏；
  *   ④ Esc / dragend 立即收起，不留残影。
  */
 (function (global) {
   "use strict";
 
   var EXT_TYPE = "application/x-fav-row";
-  var MAX_FAN = 8;                     /* 最多摊几个，再多改用右侧抽屉 */
-  var GAP = 104;                       /* 相邻文件夹的横向间距 */
-  var BULGE = 13;                      /* 两端比中间高多少（形成扇形弧） */
-  var TILT = 16;                       /* 扇形张开的总角度 */
+  var MAX_ROWS = 6;                    /* 一屏最多列几个，再多用收藏抽屉拖放 */
+  var STAGGER = 28;                    /* 每行错峰多少毫秒 */
 
-  var ST = { open: false, cats: [], el: null, loading: false, ready: false };
+  var ST = { open: false, cats: [], el: null, loading: false, ready: false, error: null };
 
   /* ---------------------------------------------------------------- 小工具 */
 
@@ -61,15 +58,16 @@
   function ensure() {
     if (ST.el && ST.el.parentNode) return ST.el;
     var d = document.createElement("div");
-    d.id = "fv-fan";
-    d.className = "fv-fan";
+    d.id = "fv-fan";                       /* id 沿用，避免动到其它引用 */
+    d.className = "fv-dock";
     d.setAttribute("aria-hidden", "true");
     d.innerHTML = ''
-      + '<div class="fv-fan-bar" role="status">'
-      +   '<span class="fv-fan-bar-dot" aria-hidden="true"></span>'
-      +   '<span class="fv-fan-bar-txt"><b>可以拖进收藏</b> · 松手即归入该分类 · Esc 取消</span>'
+      + '<div class="fv-dock-hd">'
+      +   '<span class="fv-dock-dot" aria-hidden="true"></span>'
+      +   '<span class="fv-dock-hd-t">可以拖进收藏</span>'
       + '</div>'
-      + '<div class="fv-fan-deck" id="fv-fan-deck"></div>';
+      + '<div class="fv-dock-list" id="fv-dock-list" role="list"></div>'
+      + '<div class="fv-dock-ft">松手即归入该分类<span class="fv-dock-sep">·</span>Esc 取消</div>';
     document.body.appendChild(d);
     ST.el = d;
     document.addEventListener("keydown", function (e) {
@@ -78,43 +76,24 @@
     return d;
   }
 
-  /* 横向扇形排布：
-     以右侧收藏入口为扇轴（deck 的右端），第 0 张离扇轴最近，依次往左排；
-     两端略微上抬、整叠带轻微旋转，所以看起来是"向右展开的一手牌"，而不是竖着的一摞。 */
+  /* 竖排不需要算坐标：行与行靠 flex 排，这里只负责给出错峰节奏 */
   function layout() {
-    var deck = $("#fv-fan-deck");
-    if (!deck) return;
-    var cells = all(".fv-fan-cell", deck);
-    var n = cells.length;
-    if (!n) return;
-    var vw = global.innerWidth || 1280;
-    /* 窄屏收窄间距，保证最左边那张不会跑出视口 */
-    var gap = Math.max(74, Math.min(GAP, Math.round((vw * 0.46) / Math.max(1, n - 1))));
-    cells.forEach(function (el, i) {
-      var t = (n === 1) ? 0.5 : (i / (n - 1));          /* 0=最右 1=最左 */
-      var dx = -Math.round(i * gap);
-      var dy = -Math.round(Math.abs(t - 0.5) * 2 * BULGE);   /* 两端高、中间低 = 弧 */
-      var rot = Math.round((0.5 - t) * TILT);               /* 向右张开 */
-      el.style.setProperty("--dx", dx + "px");
-      el.style.setProperty("--dy", dy + "px");
-      el.style.setProperty("--rot", rot + "deg");
-      el.style.setProperty("--d", Math.round(i * 30) + "ms");
-      el.style.zIndex = String(20 - i);
+    var rows = all(".fv-dock-row", $("#fv-dock-list"));
+    rows.forEach(function (el, i) {
+      el.style.setProperty("--i", String(i));
+      el.style.setProperty("--d", Math.round(i * STAGGER) + "ms");
     });
+    return rows.length;
   }
 
-  /* 收起时的形态：五张叠在扇轴上，角度归零 —— 展开动画从这一帧开始播 */
+  /* 展开前先把节奏归零，动画才有起点 */
   function collapseVars() {
-    var cells = all(".fv-fan-cell", $("#fv-fan-deck") || document);
-    cells.forEach(function (el) {
-      el.style.setProperty("--dx", "0px");
-      el.style.setProperty("--dy", "0px");
-      el.style.setProperty("--rot", "0deg");
+    all(".fv-dock-row", $("#fv-dock-list") || document).forEach(function (el) {
+      el.style.setProperty("--d", "0ms");
     });
   }
 
   var wasOpen = false;
-  /* 摊开只在"扇形正开着"时播；收起状态下渲染（例如 hide 之后补渲染）不该有动画 */
   function play() {
     if (ST.ready || !wasOpen) return;
     ST.ready = true;
@@ -122,31 +101,38 @@
   }
 
   function render() {
-    var deck = $("#fv-fan-deck");
-    if (!deck) return;
+    var list = $("#fv-dock-list");
+    if (!list) return;
     ST.ready = false;
     var cats = ST.cats || [];
+
     if (!cats.length) {
-      deck.innerHTML = '<div class="fv-fan-empty">' + (ST.loading ? "正在准备分类…" : "还没有分类") + '</div>';
+      list.innerHTML = '<div class="fv-dock-empty">'
+        + (ST.loading ? "正在准备分类…" : (ST.error ? "分类读取失败，请刷新" : "还没有分类"))
+        + '</div>';
       return;
     }
-    var list = cats.slice(0, MAX_FAN);
-    deck.innerHTML = list.map(function (c) {
+
+    var show = cats.slice(0, MAX_ROWS);
+    list.innerHTML = show.map(function (c) {
       var n = countOf(c.id);
-      return '<div class="fv-fan-cell" data-cat="' + esc(c.id) + '" data-name="' + esc(c.name) + '"'
+      return '<div class="fv-dock-row" role="listitem"'
+        + ' data-cat="' + esc(c.id) + '" data-name="' + esc(c.name) + '"'
         + ' style="--fv-c:' + esc(c.color || "#8b7355") + '">'
-        + '<span class="fv-fan-fold" aria-hidden="true"></span>'
-        + '<span class="fv-fan-nm">' + esc(c.name) + '</span>'
-        + (n == null ? "" : '<span class="fv-fan-n">' + n + ' 张</span>')
+        + '<span class="fv-dock-pin" aria-hidden="true"></span>'
+        + '<span class="fv-dock-nm">' + esc(c.name) + '</span>'
+        + (n == null ? "" : '<span class="fv-dock-n">' + n + '</span>')
+        + '<span class="fv-dock-ok" aria-hidden="true">\u2713</span>'
         + '</div>';
     }).join("")
-      + (cats.length > MAX_FAN
-        ? '<div class="fv-fan-more">还有 ' + (cats.length - MAX_FAN) + ' 个分类，<br>用右侧收藏抽屉拖放</div>'
+      + (cats.length > MAX_ROWS
+        ? '<div class="fv-dock-more">还有 ' + (cats.length - MAX_ROWS) + ' 个分类，用右侧收藏抽屉拖放</div>'
         : "");
+
     collapseVars();
-    bindFolders();
-    /* 下一帧再摊开，动画才有起点；再补一个定时兜底：
-       某些环境（后台标签页 / 无头预览）rAF 不一定触发，没有兜底就会停在"叠成一摞"的状态 */
+    bindRows();
+    /* 下一帧再展开，动画才有起点；再补一个定时兜底：
+       某些环境（后台标签页 / 无头预览）rAF 不一定触发，没有兜底就会停在"没出现"的状态 */
     var kick = global.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
     kick(function () { play(); });
     global.setTimeout(function () { play(); }, 60);
@@ -154,14 +140,18 @@
 
   /* ---------------------------------------------------------------- 拖放 */
 
-  function bindFolders() {
-    all(".fv-fan-cell", $("#fv-fan-deck")).forEach(function (el) {
+  function bindRows() {
+    all(".fv-dock-row", $("#fv-dock-list")).forEach(function (el) {
       el.addEventListener("dragover", function (e) {
         e.preventDefault();
         try { e.dataTransfer.dropEffect = "copy"; } catch (x) {}
         el.classList.add("is-over");
+        if (ST.el) ST.el.classList.add("is-hot");     /* 其余行淡下去，视线只在落点上 */
       });
-      el.addEventListener("dragleave", function () { el.classList.remove("is-over"); });
+      el.addEventListener("dragleave", function () {
+        el.classList.remove("is-over");
+        if (ST.el && !all(".is-over", ST.el).length) ST.el.classList.remove("is-hot");
+      });
       el.addEventListener("drop", function (e) {
         e.preventDefault();
         e.stopPropagation();
@@ -222,6 +212,7 @@
       if (typeof SB.ensureDefaultFavCats === "function") cats = await SB.ensureDefaultFavCats();
       else if (typeof SB.listFavCategories === "function") cats = await SB.listFavCategories();
       ST.cats = Array.isArray(cats) ? cats : [];
+      ST.error = null;
     } catch (err) {
       ST.cats = [];
       ST.error = (err && err.message) ? err.message : "读取分类失败";
@@ -248,6 +239,7 @@
     wasOpen = false;
     ST.ready = false;
     ST.el.classList.remove("is-open");
+    ST.el.classList.remove("is-hot");
     ST.el.setAttribute("aria-hidden", "true");
     all(".is-over", ST.el).forEach(function (x) { x.classList.remove("is-over"); });
     ST.cats = [];                 /* 下次拖动重新取一次（用户可能刚新建过分类） */
@@ -258,7 +250,10 @@
     hide: hide,
     isOpen: function () { return ST.open; },
     state: function () { return ST; },
-    _test: { layout: layout, render: render, countOf: countOf, onDrop: onDrop, GAP: GAP, MAX_FAN: MAX_FAN }
+    _test: {
+      layout: layout, render: render, countOf: countOf, onDrop: onDrop,
+      MAX_ROWS: MAX_ROWS, STAGGER: STAGGER
+    }
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ensure);

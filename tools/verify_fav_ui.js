@@ -19,15 +19,18 @@ const RANK = read("js/rank.js");
 const CSS = read("css/style.css");
 const HTML = read("rank.html");
 
-console.log("\n=== 收藏抽屉：取消扇形、改为右侧滑出 + macOS 质感 ===\n");
+console.log("\n=== 收藏抽屉 + 拖动分类竖排清单：右侧浮层 + macOS 质感 ===\n");
 
-/* ① 扇形保留，但必须是"横向向右展开"的那一版（20261023F） */
-ok("js/favfan.js 仍在（扇形保留，改为横向）", fs.existsSync(path.join(ROOT, "js/favfan.js")));
+/* ① 拖放面板：20261023H 起改成"竖排一列贴右侧"（横向扇形已被否掉） */
+ok("js/favfan.js 仍在（改为竖排清单）", fs.existsSync(path.join(ROOT, "js/favfan.js")));
 ok("rank.html 引入 favfan.js", /favfan\.js\?v=/.test(HTML));
 ok("rank.js 拖动时调用 FavFan.show", /FavFan\.show\(\)/.test(RANK));
-ok("CSS 有横向扇形的文件夹样式", /\.fv-fan-cell\{/.test(CSS));
+ok("CSS 有竖排清单的行样式", /\.fv-dock-row\{/.test(CSS));
+ok("竖排清单贴在右侧（position:fixed + right）", /\.fv-dock\{[\s\S]*?position:\s*fixed[\s\S]*?right:\s*\d+px/.test(CSS));
+ok("竖排清单是纵向一列（flex-direction: column）", /\.fv-dock-list\{[\s\S]*?flex-direction:\s*column/.test(CSS));
+ok("旧的横向扇形样式已清干净", !/\.fv-fan-cell|\.fv-fan-deck/.test(CSS));
 ok("拖动时不再自动把抽屉滑出（扇形接管拖放）", !/FavDrawer\.openForDrop\(\)/.test(RANK));
-ok("扇形带「可以拖进收藏」提示", /可以拖进收藏/.test(read("js/favfan.js")));
+ok("仍然提示「可以拖进收藏」", /可以拖进收藏/.test(read("js/favfan.js")));
 ok("抽屉的落点清理仍保留（两条路径都收得干净）", /endDropMode/.test(RANK));
 
 /* ② 抽屉仍是"浮层"，不推挤对比池 */
