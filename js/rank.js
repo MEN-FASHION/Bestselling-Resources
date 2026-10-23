@@ -39,6 +39,7 @@
   var TAG_BUSY = false;
   var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
   var LAST_COLS_MODE = "";
+  var LAST_KEPT = 0;         // 上一次真正画进各列的张数合计（类目对比不含上一周基线）
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
   var COLS = 3;              // 对比列数：纵向=最近几周、横向=前几个国家，可选 2/3/4（默认 3 = 美国近三周对比）
@@ -752,15 +753,20 @@
     if (!el) return;
     var sites = sitesForQuery();
     var periods = activePeriods();
+    /* 类目对比：CACHE 里含「上一周基线」（只为算位次），直接拿它当总数会把上周的图也算进来，
+       于是出现「共 1000 张，但下面只有 200 张」。这里改成按实际画进各列的张数算。 */
     var total = (CACHE && CACHE.items) ? CACHE.items.length : 0;
+    if (MODE === "c" && LAST_COLS_MODE === "c") total = LAST_KEPT;
     var shown = total ? Math.min(CAP, total) : 0;
     var h = '<div class="rk-modes">' +
       '<button type="button" class="rk-mode-btn' + (MODE === "h" ? " on" : "") + '" data-mode="h">横向 · 国家对比（多国 × 单周）</button>' +
       '<button type="button" class="rk-mode-btn' + (MODE === "v" ? " on" : "") + '" data-mode="v">纵向 · 时间对比（单国 × 多周）</button>' +
       '<button type="button" class="rk-mode-btn' + (MODE === "c" ? " on" : "") + '" data-mode="c">横向 · 类目对比（单周 × 多类目）</button>' +
       '</div>';
-    var cols = (MODE === "v" ? periods.length
-      : (MODE === "c" ? (LAST_COLS_MODE === "c" && LAST_COLS ? LAST_COLS : activeCats().length) : sites.length));
+    /* 列数一律以「上一次真正画出来的列数」为准：三类模式都可能折叠空列，
+       按已选数量显示会出现「写着 2 列、下面只有 1 列」这种对不上。 */
+    var cols = (LAST_COLS_MODE === MODE && LAST_COLS) ? LAST_COLS
+      : (MODE === "v" ? periods.length : (MODE === "c" ? activeCats().length : sites.length));
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
     h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
     h += '<button type="button" class="rk-rep-btn" id="rk-week-report" title="按当前选中的两周生成一份对比分析报告（PPT）：款式 / 图案印花与设计元素 / 二次工艺 / 场景与背景构成 / 主图视觉 / 类目结构 六维差异 + 趋势结论">生成周对比分析报告</button>';
@@ -989,8 +995,20 @@
         if (list.length > maxLen) maxLen = list.length;
         var metaC = siteC + (prevC ? (" · 较上一周（" + prevC + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
         if (ONLY !== "off") metaC += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
-        /* 这个类目当周没有图 → 整列不输出（与另外两种模式口径一致：不留空列） */
-        if (!list.length) { dropped++; dropKind = "cat"; return; }
+        /* 这个类目当周没有图 → 保留整列并写明原因。
+           折叠列会让「上面勾了 4 个类目、下面只剩 1 列」看着像丢数据，用户会以为漏了。 */
+        if (!list.length) {
+          var lastP = "";
+          for (var pi2 = baseC.length - 1; pi2 >= 0; pi2--) {
+            if ((byP[baseC[pi2]] || []).length) { lastP = baseC[pi2]; break; }
+          }
+          var emptyTxt = '该类目 ' + esc(pC) + ' 没有上榜数据'
+            + (lastP ? '（最近一次有数据是 ' + esc(lastP) + '）' : '')
+            + '。换一个周次，或在上面取消勾选这个类目。';
+          html += poolHtml(cat, siteC + " · " + pC + " · 本周无上传", 0, '<div class="rk-empty">' + emptyTxt + '</div>', null);
+          cols++;
+          return;
+        }
         var cardsC = list.slice(0, limit).map(function (it) {
           var mv = moveOf(it, pC, prevC, hasOf, rankOf);
           return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
@@ -1075,7 +1093,7 @@
         });
       });
     }
-    LAST_COLS = cols; LAST_COLS_MODE = MODE;
+    LAST_COLS = cols; LAST_COLS_MODE = MODE; LAST_KEPT = kept;
     return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind };
   }
 
@@ -1095,10 +1113,14 @@
     return [];
   }
 
-  function vitalsOf(items) {
+  function vitalsOf(items, onlyPeriod) {
     var cats = activeCats();
     return cats.map(function (cat) {
-      var mine = (items || []).filter(function (it) { return (it.category || "") === cat; });
+      /* 只统计「当前这一列对应的那一期」：CACHE 里还带着用于算位次的上一周基线，
+         若把它算进来，就会出现「体征卡显示 200 张，图片列却是空的」这种自相矛盾。 */
+      var mine = (items || []).filter(function (it) {
+        return (it.category || "") === cat && (!onlyPeriod || (it.period_label || "") === onlyPeriod);
+      });
       var n = mine.length;
       var opp = 0, hot = 0, srg = 0;
       mine.forEach(function (it) {
@@ -1131,12 +1153,14 @@
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         hasTag: sTot > 0 || eTot > 0, tagged: sTot
       };
-    }).filter(function (c) { return c.n > 0; });   /* 当周没上传的类目：图片列会自动折叠，体征卡也不占位 */
+    });   /* 本周没上传的类目也保留卡片：写「本周无数据」，不要静默消失 */
   }
 
   /* 差异洞察：从体征里挑出「差距最大」的几条，直接给结论，不罗列数据 */
   function insightsOf(V) {
     var out = [];
+    V = (V || []).filter(function (c) { return c.n > 0; });   /* 本周没上传的类目不参与「差别在哪」的结论 */
+    if (V.length < 2) return out;
     /* ① 拍摄方式落差：某类目某种拍法明显高于其余类目均值（≥10 个百分点才值得说） */
     var withShoot = V.filter(function (c) { return c.shoot.length; });
     if (withShoot.length >= 2) {
@@ -1196,16 +1220,21 @@
     V.forEach(function (c) {
       h += '<div class="rk-vit">'
         + '<div class="rk-vit-h"><span class="rk-vit-name">' + esc(c.cat) + '</span>'
-        + '<span class="rk-vit-n"><b>' + c.n + '</b> 张上榜</span></div>'
+        + (c.n
+          ? '<span class="rk-vit-n"><b>' + c.n + '</b> 张上榜</span></div>'
+          : '<span class="rk-vit-n rk-vit-none">本周无上传</span></div>'
+            + '<div class="rk-vit-empty">该类目这一周没有上榜数据，下面的图片列会是空的 —— 换一周，或在上面取消勾选它。</div>')
         + '<div class="rk-vit-stack" title="三档标签占比（占比之和可能不足 100%：没打上标签的图不计入）">'
         + '<i class="v-opp" style="width:' + c.oppP + '%"></i>'
         + '<i class="v-hot" style="width:' + c.hotP + '%"></i>'
         + '<i class="v-srg" style="width:' + c.srgP + '%"></i></div>'
-        + '<div class="rk-vit-legend">'
-        + '<span><em class="v-opp"></em>潜力机会 ' + c.oppP + '%</span>'
-        + '<span><em class="v-hot"></em>趋势爆款 ' + c.hotP + '%</span>'
-        + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
-        + '</div>';
+        + (c.n
+          ? '<div class="rk-vit-legend">'
+            + '<span><em class="v-opp"></em>潜力机会 ' + c.oppP + '%</span>'
+            + '<span><em class="v-hot"></em>趋势爆款 ' + c.hotP + '%</span>'
+            + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
+            + '</div>'
+          : '');
       if (c.shoot.length) {
         h += '<div class="rk-vit-sub">拍摄方式</div>';
         c.shoot.forEach(function (s) {
@@ -1272,7 +1301,8 @@
     /* 类目对比：先出「体征卡」（只比构成、不比张数），再出图片列 */
     var vit = "";
     if (MODE === "c") {
-      var VIT = vitalsOf(CACHE.items);
+      var pVIT = periods[periods.length - 1] || "";
+      var VIT = vitalsOf(CACHE.items, pVIT);
       vit = vitalsHtml(VIT);
       ensureTags(CACHE.items);        /* 拍摄方式 / 元素：有打标就补上，没有就只显示三档占比 */
     }
@@ -1956,7 +1986,8 @@
       if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
       var _cc = (_qs.get("cats") || "").split(",").filter(function (v) { return v.trim(); });
       if (_cc.length) { SEL_CATS = _cc; if (MODE !== "c") { MODE = "c"; _modeFromUrl = true; } }
-      _urlPickedCols = !!(_ss.length || _pp.length);
+      /* 链接里已经点名了对比类目，就不能再按「默认列数」重排，否则 4 个类目会被截成 3 个 */
+      _urlPickedCols = !!(_ss.length || _pp.length || _cc.length);
     } catch (e) { /* 无参数时忽略 */ }
 
     /* 分享链接 / 后台预览带的参数里可能含已隐藏项：再收一遍；收空了就回落到默认口径 */

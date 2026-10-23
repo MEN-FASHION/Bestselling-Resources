@@ -2300,15 +2300,33 @@ async removeTrendRecord(id) {
     // filter: { category, sites:[], periods:[], periodType }
     async listRankItems(filter) {
       const f = filter || {};
-      let q = client.from("rank_items").select("*");
-      if (f.category) q = q.eq("category", f.category);
-      else if (f.categories && f.categories.length) q = q.in("category", f.categories);
-      if (f.periodType) q = q.eq("period_type", f.periodType);
-      if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
-      if (f.sites && f.sites.length) q = q.in("site", f.sites);
-      const { data, error } = await q.limit(f.limit || 4000);
-      if (error) throw new Error(error.message || "读取榜单数据失败");
-      return data || [];
+      /* 服务端单次查询会被截断在 1000 行（与这里写多少 limit 无关，是接口层的上限）。
+         类目对比要同时取「4 个类目 × 2 周」的图，行数轻松超过 1000，
+         一旦被截断就会表现为「勾了 4 个类目，下面只有 1 列有图」——
+         被截掉的是哪几个类目取决于数据库返回顺序，看起来像是那几个类目没上传。
+         这里改成分页取全量：按 id 升序翻页，取到不满一页为止。 */
+      const PAGE = 1000, MAX = 20000;
+      const wanted = f.limit || 0;
+      const build = (from, to) => {
+        let q = client.from("rank_items").select("*");
+        if (f.category) q = q.eq("category", f.category);
+        else if (f.categories && f.categories.length) q = q.in("category", f.categories);
+        if (f.periodType) q = q.eq("period_type", f.periodType);
+        if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
+        if (f.sites && f.sites.length) q = q.in("site", f.sites);
+        return q.order("id", { ascending: true }).range(from, to);
+      };
+      const out = [];
+      for (let from = 0; from < MAX; from += PAGE) {
+        const to = Math.min(from + PAGE, MAX) - 1;
+        const { data, error } = await build(from, to);
+        if (error) throw new Error(error.message || "读取榜单数据失败");
+        const rows = data || [];
+        for (const r of rows) out.push(r);
+        if (rows.length < PAGE) break;                  /* 已取完 */
+        if (wanted && out.length >= wanted) break;      /* 调用方只要前 N 条 */
+      }
+      return wanted ? out.slice(0, wanted) : out;
     },
 
     /* 按图片地址批量取「打标维度」：周对比分析报告要用它们做维度差异统计。
