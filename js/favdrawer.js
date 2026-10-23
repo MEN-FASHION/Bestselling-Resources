@@ -57,6 +57,17 @@
   var DEFAULT_CATS = ["印花", "面料", "图案", "工艺", "视觉"];
   /* 从榜单卡片拖进来时用的自定义数据类型（浏览器在 dragover 阶段只允许读 types） */
   var EXT_TYPE = "application/x-fav-row";
+
+  /* 线性图标：不用 emoji，避免各系统字形不一致、也便于随字号缩放 */
+  var SVG = {
+    bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5h11a1 1 0 0 1 1 1V20l-6.5-3.6L5.5 20V5.5a1 1 0 0 1 1-1Z"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg>',
+    rows: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>',
+    expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5.5A1.5 1.5 0 0 0 4 5.5V9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15M15 20h3.5a1.5 1.5 0 0 0 1.5-1.5V15"/></svg>',
+    collapse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M20 9V5.5A1.5 1.5 0 0 0 18.5 4H15M4 15v3.5A1.5 1.5 0 0 0 5.5 20H9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>'
+  };
   function colorAt(i) { return COLORS[((i % COLORS.length) + COLORS.length) % COLORS.length]; }
 
   /* ---------------------------------------------------------------- DOM */
@@ -74,7 +85,9 @@
       tab.setAttribute("aria-controls", "fv-drawer");
       tab.setAttribute("aria-expanded", "false");
       tab.title = "我的收藏（点击展开，不影响对比池）";
-      tab.innerHTML = '<span class="fv-tab-t">我的收藏</span><span class="fv-tab-n" id="fv-tab-n" hidden>0</span>';
+      tab.innerHTML = '<span class="fv-tab-ico" aria-hidden="true">' + SVG.bookmark + '</span>'
+        + '<span class="fv-tab-t">收藏</span>'
+        + '<span class="fv-tab-n" id="fv-tab-n" hidden>0</span>';
       tab.addEventListener("click", function () { toggle(); });
       body.appendChild(tab);
     }
@@ -87,12 +100,19 @@
       d.setAttribute("aria-label", "我的收藏");
       d.innerHTML = ''
         + '<div class="fv-d-head">'
-        +   '<div class="fv-d-title">我的收藏<span class="fv-d-count" id="fv-d-count"></span></div>'
-        +   '<div class="fv-d-acts">'
-        +     '<button type="button" class="fv-d-btn" id="fv-d-flat" title="把已分类的图按类别相邻铺开，未分类的不展开">平铺</button>'
-        +     '<button type="button" class="fv-d-btn fv-d-full" id="fv-d-full" title="全屏（Esc 退出）">⤢ 全屏</button>'
-        +     '<button type="button" class="fv-d-x" id="fv-d-x" aria-label="收起">×</button>'
+        +   '<div class="fv-d-htxt">'
+        +     '<div class="fv-d-title">我的收藏<span class="fv-d-count" id="fv-d-count"></span></div>'
+        +     '<div class="fv-d-sub" id="fv-d-sub"></div>'
         +   '</div>'
+        +   '<div class="fv-d-acts">'
+        +     '<button type="button" class="fv-d-ic" id="fv-d-flat" aria-label="平铺"></button>'
+        +     '<button type="button" class="fv-d-ic" id="fv-d-full" aria-label="全屏"></button>'
+        +     '<button type="button" class="fv-d-x" id="fv-d-x" aria-label="收起">' + SVG.close + '</button>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="fv-drop-hint" id="fv-drop-hint" hidden>'
+        +   '<span class="fv-drop-hint-dot" aria-hidden="true"></span>'
+        +   '<span>把图拖到下面的分类，松手即可归入</span>'
         + '</div>'
         + '<div class="fv-d-filter" id="fv-d-filter"></div>'
         + '<div class="fv-d-main">'
@@ -306,7 +326,7 @@
         e.preventDefault(); e.stopPropagation();
         var row = extRow(e);
         var cidExt = resolveCid();
-        endDropMode();
+        endDropMode(true);          /* 放进分类了：抽屉留着，让用户看到归到哪 */
         if (row && cidExt !== "__skip__") addDropped(row, cidExt);
         return;
       }
@@ -358,6 +378,9 @@
   /* 拖动榜单图时把抽屉摊开、让分类变成"文件夹"落点 */
   function openForDrop() {
     ensureDom();
+    /* 记住"这次是拖动临时拉开的"：拖到空处（没放进任何分类）要自动收回，
+       用户没有主动开过抽屉，不该替他留着。 */
+    ST.autoOpened = !ST.open;
     if (!ST.open) {
       ST.open = true;
       ST.view = "drawer";
@@ -375,11 +398,20 @@
     if (!d) return;
     d.classList.add("is-open", "is-drop-ready");
     d.setAttribute("aria-hidden", "false");
+    var t = $("#fv-tab");
+    if (t) { t.classList.add("is-open"); t.setAttribute("aria-expanded", "true"); }
+    setDropHint(true);
   }
-  function endDropMode() {
+  /* keep=true 表示"已经放进分类了"，抽屉留着让用户看到结果；
+     keep=false（默认）表示没放成（拖到空处 / 拖出窗口），临时拉开的抽屉自动收回。 */
+  function endDropMode(keep) {
     var d = $("#fv-drawer");
     if (d) d.classList.remove("is-drop-ready");
     all(".is-drop", document).forEach(function (e) { e.classList.remove("is-drop"); });
+    setDropHint(false);
+    var wasAuto = !!ST.autoOpened;
+    ST.autoOpened = false;
+    if (wasAuto && !keep && ST.open) close();
   }
 
   /* 取消收藏：从收藏里移除这一条（不删图、不删分类） */
@@ -477,6 +509,7 @@
     return '<figure class="fv-d-cell' + (opts.drag ? " is-drag" : "") + '" data-url="' + esc(it.image_url) + '"'
       + (opts.drag ? ' draggable="true" data-id="' + esc(it.id) + '"' : '')
       + ' data-cid="' + esc(cid == null ? "" : cid) + '"'
+      + ' style="--i:' + (opts.i || 0) + '"'
       + ' title="' + esc(full) + '">'
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
@@ -548,6 +581,8 @@
     /* 拖拽在抽屉形态也开放：放置目标是顶部筛选 chip，
        全屏形态另有左栏分类与平铺组可接。这样"来回拖"不必先进全屏。 */
     var canDrag = true;
+    var seq = 0;                 /* 仅用于入场动画的错峰序号，最多算到 24，后面不再叠加延迟 */
+    var nextI = function () { return Math.min(seq++, 24); };
     var h = '';
     groupByPeriod(list).forEach(function (g) {
       h += '<section class="fv-d-week">';
@@ -563,7 +598,7 @@
         fg.groups.forEach(function (grp) {
           h += '<div class="fv-d-flat is-droppable" data-flat="' + grp.cid + '">';
           h += '<div class="fv-d-flat-cells">';
-          grp.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag }); });
+          grp.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
           h += '</div>';
           h += '<div class="fv-d-flat-band is-droppable" data-flat="' + grp.cid + '" style="border-color:' + esc(grp.color)
             + ';background:' + esc(grp.color) + '1f">'
@@ -576,12 +611,12 @@
         if (fg.others.length) {
           h += '<details class="fv-d-flat-others is-droppable" data-flat-none="1"><summary>未分类 ' + fg.others.length + ' 张（不参与平铺）</summary>'
             + '<div class="fv-d-grid">';
-          fg.others.forEach(function (it) { h += cellHtml(it, { drag: canDrag }); });
+          fg.others.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
           h += '</div></details>';
         }
       } else {
         h += '<div class="fv-d-grid">';
-        g.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag }); });
+        g.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
         h += '</div>';
       }
       h += '</section>';
@@ -598,19 +633,32 @@
     var b = $("#fv-tab-n");
     if (b) { b.textContent = String(n > 999 ? "999+" : n); b.hidden = !n; }
     var c = $("#fv-d-count");
-    if (c) c.textContent = n ? "· " + n + " 张" : "";
+    if (c) c.textContent = n ? "· " + n : "";
+    /* 副标题：分类数与当前筛选，用一句话说清"现在看到的是什么范围" */
+    var sub = $("#fv-d-sub");
+    if (sub) {
+      var parts = [n + " 张"];
+      if ((ST.cats || []).length) parts.push(ST.cats.length + " 个分类");
+      if (ST.filter && ST.filter !== "all") {
+        var cn = ST.filter === "none" ? "未分类" : (catOf(ST.filter) || {}).name;
+        if (cn) parts.push("正在看「" + cn + "」");
+      }
+      sub.textContent = parts.join(" · ");
+    }
   }
 
   function renderHead() {
     var fb = $("#fv-d-flat"), bf = $("#fv-d-full");
     if (fb) {
-      fb.textContent = ST.flat ? "取消平铺" : "平铺";
+      fb.innerHTML = ST.flat ? SVG.rows : SVG.grid;
       fb.classList.toggle("is-on", !!ST.flat);
+      fb.setAttribute("aria-pressed", ST.flat ? "true" : "false");
       fb.title = ST.flat ? "回到普通分组视图" : "把已分类的图按类别相邻铺开，未分类的不展开";
     }
     if (bf) {
-      bf.textContent = ST.view === "full" ? "⤡ 退出全屏" : "⤢ 全屏";
+      bf.innerHTML = ST.view === "full" ? SVG.collapse : SVG.expand;
       bf.title = ST.view === "full" ? "退出全屏（Esc）" : "全屏（Esc 退出）";
+      bf.setAttribute("aria-label", ST.view === "full" ? "退出全屏" : "全屏");
     }
     var d = $("#fv-drawer");
     if (d) {
@@ -785,16 +833,35 @@
     var d = $("#fv-drawer"), t = $("#fv-tab");
     if (d) { d.classList.add("is-open"); d.setAttribute("aria-hidden", "false"); }
     if (t) { t.classList.add("is-open"); t.setAttribute("aria-expanded", "true"); }
+    setDropHint(false);
     await load();
     render();
+    animateIn();
+  }
+
+  /* 入场：只在真正"打开"这一刻播一次，筛选/重绘不重播，避免每次都像刷新 */
+  function animateIn() {
+    var box = $("#fv-d-body");
+    if (!box) return;
+    box.classList.remove("is-in");
+    void box.offsetWidth;
+    box.classList.add("is-in");
+    setTimeout(function () { box.classList.remove("is-in"); }, 900);
   }
 
   function close() {
     var d = $("#fv-drawer"), t = $("#fv-tab");
     ST.open = false;
     ST.view = "drawer";
-    if (d) { d.classList.remove("is-open", "is-full"); d.setAttribute("aria-hidden", "true"); }
+    if (d) { d.classList.remove("is-open", "is-full", "is-drop-ready"); d.setAttribute("aria-hidden", "true"); }
     if (t) { t.classList.remove("is-open"); t.setAttribute("aria-expanded", "false"); }
+    setDropHint(false);
+  }
+
+  /* 拖放提示条：只在"正在从榜单拖图"时出现，平时不占地方 */
+  function setDropHint(on) {
+    var h = $("#fv-drop-hint");
+    if (h) h.hidden = !on;
   }
 
   function toggle() { return ST.open ? (close(), Promise.resolve()) : open(); }

@@ -340,7 +340,13 @@ function bootDom(sb) {
 
     ok("默认是抽屉形态（不铺满、不显示左栏）",
       w.FavDrawer.view() === "drawer" && drawer.className.indexOf("is-full") === -1 && side.hidden === true);
-    ok("头部有全屏按钮，文案为「全屏」", fullBtn && /全屏/.test(fullBtn.textContent), fullBtn && fullBtn.textContent);
+    /* 20261023E：按钮从"文字"改成"线性图标 + aria-label / title"，
+       所以验证改看 aria-label 与 title——它们才是读屏和悬停真正呈现给用户的文案。 */
+    ok("头部有全屏按钮，且带「全屏」文案（aria-label / title）",
+      !!fullBtn && (/全屏/.test(fullBtn.getAttribute("aria-label") || "") || /全屏/.test(fullBtn.getAttribute("title") || "")),
+      fullBtn && (fullBtn.getAttribute("aria-label") || "") + " / " + (fullBtn.getAttribute("title") || ""));
+    ok("全屏按钮是线性图标（inline SVG，不用 emoji）",
+      !!fullBtn && !!fullBtn.querySelector("svg"), fullBtn && fullBtn.innerHTML.slice(0, 40));
     ok("不再有「完整页面 ↗」跳转（改成当前页全屏）",
       !doc.querySelector("#fv-drawer a[href*='fav.html']"));
 
@@ -348,7 +354,9 @@ function bootDom(sb) {
     fullBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
     await tick(5);
     ok("点全屏后进入全屏形态", w.FavDrawer.view() === "full" && drawer.className.indexOf("is-full") >= 0);
-    ok("全屏时按钮变成「退出全屏」", /退出全屏/.test(fullBtn.textContent), fullBtn.textContent);
+    ok("全屏时按钮变成「退出全屏」",
+      /退出全屏/.test(fullBtn.getAttribute("aria-label") || "") || /退出全屏/.test(fullBtn.getAttribute("title") || ""),
+      fullBtn.getAttribute("aria-label") || "");
     ok("全屏时左栏分类可见", side.hidden === false);
     ok("全屏时分类栏渲染了分类与未分类", doc.querySelectorAll("#fv-d-side .fv-d-cat").length === 3,
       doc.querySelectorAll("#fv-d-side .fv-d-cat").length);
@@ -453,7 +461,11 @@ function bootDom(sb) {
     doc.getElementById("fv-d-flat").dispatchEvent(new w.Event("click", { bubbles: true }));
     await tick(5);
     ok("再点一次取消平铺，回到普通网格", doc.querySelectorAll(".fv-d-flat").length === 0);
-    ok("按钮文案在「平铺 / 取消平铺」间切换", /^平铺$/.test(doc.getElementById("fv-d-flat").textContent.trim()));
+    /* 20261023E：平铺按钮同样是图标，状态改由 aria-pressed + title 表达 */
+    ok("平铺按钮回到未开启状态（aria-pressed=false，图标为田字格）", (function () {
+      var b = doc.getElementById("fv-d-flat");
+      return !!b && b.getAttribute("aria-pressed") === "false" && !b.classList.contains("is-on");
+    })());
 
     /* 只有未分类时平铺给说明、不出空框 */
     const sb2 = makeSB({
@@ -784,9 +796,11 @@ function bootDom(sb) {
     ok("榜单卡片可拖动收藏（draggable 已加）", /draggable="true" data-tags="/.test(RANK_JS));
     ok("榜单卡片把原标签快照进 data-tags", /var cardTags = \[\];/.test(RANK_JS) && /cardTags\.push\(b\.txt\)/.test(RANK_JS));
     ok("收藏数据带上 tags 与 rank_pos", /tags: String\(fig\.getAttribute\("data-tags"\)/.test(RANK_JS) && /rank_pos: fig\.getAttribute\("data-rank"\)/.test(RANK_JS));
-    ok("拖动一开始就把分类摊成扇形文件夹（不再先滑右侧抽屉）",
-      /FavFan\.show\(\)/.test(RANK_JS) && !/FavDrawer\.openForDrop\(\)/.test(RANK_JS));
-    ok("拖动结束收起扇形（拖到窗口外也收得干净）", /FavFan\.hide\(\)/.test(RANK_JS));
+    /* 20261023E：取消扇形文件夹，改成抽屉自右侧滑出、分类变成文件夹落点 */
+    ok("拖动一开始就让右侧抽屉滑出（FavDrawer.openForDrop）",
+      /FavDrawer\.openForDrop\(\)/.test(RANK_JS));
+    ok("拖动逻辑不再引用扇形模块（FavFan 已移除）", !/FavFan/.test(RANK_JS));
+    ok("拖动结束收起落点高亮（endDropMode）", /endDropMode/.test(RANK_JS));
     ok("抽屉对外暴露 openForDrop / endDropMode / unfav",
       /openForDrop: openForDrop/.test(DRAWER) && /endDropMode: endDropMode/.test(DRAWER) && /unfav: unfav/.test(DRAWER));
     ok("收藏页也显示位次与标签（fv-meta）", /fv-meta/.test(FAV_JS) && /it\.rank_pos/.test(FAV_JS) && /it\.tags/.test(FAV_JS));

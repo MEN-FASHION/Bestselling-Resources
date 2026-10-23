@@ -4280,134 +4280,6 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-m-tg.is-move { background: rgba(42, 96, 148, .92); color: #fff; border-color: transparent; }
 .fv-m-tg.is-more { background: rgba(24, 22, 19, .62); color: #fff; border-color: transparent; }
 
-/* ===================================================================
- * 拖动收藏：扇形文件夹（favfan.js）
- * 拖动榜单图时把分类摊在对比池上方，松手即收藏到该分类。
- * 约束：外层 fixed + pointer-events:none，不占布局、不推挤列宽。
- * =================================================================== */
-.fv-fan {
-  position: fixed;
-  inset: 0;
-  z-index: 78;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;            /* 只有文件夹本身收事件，其余交给对比池 */
-  transition: opacity .12s ease, visibility .12s ease;
-  font-family: inherit;
-}
-.fv-fan.is-open { opacity: 1; visibility: visible; }
-
-.fv-fan-hint {
-  position: absolute;
-  left: 50%;
-  top: 14px;
-  transform: translateX(-50%);
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: rgba(38, 32, 26, .86);
-  color: #f6efe4;
-  font-size: 12.5px;
-  letter-spacing: .2px;
-  white-space: nowrap;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .22);
-}
-.fv-fan-hint b { color: #f0c66a; font-weight: 700; }
-
-.fv-fan-ring { position: absolute; inset: 0; }
-
-.fv-fan-cell {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 108px;
-  height: 86px;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 6px 8px 6px 12px;
-  border: 1px solid rgba(120, 104, 84, .34);
-  border-left: 6px solid var(--fv-c, #8b7355);
-  border-radius: 10px;
-  background: #fffdf8;
-  box-shadow: 0 8px 20px rgba(52, 42, 30, .2);
-  pointer-events: auto;
-  cursor: pointer;
-  opacity: 0;
-  user-select: none;
-  transition: opacity .16s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
-}
-.fv-fan.is-open .fv-fan-cell { opacity: 1; }
-
-/* 文件夹上沿的小标签，让它看起来像个马尼拉纸袋而不是普通方块 */
-.fv-fan-cell::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: -8px;
-  width: 40px;
-  height: 10px;
-  border-radius: 5px 5px 0 0;
-  background: var(--fv-c, #8b7355);
-  opacity: .9;
-}
-.fv-fan-cell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 9px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 62%);
-  pointer-events: none;
-}
-
-.fv-fan-nm {
-  font-size: 13px;
-  font-weight: 700;
-  color: #3a3126;
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fv-fan-n { font-size: 11px; color: #8a7c68; }
-
-/* 悬停放大用独立的 scale 属性：不覆盖 JS 写入的 transform，位置不会跳 */
-.fv-fan-cell.is-over {
-  scale: 1.14;
-  background: #fffaf0;
-  border-color: #c8a24a;
-  box-shadow: 0 12px 28px rgba(52, 42, 30, .3), 0 0 0 3px rgba(200, 162, 74, .38);
-}
-.fv-fan-cell.is-saving {
-  border-color: #4a9c6d;
-  box-shadow: 0 12px 28px rgba(52, 42, 30, .26), 0 0 0 3px rgba(74, 156, 109, .4);
-}
-
-.fv-fan-empty,
-.fv-fan-more {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  padding: 12px 18px;
-  border-radius: 12px;
-  background: rgba(255, 253, 248, .96);
-  border: 1px dashed rgba(120, 104, 84, .4);
-  color: #6b5f4f;
-  font-size: 12.5px;
-  line-height: 1.7;
-  text-align: center;
-  pointer-events: none;
-}
-
-@media (max-width: 760px) {
-  .fv-fan-cell { width: 92px; height: 74px; }
-  .fv-fan-nm { font-size: 12px; }
-}
-
 /* ============================================================================
  * 横向 · 类目对比（MODE=c）：类目体征卡 + 差异洞察
  * 口径：类目之间只比「构成」（百分比），不比张数（张数=上传量，不是热度）。
@@ -4469,3 +4341,434 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 /* 类目对比：本周无上传的类目卡（明确说明原因，不静默消失） */
 .rk-vit-n.rk-vit-none{color:#b07a4a;font-size:11.5px}
 .rk-vit-empty{margin-top:6px;font-size:11.5px;line-height:1.7;color:#9a8f80}
+
+/* ============================================================================
+   我的收藏 · 抽屉视觉重做（20261023E）
+   —— 交互改动：取消「扇形文件夹」，拖动榜单图时改为抽屉自右侧滑出、分类变成文件夹落点。
+   —— 视觉：macOS 面板质感（毛玻璃 / 圆角浮层 / 分层阴影 / 长缓动 / 微弹性）。
+   —— 底线不变：fixed 浮层、零占位、无遮罩，不推挤对比池、不挡对比池的点击。
+   —— 依赖的关系：本段在文件末尾，同权重规则天然覆盖上方旧样式；
+      旧样式保留 = 万一某段没覆盖到，退回的是能用的旧外观，而不是完全没样式。
+   ========================================================================== */
+:root{
+  --fv-w: 424px;                                /* 抽屉宽度（含内边距） */
+  --fv-ease: cubic-bezier(.32,.72,0,1);         /* 面板出入：起步果断、收尾极慢 */
+  --fv-spring: cubic-bezier(.16,1,.3,1);        /* 元素微交互：轻微回弹 */
+  --fv-glass: rgba(252,251,249,.82);
+  --fv-hair: rgba(28,24,18,.075);
+}
+
+/* ---------------- 右侧入口：一片薄玻璃标签 ---------------- */
+.fv-tab{
+  position: fixed; right: 0; top: 50%;
+  transform: translateY(-50%);
+  z-index: 58;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  width: 42px; padding: 15px 0 13px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+  background: var(--fv-glass);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  backdrop-filter: blur(26px) saturate(180%);
+  box-shadow: -10px 0 30px -10px rgba(40,34,26,.22), inset 0 1px 0 rgba(255,255,255,.9);
+  color: var(--sub);
+  cursor: pointer; font-family: inherit;
+  transition: right .52s var(--fv-ease), transform .52s var(--fv-ease),
+              color .25s ease, box-shadow .3s ease, background .3s ease;
+}
+.fv-tab:hover{
+  color: var(--gold);
+  box-shadow: -12px 0 34px -10px rgba(120,98,66,.3), inset 0 1px 0 rgba(255,255,255,.95);
+}
+.fv-tab:active{ transform: translateY(-50%) scale(.97); }
+.fv-tab.is-open{
+  right: calc(var(--fv-w) + 18px);
+  transform: translateY(-50%) translateX(0);
+  color: var(--gold);
+}
+.fv-tab-ico{ display: flex; }
+.fv-tab-ico svg{ width: 17px; height: 17px; display: block; }
+.fv-tab-t{
+  writing-mode: vertical-rl; text-orientation: upright;
+  letter-spacing: 2px; font-size: 11.5px; font-weight: 600;
+}
+.fv-tab-n{
+  min-width: 18px; height: 18px; line-height: 18px; padding: 0 4px;
+  border-radius: 999px; font-size: 10px; font-weight: 700;
+  background: var(--gold); color: #fff; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 抽屉：浮起的一块玻璃，四周留 10px 呼吸 ---------------- */
+.fv-drawer{
+  position: fixed;
+  top: 10px; right: 10px; bottom: 10px;
+  width: var(--fv-w); max-width: calc(100vw - 20px);
+  display: flex; flex-direction: column;
+  border: 1px solid var(--fv-hair);
+  border-radius: 20px;
+  background: var(--fv-glass);
+  -webkit-backdrop-filter: blur(42px) saturate(180%);
+  backdrop-filter: blur(42px) saturate(180%);
+  box-shadow:
+    0 34px 84px -22px rgba(34,28,20,.36),
+    0 10px 26px -12px rgba(34,28,20,.16),
+    inset 0 1px 0 rgba(255,255,255,.95),
+    inset 0 0 0 1px rgba(255,255,255,.34);
+  overflow: hidden;
+  z-index: 60;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(calc(100% + 22px), 0, 0) scale(.986);
+  transform-origin: 100% 50%;
+  will-change: transform, opacity;
+  transition:
+    transform .54s var(--fv-ease),
+    opacity .26s ease,
+    visibility 0s linear .54s;
+}
+.fv-drawer.is-open{
+  opacity: 1;
+  visibility: visible;
+  transform: translate3d(0,0,0) scale(1);
+  transition:
+    transform .54s var(--fv-ease),
+    opacity .2s ease,
+    visibility 0s;
+}
+
+/* 顶部一道极淡的高光，让"玻璃"有厚度 */
+.fv-drawer::before{
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 92px;
+  background: linear-gradient(to bottom, rgba(255,255,255,.5), rgba(255,255,255,0));
+  pointer-events: none; z-index: 0;
+}
+
+/* ---------------- 头部 ---------------- */
+.fv-d-head{
+  position: relative; z-index: 1;
+  flex: 0 0 auto;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 18px 18px 12px;
+  border-bottom: none;
+}
+.fv-d-htxt{ min-width: 0; }
+.fv-d-title{
+  font-size: 15px; font-weight: 600; letter-spacing: .4px; color: var(--txt);
+  line-height: 1.35;
+}
+.fv-d-count{ margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--sub); font-variant-numeric: tabular-nums; }
+.fv-d-sub{
+  margin-top: 5px; font-size: 11.5px; line-height: 1.5; color: var(--sub);
+  letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-d-acts{ display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+
+.fv-d-ic, .fv-d-x{
+  width: 30px; height: 30px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 9px;
+  background: transparent; color: var(--sub);
+  cursor: pointer; font-family: inherit;
+  transition: background .22s ease, color .22s ease, transform .22s var(--fv-spring);
+}
+.fv-d-ic svg, .fv-d-x svg{ width: 16px; height: 16px; display: block; }
+.fv-d-ic:hover, .fv-d-x:hover{ background: rgba(28,24,18,.06); color: var(--txt); }
+.fv-d-ic:active, .fv-d-x:active{ transform: scale(.92); }
+.fv-d-ic.is-on{ background: rgba(156,139,116,.18); color: var(--gold); }
+.fv-d-ic:focus-visible, .fv-d-x:focus-visible, .fv-tab:focus-visible{
+  outline: 2px solid rgba(156,139,116,.55); outline-offset: 2px;
+}
+
+/* ---------------- 拖动时的提示条 ---------------- */
+.fv-drop-hint{
+  position: relative; z-index: 1;
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 14px 10px; padding: 10px 12px;
+  border: 1px dashed rgba(156,139,116,.6); border-radius: 12px;
+  background: rgba(156,139,116,.09);
+  font-size: 12px; letter-spacing: .2px; color: #7a6a55;
+  animation: fv-fade-in .26s var(--fv-ease) both;
+}
+.fv-drop-hint[hidden]{ display: none; }
+.fv-drop-hint-dot{
+  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--gold);
+  animation: fv-pulse 1.7s ease-in-out infinite;
+}
+
+/* ---------------- 分类条（普通态：一排胶囊） ---------------- */
+.fv-d-filter{
+  position: relative; z-index: 1;
+  flex: 0 0 auto;
+  display: flex; gap: 6px; overflow-x: auto;
+  padding: 0 14px 12px;
+  scrollbar-width: none;
+}
+.fv-d-filter::-webkit-scrollbar{ height: 0; }
+.fv-d-chip{
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--fv-hair); background: rgba(255,255,255,.5);
+  color: var(--sub); font-size: 12px; font-family: inherit; white-space: nowrap;
+  transition: background .22s ease, border-color .22s ease, color .22s ease,
+              transform .22s var(--fv-spring);
+}
+.fv-d-chip:hover{ background: #fff; border-color: rgba(156,139,116,.5); color: var(--txt); }
+.fv-d-chip:active{ transform: scale(.97); }
+.fv-d-chip.is-on{
+  border-color: rgba(156,139,116,.85);
+  background: rgba(156,139,116,.14);
+  color: var(--txt); font-weight: 600;
+}
+.fv-d-chip i{ font-style: normal; font-size: 10.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.fv-d-dot{ width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; }
+
+/* ---------------- 拖动中：分类条变成「文件夹网格」 ---------------- */
+.fv-drawer.is-drop-ready .fv-d-filter{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+  padding: 0 14px 12px;
+}
+.fv-drawer.is-drop-ready .fv-d-chip{
+  justify-content: flex-start;
+  width: 100%; min-height: 48px;
+  padding: 9px 12px;
+  border: 1px dashed rgba(156,139,116,.55);
+  border-radius: 13px;
+  background: rgba(255,255,255,.66);
+  font-size: 12.5px;
+  box-shadow: 0 1px 2px rgba(30,25,18,.04);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease,
+              transform .18s var(--fv-spring);
+}
+.fv-drawer.is-drop-ready .fv-d-chip[data-fv-f="all"]{ display: none; }   /* 「全部」不是归类目标 */
+.fv-drawer.is-drop-ready .fv-d-chip i{ margin-left: auto; }
+.fv-drawer.is-drop-ready .fv-d-chip:hover{
+  transform: translateY(-1px);
+  border-color: var(--gold);
+  background: #fff;
+}
+.fv-drawer.is-drop-ready .fv-d-chip.is-drop{
+  border-style: solid; border-color: var(--gold);
+  background: rgba(156,139,116,.17);
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: 0 12px 26px -12px rgba(120,98,66,.55);
+}
+
+/* ---------------- 主体与滚动 ---------------- */
+.fv-d-main{ flex: 1 1 auto; display: flex; min-height: 0; position: relative; z-index: 1; }
+.fv-d-side{ display: none; }
+.fv-d-body{
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 6px 16px 28px;
+  scrollbar-width: thin; scrollbar-color: rgba(60,52,40,.22) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
+}
+.fv-d-body::-webkit-scrollbar{ width: 9px; }
+.fv-d-body::-webkit-scrollbar-thumb{
+  background: rgba(60,52,40,.16); border-radius: 8px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.fv-d-body:hover::-webkit-scrollbar-thumb{ background: rgba(60,52,40,.28); background-clip: padding-box; }
+
+.fv-d-empty{
+  padding: 30px 10px; text-align: center;
+  font-size: 12.5px; line-height: 1.95; color: var(--sub);
+}
+.fv-d-empty b{ color: var(--txt); font-weight: 600; }
+
+/* ---------------- 周分组：吸顶标题 ---------------- */
+.fv-d-week{ margin-bottom: 18px; }
+.fv-d-week-h{
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 9px 2px 8px; margin: 0 0 10px;
+  border-bottom: 1px solid var(--fv-hair);
+  background: linear-gradient(to bottom, rgba(252,251,249,.97) 60%, rgba(252,251,249,0));
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.fv-d-week-t{
+  font-size: 11px; font-weight: 700; letter-spacing: 1.8px;
+  color: #9a8b73; text-transform: uppercase;
+}
+.fv-d-week-n{ font-size: 11px; color: var(--sub); font-variant-numeric: tabular-nums; }
+
+/* ---------------- 图片卡片 ---------------- */
+.fv-d-grid{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.fv-d-cell{
+  position: relative; margin: 0; overflow: hidden;
+  border: 1px solid rgba(28,24,18,.06);
+  border-radius: 12px;
+  background: var(--shade, #f0eee9);
+  box-shadow: 0 1px 2px rgba(30,25,18,.05);
+  cursor: zoom-in;
+  transition: transform .34s var(--fv-spring), box-shadow .34s var(--fv-ease), border-color .24s ease;
+}
+.fv-d-body.is-in .fv-d-cell{ animation: fv-rise .46s var(--fv-ease) both; animation-delay: calc(var(--i,0) * 14ms); }
+.fv-d-cell:hover{
+  transform: translateY(-3px);
+  border-color: rgba(156,139,116,.5);
+  box-shadow: 0 16px 30px -16px rgba(34,28,20,.42), 0 2px 6px rgba(34,28,20,.07);
+}
+.fv-d-cell img{
+  display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover;
+  transition: transform .5s var(--fv-ease);
+}
+.fv-d-cell:hover img{ transform: scale(1.028); }
+.fv-d-cell figcaption{
+  padding: 5px 6px 6px; font-size: 10px; color: var(--sub);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-d-cell.is-dragging{ opacity: .42; transform: scale(.98); }
+.fv-d-cell.is-drag{ cursor: grab; }
+
+/* 分类小标 / 位次与标签：统一成更薄的一层，不压图 */
+.fv-d-tag{
+  position: absolute; left: 5px; top: 5px; max-width: calc(100% - 10px);
+  padding: 1.5px 6px; border-radius: 6px;
+  font-size: 9.5px; line-height: 1.5; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.fv-d-meta{
+  position: absolute; left: 5px; right: 5px; bottom: 27px;
+  display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none;
+}
+.fv-d-rank, .fv-d-tg{
+  padding: 1px 5px; border-radius: 5px; font-size: 10px; line-height: 15px;
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.fv-d-rank{ font-weight: 700; letter-spacing: .2px; background: rgba(24,22,19,.72); color: #fff; }
+.fv-d-tg{ background: rgba(255,255,255,.92); color: #3a3733; border: 1px solid rgba(0,0,0,.06); }
+.fv-d-tg.is-move{ background: rgba(42,96,148,.92); color: #fff; border-color: transparent; }
+.fv-d-tg.is-more{ background: rgba(24,22,19,.6); color: #fff; border-color: transparent; }
+.fv-d-tg.is-live{ border: 1px dashed rgba(200,162,74,.9); background: rgba(255,248,230,.95); }
+
+/* 取消收藏：平时几乎看不见，指上去才浮出来 */
+.fv-d-unfav{
+  position: absolute; top: 5px; right: 5px; z-index: 3;
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
+  font-size: 13px; line-height: 22px; text-align: center; cursor: pointer;
+  color: #fff; background: rgba(24,22,19,.42);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  opacity: 0; transform: scale(.9);
+  transition: opacity .2s ease, transform .24s var(--fv-spring), background .2s ease;
+}
+.fv-d-cell:hover .fv-d-unfav, .fv-d-unfav:focus-visible{ opacity: 1; transform: scale(1); }
+.fv-d-unfav:hover{ background: #c25e5a; transform: scale(1.08); }
+
+/* ---------------- 归类成功提示 ---------------- */
+.fv-d-save{
+  position: absolute; left: 50%; bottom: 24px; z-index: 5;
+  transform: translateX(-50%) translateY(10px) scale(.96);
+  padding: 9px 16px; border-radius: 12px;
+  background: rgba(28,24,18,.9); color: #fff; font-size: 12px; letter-spacing: .2px;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 16px 34px -14px rgba(0,0,0,.55);
+  opacity: 0; pointer-events: none; white-space: nowrap;
+  transition: opacity .26s ease, transform .38s var(--fv-spring);
+}
+.fv-d-save.is-on{ opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+
+/* ---------------- 全屏工作台 ---------------- */
+.fv-drawer.is-full{
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: 100vw; max-width: 100vw;
+  border: none; border-radius: 0;
+  background: rgba(250,249,247,.94);
+  box-shadow: none;
+  transform: translate3d(0,0,0) scale(1);
+}
+.fv-drawer.is-full .fv-d-head{ padding: 20px 26px 14px; }
+.fv-drawer.is-full .fv-d-main{ padding: 0 26px 22px; gap: 22px; }
+.fv-drawer.is-full .fv-d-side{
+  display: flex; flex-direction: column;
+  flex: 0 0 214px; width: 214px; min-width: 0;
+  border: 1px solid var(--fv-hair); border-radius: 16px;
+  background: rgba(255,255,255,.7);
+  box-shadow: 0 12px 30px -20px rgba(34,28,20,.28);
+  overflow: hidden;
+}
+.fv-drawer.is-full .fv-d-body{
+  padding: 4px 6px 24px 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
+}
+.fv-drawer.is-full .fv-d-grid{ grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+.fv-drawer.is-full .fv-d-filter{ padding: 0 26px 14px; }
+
+/* 全屏左栏：分类 */
+.fv-d-side-h{
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 14px 10px; font-size: 12px; font-weight: 600; letter-spacing: .5px;
+}
+.fv-d-newbtn{
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 9px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--fv-hair); background: rgba(255,255,255,.8); color: var(--gold);
+  font-size: 11.5px; font-family: inherit;
+  transition: background .2s, border-color .2s, transform .2s var(--fv-spring);
+}
+.fv-d-newbtn:hover{ border-color: var(--gold); background: #fff; }
+.fv-d-newbtn:active{ transform: scale(.97); }
+.fv-d-cats{ flex: 1 1 auto; overflow-y: auto; padding: 0 8px 10px; scrollbar-width: thin; }
+.fv-d-cat{
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 8px 9px; margin-bottom: 3px;
+  border-radius: 9px; border: 1px solid transparent;
+  cursor: pointer; font-size: 12.5px; color: var(--txt);
+  transition: background .2s ease, border-color .2s ease, transform .2s var(--fv-spring);
+}
+.fv-d-cat:hover{ background: rgba(156,139,116,.1); }
+.fv-d-cat.is-on{ background: rgba(156,139,116,.16); border-color: rgba(156,139,116,.45); font-weight: 600; }
+.fv-d-cat.is-drop{ border-color: var(--gold); border-style: dashed; background: rgba(156,139,116,.2); }
+.fv-d-side-tip{
+  flex: 0 0 auto; padding: 10px 14px 14px;
+  font-size: 10.5px; line-height: 1.6; color: var(--sub);
+  border-top: 1px solid var(--fv-hair);
+}
+
+/* ---------------- 动效 ---------------- */
+@keyframes fv-rise{
+  from{ opacity: 0; transform: translateY(10px) scale(.985); }
+  to{ opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fv-fade-in{ from{ opacity: 0; } to{ opacity: 1; } }
+@keyframes fv-pulse{
+  0%,100%{ box-shadow: 0 0 0 3px rgba(156,139,116,.16); }
+  50%{ box-shadow: 0 0 0 8px rgba(156,139,116,.05); }
+}
+
+/* ---------------- 响应式 ---------------- */
+@media (max-width: 880px){
+  :root{ --fv-w: 380px; }
+  .fv-d-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px){
+  .fv-drawer{
+    top: 8px; right: 8px; bottom: 8px;
+    width: calc(100vw - 16px); max-width: calc(100vw - 16px);
+    border-radius: 18px;
+  }
+  .fv-tab{ width: 38px; }
+  .fv-tab.is-open{ right: 0; opacity: 0; pointer-events: none; }   /* 手机上抽屉已铺满，标签让位 */
+  .fv-drawer.is-full .fv-d-main{ padding: 0 14px 16px; }
+  .fv-d-warn{ margin: 0 12px 8px; }
+}
+
+/* 系统偏好减少动效时，全部让路：只保留状态切换，不做位移与弹跳 */
+@media (prefers-reduced-motion: reduce){
+  .fv-drawer, .fv-tab, .fv-d-ic, .fv-d-x, .fv-d-chip, .fv-d-cell,
+  .fv-d-cell img, .fv-d-save, .fv-drop-hint, .fv-drop-hint-dot{
+    transition-duration: .01ms !important;
+    animation: none !important;
+  }
+}
