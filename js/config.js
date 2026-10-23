@@ -121,7 +121,6 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "trend",         label: "趋势专区",      href: "trends.html" },
   { key: "recruit",       label: "招品回品",      href: "trends.html#recruit" },
   { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
-  { key: "fav",           label: "我的收藏",     href: "fav.html" },
   { key: "notice",        label: "公告",        href: "" }
 ];
 
@@ -206,76 +205,13 @@ window.CAT_SEARCH = (function () {
     var el = doc.getElementById(id);
     if (!el) {
       el = document.createElement("input");
-      el.id = id;
-      /* 用 text + inputmode 而不是 type=search：type=search 会被部分浏览器的
-         账号自动填充当成"搜索账号"，把登录邮箱直接填进类目搜索框，
-         看起来就像"侧边栏里显示了账号"。 */
-      el.type = "text"; el.inputMode = "search";
-      el.className = "cat-search";
-      /* Chrome 的账号自动填充会无视 autocomplete=off（实测仍会填邮箱），
-         new-password 是目前唯一对它有效的抑制值 —— 浏览器不会往这里填账号。 */
-      el.autocomplete = "new-password";
-      el.setAttribute("autocapitalize", "off");
-      el.setAttribute("autocorrect", "off");
-      el.setAttribute("spellcheck", "false");
-      /* 给密码管理器明确的"别填这里"信号（Chrome / 1Password / LastPass） */
-      el.setAttribute("data-form-type", "other");
-      el.setAttribute("data-lpignore", "true");
-      el.setAttribute("data-1p-ignore", "");
-      el.setAttribute("aria-autocomplete", "none");
-      /* name 不用 search 之类的通用词，避免被启发式判定成账号框 */
-      el.setAttribute("name", "cat-filter-q");
+      el.id = id; el.type = "search"; el.className = "cat-search";
+      el.autocomplete = "off";
       el.title = "模糊搜索：忽略大小写与符号，可隔字匹配（如输入「连衣」可搜到「连衣裙」）";
       target.parentNode.insertBefore(el, target);
-      /* 只读态下浏览器不会填充；聚焦后才允许输入，失焦且为空则恢复只读 */
-      el.setAttribute("readonly", "readonly");
-      if (el.addEventListener) {
-        el.addEventListener("focus", function () { el.removeAttribute("readonly"); });
-        el.addEventListener("blur", function () { if (!el.value) el.setAttribute("readonly", "readonly"); });
-      }
     }
     el.placeholder = placeholder || "搜索类目…";
-    el.oninput = function () {
-      try { onInput(el.value); } catch (e) { }
-    };
-    /* 真人才会按键/粘贴；自动填充即使触发 input 也不会触发 keydown，
-       所以 typed 只由键盘与粘贴事件置位 —— 这是区分二者的可靠判据。 */
-    if (!el.dataset.typedHook) {
-      el.dataset.typedHook = "1";
-      var markTyped = function () { try { el.dataset.typed = "1"; } catch (e) { } };
-      if (el.addEventListener) {
-        el.addEventListener("keydown", function (e) {
-          var k = e && e.key;
-          if (k === "Backspace" || k === "Delete" || k === "Enter" || (k && k.length === 1)) markTyped();
-        });
-        el.addEventListener("paste", markTyped);
-        el.addEventListener("compositionend", markTyped);
-      }
-    }
-    /* 兜底：浏览器/密码管理器在页面加载后偷偷填入的内容要清掉。
-       判据是「框里有值，但用户从未按键」——正常使用者不可能凭空有值。
-       之前只扫 300/1200ms 两次，Chrome 常在这之后才填（首次与页面交互时），
-       于是漏掉、邮箱留在框里、类目被当成关键字过滤成空 —— 现在持续守护 15 秒。 */
-    if (!el.dataset.autofillGuard) {
-      el.dataset.autofillGuard = "1";
-      var sweep = function () {
-        try {
-          if (!el.dataset.typed && el.value && el.value !== "") {
-            el.value = "";
-            if (typeof onInput === "function") onInput("");
-          }
-        } catch (e) { }
-      };
-      setTimeout(sweep, 200);
-      setTimeout(sweep, 600);
-      setTimeout(sweep, 1200);
-      var ticks = 0;
-      var timer = setInterval(function () {
-        ticks++;
-        sweep();
-        if (ticks >= 60) clearInterval(timer);   /* 60 × 250ms ≈ 15 秒后收工 */
-      }, 250);
-    }
+    el.oninput = function () { try { onInput(el.value); } catch (e) { } };
     return el;
   }
   function star(fav) { return fav ? "★" : ""; }

@@ -17,7 +17,6 @@ let PERM_ZONES = [
   { key: "trend", label: "趋势专区" },
   { key: "recruit", label: "招品回品" },
   { key: "bestseller", label: "BESTSELLER" },
-  { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
 ];

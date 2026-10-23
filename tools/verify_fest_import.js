@@ -27,7 +27,7 @@ const sandbox = { console };
 const fn = new Function('console', code + '; return { rowFromSheet, normDateCell, parseStar, CAT_ALIAS, normKey };');
 const api = fn(console);
 
-const tmpl = path.join(__dirname, '..', 'templates', '节庆批量导入模板.xlsx');
+const tmpl = path.join(__dirname, '..', 'templates', 'festival-import-template.xlsx');
 ok('模板文件存在', fs.existsSync(tmpl));
 
 const wb = XLSX.read(fs.readFileSync(tmpl), { type: 'buffer', cellDates: true });

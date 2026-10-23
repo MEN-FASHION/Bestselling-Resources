@@ -216,7 +216,7 @@
       + '<input type="search" class="mk-adm-search" id="mkFestQ" placeholder="搜索名称 / 英文 / 地区 / 选品方向" value="' + esc(state.q) + '">'
       + '</div>'
       + '<p class="hint-inline" style="margin:8px 0 0">'
-      + '「导入节庆」支持 <b>Excel（xlsx / xls）</b>、<b>CSV</b> 与 JSON：把模板（交付包内「节庆批量导入模板.xlsx」）换成你的数据即可，表头用中文、日期填 <code>MM-DD</code> 或 <code>YYYY-MM-DD</code>，同一份表可混装多个国家。缺名称或日期的行会自动跳过；<b>同一国家同名的节日视为重复，导入时跳过、不覆盖库里原有那条</b>。'
+      + '「导入节庆」支持 <b>Excel（xlsx / xls）</b>、<b>CSV</b> 与 JSON：把模板（交付包内「templates/festival-import-template.xlsx」）换成你的数据即可，表头用中文、日期填 <code>MM-DD</code> 或 <code>YYYY-MM-DD</code>，同一份表可混装多个国家。缺名称或日期的行会自动跳过；<b>同一国家同名的节日视为重复，导入时跳过、不覆盖库里原有那条</b>。'
       + '</p>'
       + '<div class="mk-adm-row">'
       + '<select class="mk-adm-sel" id="mkFestRegion"><option value="">全部地区</option>'

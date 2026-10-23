@@ -31,8 +31,14 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
-  var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比
+  var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
+  var SEL_CATS = [];         // 横向·类目对比：并排显示的几个类目（2–4 个，列数 = 类目数）
+  var TAG_INDEX = {};        // 图片打标索引（url → 打标维度），类目对比用它算拍摄方式 / 元素
+  var TAG_KEY = "";          // 已加载的索引对应哪一批图，避免重复请求
+  var TAG_BUSY = false;
+  var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
+  var LAST_COLS_MODE = "";
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
   var COLS = 3;              // 对比列数：纵向=最近几周、横向=前几个国家，可选 2/3/4（默认 3 = 美国近三周对比）
@@ -78,7 +84,7 @@
   }
   /* 导出图片 / PPT 时写进文件名与封面的范围文字 */
   function exportScope() {
-    var parts = [CAT || "全部类目"];
+    var parts = [MODE === "c" ? ("类目 " + (activeCats().join(" / ") || "未选")) : (CAT || "全部类目")];
     var _g = activeGroup();
     parts.push(_g ? ("地区 " + _g.name) : (sitesForQuery().join("/") || "未选国家"));
     parts.push(activePeriods().join("、") || "未选周次");
@@ -248,7 +254,18 @@
   }
 
   /* ---------------- 取数 ---------------- */
-  function activeSites() { return MODE === "v" ? SEL_SITES.slice(0, 1) : SEL_SITES.slice(); }
+  function activeSites() { return MODE === "h" ? SEL_SITES.slice() : SEL_SITES.slice(0, 1); }
+
+  /* 类目对比要并排的几个类目：至少 2 个才有意义，最多 4 个（再多就看不清了）。
+     用户没手动选就把「当前类目」放第一，其余按后台类目顺序补足。 */
+  function activeCats() {
+    var list = (SEL_CATS || []).filter(function (c) { return c && c !== ALL; });
+    if (list.length >= 2) return list.slice(0, COLS_MAX);
+    var pool = FACETS.categories || [];
+    var out = (CAT && CAT !== ALL) ? [CAT] : (pool[0] ? [pool[0]] : []);
+    for (var i = 0; i < pool.length && out.length < 2; i++) if (out.indexOf(pool[i]) < 0) out.push(pool[i]);
+    return out;
+  }
 
   /* ---------------- 地区分组：把多个国家并成一列 ----------------
      后台把「英国 / 德国 / 法国…」放进「欧洲」这个地区后：
@@ -293,7 +310,8 @@
     return Object.keys(byKey).map(function (k) { return byKey[k]; });
   }
   function activePeriods() {
-    if (MODE === "h") { var sp = sortPeriods(SEL_PERIODS); return sp.length ? [sp[sp.length - 1]] : []; }
+    /* 只有纵向·时间对比才允许多周；横向（国家 / 类目）都固定单周，否则列会成倍膨胀 */
+    if (MODE !== "v") { var sp = sortPeriods(SEL_PERIODS); return sp.length ? [sp[sp.length - 1]] : []; }
     return sortPeriods(SEL_PERIODS);
   }
 
@@ -301,13 +319,17 @@
     var sites = sitesForQuery();
     var periods = activePeriods();
     if (!sites.length || !periods.length) return [];
-    var key = [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|")].join("\u00a7");
+    var cats = MODE === "c" ? activeCats() : [];
+    if (MODE === "c" && cats.length < 2) return [];
+    /* 缓存键必须带上类目数组：否则从「卫衣×毛衣」切到「卫衣×外套」会拿到上一次的图 */
+    var key = [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
     if (CACHE && CACHE.key === key) return CACHE.items;
 
-    /* 纵向对比需要拿到「上一周」的数据做基线，一并取回但不单独成列 */
-    var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
+    /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
+    var needPeriods = MODE === "v" ? withBasePeriods(periods) : (MODE === "c" ? withBasePeriods(periods) : periods);
     var filter = { sites: sites, periods: needPeriods };
-    if (CAT && CAT !== ALL) filter.category = CAT;
+    if (MODE === "c") filter.categories = cats;
+    else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
 
     var items = [];
@@ -356,6 +378,7 @@
     if (SEL_GROUP && !GROUPS.some(function (g) { return g.name === SEL_GROUP; })) SEL_GROUP = "";
     SEL_SITES = (SEL_SITES || []).filter(siteVisible);
     SEL_PERIODS = (SEL_PERIODS || []).filter(periodVisible);
+    SEL_CATS = (SEL_CATS || []).filter(function (c) { return (FACETS.categories || []).indexOf(c) >= 0; });
     normalizeSingle();
     return before;
   }
@@ -363,12 +386,28 @@
   function normalizeSingle() {
     if (MODE === "v") {
       if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
+    } else if (MODE === "c") {
+      /* 类目对比：国家与周次都单选，只有类目是多列 */
+      if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
+      if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
+      if (!SEL_CATS.length || SEL_CATS.length < 2) SEL_CATS = pickCats(COLS);
     } else {
       if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
       /* 位次标签只存在于「纵向·时间对比」（与上一周比），横向没有可比基线 →
          切到横向时自动回到「全部」，避免出现"界面高亮只看上升、实际没筛"的错位 */
       ONLY = "off";
     }
+  }
+
+  /* 类目对比的默认选中：当前类目排第一，其余按后台类目顺序补足到 N 个 */
+  function pickCats(n) {
+    n = Math.max(2, Math.min(COLS_MAX, n || 2));
+    var pool = (FACETS.categories || []).filter(function (c) { return c && c !== ALL; });
+    var keep = (SEL_CATS || []).filter(function (c) { return pool.indexOf(c) >= 0; });
+    if (CAT && CAT !== ALL && pool.indexOf(CAT) >= 0 && keep.indexOf(CAT) < 0) keep.unshift(CAT);
+    var out = keep.slice(0, n);
+    for (var i = 0; i < pool.length && out.length < n; i++) if (out.indexOf(pool[i]) < 0) out.push(pool[i]);
+    return out;
   }
 
   /* 按「对比列数」重排选择：纵向=最近 N 周（保留当前站点）；横向=前 N 个国家（保留最新一周） */
@@ -381,6 +420,15 @@
       var keep = SEL_SITES[0] || "";
       var one = (keep && all.indexOf(keep) >= 0) ? keep : (all[0] || "");
       SEL_SITES = one ? [one] : [];
+    } else if (MODE === "c") {
+      /* 类目对比：国家 / 周次各取一个，类目补足到 N 个 */
+      var allC = orderedSites();
+      var keepC = SEL_SITES[0] || "";
+      var oneC = (keepC && allC.indexOf(keepC) >= 0) ? keepC : (allC[0] || "");
+      SEL_SITES = oneC ? [oneC] : [];
+      var spC = sortPeriods(FACETS.periods);
+      SEL_PERIODS = spC.length ? [spC[spC.length - 1]] : [];
+      SEL_CATS = pickCats(n);
     } else {
       var all2 = orderedSites();
       var kept = SEL_SITES.filter(function (x) { return all2.indexOf(x) >= 0; });
@@ -410,6 +458,8 @@
       b.textContent = c;
       b.onclick = function () {
         CAT = c; CACHE = null; CAP = CAP_STEP;
+        /* 类目对比下点左侧类目 = 把它提到第一列，其余照旧补足（导航语义不变，不改成多选器） */
+        if (MODE === "c") { SEL_CATS = []; SEL_CATS = pickCats(COLS); }
         renderCats(); renderPanel(); renderSummary(); load();
       };
       box.appendChild(b);
@@ -457,11 +507,12 @@
 
     var modeHtml =
       chip("h", "横向 · 国家对比", MODE === "h", "data-mode") +
-      chip("v", "纵向 · 时间对比", MODE === "v", "data-mode");
+      chip("v", "纵向 · 时间对比", MODE === "v", "data-mode") +
+      chip("c", "横向 · 类目对比", MODE === "c", "data-mode");
 
-    /* 对比列数：纵向=对比几周、横向=对比几国，点一下就按这个列数重排 */
+    /* 对比列数：纵向=对比几周、横向国家=对比几国、横向类目=对比几个类目 */
     var colsHtml = COLS_OPTS.map(function (n) { return chip(String(n), n + " 列", COLS === n, "data-cols"); }).join("");
-    var colsLabel = (MODE === "v" ? "对比列数（周）" : "对比列数（国家）");
+    var colsLabel = (MODE === "v" ? "对比列数（周）" : (MODE === "c" ? "对比列数（类目）" : "对比列数（国家）"));
 
     /* 位次排序（仅纵向有效）：新上榜 / 上升位次最多的排最前面 */
     var moveHtml =
@@ -474,7 +525,7 @@
         sortPeriods(SEL_PERIODS).map(function (p) { return chip(p, "仅 " + p, MOVE_SCOPE === p, "data-scope"); }).join("");
     }
     /* 只看标签：点了就只显示带该标签的图，再点一次可取消（仅纵向·时间对比有效） */
-    var onlyGroup = (MODE === "v")
+    var onlyGroup = (MODE === "v" || MODE === "c")
       ? '<div class="tag-group"><span class="tag-group-name">只看标签（单选，点已选中的可取消）</span><div class="tag-chips" id="rk-g-only">' +
           chip("off", "全部", ONLY === "off", "data-only") +
           chip("up", "只看位次上升", ONLY === "up", "data-only") +
@@ -491,19 +542,31 @@
         '<span class="tag-sep"></span><span class="tag-sub">图幅</span>' +
         '<span class="tag-inline" id="rk-g-size">' + sizeHtml + '</span>' +
         '<span class="tag-sep"></span><span class="tag-sub">位次排序' +
-          (MODE === "v" ? "（对比上一周）" : "（仅纵向有效）") + '</span>' +
+          (MODE === "v" || MODE === "c" ? "（对比上一周）" : "（仅纵向 / 类目有效）") + '</span>' +
         '<span class="tag-inline" id="rk-g-move">' + moveHtml + '</span>' +
         (scopeHtml
           ? '<span class="tag-sep"></span><span class="tag-sub">范围</span><span class="tag-inline" id="rk-g-scope">' + scopeHtml + '</span>'
           : '') +
       '</div></div>';
 
+    /* 类目对比专用：并排哪几个类目（多选 2–4 个）。放在筛选面板里，左侧类目菜单仍保持"单选导航"语义 */
+    var catsGroup = "";
+    if (MODE === "c") {
+      var catPick = activeCats();
+      var catChips = (FACETS.categories || []).map(function (c) {
+        return chip(c, c, catPick.indexOf(c) >= 0, "data-cat");
+      }).join("");
+      catsGroup = '<div class="tag-group"><span class="tag-group-name">对比类目（多选 ' + 2 + '–' + COLS_MAX + ' 个，列数 = 类目数）</span>'
+        + '<div class="tag-chips" id="rk-g-cats">' + catChips + '</div></div>';
+    }
+
     box.innerHTML =
       '<div class="tag-group"><span class="tag-group-name">对比模式</span><div class="tag-chips" id="rk-g-mode">' + modeHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">' + colsLabel + '</span><div class="tag-chips" id="rk-g-cols">' + colsHtml + '</div></div>' +
       groupHtml +
-      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "v" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "h" ? "（单选，选一个其它自动取消）" : "（可多选，最多 " + COLS_MAX + " 个）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
+      catsGroup +
+      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
+      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "v" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       mergedRow + onlyGroup;
 
     bindPanel();
@@ -532,12 +595,31 @@
       };
     });
 
+    /* 类目对比：勾选 / 取消要并排的类目（至少 2 个、最多 COLS_MAX 个） */
+    var catBox = $("#rk-g-cats");
+    if (catBox) Array.prototype.forEach.call(catBox.querySelectorAll("[data-cat]"), function (b) {
+      b.onclick = function () {
+        var v = b.getAttribute("data-cat");
+        var i = SEL_CATS.indexOf(v);
+        if (i >= 0) {
+          if (SEL_CATS.length <= 2) { toast("类目对比至少要保留 2 个类目"); return; }
+          SEL_CATS.splice(i, 1);
+        } else {
+          if (SEL_CATS.length >= COLS_MAX) { toast("最多同时对比 " + COLS_MAX + " 个类目，可先取消一个"); return; }
+          SEL_CATS.push(v);
+        }
+        COLS = Math.max(2, Math.min(COLS_MAX, SEL_CATS.length));
+        CACHE = null; CAP = CAP_STEP;
+        renderPanel(); renderSummary(); renderBar(); load();
+      };
+    });
+
     var siteBox = $("#rk-g-sites");
     if (siteBox) Array.prototype.forEach.call(siteBox.querySelectorAll("[data-site]"), function (b) {
       b.onclick = function () {
         var v = b.getAttribute("data-site");
         SEL_GROUP = "";                       /* 选单个国家 → 取消地区合并 */
-        if (MODE === "v") {
+        if (MODE !== "h") {
           SEL_SITES = [v];                    /* 纵向·时间对比：国家单选，选中即自动取消其它国家 */
         } else {
           var i = SEL_SITES.indexOf(v);
@@ -568,7 +650,7 @@
     if (pBox) Array.prototype.forEach.call(pBox.querySelectorAll("[data-period]"), function (b) {
       b.onclick = function () {
         var v = b.getAttribute("data-period");
-        if (MODE === "h") {
+        if (MODE !== "v") {
           SEL_PERIODS = [v];                  /* 横向·国家对比：周次单选，选中即自动取消其它周次 */
         } else {
           var i = SEL_PERIODS.indexOf(v);
@@ -649,13 +731,13 @@
     var sites = activeSites();
     var periods = activePeriods();
     var parts = [];
-    parts.push(CAT || ALL);
+    parts.push(MODE === "c" ? (activeCats().join(" / ") || CAT || ALL) : (CAT || ALL));
     parts.push(periods.length ? periods.join("、") : "未选周次");
     var _g = activeGroup();
     parts.push(_g ? ("地区 " + _g.name) : (sites.length ? sites.join(" / ") : "未选国家"));
     parts.push(tagLabel());
-    if (MODE === "v" && MOVE !== "off") parts.push(moveLabel());
-    if (MODE === "v" && ONLY !== "off") parts.push(onlyLabel());
+    if ((MODE === "v" || MODE === "c") && MOVE !== "off") parts.push(moveLabel());
+    if ((MODE === "v" || MODE === "c") && ONLY !== "off") parts.push(onlyLabel());
     el.textContent = parts.join(" · ");
   }
 
@@ -675,12 +757,13 @@
     var h = '<div class="rk-modes">' +
       '<button type="button" class="rk-mode-btn' + (MODE === "h" ? " on" : "") + '" data-mode="h">横向 · 国家对比（多国 × 单周）</button>' +
       '<button type="button" class="rk-mode-btn' + (MODE === "v" ? " on" : "") + '" data-mode="v">纵向 · 时间对比（单国 × 多周）</button>' +
+      '<button type="button" class="rk-mode-btn' + (MODE === "c" ? " on" : "") + '" data-mode="c">横向 · 类目对比（单周 × 多类目）</button>' +
       '</div>';
-    var cols = (MODE === "v" ? periods.length : sites.length);
+    var cols = (MODE === "v" ? periods.length
+      : (MODE === "c" ? (LAST_COLS_MODE === "c" && LAST_COLS ? LAST_COLS : activeCats().length) : sites.length));
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
     h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
     h += '<button type="button" class="rk-rep-btn" id="rk-week-report" title="按当前选中的两周生成一份对比分析报告（PPT）：款式 / 图案印花与设计元素 / 二次工艺 / 场景与背景构成 / 主图视觉 / 类目结构 六维差异 + 趋势结论">生成周对比分析报告</button>';
-    h += '<button type="button" class="rk-batch-fav hidden" id="rk-batch-fav">批量收藏（0）</button>';
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
@@ -735,12 +818,8 @@
           v: (function () { var s = document.querySelector('script[src*="js/rank.js"]'); return (s && (String(s.getAttribute("src")).match(/[?&]v=([^&]+)/) || [])[1]) || ""; })(),
           onProgress: function (t) { rep.textContent = t; },
           tagOf: function (urls) {
-            if (!SBX) return Promise.resolve({});
-            /* 先读「图库标签 + 榜单独立标签」的合并结果（后台「榜单打标」写的就是后者）；
-               老版本没有合并方法时退回只读图库，保证不会因此报错。 */
-            var fn = SBX.listImageTagsForReport || SBX.listImageTags;
-            if (!fn) return Promise.resolve({});
-            return fn.call(SBX, urls).catch(function () { return {}; });
+            if (!SBX || !SBX.listImageTags) return Promise.resolve({});
+            return SBX.listImageTags(urls).catch(function () { return {}; });
           }
         }).then(function (r) {
           if (!r || !r.ok) { done((r && r.reason) || "生成失败，请重试", true); return; }
@@ -775,18 +854,7 @@
       if (opt.move) eyeTags.push(opt.move);
       if (share) eyeTags.push("共 " + share.length + " 国同款");
     }
-    /* 收藏要保留卡片上原本显示的「标签」：趋势爆款 / 上升 12 位 / 共 3 国同款 …
-       直接快照到 data-tags，收藏时一并落库，进收藏后这些信息不会消失。 */
-    var cardTags = [];
-    if (b) cardTags.push(b.txt);
-    if (opt.move) cardTags.push(opt.move);
-    if (share) cardTags.push("共 " + share.length + " 国同款");
     var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '"'
-      + ' draggable="true" data-tags="' + esc(cardTags.join("|")) + '"'
-      + ' data-period="' + esc(it.period_label || "") + '" data-ptype="' + esc(it.period_type || "week") + '"'
-      + ' data-title="' + esc(it.title || "") + '" data-leaf="' + esc(it.leaf_category || "") + '"'
-      + ' data-cat="' + esc(it.category || "") + '" data-site="' + esc(it.site || "") + '"'
-      + ' data-ratio="' + esc(it.ratio == null ? "" : it.ratio) + '" data-rank="' + esc(it.rank_abs == null ? "" : it.rank_abs) + '"'
       + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
     h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '"' +
@@ -795,9 +863,6 @@
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
       if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
       if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
-      /* 我的收藏：右上角星标（点一次收藏/取消），左上角多选勾选（攒够一次批量收藏） */
-      h += '<button type="button" class="rk-fav" data-fav="0" title="收藏到「我的收藏」">☆</button>';
-      h += '<span class="rk-pick" data-pick="0" title="选中，稍后批量收藏"></span>';
     }
     /* 天眼标签（可开关）：文字一律放在【图片下方】的独立栏里，绝不叠在图上、不盖图。
        顶栏固定蓝栏里的「眼睛」按钮随时开关；关掉后整条隐藏，图片区自然变大。 */
@@ -882,6 +947,64 @@
           });
         });
       });
+    } else if (MODE === "c") {
+      /* ===== 横向 · 类目对比：每类目一列（同一周 · 同一站点） =====
+         列内仍与「自己上一周」比 → 新上榜 / 上升位次 标签照旧成立；
+         列与列之间不比重合度（不同类目的图天然不重复），要看差异看体征卡。 */
+      var catsC = (opts.cats || activeCats()).slice();
+      var siteC = (sites && sites[0]) || "";
+      var pC = periods[periods.length - 1] || "";
+      var prevC = prevOfPeriod(pC);
+      var baseC = pC ? withBasePeriods([pC]) : [];
+      catsC.forEach(function (cat) {
+        var mine = all.filter(function (it) { return (it.category || "") === cat; });
+        var byP = {};
+        baseC.forEach(function (p) { byP[p] = []; });
+        mine.forEach(function (it) { if (byP[it.period_label]) byP[it.period_label].push(it); });
+        /* 位次只在「同一个类目内部」有意义，所以每类目各自算一套 */
+        var hasOf = {}, rankOf = {};
+        baseC.forEach(function (p) {
+          var lst = sortItems(byP[p] || []);
+          var hs = {}, m = {};
+          lst.forEach(function (i) { hs[i.image_url] = 1; });
+          lst.filter(function (i) { return i.ratio != null; }).forEach(function (i, idx) { m[i.image_url] = idx + 1; });
+          hasOf[p] = hs; rankOf[p] = m;
+        });
+        var list = sortItems(byP[pC] || []);
+        if (MOVE !== "off" && prevC) {
+          var keyedC = list.map(function (it, i) {
+            var mv0 = moveOf(it, pC, prevC, hasOf, rankOf);
+            var key = (MOVE === "new") ? (mv0.isNew ? 1e9 : 0) : (mv0.isNew ? -1e9 : mv0.diff);
+            return { it: it, i: i, key: key };
+          });
+          keyedC.sort(function (a, b) { return (b.key - a.key) || (a.i - b.i); });
+          list = keyedC.map(function (o) { return o.it; });
+        }
+        var newCnt = 0;
+        if (prevC) list.forEach(function (i) { if (moveOf(i, pC, prevC, hasOf, rankOf).isNew) newCnt++; });
+        var full = list.length;
+        if (ONLY !== "off" && prevC) {
+          list = list.filter(function (it) { return hitOnly(moveOf(it, pC, prevC, hasOf, rankOf)); });
+        }
+        if (list.length > maxLen) maxLen = list.length;
+        var metaC = siteC + (prevC ? (" · 较上一周（" + prevC + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
+        if (ONLY !== "off") metaC += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
+        /* 这个类目当周没有图 → 整列不输出（与另外两种模式口径一致：不留空列） */
+        if (!list.length) { dropped++; dropKind = "cat"; return; }
+        var cardsC = list.slice(0, limit).map(function (it) {
+          var mv = moveOf(it, pC, prevC, hasOf, rankOf);
+          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
+        }).join("");
+        html += poolHtml(cat, metaC, list.length, cardsC, opts.noFoot ? null : Math.min(limit, list.length));
+        kept += list.length; cols++;
+        list.forEach(function (it) {
+          EXPORT_ITEMS.push({
+            url: it.image_url, label: moveOf(it, pC, prevC, hasOf, rankOf).move,
+            site: it.site || siteC, period: pC,
+            cat: it.leaf_category || it.category || cat
+          });
+        });
+      });
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
       var site = sites[0];
@@ -952,7 +1075,177 @@
         });
       });
     }
+    LAST_COLS = cols; LAST_COLS_MODE = MODE;
     return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind };
+  }
+
+  /* ---------------- 类目体征（仅类目对比用） ----------------
+     关键口径：**类目之间只比「构成」，不比张数**。
+     张数取决于你这一期上传了多少图（上传量），不是热度；拿它横比会把"上传得多"误读成"卖得好"。
+     所以所有横条都是百分比：三档标签占比 / 拍摄方式占比 / 元素标签出现率。 */
+  /* 打标字段可能是数组，也可能是「模拍」这样的单个字符串（单值维度），统一成数组再统计 */
+  function tagArr(v) {
+    if (v == null) return [];
+    if (Object.prototype.toString.call(v) === "[object Array]") {
+      return v.filter(function (x) { return x != null && x !== ""; });
+    }
+    if (typeof v === "string") {
+      return v.split(/[,，、|\/]/).map(function (x) { return String(x).trim(); }).filter(Boolean);
+    }
+    return [];
+  }
+
+  function vitalsOf(items) {
+    var cats = activeCats();
+    return cats.map(function (cat) {
+      var mine = (items || []).filter(function (it) { return (it.category || "") === cat; });
+      var n = mine.length;
+      var opp = 0, hot = 0, srg = 0;
+      mine.forEach(function (it) {
+        if (it._opp) opp++;
+        if (it._hot) hot++;
+        if (it._surge) srg++;
+      });
+      var pct = function (k, t) { return (t ? Math.round(k / t * 100) : 0); };
+      /* 打标维度：分母只用「打过这个维度」的图，避免把"没打标"算成"其它" */
+      var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
+      mine.forEach(function (it) {
+        var t = TAG_INDEX[it.image_url];
+        if (!t) return;
+        /* 同一张图同一个维度里若出现重复值，只算一次（否则占比会超过 100%） */
+        var sSet = {}, nS = 0;
+        tagArr(t.shoot_tags).forEach(function (v) { if (sSet[v] === undefined) { sSet[v] = 1; sCnt[v] = (sCnt[v] || 0) + 1; nS++; } });
+        if (nS) sTot++;
+        var eSet = {}, nE = 0;
+        tagArr(t.element_tags).forEach(function (v) { if (eSet[v] === undefined) { eSet[v] = 1; eCnt[v] = (eCnt[v] || 0) + 1; nE++; } });
+        if (nE) eTot++;
+      });
+      var tops = function (obj, tot, lim) {
+        if (!tot) return [];
+        return Object.keys(obj).map(function (k) { return [k, Math.round(obj[k] / tot * 100)]; })
+          .sort(function (a, b) { return b[1] - a[1]; }).slice(0, lim);
+      };
+      return {
+        cat: cat, n: n,
+        oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
+        shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
+        hasTag: sTot > 0 || eTot > 0, tagged: sTot
+      };
+    }).filter(function (c) { return c.n > 0; });   /* 当周没上传的类目：图片列会自动折叠，体征卡也不占位 */
+  }
+
+  /* 差异洞察：从体征里挑出「差距最大」的几条，直接给结论，不罗列数据 */
+  function insightsOf(V) {
+    var out = [];
+    /* ① 拍摄方式落差：某类目某种拍法明显高于其余类目均值（≥10 个百分点才值得说） */
+    var withShoot = V.filter(function (c) { return c.shoot.length; });
+    if (withShoot.length >= 2) {
+      var keys = {};
+      withShoot.forEach(function (c) { c.shoot.forEach(function (s) { keys[s[0]] = 1; }); });
+      var best = null;
+      Object.keys(keys).forEach(function (k) {
+        var vals = withShoot.map(function (c) {
+          var hit = c.shoot.filter(function (s) { return s[0] === k; })[0];
+          return { cat: c.cat, v: hit ? hit[1] : 0 };
+        });
+        var mx = vals.slice().sort(function (a, b) { return b.v - a.v; })[0];
+        var rest = vals.filter(function (x) { return x.cat !== mx.cat; });
+        var avg = rest.length ? Math.round(rest.reduce(function (a, b) { return a + b.v; }, 0) / rest.length) : 0;
+        var gap = mx.v - avg;
+        if (!best || gap > best.gap) best = { k: k, cat: mx.cat, v: mx.v, avg: avg, gap: gap };
+      });
+      if (best && best.gap >= 10) {
+        out.push("「" + best.cat + "」的" + best.k + "占 " + best.v + "%，比其余类目均值（" + best.avg + "%）高 " + best.gap + " 个百分点，呈现方式上更吃这一种。");
+      }
+    }
+    /* ② 三档标签落差：最能解释"为什么这个类目这周更热" */
+    var defs = [["srgP", "周度激增"], ["hotP", "趋势爆款"], ["oppP", "潜力机会"]];
+    var bestT = null;
+    defs.forEach(function (d) {
+      var sorted = V.slice().sort(function (a, b) { return b[d[0]] - a[d[0]]; });
+      var mx = sorted[0], mn = sorted[sorted.length - 1];
+      if (!mx || !mn || mx.cat === mn.cat) return;
+      var gap = mx[d[0]] - mn[d[0]];
+      if (!bestT || gap > bestT.gap) bestT = { key: d[0], name: d[1], hi: mx, lo: mn, gap: gap };
+    });
+    if (bestT && bestT.gap >= 4) {
+      out.push("「" + bestT.hi.cat + "」的" + bestT.name + "占比 " + bestT.hi[bestT.key] + "%，是这几个类目里最高的；"
+        + "「" + bestT.lo.cat + "」只有 " + bestT.lo[bestT.key] + "% —— 同一周内，爆发款密度相差 " + bestT.gap + " 个百分点。");
+    }
+    /* ③ 首位元素独有性：只有它把这个元素排第一，辨识度就在这儿 */
+    var withElem = V.filter(function (c) { return c.elems.length; });
+    if (withElem.length >= 2) {
+      withElem.forEach(function (c) {
+        if (out.length >= 3) return;
+        var top1 = c.elems[0][0];
+        var others = withElem.filter(function (x) { return x.cat !== c.cat; });
+        var inOthers = others.some(function (x) {
+          return x.elems.some(function (e) { return e[0] === top1; });
+        });
+        if (!inOthers) {
+          out.push("「" + c.cat + "」的首位元素是「" + top1 + "」（" + c.elems[0][1] + "%），其余类目都没把它排第一，辨识度主要来自这个细节。");
+        }
+      });
+    }
+    return out.slice(0, 3);
+  }
+
+  function vitalsHtml(V) {
+    if (!V.length) return "";
+    var h = '<div class="rk-vitals">';
+    V.forEach(function (c) {
+      h += '<div class="rk-vit">'
+        + '<div class="rk-vit-h"><span class="rk-vit-name">' + esc(c.cat) + '</span>'
+        + '<span class="rk-vit-n"><b>' + c.n + '</b> 张上榜</span></div>'
+        + '<div class="rk-vit-stack" title="三档标签占比（占比之和可能不足 100%：没打上标签的图不计入）">'
+        + '<i class="v-opp" style="width:' + c.oppP + '%"></i>'
+        + '<i class="v-hot" style="width:' + c.hotP + '%"></i>'
+        + '<i class="v-srg" style="width:' + c.srgP + '%"></i></div>'
+        + '<div class="rk-vit-legend">'
+        + '<span><em class="v-opp"></em>潜力机会 ' + c.oppP + '%</span>'
+        + '<span><em class="v-hot"></em>趋势爆款 ' + c.hotP + '%</span>'
+        + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
+        + '</div>';
+      if (c.shoot.length) {
+        h += '<div class="rk-vit-sub">拍摄方式</div>';
+        c.shoot.forEach(function (s) {
+          h += '<div class="rk-vit-bar"><span class="b-k">' + esc(s[0]) + '</span>'
+            + '<span class="b-t"><i style="width:' + s[1] + '%"></i></span>'
+            + '<span class="b-v">' + s[1] + '%</span></div>';
+        });
+      }
+      if (c.elems.length) {
+        h += '<div class="rk-vit-sub">元素标签 TOP3</div><div class="rk-vit-tags">'
+          + c.elems.map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
+          + '</div>';
+      }
+      h += '</div>';
+    });
+    h += '</div>';
+    var ins = insightsOf(V);
+    if (ins.length) {
+      h += '<div class="rk-insight"><div class="rk-insight-h">这一周，这几个类目差别在哪</div><ul>'
+        + ins.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul></div>';
+    }
+    return h;
+  }
+
+  /* 打标维度按当前这批图异步取一次；取不到就只显示三档占比，不阻塞主流程 */
+  function ensureTags(items) {
+    if (!SBX || !SBX.listImageTags) return;
+    var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
+    if (!urls.length) return;
+    var key = urls.length + "|" + (urls[0] || "") + "|" + (urls[urls.length - 1] || "");
+    if (key === TAG_KEY || TAG_BUSY) return;
+    TAG_BUSY = true;
+    var fin = function () { TAG_BUSY = false; TAG_KEY = key; };
+    try {
+      SBX.listImageTags(urls).then(function (m) {
+        (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
+        fin();
+        if (MODE === "c") renderBody();      /* 标签到位后补上「拍摄方式 / 元素」两栏 */
+      }, function () { fin(); });
+    } catch (e) { fin(); }
   }
 
   function renderBody() {
@@ -966,6 +1259,7 @@
       return;
     }
     if (!CAT) { box.innerHTML = '<div class="rk-empty">请先在左侧选择一个类目</div>'; return; }
+    if (MODE === "c" && activeCats().length < 2) { box.innerHTML = '<div class="rk-empty">类目对比至少要选 2 个类目：在上方「对比类目」里再勾一个就能并排比较。</div>'; return; }
     var _gchk = activeGroup();
     if (_gchk && !_gchk.members.length) { box.innerHTML = '<div class="rk-empty">地区「' + esc(_gchk.name) + '」还没有勾选国家。到后台「趋势上升榜 → 地区分组」点 ☑ 把国家勾进去即可。</div>'; return; }
     if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」</div>'; return; }
@@ -975,6 +1269,13 @@
     var all = CACHE.items.filter(hitTags);
     if (!all.length) { box.innerHTML = '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>'; return; }
 
+    /* 类目对比：先出「体征卡」（只比构成、不比张数），再出图片列 */
+    var vit = "";
+    if (MODE === "c") {
+      var VIT = vitalsOf(CACHE.items);
+      vit = vitalsHtml(VIT);
+      ensureTags(CACHE.items);        /* 拍摄方式 / 元素：有打标就补上，没有就只显示三档占比 */
+    }
     var R = buildPools(CAP);
     if (ONLY !== "off" && !R.kept) {
       box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
@@ -989,11 +1290,13 @@
     if (R.dropped) {
       var _dtxt = R.dropKind === "site"
         ? ('已自动隐藏 <b>' + R.dropped + '</b> 个国家列（该国这一期在这个类目下没有上传）')
-        : ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的周列（该周这个国家 / 类目没有上传）');
+        : (R.dropKind === "cat"
+          ? ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的类目列（该类目这一周没有上传）')
+          : ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的周列（该周这个国家 / 类目没有上传）'));
       html += '<div class="rk-dropnote">' + _dtxt + '，'
         + '剩余 <b>' + R.cols + '</b> 列已铺满宽度。</div>';
     }
-    html += '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
+    html += vit + '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
     var maxLen = R.maxLen;
 
     if (maxLen > CAP) {
@@ -1013,332 +1316,6 @@
     });
 
     fitPoolsSoon();
-    syncFavUI();
-  }
-
-  /* ================= 我的收藏：收藏 / 多选批量 / 取消 =================
-     · 星标状态按「期次 + 图地址」判定：同一张图在 W40 与 W41 各算一条，
-       所以在 W40 收藏了不会把 W41 那一列也点亮（用户明确要求两条）。
-     · 未登录、或建表脚本还没执行 → 只提示，不发任何写请求。 */
-  var FAV = { ready: null, uid: null, cats: [], keys: {}, sel: {}, rows: [], batch: false, catId: null, pop: null };
-  var FAV_COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f", "#8a6fa8", "#4f8f8a", "#a0685a"];
-
-  function favKey(period, url) { return String(period || "") + "\u0001" + String(url || ""); }
-  function favColorOf(i) { return FAV_COLORS[((i % FAV_COLORS.length) + FAV_COLORS.length) % FAV_COLORS.length]; }
-  function favColorFor(cat, idx) { return (cat && cat.color) || favColorOf(idx); }
-
-  async function loadFavState() {
-    FAV.ready = false;
-    if (!SBX || typeof SBX.favReady !== "function") return;
-    try { FAV.ready = await SBX.favReady(); } catch (e) { FAV.ready = false; }
-    try { FAV.uid = (await SBX.favUid()) || null; } catch (e) { FAV.uid = null; }
-    if (!FAV.uid || !FAV.ready) return;
-    try { FAV.cats = await SBX.listFavCategories(); } catch (e) { FAV.cats = []; }
-    try {
-      var rows = await SBX.listFavKeys();
-      var m = {};
-      (rows || []).forEach(function (r) { m[favKey(r.period_label, r.image_url)] = r.id || 1; });
-      FAV.keys = m;
-    } catch (e) { FAV.keys = {}; }
-  }
-
-  function syncFavUI() {
-    var box = $("#rk-body");
-    if (box) {
-      Array.prototype.forEach.call(box.querySelectorAll(".rk-card[data-url]"), function (fig) {
-        var k = favKey(fig.getAttribute("data-period"), fig.getAttribute("data-url"));
-        var on = !!FAV.keys[k];
-        var b = fig.querySelector(".rk-fav");
-        if (b) { b.setAttribute("data-fav", on ? "1" : "0"); b.textContent = on ? "★" : "☆"; }
-        var p = fig.querySelector(".rk-pick");
-        if (p) p.setAttribute("data-pick", FAV.sel[k] ? "1" : "0");
-      });
-    }
-    var n = Object.keys(FAV.sel).length;
-    var bb = $("#rk-batch-fav");
-    if (bb) {
-      bb.textContent = "批量收藏（" + n + "）";
-      bb.classList.toggle("hidden", !n || !FAV.uid);
-    }
-  }
-
-  function favCardData(fig) {
-    return {
-      image_url: fig.getAttribute("data-url") || "",
-      period_label: fig.getAttribute("data-period") || "",
-      period_type: fig.getAttribute("data-ptype") || "week",
-      title: fig.getAttribute("data-title") || "",
-      leaf_category: fig.getAttribute("data-leaf") || "",
-      rank_category: fig.getAttribute("data-cat") || "",
-      site: fig.getAttribute("data-site") || "",
-      ratio: fig.getAttribute("data-ratio") || null,
-      rank_abs: fig.getAttribute("data-rank") || null,
-      rank_pos: fig.getAttribute("data-rank") || null,
-      tags: String(fig.getAttribute("data-tags") || "").split("|")
-        .filter(function (x) { return x && x.trim(); })
-    };
-  }
-
-  function favNeedLogin() {
-    if (!FAV.uid) { toast("请先登录后再收藏"); return true; }
-    if (!FAV.ready) { toast("收藏表还没建好，请先执行 tools/patch_20261021R.sql"); return true; }
-    return false;
-  }
-
-  function closeFavPop() {
-    if (FAV.pop && FAV.pop.parentNode) FAV.pop.parentNode.removeChild(FAV.pop);
-    FAV.pop = null; FAV.rows = []; FAV.batch = false; FAV.catId = null;
-  }
-
-  function openFavPop(rows, opt) {
-    var o = opt || {};
-    closeFavPop();
-    FAV.rows = rows || [];
-    if (!FAV.rows.length) return;
-    FAV.batch = !!o.batch;
-    FAV.catId = null;
-    var already = (!FAV.batch && FAV.rows.length === 1)
-      ? !!FAV.keys[favKey(FAV.rows[0].period_label, FAV.rows[0].image_url)] : false;
-
-    var head = already ? "已收藏" : (FAV.batch ? "批量收藏 " + FAV.rows.length + " 张" : "收藏到「我的收藏」");
-    var h = '<div class="fp-mask" data-fp="mask"></div><div class="fp-box" role="dialog" aria-label="我的收藏">';
-    h += '<div class="fp-head"><span class="fp-t">' + esc(head) + '</span>'
-      + '<button type="button" class="fp-x" data-fp="close" aria-label="关闭">×</button></div>';
-    if (!FAV.ready) {
-      /* 表还没建好：不要等用户点「收藏」才报错，进来就把原因和下一步说清楚 */
-      h += '<div class="fp-body">'
-        + '<div class="fp-miss">收藏功能还没启用。</div>'
-        + '<div class="fp-hint">需要管理员在数据库执行一次建表脚本 <code>tools/patch_20261021R.sql</code>。'
-        + '脚本末尾会刷新接口缓存，执行完点下面的按钮即可，不用重新部署。</div>'
-        + '</div>'
-        + '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">关闭</button>'
-        + '<button type="button" class="fp-ok" data-fp="recheck">我建好了，重新检测</button></div>';
-    } else if (already) {
-      h += '<div class="fp-body"><div class="fp-done">这张图已经收藏过了（' + esc(FAV.rows[0].period_label || "本批") + '）。</div>'
-        + '<div class="fp-hint">同一个分类下想调整位置，可以到「我的收藏」里拖拽。</div></div>';
-      h += '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">关闭</button>'
-        + '<button type="button" class="fp-del" data-fp="unfav">取消收藏</button></div>';
-    } else {
-      h += '<div class="fp-body"><div class="fp-sub">选择分类</div><div class="fp-cats">';
-      FAV.cats.forEach(function (c, i) {
-        h += '<button type="button" class="fp-cat' + (FAV.catId === c.id ? " is-on" : "") + '" data-cat="' + c.id + '">'
-          + '<i class="fp-dot" style="background:' + favColorFor(c, i) + '"></i>'
-          + '<span class="fp-cn">' + esc(c.name) + '</span></button>';
-      });
-      h += '<button type="button" class="fp-cat is-none" data-cat=""><i class="fp-dot is-empty"></i><span class="fp-cn">不分类（直接收藏）</span></button>';
-      h += '</div>';
-      h += '<div class="fp-new"><input class="fp-input" maxlength="40" placeholder="或者新建一个分类…" data-fp="name">'
-        + '<button type="button" class="fp-addbtn" data-fp="newcat">新建并收藏</button></div>';
-      h += '</div>';
-      h += '<div class="fp-foot"><button type="button" class="fp-cancel" data-fp="close">取消</button>'
-        + '<button type="button" class="fp-ok" data-fp="ok">收藏</button></div>';
-    }
-    h += '</div>';
-
-    var wrap = document.createElement("div");
-    wrap.className = "fav-pop-wrap";
-    wrap.id = "rk-fav-pop";
-    wrap.innerHTML = h;
-    document.body.appendChild(wrap);
-    FAV.pop = wrap;
-
-    wrap.addEventListener("click", function (e) {
-      var t = e.target;
-      if (!t || !t.closest) return;
-      if (t.closest('[data-fp="mask"]') || t.closest('[data-fp="close"]')) { closeFavPop(); return; }
-      var cat = t.closest(".fp-cat");
-      if (cat) {
-        var v = cat.getAttribute("data-cat");
-        FAV.catId = v ? Number(v) : null;
-        Array.prototype.forEach.call(wrap.querySelectorAll(".fp-cat"), function (x) { x.classList.remove("is-on"); });
-        cat.classList.add("is-on");
-        return;
-      }
-      if (t.closest('[data-fp="recheck"]')) { favRecheck(wrap); return; }
-      if (t.closest('[data-fp="newcat"]')) { favCreateAndSave(wrap); return; }
-      if (t.closest('[data-fp="ok"]')) { favSave(wrap, FAV.catId); return; }
-      if (t.closest('[data-fp="unfav"]')) { favRemoveOne(wrap); return; }
-    });
-    wrap.addEventListener("keydown", function (e) {
-      if (!e || !e.key) return;
-      if (e.key === "Escape") { closeFavPop(); return; }
-      if (e.key === "Enter" && e.target && e.target.getAttribute && e.target.getAttribute("data-fp") === "name") {
-        favCreateAndSave(wrap);
-      }
-    });
-  }
-
-  /* 用户执行完建表脚本后，不刷新页面直接重新检测一次 */
-  async function favRecheck(wrap) {
-    var btn = wrap.querySelector('[data-fp="recheck"]');
-    if (btn) { btn.disabled = true; btn.textContent = "检测中…"; }
-    var rows = FAV.rows.slice();
-    var batch = FAV.batch;
-    await loadFavState();
-    if (FAV.ready) {
-      syncFavUI();
-      closeFavPop();
-      openFavPop(rows, { batch: batch });
-      toast("收藏功能已就绪");
-    } else {
-      if (btn) { btn.disabled = false; btn.textContent = "我建好了，重新检测"; }
-      toast("还是连不上：请确认脚本执行在这个站点对应的数据库里");
-    }
-  }
-
-  async function favSave(wrap, catId) {
-    if (favNeedLogin()) { closeFavPop(); return; }
-    var btn = wrap.querySelector('[data-fp="ok"]');
-    if (btn) { btn.disabled = true; btn.textContent = "收藏中…"; }
-    try {
-      var n = await SBX.addFavItems(FAV.rows, catId);
-      FAV.rows.forEach(function (r) { FAV.keys[favKey(r.period_label, r.image_url)] = 1; });
-      var wasBatch = FAV.batch;
-      if (wasBatch) FAV.sel = {};
-      closeFavPop();
-      syncFavUI();
-      favDrawerSync();
-      toast("已收藏 " + n + " 张 · 右侧「我的收藏」可查看");
-    } catch (e) {
-      if (btn) { btn.disabled = false; btn.textContent = "收藏"; }
-      toast((e && e.message) ? e.message : "收藏失败");
-    }
-  }
-
-  async function favCreateAndSave(wrap) {
-    var inp = wrap.querySelector('[data-fp="name"]');
-    var name = inp ? String(inp.value || "").trim() : "";
-    if (!name) { toast("先给新分类起个名字"); if (inp && inp.focus) inp.focus(); return; }
-    if (favNeedLogin()) { closeFavPop(); return; }
-    var add = wrap.querySelector('[data-fp="newcat"]');
-    if (add) { add.disabled = true; add.textContent = "新建中…"; }
-    try {
-      var c = await SBX.createFavCategory(name, favColorOf(FAV.cats.length));
-      try { FAV.cats = await SBX.listFavCategories(); } catch (e2) { FAV.cats = FAV.cats.concat([c]); }
-      await favSave(wrap, (c && c.id) ? c.id : null);
-    } catch (e) {
-      if (add) { add.disabled = false; add.textContent = "新建并收藏"; }
-      toast((e && e.message) ? e.message : "新建分类失败");
-    }
-  }
-
-  /* 收藏变动后同步右侧抽屉：抽屉开着即时刷新，关着只更新角标 */
-  function favDrawerSync() {
-    try { if (window.FavDrawer && FavDrawer.refresh) FavDrawer.refresh(); } catch (e) { /* 抽屉异常不影响收藏主流程 */ }
-  }
-
-  async function favRemoveOne(wrap) {
-    var r = FAV.rows[0];
-    if (!r) { closeFavPop(); return; }
-    try {
-      var id = FAV.keys[favKey(r.period_label, r.image_url)];
-      if (!id || id === 1) {
-        var list = await SBX.listFavItems({ period: r.period_label });
-        var hit = (list || []).filter(function (x) { return x.image_url === r.image_url; })[0];
-        if (hit) id = hit.id;
-      }
-      if (id) await SBX.removeFavItems([id]);
-      delete FAV.keys[favKey(r.period_label, r.image_url)];
-      closeFavPop(); syncFavUI();
-      favDrawerSync();
-      toast("已取消收藏");
-    } catch (e) {
-      toast((e && e.message) ? e.message : "取消收藏失败");
-    }
-  }
-
-  function bindFav() {
-    var box = $("#rk-body");
-    if (box && !box.__favBound) {
-      box.__favBound = true;
-      /* 捕获阶段拦截：卡片自身有「点击开灯箱」，星标与勾选必须先被我们吃掉 */
-      box.addEventListener("click", function (e) {
-        var t = e.target;
-        if (!t || !t.closest) return;
-        var favBtn = t.closest(".rk-fav");
-        if (favBtn) {
-          e.preventDefault(); e.stopPropagation();
-          var fig = favBtn.closest(".rk-card");
-          if (!fig) return;
-          if (favNeedLogin()) return;
-          openFavPop([favCardData(fig)], {});
-          return;
-        }
-        var pick = t.closest(".rk-pick");
-        if (pick) {
-          e.preventDefault(); e.stopPropagation();
-          var fig2 = pick.closest(".rk-card");
-          if (!fig2) return;
-          if (favNeedLogin()) return;
-          var k = favKey(fig2.getAttribute("data-period"), fig2.getAttribute("data-url"));
-          if (FAV.sel[k]) delete FAV.sel[k]; else FAV.sel[k] = 1;
-          syncFavUI();
-          return;
-        }
-      }, true);
-    }
-    if (box && !box.__favDragBound) {
-      box.__favDragBound = true;
-      /* 直接从榜单把图拖到某个分类上 = 收藏并归类。
-         拖动一开始就把分类以「扇形文件夹」摊在对比池上方（一步到位，不用先滑抽屉）；
-         右侧抽屉若已展开，其分类按钮仍是有效落点，两条路径都通。 */
-      box.addEventListener("dragstart", function (e) {
-        var t = e.target;
-        if (!t || !t.closest) return;
-        var fig = t.closest(".rk-card");
-        if (!fig) return;
-        if (favNeedLogin()) { try { e.preventDefault(); } catch (x) {} return; }
-        var row = favCardData(fig);
-        FAV.dragRow = row;
-        try {
-          e.dataTransfer.setData("application/x-fav-row", JSON.stringify(row));
-          e.dataTransfer.setData("text/plain", row.title || row.image_url);
-          e.dataTransfer.effectAllowed = "copy";
-        } catch (x) {}
-        fig.classList.add("is-fav-dragging");
-        if (window.FavFan && typeof FavFan.show === "function") {
-          try { FavFan.show(); } catch (x) {}
-        }
-      }, true);
-      box.addEventListener("dragend", function (e) {
-        var t = e.target;
-        var fig = (t && t.closest) ? t.closest(".rk-card") : null;
-        if (fig) fig.classList.remove("is-fav-dragging");
-        FAV.dragRow = null;
-        if (window.FavFan && typeof FavFan.hide === "function") {
-          try { FavFan.hide(); } catch (x) {}
-        }
-        if (window.FavDrawer && typeof FavDrawer.endDropMode === "function") {
-          try { FavDrawer.endDropMode(); } catch (x) {}
-        }
-      }, true);
-    }
-
-    if (!document.__favBatchBound) {
-      document.__favBatchBound = true;
-      document.addEventListener("click", function (e) {
-        var t = e.target;
-        if (!t || !t.closest) return;
-        if (!t.closest("#rk-batch-fav")) return;
-        if (favNeedLogin()) return;
-        var rows = [];
-        var box2 = $("#rk-body");
-        if (box2) {
-          Array.prototype.forEach.call(box2.querySelectorAll(".rk-card[data-url]"), function (fig) {
-            var k = favKey(fig.getAttribute("data-period"), fig.getAttribute("data-url"));
-            if (FAV.sel[k]) rows.push(favCardData(fig));
-          });
-        }
-        if (!rows.length) { toast("先点图左上角的勾选，再批量收藏"); return; }
-        openFavPop(rows, { batch: true });
-      });
-    }
-  }
-
-  async function initFav() {
-    bindFav();
-    await loadFavState();
-    syncFavUI();
   }
 
   /* ---------------- 对比池：横向铺满 + 纵向自然向下排 ----------------
@@ -1441,6 +1418,12 @@
 
   /* 天眼要铺开的列范围 */
   function eyeScope() {
+    /* 类目对比：天眼守死「同一周 · 同一站点 · 当前这几个类目」，
+       不提供「全部站点 × 全部期次」那种范围（那会把列数乘起来，图上没法看） */
+    if (MODE === "c") {
+      EYE_PERIOD_CLAMPED = false;
+      return { sites: poolSites(), periods: activePeriods(), cats: activeCats() };
+    }
     if (!EYE_ALL) {
       /* 天眼默认只对比最近两周：列数少了，每列更宽，图自然更大。
          需要看更多周时，点顶栏的「范围」切到「全部站点 × 全部期次」。 */
@@ -1461,8 +1444,10 @@
     var sites = sc.sites || [], periods = sc.periods || [];
     if (!sites.length || !periods.length) return { items: [], sites: sites, periods: periods };
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
+    var cats = sc.cats || (MODE === "c" ? activeCats() : []);
     var filter = { sites: sites, periods: needPeriods };
-    if (CAT && CAT !== ALL) filter.category = CAT;
+    if (MODE === "c") filter.categories = cats;
+    else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
     var items = [];
     try { items = await SBX.listRankItems(filter); } catch (e) { items = []; }
@@ -1474,7 +1459,7 @@
     flagPools(items);
     /* 补进「图 → 归属信息」索引，天眼里点开大图也能看到站点/期次/标签 */
     items.forEach(function (it) { if (it.image_url && !ITEMS_BY_URL[it.image_url]) ITEMS_BY_URL[it.image_url] = it; });
-    return { items: items, sites: sites, periods: periods };
+    return { items: items, sites: sites, periods: periods, cats: cats };
   }
 
   /* 纯计算（天眼）：每行排几张 = 只由「列宽」决定。
@@ -1685,7 +1670,7 @@
     if (!d.parentNode) return;                            /* 取数期间被关掉就不画了 */
     var total = (R.items || []).length;
     var eager = total <= EYE_EAGER_MAX;                   /* 默认「全部加载」，只有极端量级才退回懒加载 */
-    var built = buildPools(Infinity, { items: R.items, sites: sc.sites, periods: sc.periods, noFoot: true, eager: eager, eye: true });
+    var built = buildPools(Infinity, { items: R.items, sites: sc.sites, periods: sc.periods, cats: sc.cats, noFoot: true, eager: eager, eye: true });
     var n = 0;
     if (built.html) {
       body.innerHTML = '<div class="rk-pools">' + built.html + '</div>';
@@ -1696,15 +1681,16 @@
     var ss = d.querySelector("#rk-eye-sortsel");
     if (ss && ss.value !== SORT) ss.value = SORT;
     if (sub) {
-      var colsN = (MODE === "v") ? sc.periods.length : sc.sites.length;
-      var scopeTxt = (MODE === "v") ? (R.sites.join("、") || "—") : (R.periods.join("、") || "—");
-      var colsTxt = (MODE === "v") ? "周" : "国";
+      var colsN = (MODE === "v") ? sc.periods.length : (MODE === "c" ? (built.cols || (sc.cats || []).length) : sc.sites.length);
+      var scopeTxt = (MODE === "v") ? (R.sites.join("、") || "—")
+        : (MODE === "c" ? ((sc.cats || []).join("、") || "—") : (R.periods.join("、") || "—"));
+      var colsTxt = (MODE === "v") ? "周" : (MODE === "c" ? "类目" : "国");
       /* 顶栏只留一行关键信息（类目 / 列数 / 张数）；范围明细收进悬浮提示，
          避免顶栏文字又长又大把图挤掉、甚至盖住图。 */
-      sub.innerHTML = esc(CAT) + ' · ' + colsN + ' ' + colsTxt + ' · 共 <b>' + n + '</b> 张' +
+      sub.innerHTML = esc(MODE === "c" ? (activeCats().join(" / ") || CAT) : CAT) + ' · ' + colsN + ' ' + colsTxt + ' · 共 <b>' + n + '</b> 张' +
         (EYE_PERIOD_CLAMPED ? ' · <span class="rk-eye-dflt">默认只对比最近 ' + EYE_PERIODS_MAX + ' 周</span>' : '') +
         (eager ? '' : ' · <span class="rk-eye-warn">图数过多，已改为随滚动加载</span>');
-      sub.title = (MODE === "v" ? "国家：" : "期次：") + scopeTxt;
+      sub.title = (MODE === "v" ? "国家：" : (MODE === "c" ? "对比类目：" : "期次：")) + scopeTxt;
     }
     if (n) fitEye(d);
   }
@@ -1959,7 +1945,7 @@
     var _modeFromUrl = false, _urlPickedCols = false;
     try {
       var _qs = new URLSearchParams(location.search);
-      var _m = _qs.get("mode"); if (_m === "h" || _m === "v") { if (_m !== MODE) _modeFromUrl = true; MODE = _m; }
+      var _m = _qs.get("mode"); if (_m === "h" || _m === "v" || _m === "c") { if (_m !== MODE) _modeFromUrl = true; MODE = _m; }
       var _z = _qs.get("size"); if (_z === "s" || _z === "m" || _z === "l") SIZE = _z;
       var _c = _qs.get("cat"); if (_c) CAT = _c;
       var _ss = (_qs.get("sites") || "").split(",").filter(function (v) { return v.trim(); });
@@ -1968,6 +1954,8 @@
       if (_g && GROUPS.some(function (x) { return x.name === _g; })) SEL_GROUP = _g;
       var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
       if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
+      var _cc = (_qs.get("cats") || "").split(",").filter(function (v) { return v.trim(); });
+      if (_cc.length) { SEL_CATS = _cc; if (MODE !== "c") { MODE = "c"; _modeFromUrl = true; } }
       _urlPickedCols = !!(_ss.length || _pp.length);
     } catch (e) { /* 无参数时忽略 */ }
 
@@ -1980,6 +1968,7 @@
 
     /* 「对比列数」跟着当前实际列数走：分享链接 / 后台预览带参数时也能对上 */
     if (MODE === "v") COLS = Math.max(2, Math.min(COLS_MAX, SEL_PERIODS.length || COLS));
+    else if (MODE === "c") COLS = Math.max(2, Math.min(COLS_MAX, activeCats().length || COLS));
     else COLS = Math.max(2, Math.min(COLS_MAX, SEL_SITES.length || COLS));
 
     renderCats();
@@ -2003,9 +1992,6 @@
     }
 
     await load();
-    /* 收藏状态（星标点亮 + 分类清单）在榜单渲染完之后再同步一次：
-       否则首屏渲染时还不知道哪些图已收藏，星标会全部是空心。 */
-    try { await initFav(); } catch (e) { /* 收藏不可用不影响榜单本身 */ }
 
     // 未登录 / 无数据时的兜底提示
     if (!CACHE || !CACHE.items.length) {
@@ -2034,8 +2020,9 @@
     var sizeMap = { s: "小图", m: "中图", l: "大图" };
     return {
       zone: "趋势上升榜",
-      cat: CAT || ALL,
-      modeLabel: MODE === "h" ? "横向 · 国家对比（多国 × 单周）" : "纵向 · 时间对比（单国 × 多周）",
+      cat: MODE === "c" ? activeCats().join(" / ") : (CAT || ALL),
+      modeLabel: MODE === "h" ? "横向 · 国家对比（多国 × 单周）"
+        : (MODE === "c" ? "横向 · 类目对比（单周 × 多类目）" : "纵向 · 时间对比（单国 × 多周）"),
       sites: poolSites(),
       group: activeGroup() ? activeGroup().name : "",
       periods: activePeriods(),
@@ -2085,7 +2072,7 @@
 
   /* 多选类条件不自动收起（横向要多选国家、纵向要多选周次，连着点才对）；
      其余单选类条件点完就收起。 */
-  var PICK_ATTRS = "[data-mode],[data-cols],[data-site],[data-period],[data-group],[data-tag],[data-sort],[data-size],[data-move],[data-scope],[data-only]";
+  var PICK_ATTRS = "[data-mode],[data-cols],[data-cat],[data-site],[data-period],[data-group],[data-tag],[data-sort],[data-size],[data-move],[data-scope],[data-only]";
   function isMultiPick(el) {
     if (!el || !el.hasAttribute) return false;
     if (el.hasAttribute("data-site")) return MODE !== "v";      /* 横向：国家可多选 */
