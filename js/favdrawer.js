@@ -116,16 +116,16 @@
         +   '<span>把图拖到分类，或拖进「上装 / 下装」栏，松手即归入</span>'
         + '</div>'
         + '<div class="fv-d-main">'
+        /* 顺序：分类列（最左）→ 内容 → 上装下装栏（最右，贯穿上下）。
+           DOM 顺序与视觉一致，Tab 键也走得顺。 */
+        +   '<div class="fv-d-filter" id="fv-d-filter" aria-label="我的分类"></div>'
         +   '<div class="fv-d-body" id="fv-d-body"></div>'
-        /* 顺序：内容 → 上装下装栏 → 分类列。整块菜单区仍在抽屉最右，
-           上装下装栏落在菜单区的左边缘（DOM 顺序与视觉一致，Tab 键也走得顺）。 */
         +   '<div class="fv-d-rail" id="fv-d-rail" aria-label="拖到这里归为上装或下装">'
         +     '<button type="button" class="fv-d-rail-z" data-railk="top" title="拖到这里归为上装">'
         +       '<span>上装</span><i id="fv-rail-n-top">0</i></button>'
         +     '<button type="button" class="fv-d-rail-z" data-railk="bottom" title="拖到这里归为下装">'
         +       '<span>下装</span><i id="fv-rail-n-bottom">0</i></button>'
         +   '</div>'
-        +   '<div class="fv-d-filter" id="fv-d-filter" aria-label="我的分类"></div>'
         + '</div>'
         + '<div class="fv-d-save" id="fv-d-save" hidden></div>';
       body.appendChild(d);

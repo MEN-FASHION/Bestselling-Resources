@@ -5554,13 +5554,13 @@ html, body{
 /* 分类列：一列方框，纵向排列，可纵向滚动 */
 .fv-d-filter {
   position: relative; z-index: 2;
-  order: 3;                            /* 分类列在菜单区最右，整块仍贴屏幕右侧 */
+  order: 1;                            /* 分类列在抽屉最左：点选最顺手，右手也不用横跨整屏 */
   flex: 0 0 158px; width: 158px; min-width: 158px;
   display: flex; flex-direction: column; gap: 9px;
   overflow-x: visible; overflow-y: auto;
   padding: 9px 9px 14px 9px;
-  border-left: 0;                        /* 分隔线交给上装/下装栏去画 */
-  background: linear-gradient(to left, rgba(252,250,246,.94), rgba(252,250,246,.55));
+  border-right: 1px solid var(--fv-hair, rgba(28,24,18,.1));
+  background: linear-gradient(to right, rgba(252,250,246,.95), rgba(252,250,246,.6));
   scrollbar-width: none;
   overscroll-behavior: contain;
 }
@@ -5650,9 +5650,9 @@ html, body{
 .fv-d-filter .fv-d-newrow { display: flex; gap: 5px; }
 .fv-d-filter .fv-d-newrow .fv-d-btn { flex: 1 1 0; padding: 5px 0; font-size: 11.5px; border-radius: 8px; }
 
-/* 上装/下装栏：在菜单区的最左侧（紧贴分类列左边），菜单区整块仍在屏幕右侧 */
-.fv-d-rail { order: 2; border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1)); padding-left: 8px; }
-.fv-d-body { order: 1; }
+/* 分类列在最左，内容居中，上装/下装栏贴最右一整条（贯穿上下） */
+.fv-d-rail { order: 3; border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1)); padding-left: 8px; }
+.fv-d-body { order: 2; }
 
 /* 窄屏：列再收一点，图片区优先 */
 @media (max-width: 720px) {
@@ -5668,9 +5668,9 @@ html, body{
 /* ==================================================================
    20261026V · 收藏页（fav.html）：分类也挪到右侧，并做成方框一列
    ================================================================== */
-.fv-layout { grid-template-columns: 1fr 268px; }
-.fv-main { order: 1; min-width: 0; }
-.fv-side { order: 2; }
+.fv-layout { grid-template-columns: 268px 1fr; }
+.fv-main { order: 2; min-width: 0; }
+.fv-side { order: 1; }
 
 .fv-cats { display: flex; flex-direction: column; gap: 9px; }
 .fv-catrow {

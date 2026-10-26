@@ -1,3 +1,5 @@
+> 包内哪个文件是干什么的？见 **FILES.md**（按页面 / 脚本 / 第三方库分组，每个文件一句话说明）。
+
 # TREND BANK（前台浏览 + 后台传图 · 真私密版）
 
 一个部署在 **Cloudflare Pages** 的图片站（主域名 `newtrend.top`；图片服务走子域 `img.newtrend.top`）：
