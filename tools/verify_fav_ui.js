@@ -24,7 +24,7 @@ console.log("\n=== 收藏抽屉 + 拖动分类竖排清单：右侧浮层 + macO
 /* ① 拖放面板：20261023H 起改成"竖排一列贴右侧"（横向扇形已被否掉） */
 ok("js/favfan.js 仍在（改为竖排清单）", fs.existsSync(path.join(ROOT, "js/favfan.js")));
 ok("rank.html 引入 favfan.js", /favfan\.js\?v=/.test(HTML));
-ok("rank.js 拖动时调用 FavFan.show", /FavFan\.show\(\)/.test(RANK));
+ok("rank.js 拖动时调用 FavFan.show（带上起点，用来自动选边）", /FavFan\.show\(e\)/.test(RANK));
 ok("CSS 有竖排清单的行样式", /\.fv-dock-row\{/.test(CSS));
 ok("竖排清单贴在右侧（position:fixed + right）", /\.fv-dock\{[\s\S]*?position:\s*fixed[\s\S]*?right:\s*\d+px/.test(CSS));
 ok("竖排清单是纵向一列（flex-direction: column）", /\.fv-dock-list\{[\s\S]*?flex-direction:\s*column/.test(CSS));

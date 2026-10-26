@@ -30,6 +30,7 @@
     cats: [],
     items: [],
     filter: "all",      /* "all" | 分类 id（数字）| "none" */
+    sub: "all",         /* 二分类视图："all" | "top" 上装 | "bottom" 下装 | "none" 未分 */
     loading: false,
     error: "",
     built: false,
@@ -194,11 +195,27 @@
     return { groups: groups, others: others };
   }
 
+  /* 二分类取值：只认 top / bottom，其余（含老数据 null）一律按"未分"处理 */
+  function subOf(it) {
+    var v = it && it.sub_cat;
+    return (v === "top" || v === "bottom") ? v : null;
+  }
+  function subName(v) { return v === "top" ? "上装" : (v === "bottom" ? "下装" : "未分"); }
+
+  /* 先按分类筛，再按上装/下装筛——两个条件是"与"关系，切分类不该重置二分类 */
   function filtered() {
-    if (ST.filter === "all") return ST.items;
-    if (ST.filter === "none") return ST.items.filter(function (it) { return it.category_id == null; });
-    var cid = Number(ST.filter);
-    return ST.items.filter(function (it) { return Number(it.category_id) === cid; });
+    var list;
+    if (ST.filter === "all") list = ST.items;
+    else if (ST.filter === "none") list = ST.items.filter(function (it) { return it.category_id == null; });
+    else {
+      var cid = Number(ST.filter);
+      list = ST.items.filter(function (it) { return Number(it.category_id) === cid; });
+    }
+    if (ST.sub === "none") return list.filter(function (it) { return subOf(it) == null; });
+    if (ST.sub === "top" || ST.sub === "bottom") {
+      return list.filter(function (it) { return subOf(it) === ST.sub; });
+    }
+    return list;
   }
 
   function catOf(cid) {
@@ -514,6 +531,10 @@
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
       + '<button type="button" class="fv-d-unfav" data-unfav="' + esc(it.id) + '" title="取消收藏">×</button>'
+      + '<span class="fv-d-subseg" role="group" aria-label="上装或下装">'
+      +   '<button type="button" data-sub="top" class="' + (subOf(it) === "top" ? "is-on" : "") + '" title="归为上装">上</button>'
+      +   '<button type="button" data-sub="bottom" class="' + (subOf(it) === "bottom" ? "is-on" : "") + '" title="归为下装">下</button>'
+      + '</span>' 
       + (meta ? '<span class="fv-d-meta">' + meta + '</span>' : '')
       + '<figcaption>' + esc(String(it.title || "").slice(0, 16)) + '</figcaption>'
       + '</figure>';
@@ -526,6 +547,14 @@
       b.addEventListener("click", function (e) {
         e.preventDefault(); e.stopPropagation();
         unfav(b.getAttribute("data-unfav"));
+      });
+    });
+    all(".fv-d-subseg button", body).forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var cell = b.parentNode && b.parentNode.parentNode;
+        var id = cell && cell.getAttribute("data-id");
+        if (id) setSub(Number(id), b.getAttribute("data-sub"));
       });
     });
     all(".fv-d-cell", body).forEach(function (c) {
@@ -557,6 +586,84 @@
     });
   }
 
+  /* 二分类工具条：当前分类范围下，上装 / 下装 / 未分 各有多少张。
+     除了当筛选器，它本身也是放置目标——把卡片拖到「上装」上就直接改二分类。 */
+  function subBarHtml(list) {
+    var base = ST.items;
+    if (ST.filter === "none") base = base.filter(function (it) { return it.category_id == null; });
+    else if (ST.filter !== "all") {
+      var cid = Number(ST.filter);
+      base = base.filter(function (it) { return Number(it.category_id) === cid; });
+    }
+    var top = 0, bot = 0, none = 0;
+    base.forEach(function (it) {
+      var v = subOf(it);
+      if (v === "top") top++; else if (v === "bottom") bot++; else none++;
+    });
+    if (!base.length) return '';
+    var item = function (k, label, n) {
+      return '<button type="button" class="fv-sub' + (ST.sub === k ? " is-on" : "") + (k === "none" ? " is-quiet" : "")
+        + '" data-sub="' + k + '" data-sub-drop="' + k + '">' + label + '<i>' + n + '</i></button>';
+    };
+    return '<div class="fv-subbar" id="fv-subbar">'
+      + '<span class="fv-subbar-t">二分类</span>'
+      + item("all", "全部", base.length)
+      + item("top", "上装", top)
+      + item("bottom", "下装", bot)
+      + (none ? item("none", "未分", none) : '')
+      + '</div>';
+  }
+
+  function bindSubBar(root) {
+    /* 只绑工具条里的按钮：卡片上的 上/下 按钮用的是同一个 data-sub 属性，
+       若在这里一并绑上，点卡片会变成切筛选而不是给这张图分类。 */
+    all("#fv-subbar [data-sub]", root).forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.preventDefault();
+        ST.sub = b.getAttribute("data-sub");
+        render();
+      });
+    });
+    all("#fv-subbar [data-sub-drop]", root).forEach(function (el) {
+      var k = el.getAttribute("data-sub-drop");
+      if (k === "all" || k === "none") return;
+      el.addEventListener("dragover", function (e) {
+        if (ST.dragId == null) return;      /* 只接抽屉内部卡片，从榜单拖来的不算 */
+        e.preventDefault();
+        el.classList.add("is-drop");
+      });
+      el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
+      el.addEventListener("drop", function (e) {
+        el.classList.remove("is-drop");
+        if (ST.dragId == null) return;
+        e.preventDefault(); e.stopPropagation();
+        var id = ST.dragId;
+        clearDragState(id);
+        setSub(id, k);
+      });
+    });
+  }
+
+  /* 设置单张图的上装 / 下装；同值不发请求（避免无意义的写库） */
+  async function setSub(id, sub) {
+    var SB = SBX();
+    if (!SB || !SB.setFavSubCat) { toast("二分类功能未就绪，请刷新页面重试"); return false; }
+    var it = ST.items.filter(function (x) { return Number(x.id) === Number(id); })[0];
+    if (!it) return false;
+    var want = (sub === "top" || sub === "bottom") ? sub : null;
+    if (subOf(it) === want) { flashSaved("已经是" + subName(want)); return true; }
+    try {
+      await SB.setFavSubCat([id], want);
+      it.sub_cat = want;
+      render();
+      flashSaved(want ? "已归为" + subName(want) : "已取消二分类");
+      return true;
+    } catch (e) {
+      toast((e && e.message) ? e.message : "设置失败");
+      return false;
+    }
+  }
+
   function renderBody() {
     var box = $("#fv-d-body");
     if (!box) return;
@@ -583,7 +690,7 @@
     var canDrag = true;
     var seq = 0;                 /* 仅用于入场动画的错峰序号，最多算到 24，后面不再叠加延迟 */
     var nextI = function () { return Math.min(seq++, 24); };
-    var h = '';
+    var h = subBarHtml(list);
     groupByPeriod(list).forEach(function (g) {
       h += '<section class="fv-d-week">';
       h += '<div class="fv-d-week-h"><span class="fv-d-week-t">' + esc(g.period) + '</span>'
@@ -623,6 +730,7 @@
     });
     box.innerHTML = h;
     bindCells();
+    bindSubBar(box);
     all(".fv-d-flat, .fv-d-flat-band, [data-flat-none]", box).forEach(function (el) {
       bindDropTarget(el, catDropValue(el));
     });
@@ -893,6 +1001,9 @@
       groupByPeriod: groupByPeriod,
       flatGroups: flatGroups,
       moveTo: moveTo,
+      setSub: setSub,
+      subOf: subOf,
+      subBarHtml: subBarHtml,
       ensured: function () { return !!$("#fv-drawer"); },
     },
   };

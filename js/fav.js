@@ -108,6 +108,7 @@
     cats: [],
     items: [],
     filter: "",       // "" 全部 | "none" 未分类 | "c<id>" 某分类
+    sub: "",          // 二分类："" 全部 | "top" 上装 | "bottom" 下装 | "none" 未分
     flat: {},         // week -> true（该周平铺）
     folded: {},       // week -> true（该周整体折叠）
     sel: {},          // item id -> 1
@@ -115,6 +116,17 @@
   };
 
   function catIdKey(v) { return (v == null || v === "") ? "" : "c" + v; }
+  /* 二分类：只认 top / bottom，其余（含老数据）都算未分——与抽屉同一口径 */
+  function subOf(it) {
+    var v = it && it.sub_cat;
+    return (v === "top" || v === "bottom") ? v : null;
+  }
+  function subName(v) { return v === "top" ? "上装" : (v === "bottom" ? "下装" : "未分"); }
+  function subHit(it) {
+    if (ST.sub === "top" || ST.sub === "bottom") return subOf(it) === ST.sub;
+    if (ST.sub === "none") return subOf(it) == null;
+    return true;
+  }
 
   /* ============================================================
    * 三、渲染
@@ -146,6 +158,10 @@
       +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
       +   '<button type="button" class="fv-del" data-del="1" title="取消收藏">×</button>'
+      +   '<span class="fv-subseg" role="group" aria-label="上装或下装">'
+      +     '<button type="button" data-sub="top" class="' + (subOf(it) === "top" ? "is-on" : "") + '" title="归为上装">上</button>'
+      +     '<button type="button" data-sub="bottom" class="' + (subOf(it) === "bottom" ? "is-on" : "") + '" title="归为下装">下</button>'
+      +   '</span>' 
       +   (meta ? '<span class="fv-meta">' + meta + '</span>' : '')
       +   (cap ? '<figcaption class="fv-cap">' + esc(cap) + '</figcaption>' : '')
       + '</figure>';
@@ -277,7 +293,7 @@
       if (ST.filter === "") return true;
       if (ST.filter === "none") return it.category_id == null || it.category_id === "";
       return catIdKey(it.category_id) === ST.filter;
-    });
+    }).filter(subHit);
     if (!items.length) {
       box.innerHTML = ST.items.length
         ? '<div class="fv-empty">这个分类下还没有图。到「趋势上升榜」点图片右上角的 ☆ 就能收藏。</div>'
@@ -285,8 +301,51 @@
       return;
     }
     var weeks = groupWeeks(items, ST.cats);
-    box.innerHTML = weeks.map(weekHtml).join("");
+    box.innerHTML = subBarHtml() + weeks.map(weekHtml).join("");
     syncSelUI();
+  }
+
+  /* 顶部二分类条：全部 / 上装 / 下装 / 未分，数量按当前分类范围算 */
+  function subBarHtml() {
+    var base = ST.items.filter(function (it) {
+      if (ST.filter === "") return true;
+      if (ST.filter === "none") return it.category_id == null || it.category_id === "";
+      return catIdKey(it.category_id) === ST.filter;
+    });
+    if (!base.length) return "";
+    var top = 0, bot = 0, none = 0;
+    base.forEach(function (it) {
+      var v = subOf(it);
+      if (v === "top") top++; else if (v === "bottom") bot++; else none++;
+    });
+    var it2 = function (k, label, n) {
+      return '<button type="button" class="fv-sub' + (ST.sub === k ? " is-on" : "") + (k === "none" ? " is-quiet" : "")
+        + '" data-subview="' + k + '">' + label + '<i>' + n + '</i></button>';
+    };
+    return '<div class="fv-subbar" id="fv-subbar">'
+      + '<span class="fv-subbar-t">二分类</span>'
+      + it2("", "全部", base.length)
+      + it2("top", "上装", top)
+      + it2("bottom", "下装", bot)
+      + (none ? it2("none", "未分", none) : '')
+      + '</div>';
+  }
+
+  async function setSub(id, sub) {
+    var SB = window.SB;
+    if (!SB || !SB.setFavSubCat) { toast("二分类功能未就绪，请刷新页面重试"); return; }
+    var it = ST.items.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!it) return;
+    var want = (sub === "top" || sub === "bottom") ? sub : null;
+    if (subOf(it) === want) { toast("已经是" + subName(want)); return; }
+    try {
+      await SB.setFavSubCat([id], want);
+      it.sub_cat = want;
+      render();
+      toast(want ? "已归为" + subName(want) : "已取消二分类");
+    } catch (e) {
+      toast((e && e.message) ? e.message : "设置失败");
+    }
   }
 
   function renderSummary() {
@@ -449,6 +508,17 @@
         ST.openNone[wk3] = !ST.openNone[wk3];
         render(); return;
       }
+      var sv = t.closest("[data-subview]");
+      if (sv) { ST.sub = sv.getAttribute("data-subview"); render(); return; }
+
+      var sb = t.closest(".fv-subseg [data-sub]");
+      if (sb) {
+        e.preventDefault(); e.stopPropagation();
+        var fg = sb.closest(".fv-card");
+        if (fg) setSub(fg.getAttribute("data-id"), sb.getAttribute("data-sub"));
+        return;
+      }
+
       var del = t.closest("[data-del]");
       if (del) {
         e.preventDefault(); e.stopPropagation();

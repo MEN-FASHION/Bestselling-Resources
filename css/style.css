@@ -4787,63 +4787,105 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 
 .fv-dock{
-  position: fixed; right: 26px; top: 50%;
-  width: 198px; max-width: calc(100vw - 32px);
-  display: flex; flex-direction: column; gap: 6px;
-  z-index: 57;
+  position: fixed; z-index: 57;
+  display: flex; flex-direction: column; gap: 8px;
+  width: 244px; max-width: calc(100vw - 32px);
   pointer-events: none;                     /* 整层不拦事件，只有行收事件 */
   opacity: 0; visibility: hidden;
-  transform: translate3d(0, -50%, 0) translate3d(20px, 0, 0);
+
+  /* 菜单从"你正在拖向的那一侧"弹出来：方向由 JS 打上的 is-* 类决定。
+     下面这组变量把位移、错峰、悬停让位的方向一并翻过来，
+     所以四个方向共用同一套动效，不用写四份。 */
+  --dock-shift-x: 0px;   --dock-shift-y: -50%;
+  --enter-x: 30px;       --enter-y: 0px;
+  --row-x: 18px;         --row-y: 0px;
+  --nudge-x: -6px;       --nudge-y: 0px;
+  --over-x: -9px;        --over-y: 0px;
+
+  transform: translate3d(var(--dock-shift-x), var(--dock-shift-y), 0)
+             translate3d(var(--enter-x), var(--enter-y), 0);
   transition:
-    transform var(--ap-dur) var(--ap-smooth),
-    opacity .34s var(--ap-ease),
-    visibility 0s linear var(--ap-dur);
+    transform .58s var(--ap-smooth),
+    opacity .32s var(--ap-ease),
+    visibility 0s linear .58s;
   will-change: transform, opacity;
+}
+
+/* 贴边：右 / 左 / 上 / 下 —— 四套只改锚点与方向变量 */
+.fv-dock, .fv-dock.is-right{ right: 26px; top: 50%; }
+.fv-dock.is-left{
+  left: 26px; right: auto; top: 50%;
+  --enter-x: -30px; --row-x: -18px; --nudge-x: 6px; --over-x: 9px;
+}
+.fv-dock.is-top{
+  left: 50%; right: auto; top: 24px;
+  width: auto; max-width: min(92vw, 760px);
+  align-items: center;
+  --dock-shift-x: -50%; --dock-shift-y: 0px;
+  --enter-x: 0px; --enter-y: -24px;
+  --row-x: 0px;   --row-y: -14px;
+  --nudge-x: 0px; --nudge-y: 4px;
+  --over-x: 0px;  --over-y: -6px;
+}
+.fv-dock.is-bottom{
+  left: 50%; right: auto; top: auto; bottom: 26px;
+  width: auto; max-width: min(92vw, 760px);
+  align-items: center;
+  --dock-shift-x: -50%; --dock-shift-y: 0px;
+  --enter-x: 0px; --enter-y: 24px;
+  --row-x: 0px;   --row-y: 14px;
+  --nudge-x: 0px; --nudge-y: -4px;
+  --over-x: 0px;  --over-y: 6px;
 }
 .fv-dock.is-open{
   opacity: 1; visibility: visible;
-  transform: translate3d(0, -50%, 0) translate3d(0, 0, 0);
+  transform: translate3d(var(--dock-shift-x), var(--dock-shift-y), 0) translate3d(0, 0, 0);
   transition:
-    transform var(--ap-dur) var(--ap-smooth),
+    transform .58s var(--ap-smooth),
     opacity .26s var(--ap-ease),
     visibility 0s;
 }
 
 /* 顶部小标题：说明这里能放什么 */
 .fv-dock-hd{
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 12px;
-  border-radius: 10px;
-  background: rgba(252,251,249,.72);
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 14px;
+  border-radius: 12px;
+  background: rgba(252,251,249,.76);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(28,24,18,.06);
   box-shadow: 0 6px 16px -10px rgba(34,28,20,.34), inset 0 1px 0 rgba(255,255,255,.9);
-  color: #6a6154; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
-  opacity: 0; transform: translate3d(10px, 0, 0);
-  transition: opacity .32s var(--ap-ease) .04s, transform .46s var(--ap-smooth) .04s;
+  color: #5f5749; font-size: 13px; font-weight: 600; letter-spacing: .03em;
+  white-space: nowrap;
+  opacity: 0; transform: translate3d(var(--row-x), var(--row-y), 0);
+  transition: opacity .32s var(--ap-ease) .04s, transform .5s var(--ap-smooth) .04s;
 }
 .fv-dock.is-open .fv-dock-hd{ opacity: 1; transform: translate3d(0,0,0); }
 .fv-dock-dot{
-  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
   background: #c8a45c;
   box-shadow: 0 0 0 3px rgba(200,164,92,.16);
   animation: fv-pulse 1.9s var(--ap-ease) infinite;
 }
 
-/* 竖排清单本体 */
+/* 清单本体：竖排是常态（贴左右时），贴上下时转成一行 */
 .fv-dock-list{
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 8px;
   pointer-events: none;
+}
+.fv-dock.is-top .fv-dock-list,
+.fv-dock.is-bottom .fv-dock-list{
+  flex-direction: row; flex-wrap: wrap; justify-content: center;
 }
 
 .fv-dock-row{
   position: relative;
-  display: flex; align-items: center; gap: 9px;
-  height: 44px; padding: 0 12px;
+  display: flex; align-items: center; gap: 10px;
+  height: 58px; padding: 0 16px;
   border: 1px solid rgba(28,24,18,.075);
-  border-radius: 13px;
-  background: rgba(252,251,249,.86);
+  border-radius: 15px;
+  background: rgba(252,251,249,.88);
   -webkit-backdrop-filter: blur(26px) saturate(180%);
   backdrop-filter: blur(26px) saturate(180%);
   box-shadow:
@@ -4854,9 +4896,9 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   cursor: pointer;
   user-select: none;
   opacity: 0;
-  transform: translate3d(16px, 0, 0) scale(.972);
+  transform: translate3d(var(--row-x), var(--row-y), 0) scale(.972);
   transition:
-    transform .56s var(--ap-smooth) var(--d, 0ms),
+    transform .58s var(--ap-smooth) var(--d, 0ms),
     opacity .42s var(--ap-ease) var(--d, 0ms),
     background .26s var(--ap-ease),
     border-color .26s var(--ap-ease),
@@ -4864,35 +4906,40 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   will-change: transform, opacity;
 }
 .fv-dock.is-open .fv-dock-row{ opacity: 1; transform: translate3d(0,0,0) scale(1); }
+/* 贴上下时改成横条，宽度跟着文字走 */
+.fv-dock.is-top .fv-dock-row,
+.fv-dock.is-bottom .fv-dock-row{
+  width: auto; height: 54px; padding: 0 18px; border-radius: 15px;
+}
 
 /* 分类色：一枚小圆点，比整块上色克制，也更容易排成一列时对齐 */
 .fv-dock-pin{
-  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
   background: var(--fv-c, #8b7355);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fv-c, #8b7355) 14%, transparent);
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--fv-c, #8b7355) 14%, transparent);
   transition: transform .3s var(--ap-ease), box-shadow .3s var(--ap-ease);
 }
 .fv-dock-nm{
-  font-size: 13px; font-weight: 590; letter-spacing: .01em; color: #2b2823;
+  font-size: 15px; font-weight: 600; letter-spacing: .01em; color: #26231e;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .fv-dock-n{
-  margin-left: auto;
-  font-size: 11px; font-weight: 500; color: #a8a196;
+  margin-left: auto; padding-left: 8px;
+  font-size: 12.5px; font-weight: 500; color: #a49c90;
   font-variant-numeric: tabular-nums;
   transition: opacity .22s var(--ap-ease);
 }
 .fv-dock-ok{
-  position: absolute; right: 11px; top: 50%;
+  position: absolute; right: 15px; top: 50%;
   transform: translateY(-50%) scale(.4);
-  font-size: 13px; font-weight: 700; color: #3f9761;
+  font-size: 15px; font-weight: 700; color: #3f9761;
   opacity: 0; transition: opacity .2s var(--ap-ease), transform .34s var(--ap-smooth);
 }
 
-/* 悬停：只挪 5px、放 1.2%，像指针把它轻轻勾过来 */
+/* 悬停：只挪 6px、放 1.2%，像指针把它轻轻勾过来 */
 .fv-dock-row:hover{
-  transform: translate3d(-5px, 0, 0) scale(1.012);
-  background: rgba(255,255,255,.95);
+  transform: translate3d(var(--nudge-x), var(--nudge-y), 0) scale(1.012);
+  background: rgba(255,255,255,.96);
   box-shadow:
     0 16px 30px -18px rgba(34,28,20,.56),
     0 3px 8px -5px rgba(34,28,20,.2),
@@ -4900,10 +4947,10 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 .fv-dock-row:hover .fv-dock-pin{ transform: scale(1.15); }
 
-/* 拖到这一行上方：行向左让开、描边亮成分类色，其余行淡下去 */
+/* 拖到这一行上方：行朝外侧让开、描边亮成分类色，其余行淡下去 */
 .fv-dock.is-hot .fv-dock-row:not(.is-over){ opacity: .42; }
 .fv-dock-row.is-over{
-  transform: translate3d(-8px, 0, 0) scale(1.028);
+  transform: translate3d(var(--over-x), var(--over-y), 0) scale(1.03);
   background: #fff;
   border-color: color-mix(in srgb, var(--fv-c, #8b7355) 55%, #fff);
   box-shadow:
@@ -4925,33 +4972,44 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 /* 底部说明 */
 .fv-dock-ft{
-  padding: 2px 2px 0 13px;
-  font-size: 11px; color: #a49c90; letter-spacing: .02em;
-  opacity: 0; transform: translate3d(8px,0,0);
-  transition: opacity .3s var(--ap-ease) .16s, transform .44s var(--ap-smooth) .16s;
+  padding: 2px 2px 0 15px;
+  font-size: 12px; color: #a49c90; letter-spacing: .02em;
+  white-space: nowrap;
+  opacity: 0; transform: translate3d(var(--row-x), var(--row-y), 0);
+  transition: opacity .3s var(--ap-ease) .16s, transform .48s var(--ap-smooth) .16s;
 }
 .fv-dock.is-open .fv-dock-ft{ opacity: 1; transform: translate3d(0,0,0); }
+.fv-dock.is-top .fv-dock-ft,
+.fv-dock.is-bottom .fv-dock-ft{ padding: 0 2px; }
 .fv-dock-sep{ margin: 0 5px; opacity: .55; }
 
 .fv-dock-empty, .fv-dock-more{
-  padding: 12px 14px;
-  border-radius: 13px;
+  padding: 14px 16px;
+  border-radius: 15px;
   border: 1px dashed rgba(120,104,84,.34);
-  background: rgba(252,251,249,.86);
+  background: rgba(252,251,249,.88);
   -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
-  color: #6b5f4f; font-size: 12px; line-height: 1.7; text-align: center;
+  color: #6b5f4f; font-size: 13px; line-height: 1.7; text-align: center;
   pointer-events: none;
-  opacity: 0; transform: translate3d(12px,0,0);
-  transition: opacity .3s var(--ap-ease), transform .46s var(--ap-smooth);
+  opacity: 0; transform: translate3d(var(--row-x), var(--row-y), 0);
+  transition: opacity .3s var(--ap-ease), transform .48s var(--ap-smooth);
 }
 .fv-dock.is-open .fv-dock-empty,
 .fv-dock.is-open .fv-dock-more{ opacity: 1; transform: translate3d(0,0,0); }
 
 @media (max-width: 900px){
-  .fv-dock{ right: 14px; width: 176px; }
-  .fv-dock-row{ height: 42px; padding: 0 11px; }
-  .fv-dock-nm{ font-size: 12.5px; }
-  .fv-dock-ft{ font-size: 10.5px; }
+  .fv-dock{ width: 208px; }
+  .fv-dock.is-right{ right: 14px; }
+  .fv-dock.is-left{ left: 14px; }
+  .fv-dock.is-top{ top: 14px; }
+  .fv-dock.is-bottom{ bottom: 14px; }
+  .fv-dock-row{ height: 52px; padding: 0 13px; gap: 8px; }
+  .fv-dock-nm{ font-size: 14px; }
+  .fv-dock-n{ font-size: 12px; }
+  .fv-dock.is-top .fv-dock-row,
+  .fv-dock.is-bottom .fv-dock-row{ height: 48px; padding: 0 14px; }
+  .fv-dock-hd{ font-size: 12px; height: 32px; }
+  .fv-dock-ft{ font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce){
   .fv-dock, .fv-dock-hd, .fv-dock-row, .fv-dock-ft, .fv-dock-empty, .fv-dock-more{
@@ -5070,3 +5128,165 @@ html, body{
   .rk-card:hover{ transform: none; }
   .rk-card:hover img{ transform: none; }
 }
+
+/* ============================================================================
+   20261023I · 收藏卡片：默认只留一张图，文字与标签悬停才出
+   —— 之前的样子（问题）：分类标、位次、标签、标题全部常显，压在图正中，
+      本来就不大的缩略图被切掉一大半，看不清版型。
+   —— 现在的规则：图占满整张卡；所有文字层 opacity 0，鼠标移上（或键盘聚焦）
+      再用 200–260ms 淡入并轻微上移。触屏没有 hover，改为常显，否则永远点不到。
+   ========================================================================== */
+
+/* 1) 标题：从"占一行的 figcaption"改成图片底部的浮层 */
+.fv-d-cell figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 14px 7px 6px; margin: 0;
+  font-size: 10px; line-height: 1.45; color: #fff;
+  background: linear-gradient(to top, rgba(18,15,12,.82), rgba(18,15,12,.42) 55%, rgba(18,15,12,0));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .26s var(--fv-ease), transform .3s var(--fv-ease);
+  pointer-events: none;
+}
+.fv-card .fv-cap {
+  padding: 13px 5px 4px;
+  background: linear-gradient(to top, rgba(18,15,12,.8), rgba(18,15,12,.34) 60%, rgba(18,15,12,0));
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .26s var(--fv-ease), transform .3s var(--fv-ease);
+}
+
+/* 2) 分类色标 / 位次 / 标签：同样默认隐形 */
+.fv-d-cell .fv-d-tag,
+.fv-card .fv-d-tag {
+  opacity: 0; transform: translateX(-4px);
+  transition: opacity .24s var(--fv-ease), transform .28s var(--fv-ease);
+}
+.fv-d-cell .fv-d-meta,
+.fv-card .fv-meta {
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .26s var(--fv-ease) .02s, transform .3s var(--fv-ease) .02s;
+}
+
+/* 3) 悬停 / 聚焦：一次性把该出现的都淡出来 */
+.fv-d-cell:hover figcaption,
+.fv-d-cell:focus-within figcaption,
+.fv-card:hover .fv-cap,
+.fv-card:focus-within .fv-cap,
+.fv-d-cell:hover .fv-d-tag,
+.fv-d-cell:focus-within .fv-d-tag,
+.fv-card:hover .fv-d-tag,
+.fv-card:focus-within .fv-d-tag,
+.fv-d-cell:hover .fv-d-meta,
+.fv-d-cell:focus-within .fv-d-meta,
+.fv-card:hover .fv-meta,
+.fv-card:focus-within .fv-meta {
+  opacity: 1; transform: none;
+}
+
+/* 4) 悬停时压一层很薄的底部渐隐，让白字在任何图上都读得清 */
+.fv-d-cell::after,
+.fv-card::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+  background: linear-gradient(to top, rgba(18,15,12,.46), rgba(18,15,12,0));
+  opacity: 0; pointer-events: none; z-index: 1;
+  transition: opacity .26s var(--fv-ease);
+}
+.fv-d-cell:hover::after,
+.fv-d-cell:focus-within::after,
+.fv-card:hover::after,
+.fv-card:focus-within::after { opacity: 1; }
+
+/* 5) 上装 / 下装：悬停后在图片下方浮出两个小按钮（默认不占图） */
+.fv-d-subseg,
+.fv-subseg {
+  position: absolute; left: 50%; bottom: 28px; z-index: 5;
+  display: flex; gap: 2px; padding: 2px; border-radius: 9px;
+  background: rgba(26,23,19,.62);
+  -webkit-backdrop-filter: blur(10px) saturate(150%); backdrop-filter: blur(10px) saturate(150%);
+  box-shadow: 0 4px 12px rgba(20,17,12,.28);
+  opacity: 0; transform: translate(-50%, 6px) scale(.96); pointer-events: none;
+  transition: opacity .22s var(--fv-ease), transform .3s var(--fv-spring);
+}
+.fv-d-cell:hover .fv-d-subseg,
+.fv-d-cell:focus-within .fv-d-subseg,
+.fv-card:hover .fv-subseg,
+.fv-card:focus-within .fv-subseg {
+  opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto;
+}
+.fv-d-subseg button,
+.fv-subseg button {
+  width: 26px; height: 22px; padding: 0; border: 0; border-radius: 7px;
+  background: transparent; color: rgba(255,255,255,.82); cursor: pointer;
+  font-size: 11px; line-height: 22px; font-family: inherit; font-weight: 600;
+  transition: background .18s ease, color .18s ease, transform .18s var(--fv-ease);
+}
+.fv-d-subseg button:hover,
+.fv-subseg button:hover { background: rgba(255,255,255,.16); color: #fff; }
+.fv-d-subseg button:active,
+.fv-subseg button:active { transform: scale(.94); }
+.fv-d-subseg button.on,
+.fv-subseg button.on,
+.fv-d-subseg button.is-on,
+.fv-subseg button.is-on { background: #c8a45c; color: #fff; }
+
+/* 6) 二分类工具条：贴在滚动区顶部，跟着滚动一直可见 */
+.fv-subbar {
+  position: sticky; top: -10px; z-index: 4;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  margin: -2px -2px 10px; padding: 8px 2px 9px;
+  background: linear-gradient(to bottom, rgba(251,250,247,.96) 62%, rgba(251,250,247,.72));
+  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+  border-bottom: 1px solid rgba(28,24,18,.05);
+}
+.fv-subbar-t {
+  font-size: 10px; letter-spacing: .08em; color: rgba(90,82,70,.55);
+  margin-right: 2px; text-transform: none;
+}
+.fv-sub {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(28,24,18,.1); background: rgba(255,255,255,.6);
+  color: var(--sub); font-size: 11.5px; font-family: inherit;
+  transition: border-color .2s ease, background .2s ease, color .2s ease, transform .2s var(--fv-ease);
+}
+.fv-sub i {
+  font-style: normal; font-size: 10px; color: rgba(90,82,70,.6);
+  font-variant-numeric: tabular-nums;
+}
+.fv-sub:hover { border-color: rgba(156,139,116,.55); color: var(--txt); transform: translateY(-1px); }
+.fv-sub.is-on {
+  border-color: #c8a45c; background: rgba(200,164,92,.14); color: #8b6b28; font-weight: 600;
+}
+.fv-sub.is-on i { color: #8b6b28; }
+.fv-sub.is-quiet { opacity: .78; }
+.fv-sub.is-drop {
+  border-color: #c8a45c; background: rgba(200,164,92,.22);
+  transform: translateY(-1px) scale(1.03);
+}
+
+/* 7) 触屏 / 无 hover 设备：文字常显，否则这些信息在手机上永远看不到 */
+@media (hover: none) {
+  .fv-d-cell figcaption, .fv-card .fv-cap,
+  .fv-d-cell .fv-d-tag, .fv-card .fv-d-tag,
+  .fv-d-cell .fv-d-meta, .fv-card .fv-meta {
+    opacity: 1; transform: none;
+  }
+  .fv-d-cell::after, .fv-card::after { opacity: 1; }
+  .fv-d-subseg, .fv-subseg { opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto; }
+}
+
+/* 8) 尊重"减少动效" */
+@media (prefers-reduced-motion: reduce) {
+  .fv-d-cell figcaption, .fv-card .fv-cap,
+  .fv-d-cell .fv-d-tag, .fv-card .fv-d-tag,
+  .fv-d-cell .fv-d-meta, .fv-card .fv-meta,
+  .fv-d-subseg, .fv-subseg, .fv-d-cell::after, .fv-card::after {
+    transition-duration: .01ms;
+  }
+}
+
+/* 文字层统一压在悬停渐隐之上，避免被 ::after 的渐变盖住 */
+.fv-d-cell .fv-d-tag,
+.fv-card .fv-d-tag,
+.fv-d-cell .fv-d-meta,
+.fv-card .fv-meta { z-index: 3; }

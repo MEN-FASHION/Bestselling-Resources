@@ -2721,8 +2721,13 @@ async removeTrendRecord(id) {
       const uid = await this.favUid();
       if (!uid) return [];
       const o = opt || {};
-      const BASE = "id,category_id,image_url,title,leaf_category,rank_category,site,period_type,period_label,ratio,rank_abs,created_at";
+      /* 三级降级的列清单：sub_cat（上装/下装）与 tags/rank_pos 都是后加补丁，
+         任何一列不存在都不该让整页读不出收藏，所以按富到简依次尝试。 */
+      const BASE_NOSUB = "id,category_id,image_url,title,leaf_category,rank_category,site,period_type,period_label,ratio,rank_abs,created_at";
+      const BASE = BASE_NOSUB + ",sub_cat";
       const WITH_TAGS = BASE + ",tags,rank_pos";
+      const WITH_TAGS_NOSUB = BASE_NOSUB + ",tags,rank_pos";
+      const ATTEMPTS = [WITH_TAGS, BASE, WITH_TAGS_NOSUB, BASE_NOSUB];
       const run = (cols) => {
         let q = client.from("fav_items").select(cols).eq("user_id", uid);
         if (o.period) q = q.eq("period_label", o.period);
@@ -2732,11 +2737,13 @@ async removeTrendRecord(id) {
           .order("created_at", { ascending: false })
           .limit(o.limit || 5000);
       };
-      let { data, error } = await run(WITH_TAGS);
-      /* 老库还没执行 patch_20261021Y（没有 tags/rank_pos 列）→ 退回旧列，别让整页读不出来 */
-      if (error && /column .*(tags|rank_pos)/i.test(String(error.message || "") + String(error.details || ""))) {
-        const r2 = await run(BASE);
-        data = r2.data; error = r2.error;
+      let data = null, error = null, i = 0;
+      for (; i < ATTEMPTS.length; i++) {
+        const r = await run(ATTEMPTS[i]);
+        data = r.data; error = r.error;
+        if (!error) break;
+        /* 只有"列不存在"才降级；权限/网络问题必须原样抛出，别悄悄吞掉 */
+        if (!/column .*(tags|rank_pos|sub_cat)/i.test(String(error.message || "") + String(error.details || ""))) break;
       }
       if (error) throw new Error(this.favErrMsg(error) || "读取收藏失败");
       return data || [];
@@ -2850,6 +2857,22 @@ async removeTrendRecord(id) {
       const cid = (categoryId == null || categoryId === "") ? null : Number(categoryId);
       const { error } = await client.from("fav_items").update({ category_id: cid }).eq("user_id", uid).in("id", list);
       if (error) throw new Error(this.favErrMsg(error) || "移动失败");
+      return list.length;
+    },
+    /* 二分类：sub 传 "top" / "bottom" / null（未分）。
+       与分类（category_id）互不影响——分类是"哪一类"，sub 是"上装还是下装"。 */
+    async setFavSubCat(ids, sub) {
+      const uid = await this.favUid();
+      if (!uid) throw new Error("请先登录");
+      const list = (ids || []).map((x) => Number(x)).filter((x) => x > 0);
+      if (!list.length) return 0;
+      const v = (sub === "top" || sub === "bottom") ? sub : null;
+      const { error } = await client.from("fav_items").update({ sub_cat: v }).eq("user_id", uid).in("id", list);
+      if (error) {
+        const m = String(error.message || "") + String(error.details || "");
+        if (/column .*sub_cat/i.test(m)) throw new Error("二分类功能还没启用：请在数据库执行一次 tools/patch_20261023I.sql");
+        throw new Error(this.favErrMsg(error) || "设置上装/下装失败");
+      }
       return list.length;
     },
     /* 榜单星标状态：返回已收藏的「期次 + 图地址」清单，前端据此点亮星标 */

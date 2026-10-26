@@ -1739,7 +1739,8 @@
         } catch (x) {}
         fig.classList.add("is-fav-dragging");
         if (window.FavFan && typeof FavFan.show === "function") {
-          try { FavFan.show(); } catch (x) {}
+          /* 把起点交过去：菜单先贴在不挡来路的一侧，等看出拖动方向再滑过去 */
+          try { FavFan.show(e); } catch (x) {}
         }
       }, true);
       box.addEventListener("dragend", function (e) {

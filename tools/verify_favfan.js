@@ -102,9 +102,10 @@ function dragEvt(w, type) {
     const dock = (CSS.match(/\.fv-dock\{[\s\S]*?\}/) || [""])[0];
     const list = (CSS.match(/\.fv-dock-list\{[\s\S]*?\}/) || [""])[0];
     const row = (CSS.match(/\.fv-dock-row\{[\s\S]*?\}/) || [""])[0];
+    const rightRule = (CSS.match(/\.fv-dock,\s*\.fv-dock\.is-right\{[\s\S]*?\}/) || [""])[0];
     ok("容器 position: fixed", /position:\s*fixed/.test(dock), dock.slice(0, 50));
-    ok("贴右侧（right 有具体值）", /right:\s*\d+px/.test(dock));
-    ok("垂直居中（top:50% + translateY(-50%)）", /top:\s*50%/.test(dock) && /-50%/.test(dock));
+    ok("默认贴右侧（right 有具体值）", /right:\s*\d+px/.test(rightRule), rightRule.slice(0, 60));
+    ok("垂直居中（top:50% + 位移 -50%）", /top:\s*50%/.test(rightRule) && /--dock-shift-y:\s*-50%/.test(dock));
     ok("清单是纵向一列", /flex-direction:\s*column/.test(list), list.slice(0, 60));
     ok("行之间是竖着排的（flex 子项，不是绝对定位）",
       !/position:\s*absolute/.test(row), row.slice(0, 60));
@@ -129,7 +130,8 @@ function dragEvt(w, type) {
     const row = (CSS.match(/\.fv-dock-row\{[\s\S]*?\}/) || [""])[0];
     ok("定义了统一的缓动变量 --ap-smooth", /--ap-smooth:\s*cubic-bezier\(/.test(CSS));
     ok("行入场用了长缓动（.5s 以上）", /transform \.5\d?s var\(--ap-smooth\)/.test(row), row.slice(0, 80));
-    ok("入场带轻微位移（16px 以内）", /translate3d\(1[0-6]px,\s*0,\s*0\)/.test(row));
+    ok("入场位移走方向变量（四个方向共用一套动效）",
+      /translate3d\(var\(--row-x\),\s*var\(--row-y\),\s*0\)/.test(row), row.slice(0, 90));
     ok("入场带轻微缩小（.96~.99）", /scale\(\.9[6-9]\d?\)/.test(row));
     ok("没有旋转（扇形特征已去掉）", !/rotate\(/.test(row));
     ok("没有回弹曲线（不用 overshoot 的 spring）", !/cubic-bezier\([^)]*\.5[6-9]/.test(row) || true);
@@ -232,7 +234,75 @@ function dragEvt(w, type) {
     ok("Esc 可收起", /e\.key === "Escape"[\s\S]{0,40}hide\(\)/.test(JS));
     ok("行带 role=listitem", /role="listitem"/.test(JS));
     ok("尊重系统「减少动效」", /prefers-reduced-motion: reduce[\s\S]{0,200}\.fv-dock-row/.test(CSS));
-    ok("版本号已升到 20261023H", /20261023H/.test(HTML));
+    /* 版本号随每次发布递增；只要求"不等于上一版"，避免每版都来改这一行 */
+    ok("资源版本号已更新（不早于 20261023I）", (function () {
+      const v = (HTML.match(/\?v=(\d{8}[A-Z])/g) || []).map((x) => x.slice(3));
+      return v.length > 0 && v.every((x) => x >= "20261023I");
+    })(), (HTML.match(/\?v=\d{8}[A-Z]/g) || []).join(","));
+  }
+
+  console.log("\n[9] 字号与行高：拖动时不用眯眼看");
+  {
+    const row = (CSS.match(/\.fv-dock-row\{[\s\S]*?\}/) || [""])[0];
+    const nm = (CSS.match(/\.fv-dock-nm\{[\s\S]*?\}/) || [""])[0];
+    const dock = (CSS.match(/\.fv-dock\{[\s\S]*?\}/) || [""])[0];
+    const h = Number((row.match(/height:\s*(\d+)px/) || [])[1] || 0);
+    const fs = Number((nm.match(/font-size:\s*([\d.]+)px/) || [])[1] || 0);
+    const wd = Number((dock.match(/width:\s*(\d+)px/) || [])[1] || 0);
+    ok("行高放大到 54px 以上", h >= 54, h + "px");
+    ok("分类名字号放大到 14px 以上", fs >= 14, fs + "px");
+    ok("整条宽度放大到 230px 以上", wd >= 230, wd + "px");
+    ok("分类色点放大到 10px", /width:\s*10px;\s*height:\s*10px/.test(CSS));
+    ok("顶部提示字号不低于 13px", /\.fv-dock-hd\{[\s\S]*?font-size:\s*1[3-9]px/.test(CSS));
+  }
+
+  console.log("\n[10] 四个方向：菜单从你拖向的那一侧弹出来");
+  {
+    const { window: w } = await boot();
+    const T = w.FavFan._test;
+    const sides = (dx, dy) => T.decideSide(dx, dy);
+    ok("往右拖 → 贴右", sides(80, 4) === "right", sides(80, 4));
+    ok("往左拖 → 贴左", sides(-80, 4) === "left", sides(-80, 4));
+    ok("往上拖 → 贴顶", sides(6, -80) === "top", sides(6, -80));
+    ok("往下拖 → 贴底", sides(6, 80) === "bottom", sides(6, 80));
+    ok("斜着拖以位移大的轴为准", sides(90, -30) === "right" && sides(30, -90) === "top");
+
+    const dock = w.document.getElementById("fv-fan");
+    const cls = () => Array.prototype.slice.call(dock.classList).filter((c) => c.indexOf("is-") === 0 && c !== "is-open");
+    w.FavFan.show({ clientX: 1500, clientY: 500 });
+    await sleep(60);
+    ok("打开时先贴一侧（不压住来路）", cls().length === 1, cls().join(","));
+
+    const mv = (x, y) => w.document.dispatchEvent(new w.MouseEvent("dragover", { bubbles: true, clientX: x, clientY: y }));
+    w.document.dispatchEvent(new w.MouseEvent("dragstart", { bubbles: true, clientX: 900, clientY: 400 }));
+    mv(760, 404); await sleep(60);
+    ok("从中间往左拖 → 挂上 is-left", dock.classList.contains("is-left"), cls().join(","));
+    mv(300, 700); await sleep(60);
+    ok("方向锁定后不再来回跳（仍是 is-left）", dock.classList.contains("is-left"), cls().join(","));
+
+    w.FavFan.hide();
+    w.FavFan.show({ clientX: 120, clientY: 400 });
+    w.document.dispatchEvent(new w.MouseEvent("dragstart", { bubbles: true, clientX: 120, clientY: 400 }));
+    mv(520, 404); await sleep(60);
+    ok("从左边往右拖 → 挂上 is-right", dock.classList.contains("is-right"), cls().join(","));
+
+    w.FavFan.hide();
+    w.FavFan.show({ clientX: 700, clientY: 700 });
+    w.document.dispatchEvent(new w.MouseEvent("dragstart", { bubbles: true, clientX: 700, clientY: 700 }));
+    mv(704, 300); await sleep(60);
+    ok("往上拖 → 挂上 is-top", dock.classList.contains("is-top"), cls().join(","));
+    ok("贴顶时清单转成横排", /\.fv-dock\.is-top \.fv-dock-list[\s\S]{0,120}flex-direction:\s*row/.test(CSS));
+
+    w.FavFan.hide();
+    w.FavFan.show({ clientX: 700, clientY: 200 });
+    w.document.dispatchEvent(new w.MouseEvent("dragstart", { bubbles: true, clientX: 700, clientY: 200 }));
+    mv(704, 640); await sleep(60);
+    ok("往下拖 → 挂上 is-bottom", dock.classList.contains("is-bottom"), cls().join(","));
+
+    ok("四个方向都有定位样式",
+      ["is-left", "is-top", "is-bottom"].every((c) => new RegExp("\\.fv-dock\\." + c + "\\{").test(CSS)));
+    ok("小位移不触方向翻转（16px 阈值）", T.MIN_MOVE >= 12 && T.MIN_MOVE <= 24, String(T.MIN_MOVE));
+    ok("一次只挂一个方向类", cls().length === 1, cls().join(","));
   }
 
   console.log("\n================ 汇总 ================");

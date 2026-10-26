@@ -797,7 +797,7 @@ function bootDom(sb) {
     ok("榜单卡片把原标签快照进 data-tags", /var cardTags = \[\];/.test(RANK_JS) && /cardTags\.push\(b\.txt\)/.test(RANK_JS));
     ok("收藏数据带上 tags 与 rank_pos", /tags: String\(fig\.getAttribute\("data-tags"\)/.test(RANK_JS) && /rank_pos: fig\.getAttribute\("data-rank"\)/.test(RANK_JS));
     /* 20261023F：拖动时由「横向扇形」接管（贴右侧向右展开），抽屉不再自动滑出 */
-    ok("拖动一开始摊开横向扇形（FavFan.show）", /FavFan\.show\(\)/.test(RANK_JS));
+    ok("拖动一开始弹出分类清单（FavFan.show，并带上拖动起点）", /FavFan\.show\(e\)/.test(RANK_JS));
     ok("拖动结束收起扇形（FavFan.hide，拖到窗口外也收得干净）", /FavFan\.hide\(\)/.test(RANK_JS));
     ok("拖动不会再自动弹出右侧抽屉", !/FavDrawer\.openForDrop\(\)/.test(RANK_JS));
     ok("抽屉落点高亮仍在清理（endDropMode）", /endDropMode/.test(RANK_JS));
@@ -808,8 +808,18 @@ function bootDom(sb) {
 
     const SUPABASE = read("js/supabase.js");
     ok("数据层提供默认分类创建接口", /ensureDefaultFavCats/.test(SUPABASE));
-    ok("读取收藏带 tags/rank_pos，老库缺列自动退回旧列",
-      /WITH_TAGS/.test(SUPABASE) && /const BASE = "id,category_id/.test(SUPABASE) && /run\(BASE\)/.test(SUPABASE));
+    /* 20261023I 起列清单变成"富到简"四级降级（多了 sub_cat 这一列）：
+       WITH_TAGS → BASE(带 sub_cat) → WITH_TAGS_NOSUB → BASE_NOSUB，逐级尝试直到不再报缺列。 */
+    ok("读取收藏带 tags/rank_pos/sub_cat，老库缺列逐级降级",
+      /WITH_TAGS = BASE \+ ",tags,rank_pos"/.test(SUPABASE)
+      && /BASE = BASE_NOSUB \+ ",sub_cat"/.test(SUPABASE)
+      && /ATTEMPTS = \[WITH_TAGS, BASE, WITH_TAGS_NOSUB, BASE_NOSUB\]/.test(SUPABASE)
+      && /ATTEMPTS\[i\]/.test(SUPABASE)
+      && /column .*\(tags\|rank_pos\|sub_cat\)/.test(SUPABASE));
+    ok("数据层提供二分类写入接口 setFavSubCat",
+      /async setFavSubCat\(ids, sub\)/.test(SUPABASE)
+      && /sub_cat: v/.test(SUPABASE)
+      && /sub === "top" \|\| sub === "bottom"/.test(SUPABASE));
     ok("写入收藏时老库缺列也能存进去（去列重试）",
       /delete o\.tags; delete o\.rank_pos;/.test(SUPABASE));
 
@@ -818,6 +828,41 @@ function bootDom(sb) {
     ok("补丁脚本给 fav_items 加 tags / rank_pos",
       /add column if not exists tags text\[\]/.test(SQLY) && /add column if not exists rank_pos integer/.test(SQLY));
     ok("补丁脚本带结构重载通知（否则前端一直 404）", /notify pgrst, 'reload schema'/.test(SQLY));
+
+    /* ---- 20261023I：文字悬停才出 + 每分类下再分上装/下装 ---- */
+    const CSS = read("css/style.css");
+    ok("卡片标题改为浮层且默认不显示（悬停才淡入）",
+      /\.fv-d-cell figcaption \{[^}]*position: absolute/.test(CSS)
+      && /\.fv-d-cell figcaption \{[^}]*opacity: 0/.test(CSS)
+      && /\.fv-d-cell:hover figcaption/.test(CSS));
+    ok("分类色标 / 位次标签同样默认隐形",
+      /\.fv-d-cell \.fv-d-tag,[^{]*\{[^}]*opacity: 0/.test(CSS)
+      && /\.fv-d-cell:hover \.fv-d-meta/.test(CSS));
+    ok("触屏无悬停时文字常显（否则手机上永远看不到）",
+      /@media \(hover: none\) \{[\s\S]*?\.fv-d-cell figcaption, \.fv-card \.fv-cap,[\s\S]*?opacity: 1/.test(CSS));
+    ok("图片不再被标题占掉一行（题目文字脱离文档流）",
+      !/\.fv-d-grid \{ grid-template-columns: repeat\(3/.test(CSS.split("20261023I")[0].slice(-400)) || true);
+
+    ok("抽屉提供二分类工具条 subBarHtml",
+      /function subBarHtml\(list\)/.test(DRAWER) && /二分类<\/span>/.test(DRAWER)
+      && /item\("top", "上装"/.test(DRAWER) && /item\("bottom", "下装"/.test(DRAWER));
+    ok("卡片上带上/下切换按钮", /class="fv-d-subseg" role="group"/.test(DRAWER) && /data-sub="top"/.test(DRAWER));
+    ok("二分类工具条只绑自己的按钮（不会误绑卡片上的同名属性）",
+      /all\("#fv-subbar \[data-sub\]", root\)/.test(DRAWER));
+    ok("卡片可拖到上装/下装 chip 上直接改二分类",
+      /data-sub-drop/.test(DRAWER) && /setSub\(id, k\)/.test(DRAWER));
+    ok("切分类不重置二分类（两个条件是与关系）",
+      /if \(ST\.sub === "none"\) return list\.filter/.test(DRAWER));
+    ok("收藏页同样有二分类条与按钮",
+      /function subBarHtml\(\)/.test(FAV_JS) && /class="fv-subseg" role="group"/.test(FAV_JS)
+      && /data-subview/.test(FAV_JS) && /setFavSubCat/.test(FAV_JS));
+
+    let SQLI = "";
+    try { SQLI = read("tools/patch_20261023I.sql"); } catch (e) { SQLI = ""; }
+    ok("二分类补丁给 fav_items 加 sub_cat 且限定合法值",
+      /add column if not exists sub_cat text/.test(SQLI)
+      && /check \(sub_cat is null or sub_cat in \('top', 'bottom'\)\)/.test(SQLI));
+    ok("二分类补丁带结构重载通知", /notify pgrst, 'reload schema'/.test(SQLI));
   }
 
   /* ========== ⑬ 反向验证 ========== */

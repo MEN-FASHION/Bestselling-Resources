@@ -1,7 +1,11 @@
-/* favfan.js —— 拖动榜单图时，分类以「竖排清单」贴在右侧栏出现
+/* favfan.js —— 拖动榜单图时，分类清单贴着你拖向的那一侧弹出
  *
- * 这一版按用户要求重做（原来横向摊开的扇形被否掉了）：
- *   ① 分类改成**竖排**一列，贴屏幕右侧、垂直居中，一列读下来，不用横着找；
+ * 这一版：
+ *   ① 分类仍然是清单式（不是扇形），但**贴着哪一边由拖动方向决定**：
+ *      往左拖 → 贴左边竖排；往右拖 → 贴右边竖排；往上/往下 → 贴顶/底横排。
+ *      一次拖动里方向只锁一次，不会来回跳。
+ *   ② 字号/行高整体放大（行 44→58，文字 13→15），拖动时不用眯眼看；
+ *   ③ 原版：竖排一列贴右侧、垂直居中；
  *   ② 视觉与动效对齐 macOS：玻璃层、细描边、克制阴影，长缓动、错峰滑入；
  *   ③ 仍然明确提示「可以拖进收藏」。
  *
@@ -17,8 +21,15 @@
   var EXT_TYPE = "application/x-fav-row";
   var MAX_ROWS = 6;                    /* 一屏最多列几个，再多用收藏抽屉拖放 */
   var STAGGER = 28;                    /* 每行错峰多少毫秒 */
+  var MIN_MOVE = 16;                   /* 位移超过这么多才认方向，避免手抖 */
+  var SIDES = ["right", "left", "top", "bottom"];
 
-  var ST = { open: false, cats: [], el: null, loading: false, ready: false, error: null };
+  var ST = {
+    open: false, cats: [], el: null, loading: false, ready: false, error: null,
+    side: "right",                     /* 当前贴哪一边 */
+    locked: false,                     /* 本次拖动方向是否已锁定 */
+    tracking: false, sx: 0, sy: 0      /* 起点坐标，用来算方向 */
+  };
 
   /* ---------------------------------------------------------------- 小工具 */
 
@@ -53,6 +64,61 @@
     } catch (e) { return null; }
   }
 
+  /* ------------------------------------------------------------ 方向判定 */
+
+  /* 一次拖动里只认一个方向：横向位移大就左右，纵向大就上下 */
+  function decideSide(dx, dy) {
+    if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
+    return dy < 0 ? "top" : "bottom";
+  }
+
+  /* 还没动起来时的过渡猜测：贴到起点对面那一侧，先不压住你要拖的那张图；
+     一旦看出方向（16px），立刻滑到真正的那一侧。 */
+  function guessSide(x) {
+    var vw = global.innerWidth || 0;
+    if (!vw) return "right";
+    return x < vw * 0.5 ? "right" : "left";
+  }
+
+  function setSide(side) {
+    if (SIDES.indexOf(side) < 0) side = "right";
+    ST.side = side;
+    if (!ST.el) return side;
+    SIDES.forEach(function (k) {
+      ST.el.classList.toggle("is-" + k, k === side);
+    });
+    return side;
+  }
+
+  function onDragStart(e) {
+    ST.locked = false;
+    ST.tracking = true;
+    ST.sx = Number(e && e.clientX) || 0;
+    ST.sy = Number(e && e.clientY) || 0;
+  }
+
+  var moveTick = false, lastEvt = null;
+  function applyMove() {
+    moveTick = false;
+    var e = lastEvt;
+    if (!e || !ST.open || !ST.tracking || ST.locked) return;
+    var dx = (Number(e.clientX) || 0) - ST.sx;
+    var dy = (Number(e.clientY) || 0) - ST.sy;
+    if (Math.abs(dx) < MIN_MOVE && Math.abs(dy) < MIN_MOVE) return;
+    setSide(decideSide(dx, dy));       /* 菜单滑到你要去的那个方向 */
+    ST.locked = true;                  /* 锁住，这次拖动里不再改 */
+  }
+
+  function onDragMove(e) {
+    if (!ST.open || !ST.tracking || ST.locked) return;
+    lastEvt = e;
+    if (moveTick) return;
+    moveTick = true;
+    (global.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(applyMove);
+  }
+
+  function onDragEnd() { ST.tracking = false; ST.locked = false; }
+
   /* ---------------------------------------------------------------- DOM */
 
   function ensure() {
@@ -73,6 +139,11 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && ST.open) hide();
     });
+    /* 拖动全过程只挂三个被动监听：不 preventDefault，不影响任何既有拖放 */
+    document.addEventListener("dragstart", onDragStart, true);
+    document.addEventListener("dragover", onDragMove, true);
+    document.addEventListener("dragend", onDragEnd, true);
+    document.addEventListener("drop", onDragEnd, true);
     return d;
   }
 
@@ -223,9 +294,19 @@
 
   /* ---------------------------------------------------------------- 对外 */
 
-  function show() {
+  function show(pt) {
     ensure();
     if (ST.open) return;
+    /* 起点已知就先把菜单放到"正要离开的那一侧"，等方向确定再滑过去 */
+    if (pt && typeof pt.clientX === "number") {
+      ST.sx = pt.clientX;
+      ST.sy = Number(pt.clientY) || 0;
+      ST.tracking = true;
+      ST.locked = false;
+      setSide(guessSide(pt.clientX));
+    } else if (!ST.tracking) {
+      setSide(ST.side || "right");
+    }
     ST.open = true;
     wasOpen = true;
     ST.el.classList.add("is-open");
@@ -242,6 +323,8 @@
     ST.el.classList.remove("is-hot");
     ST.el.setAttribute("aria-hidden", "true");
     all(".is-over", ST.el).forEach(function (x) { x.classList.remove("is-over"); });
+    ST.tracking = false;
+    ST.locked = false;
     ST.cats = [];                 /* 下次拖动重新取一次（用户可能刚新建过分类） */
   }
 
@@ -252,7 +335,8 @@
     state: function () { return ST; },
     _test: {
       layout: layout, render: render, countOf: countOf, onDrop: onDrop,
-      MAX_ROWS: MAX_ROWS, STAGGER: STAGGER
+      setSide: setSide, decideSide: decideSide, guessSide: guessSide,
+      MAX_ROWS: MAX_ROWS, STAGGER: STAGGER, MIN_MOVE: MIN_MOVE, SIDES: SIDES
     }
   };
 
