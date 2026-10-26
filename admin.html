@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261026Q">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261026Q">
+<link rel="stylesheet" href="css/style.css?v=20261026S">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261026S">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -968,8 +968,8 @@
           <div>
             <h3>大码专区 · 数据上传与同款匹配</h3>
             <p class="hint">
-              大码数据走<b>独立入口</b>，不影响趋势上升榜的任何数据。支持<b>一个 sheet 一个类目</b>（sheet 名即类目名），
-              也支持表内带「类目」列；单次上传建议 5000 条以内，超过会自动分块写入并显示进度。
+              大码数据走<b>独立入口</b>，不影响趋势上升榜的任何数据。类目三种给法，任选其一：<b>上面选一个类目</b>（整表归入，最省事）、
+              <b>一个 sheet 一个类目</b>（sheet 名即类目名）、<b>表内带「类目」列</b>。单次上传建议 5000 条以内，超过会自动分块写入并显示进度。
             </p>
           </div>
           <div class="rkadm-head-act">
@@ -1002,6 +1002,20 @@
             <label class="rank-field">
               <span>备注（可选）</span>
               <input id="pl-note" type="text" placeholder="例如：W43 大码整理表">
+            </label>
+            <label class="rank-field">
+              <span>类目（可搜索，常用类目优先）</span>
+              <span class="rank-inline">
+                <select id="pl-cat" style="min-width:160px"></select>
+                <button id="pl-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+            <label class="rank-field">
+              <span>类目怎么用</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-catmode" value="force" checked> 整表用这个类目</label>
+                <label class="chk"><input type="radio" name="pl-catmode" value="fallback"> 只兜底（sheet 名/类目列优先）</label>
+              </span>
             </label>
           </div>
           <div class="rank-block-sub">
@@ -1350,32 +1364,32 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261026Q"></script>
-  <script src="vendor/quill.js?v=20261026Q"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261026Q"></script>
-  <script src="vendor/qrcode.min.js?v=20261026Q"></script>
-  <script src="js/config.js?v=20261026Q"></script>
-  <script src="js/supabase.js?v=20261026Q"></script>
-  <script src="js/track-menu.js?v=20261026Q"></script>
+  <script src="vendor/supabase.js?v=20261026S"></script>
+  <script src="vendor/quill.js?v=20261026S"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261026S"></script>
+  <script src="vendor/qrcode.min.js?v=20261026S"></script>
+  <script src="js/config.js?v=20261026S"></script>
+  <script src="js/supabase.js?v=20261026S"></script>
+  <script src="js/track-menu.js?v=20261026S"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261026Q"></script>
-  <script src="js/admin.js?v=20261026Q"></script>
-  <script src="js/admin-images.js?v=20261026Q"></script>
-  <script src="js/admin-smart.js?v=20261026Q"></script>
-  <script src="js/admin-trend.js?v=20261026Q"></script>
-  <script src="js/admin-notice.js?v=20261026Q"></script>
-  <script src="js/marketing-data.js?v=20261026Q"></script>
-  <script src="js/admin-festival.js?v=20261026Q"></script>
-  <script src="js/admin-tasks.js?v=20261026Q"></script>
-  <script src="js/admin-bestseller.js?v=20261026Q"></script>
-  <script src="js/admin-perm.js?v=20261026Q"></script>
-  <script src="js/admin-pool.js?v=20261026Q"></script>
-  <script src="js/admin-rank.js?v=20261026Q"></script>
-  <script src="js/plus-sb.js?v=20261026Q"></script>
-  <script src="js/plus-match.js?v=20261026Q"></script>
-  <script src="js/admin-plus.js?v=20261026Q"></script>
-  <script src="js/admin-insight.js?v=20261026Q"></script>
-  <script src="js/admin-backup.js?v=20261026Q"></script>
+  <script src="js/admin-dialog.js?v=20261026S"></script>
+  <script src="js/admin.js?v=20261026S"></script>
+  <script src="js/admin-images.js?v=20261026S"></script>
+  <script src="js/admin-smart.js?v=20261026S"></script>
+  <script src="js/admin-trend.js?v=20261026S"></script>
+  <script src="js/admin-notice.js?v=20261026S"></script>
+  <script src="js/marketing-data.js?v=20261026S"></script>
+  <script src="js/admin-festival.js?v=20261026S"></script>
+  <script src="js/admin-tasks.js?v=20261026S"></script>
+  <script src="js/admin-bestseller.js?v=20261026S"></script>
+  <script src="js/admin-perm.js?v=20261026S"></script>
+  <script src="js/admin-pool.js?v=20261026S"></script>
+  <script src="js/admin-rank.js?v=20261026S"></script>
+  <script src="js/plus-sb.js?v=20261026S"></script>
+  <script src="js/plus-match.js?v=20261026S"></script>
+  <script src="js/admin-plus.js?v=20261026S"></script>
+  <script src="js/admin-insight.js?v=20261026S"></script>
+  <script src="js/admin-backup.js?v=20261026S"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

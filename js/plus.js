@@ -19,7 +19,7 @@
     cats: [], periods: [], sites: [],
     cat: "", plusPeriod: "", stdPeriod: "", site: "",
     unlock: false, onlyGap: false, onlyReview: false,
-    plus: [], std: [], matches: {}, loading: false,
+    plus: [], std: [], matches: {}, loading: false, pending: false,
   };
 
   function esc(s) {
@@ -97,7 +97,10 @@
   function renderCats() {
     var box = $("#plz-cats");
     if (!box) return;
-    if (!ST.cats.length) { box.innerHTML = '<div class="rk-empty">暂无大码类目</div>'; return; }
+    if (!ST.cats.length) {
+      box.innerHTML = '<div class="rk-empty">这个大码期次没有带类目的数据：请让管理员在后台「大码专区」上传时选一个类目（或按一个 sheet 一个类目拆表）后重传。</div>';
+      return;
+    }
     var html = ['<button type="button" class="cat-menu-item' + (ST.cat ? "" : " active") + '" data-cat="">全部类目</button>'];
     ST.cats.forEach(function (c) {
       html.push('<button type="button" class="cat-menu-item' + (ST.cat === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>');
@@ -110,6 +113,19 @@
         load();
       };
     });
+  }
+
+  /* 类目名宽松匹配：大码写「裤装」、标码写「加绒裤装 / 裤装（女）」也算同一类。
+     榜单的类目名是运营各自写的，强求一字不差会让标码那一列整列消失。 */
+  function normCat(v) {
+    return String(v == null ? "" : v).replace(/[\s（）()【】\[\]·・\-—_/、,，.。]/g, "").toLowerCase();
+  }
+  function catSame(a, b) {
+    var x = normCat(a), y = normCat(b);
+    if (!x || !y) return x === y;
+    if (x === y) return true;
+    if (x.length >= 2 && y.length >= 2 && (x.indexOf(y) >= 0 || y.indexOf(x) >= 0)) return true;
+    return false;
   }
 
   /* ---------------- 取数 ---------------- */
@@ -133,7 +149,7 @@
     ST.matches = map;
   }
   async function load() {
-    if (ST.loading) return;
+    if (ST.loading) { ST.pending = true; return; }   // 正在加载时点了类目：记下来，加载完再跑一遍
     var body = $("#plz-body");
     if (!ST.plusPeriod) {
       if (body) body.innerHTML = '<div class="rk-empty">还没有上传过大码数据，请联系管理员在后台「大码专区」上传。</div>';
@@ -147,12 +163,20 @@
       var q = { periods: [ST.stdPeriod] };
       if (ST.cat) q.category = ST.cat;
       try { std = await SBX.listRankItems(q); } catch (e) { std = []; }
+      /* 标码那边类目名和大码不完全一致时，精确取会空 → 退一步取该期次全部，再按宽松规则筛 */
+      if (ST.cat && !(std || []).length) {
+        try {
+          var all = await SBX.listRankItems({ periods: [ST.stdPeriod] });
+          std = (all || []).filter(function (r) { return catSame(r.category, ST.cat); });
+        } catch (e) { std = []; }
+      }
       if (ST.site) std = std.filter(function (it) { return it.site === ST.site; });
       ST.plus = plus; ST.std = std;
       await loadMatches();
       renderBody();
     } finally {
       ST.loading = false;
+      if (ST.pending) { ST.pending = false; load(); }
     }
   }
 
@@ -189,7 +213,7 @@
     }
     var groups = cats.map(function (c) {
       var plus = ST.plus.filter(function (r) { return (r.category || "") === c; });
-      var std = ST.std.filter(function (r) { return (r.category || "") === c; });
+      var std = ST.std.filter(function (r) { return catSame(r.category, c); });
       /* 标码同图去重（多站点会重复） */
       var seen = {}, stdU = [];
       std.forEach(function (r) { if (!seen[r.image_url]) { seen[r.image_url] = 1; stdU.push(r); } });
@@ -333,6 +357,16 @@
     return ok;
   }
 
+  /* 专区被关上时给一句能自证原因的话，而不是空白页 */
+  function renderGate(why) {
+    var body = $("#plz-body");
+    if (body) {
+      body.innerHTML = '<div class="rk-empty">' + why + '<br><span style="opacity:.7">如需查看，请联系超级管理员在后台「前台访问设置 / 权限管理」中开放「大码专区」。</span></div>';
+    }
+    var cats = $("#plz-cats");
+    if (cats) cats.innerHTML = '<div class="rk-empty">—</div>';
+  }
+
   async function boot() {
     if (!SBX || !window.SBP) {
       $("#plz-body").innerHTML = '<div class="rk-empty">数据服务未就绪，请刷新页面重试。</div>';
@@ -343,6 +377,18 @@
       $("#plz-body").innerHTML = '<div class="rk-empty">请先 <a href="index.html">登录</a> 后查看大码专区。</div>';
       return;
     }
+    /* 专区可见性守门（两级，与榜单页同一套）：
+       ①全站开关（后台「前台访问设置」）②用户级白名单（后台「权限管理」勾选） */
+    var vis = null, myz = null;
+    try { vis = await SBX.getFrontendZoneVisibility(); } catch (e) { /* 读不到就照常展示 */ }
+    try { myz = await SBX.myFrontendZones(); } catch (e) { myz = null; }
+    if (window.Common && Common.zones) {
+      Common.zones.setVis(vis || {});
+      Common.zones.setMine(Array.isArray(myz) ? myz : null);
+      if (Common.zones.applyNav) Common.zones.applyNav();
+    }
+    if (vis && vis.plus === false) { renderGate("全站开关：该专区已在后台「前台访问设置」中被关闭"); return; }
+    if (Array.isArray(myz) && myz.length && myz.indexOf("plus") === -1) { renderGate("账号授权：你的账号未获授权访问本专区"); return; }
     bind();
     await loadFacets();
     renderCats();

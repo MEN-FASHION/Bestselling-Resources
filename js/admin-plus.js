@@ -21,6 +21,8 @@
     review: [],        // 待确认清单当前页数据
     reviewFilter: "review",
     lastRun: null,
+    file: null,        // 最近一次选中的文件（改类目时要重解析）
+    cats: [],          // 类目候选（标签管理里的前台类目 + 已有大码类目）
   };
 
   function $(s) { return box ? box.querySelector(s) : null; }
@@ -107,8 +109,47 @@
     });
   }
 
+  /* ---------------- 类目设置 ---------------- */
+  function catOpt() {
+    var sel = $("#pl-cat");
+    var modeEl = $$('input[name="pl-catmode"]').filter(function (r) { return r.checked; })[0];
+    return { cat: sel ? String(sel.value || "").trim() : "", mode: (modeEl && modeEl.value) || "force" };
+  }
+
+  /* 类目候选：标签管理里的「前台类目」+ 大码库里已出现过的类目。
+     走统一的 CAT_SEARCH：常用类目排前面并带 ★，下拉上方带搜索框（宽松匹配）。 */
+  async function loadPlusCats() {
+    var list = [];
+    try { list = await SB.listActiveCats(); } catch (e) { list = []; }
+    try {
+      var f = await SBP.facets();
+      (f.categories || []).forEach(function (c) { if (c && list.indexOf(c) < 0) list.push(c); });
+    } catch (e) { /* 补丁没跑：只用标签管理里的类目 */ }
+    ST.cats = list.filter(Boolean);
+    var sel = $("#pl-cat");
+    if (!sel) return;
+    var keep = sel.value;
+    var CATS = window.CAT_SEARCH;
+    var favs = [];
+    try { favs = await SB.myFavCats(); } catch (e) { favs = []; }
+    var ordered = CATS ? CATS.sortCats(ST.cats, favs) : ST.cats.map(function (n) { return { name: n, fav: false }; });
+    sel.innerHTML = '<option value="">不指定（按 sheet 名 / 类目列）</option>'
+      + ordered.map(function (o) { return '<option value="' + esc(o.name) + '">' + (o.fav ? "★ " : "") + esc(o.name) + '</option>'; }).join("");
+    if (keep && ST.cats.indexOf(keep) >= 0) sel.value = keep;
+    if (CATS && typeof CATS.mountBox === "function") {
+      CATS.mountBox(sel, "cat-search-plus", "搜索类目…", function (v) { CATS.kw("plus", v); CATS.filterSelect(sel, v); });
+      CATS.filterSelect(sel, CATS.kw("plus"));
+    }
+  }
+
   /* ---------------- 解析整本工作簿（多 sheet = 多类目） ---------------- */
-  function parseBook(file) {
+  /* opt: { cat: "裤装", mode: "force" | "fallback" }
+     force    → 整表都归这个类目（一张表只装一个类目时最省事）
+     fallback → 只补那些「表内类目列」和「sheet 名」都拿不到类目的行 */
+  function parseBook(file, opt) {
+    opt = opt || {};
+    var picked = String(opt.cat || "").trim();
+    var force = !!picked && opt.mode !== "fallback";
     return readBuf(file).then(function (buf) {
       var wb = XLSX.read(buf, { type: "array" });
       var all = [], failed = [], noUrl = 0, sheetsMeta = [];
@@ -128,8 +169,9 @@
           if (!url) { noUrl++; continue; }
           var sheetCat = String(name || "").trim();
           var rowCat = head.map.cat >= 0 ? String(c[head.map.cat] || "").trim() : "";
+          var finalCat = force ? picked : (rowCat || sheetCat || picked || "");
           rows.push({
-            category: rowCat || sheetCat,
+            category: finalCat,
             site: head.map.site >= 0 ? String(c[head.map.site] || "").trim() : "",
             leaf_category: head.map.leaf >= 0 ? String(c[head.map.leaf] || "").trim() : "",
             title: head.map.title >= 0 ? String(c[head.map.title] || "").trim() : "",
@@ -169,7 +211,9 @@
     if (!tip || !pv) return;
     var st = ST.parsed;
     if (!st) { pv.innerHTML = ""; tip.textContent = ""; return; }
-    tip.textContent = "✅ 共 " + st.rows.length + " 条有效数据 · " + st.sheets.length + " 个 sheet";
+    var co = catOpt();
+    tip.textContent = "✅ 共 " + st.rows.length + " 条有效数据 · " + st.sheets.length + " 个 sheet"
+      + (co.cat ? (co.mode === "fallback" ? " · 识别不出类目的行归到「" + co.cat + "」" : " · 整表归入「" + co.cat + "」") : "");
     var byCat = {};
     st.rows.forEach(function (r) { byCat[r.category] = (byCat[r.category] || 0) + 1; });
     var catRows = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; })
@@ -210,6 +254,12 @@
     var periodLabel = ($("#pl-period-label").value || "").trim();
     if (!periodLabel) { toast(periodType === "month" ? "请先选月份" : "请先选某一周", false); return; }
     var note = ($("#pl-note").value || "").trim();
+    var co = catOpt();
+    if (co.cat) {
+      st.rows.forEach(function (r) {
+        if (co.mode !== "fallback" || !r.category) r.category = co.cat;
+      });
+    }
     var mode = ($$('input[name="pl-mode"]').filter(function (r) { return r.checked; })[0] || {}).value === "append" ? "append" : "replace";
     var cats = Object.keys(st.rows.reduce(function (m, r) { if (r.category) m[r.category] = 1; return m; }, {}));
 
@@ -375,10 +425,20 @@
     if (cat) {
       SBP.facets().then(function (f) {
         var prev = cat.value;
-        cat.innerHTML = '<option value="">全部类目</option>' + (f.categories || []).map(function (c) {
-          return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
-        }).join("");
-        if (prev) cat.value = prev;
+        var CATS = window.CAT_SEARCH, favs = [];
+        SB.myFavCats().then(function (v) { favs = v || []; }).catch(function () { favs = []; }).then(function () {
+          var names = (f.categories || []).slice();
+          var ordered = CATS ? CATS.sortCats(names, favs) : names.map(function (n) { return { name: n, fav: false }; });
+          cat.innerHTML = '<option value="">全部类目</option>' + ordered.map(function (o) {
+            return '<option value="' + esc(o.name) + '">' + (o.fav ? "★ " : "") + esc(o.name) + '</option>';
+          }).join("");
+          if (prev) cat.value = prev;
+          /* 类目多时要能搜；搜索只隐藏不匹配项，不动已选值 */
+          if (CATS && typeof CATS.mountBox === "function") {
+            CATS.mountBox(cat, "cat-search-plus-match", "搜索类目…", function (v) { CATS.kw("plusm", v); CATS.filterSelect(cat, v); });
+            CATS.filterSelect(cat, CATS.kw("plusm"));
+          }
+        });
       }).catch(function () { /* 忽略 */ });
     }
   }
@@ -639,21 +699,47 @@
     });
   }
 
+  /* 用当前类目设置重新解析同一个文件（改类目时调用，避免让用户重新选文件） */
+  async function reparse() {
+    if (!ST.file) return;
+    var tip = $("#pl-file-tip");
+    if (tip) tip.textContent = "正在解析 " + (ST.file.name || "文件") + " …";
+    try {
+      ST.parsed = await parseBook(ST.file, catOpt());
+      renderPreview();
+    } catch (e) {
+      ST.parsed = null;
+      if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx / .xls）";
+      renderPreview();
+    }
+  }
+
   /* ---------------- 绑定 ---------------- */
   function bind() {
     var f = $("#pl-file");
     if (f) f.onchange = async function () {
       var file = f.files && f.files[0];
+      ST.file = file || null;
       ST.parsed = null; renderPreview();
       if (!file) return;
-      var tip = $("#pl-file-tip");
-      if (tip) tip.textContent = "正在解析 " + file.name + " …";
+      await reparse();
+    };
+    /* 换类目 / 换用法：重新解析一遍，让预览里的类目计数立刻跟着变（不重新选文件） */
+    var pcat = $("#pl-cat");
+    if (pcat) pcat.onchange = function () { if (ST.file) reparse(); };
+    $$('input[name="pl-catmode"]').forEach(function (r) { r.onchange = function () { if (ST.file) reparse(); }; });
+    var pcatAdd = $("#pl-cat-add");
+    if (pcatAdd) pcatAdd.onclick = async function () {
+      var v = (window.prompt("输入新类目名称（会同步到「标签管理 → 前台类目」）：") || "").trim();
+      if (!v) return;
       try {
-        ST.parsed = await parseBook(file);
-        renderPreview();
-      } catch (e) {
-        if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx / .xls）";
-      }
+        await SB.addCategory(v);
+        await loadPlusCats();
+        var sel = $("#pl-cat");
+        if (sel) sel.value = v;
+        if (ST.file) reparse();
+        toast("已新增类目「" + v + "」", true);
+      } catch (e) { toast((e && e.message) || "新增类目失败", false); }
     };
     var imp = $("#pl-import");
     if (imp) imp.onclick = doImport;
@@ -696,6 +782,7 @@
     if (mEl && !mEl.value) mEl.value = iso.slice(0, 7);
     syncLabel();
     bind();
+    await loadPlusCats();
     await loadBatches();
     await refreshFacets();
     await loadReview();
@@ -711,6 +798,7 @@
       loadBatches();
       refreshFacets();
       loadReview();
+      loadPlusCats();
     },
   };
 })();

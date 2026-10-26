@@ -116,6 +116,7 @@ window.CONFIG = {
  * ============================================================ */
 window.ZONE_DEFS_DEFAULT = [
   { key: "rank",          label: "趋势上升榜",     href: "rank.html" },
+  { key: "plus",          label: "大码专区",      href: "plus.html" },
   { key: "marketing",     label: "营销日历",      href: "marketing.html" },
   { key: "visual",        label: "视觉专区",      href: "index.html" },
   { key: "trend",         label: "趋势专区",      href: "trends.html" },

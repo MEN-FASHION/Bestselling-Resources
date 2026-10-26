@@ -20,6 +20,7 @@ let PERM_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
+  { key: "plus", label: "大码专区" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步

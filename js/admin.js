@@ -41,7 +41,7 @@ const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
-  "plus-card": "",          // 大码专区：大码数据上传 + 同款匹配（与趋势上升榜同口径，任一管理员）
+  "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
   "recruit-card": "recruit",
@@ -74,7 +74,8 @@ const CAT_VIS_ZONES = [
   { key: "bestseller", label: "BESTSELLER" },
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
-  { key: "rank", label: "趋势上升榜" }
+  { key: "rank", label: "趋势上升榜" },
+  { key: "plus", label: "大码专区" }
 ];
 
 // 当前生效的专区定义（内置 7 个 + 超管在「专区管理」里新增的），
@@ -105,7 +106,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "plus-card" || target === "insight-card") return true;
+    if (target === "rank-card" || target === "insight-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;

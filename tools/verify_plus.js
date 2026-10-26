@@ -392,6 +392,195 @@ function mkImg(fn, w, h) {
     && !/from public\.rank_items/.test(SQL));
   ok("补丁幂等（可重复执行）", (SQL.match(/if not exists/g) || []).length >= 6 && /create or replace function/.test(SQL));
 
+  /* ==================================================================
+     ⑥ 上传时能选类目（20261026R）
+     ================================================================== */
+  console.log("\n=== ⑥ 后台上传可选类目 + 前台类目交互 ===\n");
+  const htmlR = read("admin.html");
+  ok("上传区有类目下拉", /<select id="pl-cat"/.test(htmlR));
+  ok("上传区有「自定义添加」类目按钮", /id="pl-cat-add"/.test(htmlR));
+  ok("类目用法可选「整表用这个类目 / 只兜底」",
+    /name="pl-catmode" value="force"/.test(htmlR) && /name="pl-catmode" value="fallback"/.test(htmlR));
+  ok("类目下拉走统一搜索组件（可搜 + 常用类目优先）",
+    /CATS\.mountBox\(sel, "cat-search-plus"/.test(read("js/admin-plus.js"))
+    && /CATS\.sortCats\(ST\.cats, favs\)/.test(read("js/admin-plus.js")));
+  ok("匹配区类目下拉也能搜", /cat-search-plus-match/.test(read("js/admin-plus.js")));
+
+  /* 用刚解析过的那本工作簿，换类目设置重解析 */
+  const selR = w3.document.getElementById("pl-cat");
+  selR.innerHTML = '<option value="">不指定</option><option value="裤装">裤装</option><option value="连衣裙">连衣裙</option>';
+  selR.value = "连衣裙";
+  const forceR = w3.document.querySelector('input[name="pl-catmode"][value="force"]');
+  forceR.checked = true;
+  selR.onchange();
+  await sleep(700);
+  const tipR = (w3.document.getElementById("pl-file-tip") || {}).textContent || "";
+  const chipsR = Array.prototype.slice.call(w3.document.querySelectorAll("#pl-preview .pl-chip")).map((el) => el.textContent.trim());
+  ok("整表归入：预览里只剩所选类目", chipsR.length === 1 && /连衣裙/.test(chipsR[0]), JSON.stringify(chipsR));
+  ok("整表归入：提示里写明归到哪个类目", /整表归入「连衣裙」/.test(tipR), tipR);
+
+  /* 切到兜底：sheet 名优先，识别不出的才用它 */
+  const fbR = w3.document.querySelector('input[name="pl-catmode"][value="fallback"]');
+  fbR.checked = true;
+  fbR.onchange();
+  await sleep(700);
+  const chipsR2 = Array.prototype.slice.call(w3.document.querySelectorAll("#pl-preview .pl-chip")).map((el) => el.textContent.trim());
+  ok("兜底模式：sheet 名照旧当类目（裤装 / 大批量 都回来了）",
+    chipsR2.some((t) => /裤装/.test(t)) && chipsR2.some((t) => /大批量/.test(t)), JSON.stringify(chipsR2).slice(0, 160));
+  const tipR2 = (w3.document.getElementById("pl-file-tip") || {}).textContent || "";
+  ok("兜底模式：提示文案与整表模式不同", /识别不出类目的行归到/.test(tipR2), tipR2);
+
+  /* 选中的类目要真的进载荷，而不只是界面好看 */
+  forceR.checked = true;
+  selR.value = "连衣裙";
+  selR.onchange();
+  await sleep(700);
+  const rowsBefore = calls.insert.length;
+  const impBtnR = w3.document.getElementById("pl-import");
+  if (impBtnR) impBtnR.click();
+  await sleep(500);
+  const newPayload = calls.insert.slice(rowsBefore).reduce((a, b) => a.concat(b || []), []);
+  ok("导入载荷用的是所选的类目（不是 sheet 名）",
+    newPayload.length > 0 && newPayload.every((r) => r.category === "连衣裙"),
+    newPayload.length ? newPayload.slice(0, 3).map((r) => r.category).join(",") + " / 共" + newPayload.length : "无载荷");
+
+  /* ---- 前台：类目名不完全一致也要对上；加载中点类目不丢 ---- */
+  const d6 = new JSDOM(read("plus.html"), { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
+  const w6 = d6.window;
+  const IMG6 = (n) => "https://img.example.com/" + n + ".jpeg";
+  const plus6 = [{ category: "裤装", site: "", title: "大码阔腿裤", image_url: IMG6("p1"), ratio: 90 }];
+  const std6 = [
+    { category: "加绒裤装", site: "美国", title: "加绒阔腿裤", image_url: IMG6("s1"), ratio: 300 },
+    { category: "衬衫", site: "美国", title: "衬衫", image_url: IMG6("s2"), ratio: 120 },
+  ];
+  let listCalls = 0;
+  w6.SB = {
+    getSession: () => Promise.resolve({ user: { email: "t@e.com" } }),
+    signOut: () => Promise.resolve(),
+    rankFacets: () => Promise.resolve({ sites: ["美国"], periods: ["W43"], categories: ["裤装", "衬衫"] }),
+    listRankItems: (q) => {
+      listCalls++;
+      let rows = std6.slice();
+      if (q && q.category) rows = rows.filter((r) => r.category === q.category);
+      return new Promise((res) => setTimeout(() => res(rows), 60));
+    },
+  };
+  w6.SBP = {
+    facets: () => Promise.resolve({ periods: ["W43"], categories: ["裤装"] }),
+    listItems: () => new Promise((res) => setTimeout(() => res(plus6), 60)),
+    listMatches: () => Promise.resolve([]),
+  };
+  runScript(d6, "js/plus.js");
+  await sleep(20);                                  /* 首次加载还在路上 */
+  const catBtn = Array.prototype.slice.call(w6.document.querySelectorAll("#plz-cats .cat-menu-item"))
+    .filter((b) => (b.getAttribute("data-cat") || "") === "裤装")[0];
+  if (catBtn) catBtn.click();                        /* 加载中点类目：不能白点 */
+  await sleep(600);
+  const g6 = Array.prototype.slice.call(w6.document.querySelectorAll(".plz-group"));
+  ok("加载中点类目不会白点（加载完会再跑一遍）", g6.length === 1, String(g6.length));
+  ok("类目名不完全一致（裤装 vs 加绒裤装）标码列仍然出现",
+    g6.length === 1 && g6[0].querySelectorAll(".plz-col.std").length === 1,
+    g6.length ? String(g6[0].querySelectorAll(".plz-col.std").length) : "0");
+  ok("宽松匹配不会把无关类目（衬衫）拉进来",
+    !/衬衫/.test((w6.document.getElementById("plz-body") || {}).textContent || ""));
+  ok("前台加载点头应有排队重跑（不是直接 return 掉）",
+    /if \(ST\.loading\) \{ ST\.pending = true; return; \}/.test(read("js/plus.js"))
+    && /if \(ST\.pending\) \{ ST\.pending = false; load\(\); \}/.test(read("js/plus.js")));
+  ok("类目为空时给出「重传时选类目」的明确指引",
+    /上传时选一个类目/.test(read("js/plus.js")));
+
+  /* ==================================================================
+     ⑦ 大码专区必须登记进「专区体系」（可见开关 / 权限勾选 / 面板授权）
+     ================================================================== */
+  console.log("\n=== ⑦ 大码专区纳入专区权限体系 ===\n");
+  const CFG = read("js/config.js");
+  const ADM = read("js/admin.js");
+  const PERMJS = read("js/admin-perm.js");
+  ok("内置专区清单里有 plus（前台导航/全局可见开关读它）",
+    /\{ key: "plus",\s*label: "大码专区",\s*href: "plus.html" \}/.test(CFG));
+  ok("后台专区定义里也有 plus（专区管理/类目可见共用它）",
+    /\{ key: "plus", label: "大码专区" \}/.test(ADM));
+  ok("权限管理兜底清单里也有 plus（权限表能勾）",
+    /\{ key: "plus", label: "大码专区" \}/.test(PERMJS));
+  /* 只看 canAccessPanel 函数体：「任一授权专区即可」的放行名单里不能再有 plus-card。
+     (文件别处出现 plus-card 是刷新钩子，不属于权限判定，不能一并否定) */
+  const canBody = (ADM.match(/function canAccessPanel[\s\S]*?\n  \}/) || [""])[0];
+  ok("后台大码面板按「大码专区」授权（不再对任一管理员放行）",
+    /"plus-card": "plus"/.test(ADM) && canBody.length > 0 && !/plus-card/.test(canBody),
+    canBody ? canBody.split("\n").slice(0, 6).join(" | ") : "没截到函数体");
+
+  /* getZoneDefs 必须「内置为底 + 保存值覆盖」，否则老库里存的 __defs 缺 plus 就永远看不到 */
+  const SBSRC = read("js/supabase.js");
+  ok("读取专区定义以内置清单为底（历史保存的配置不会把新专区吃掉）",
+    /getZoneDefs[\s\S]{0,700}?ZONE_DEFS_DEFAULT/.test(SBSRC)
+    && /saved\.forEach/.test(SBSRC));
+
+  /* 真跑：模拟"库里 __defs 是旧清单"，看合并结果里有没有 plus */
+  const d7 = new JSDOM("<!doctype html><html><body></body></html>",
+    { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
+  const w7 = d7.window;
+  w7.ZONE_DEFS_DEFAULT = [
+    { key: "rank", label: "趋势上升榜", href: "rank.html" },
+    { key: "plus", label: "大码专区", href: "plus.html" },
+  ];
+  const mergedZ = (function () {
+    const raw = { __defs: [{ key: "rank", label: "旧名字", href: "rank.html" }, { key: "custom", label: "自定义", href: "c.html" }] };
+    const saved = Array.isArray(raw.__defs) ? raw.__defs : [];
+    const out = (w7.ZONE_DEFS_DEFAULT || []).map((d) => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
+    const idx = {};
+    out.forEach((d, i) => { idx[d.key] = i; });
+    saved.forEach((d) => {
+      if (!d || !d.key) return;
+      const k = String(d.key);
+      if (idx[k] != null) { const t = out[idx[k]]; t.label = String(d.label || t.label); t.href = String(d.href || t.href); }
+      else { out.push({ key: k, label: String(d.label || k), href: String(d.href || "") }); }
+    });
+    return out;
+  })();
+  ok("库里存着旧专区清单时，新专区仍会出现在合并结果里",
+    mergedZ.some((z) => z.key === "plus"), JSON.stringify(mergedZ.map((z) => z.key)));
+  ok("合并时保留超管自定义专区", mergedZ.some((z) => z.key === "custom"));
+  ok("合并时同 key 以保存值为准（不会把改名覆盖掉）",
+    mergedZ.filter((z) => z.key === "rank")[0].label === "旧名字");
+
+  /* 前台 plus.html：全站关掉 / 未授权时要有明确说明，而不是空白 */
+  const PLUSS = read("js/plus.js");
+  ok("大码页读全站开关与用户级白名单（两级守门）",
+    /getFrontendZoneVisibility/.test(PLUSS) && /myFrontendZones/.test(PLUSS));
+  ok("全站关掉时给出原因", /vis\.plus === false/.test(PLUSS) && /前台访问设置/.test(PLUSS));
+  ok("未授权时给出原因", /myz\.indexOf\("plus"\) === -1/.test(PLUSS) && /权限管理|未获授权/.test(PLUSS));
+  ok("大码页顶部导航走统一显隐（不再自己写一套）", /Common\.zones\.applyNav/.test(PLUSS));
+
+  const d8 = new JSDOM(read("plus.html"), { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
+  const w8 = d8.window;
+  w8.SB = {
+    getSession: () => Promise.resolve({ user: { email: "t@e.com" } }),
+    signOut: () => Promise.resolve(),
+    getFrontendZoneVisibility: () => Promise.resolve({ plus: false }),
+    myFrontendZones: () => Promise.resolve(null),
+    listRankItems: () => Promise.resolve([]),
+  };
+  w8.SBP = { facets: () => Promise.resolve({ periods: [], categories: [] }), listItems: () => Promise.resolve([]), listMatches: () => Promise.resolve([]) };
+  runScript(d8, "js/plus.js");
+  await sleep(200);
+  const gateTxt = (w8.document.getElementById("plz-body") || {}).textContent || "";
+  ok("全站关闭时页面显示关闭原因（非空白页）", /前台访问设置/.test(gateTxt), gateTxt.slice(0, 80));
+
+  const d9 = new JSDOM(read("plus.html"), { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost/" });
+  const w9 = d9.window;
+  w9.SB = {
+    getSession: () => Promise.resolve({ user: { email: "t@e.com" } }),
+    signOut: () => Promise.resolve(),
+    getFrontendZoneVisibility: () => Promise.resolve({}),
+    myFrontendZones: () => Promise.resolve(["visual", "rank"]),
+    listRankItems: () => Promise.resolve([]),
+  };
+  w9.SBP = { facets: () => Promise.resolve({ periods: [], categories: [] }), listItems: () => Promise.resolve([]), listMatches: () => Promise.resolve([]) };
+  runScript(d9, "js/plus.js");
+  await sleep(200);
+  const gateTxt2 = (w9.document.getElementById("plz-body") || {}).textContent || "";
+  ok("账号未授权时显示未授权原因", /未获授权/.test(gateTxt2), gateTxt2.slice(0, 80));
+
   console.log("\n================ 汇总 ================");
   console.log("PASS " + pass + " / FAIL " + fail);
   if (fail) process.exitCode = 1;
