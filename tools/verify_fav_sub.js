@@ -43,6 +43,7 @@ function boot(opts) {
   const w = dom.window;
   const items = opts.items || makeItems();
   const calls = [];
+  const added = [];   /* 拖进来被收藏的行 */
   w.SB = {
     favUid: async () => "u-1",
     favReady: async () => true,
@@ -57,9 +58,17 @@ function boot(opts) {
     moveFavItems: async () => 1,
     setFavSubCat: opts.noApi ? undefined : async (ids, sub) => { calls.push({ ids: ids, sub: sub }); return ids.length; },
     listFavKeys: async () => [],
+    addFavItems: async (rows) => {
+      (rows || []).forEach(function (r) {
+        added.push(r);
+        items.push({ id: 900 + items.length, category_id: null, sub_cat: (opts.noSubCat ? undefined : null),
+          image_url: r.image_url, title: r.title, period_label: "W42" });
+      });
+      return (rows || []).length;
+    },
   };
   w.eval(read("js/favdrawer.js"));
-  return { dom, w, items, calls };
+  return { dom, w, items, calls, added };
 }
 
 function q(w, sel) { return w.document.querySelector(sel); }
@@ -182,6 +191,59 @@ function qa(w, sel) { return Array.prototype.slice.call(w.document.querySelector
   pBtn.dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
   await new Promise((r) => setTimeout(r, 40));
   ok("收藏页点「下」也会写库", pcalls.length === 1 && pcalls[0].sub === "bottom", JSON.stringify(pcalls));
+
+  /* ==================================================================
+     ⑤ 20261026T：修「点了上装变空页 / 图拖不进去 / 进去出不来」
+     ================================================================== */
+  console.log("\n=== ⑤ 空态可回退 / 外部拖入可落点 / 未启用说清楚 ===\n");
+
+  /* (1) 筛到 0 张时工具条必须还在，并且有「看全部」能退回去 */
+  const T1 = boot();
+  await T1.w.FavDrawer.open();
+  const botChip = qa(T1.w, "#fv-subbar [data-sub]").filter((c) => c.getAttribute("data-sub") === "bottom")[0];
+  botChip.dispatchEvent(new T1.w.MouseEvent("click", { bubbles: true }));
+  /* 切到「图案」这个分类：里面只有 1 张且未分 → 下装在这个分类下是 0 张 */
+  const patChip = qa(T1.w, "#fv-d-filter [data-fv-f]").filter((c) => c.getAttribute("data-fv-f") === "3")[0];
+  patChip.dispatchEvent(new T1.w.MouseEvent("click", { bubbles: true }));
+  const isEmpty = qa(T1.w, ".fv-d-grid .fv-d-cell").length === 0;
+  ok("构造成功：选中的组合确实是 0 张", isEmpty, String(qa(T1.w, ".fv-d-grid .fv-d-cell").length));
+  ok("0 张时二分类工具条仍然在（不会因此消失）", !!q(T1.w, "#fv-subbar"));
+  const backBtn = q(T1.w, "#fv-subbar [data-sub]");
+  ok("0 张时仍能点「全部」退回去", !!backBtn);
+  const emptyBack = q(T1.w, ".fv-d-empty-back");
+  ok("空态里另给一个「看全部」按钮", !!emptyBack);
+  ok("空态说明写清当前筛的是什么（「下装」）",
+    /「下装」下还没有图/.test((q(T1.w, "#fv-d-body") || {}).textContent || ""),
+    ((q(T1.w, "#fv-d-body") || {}).textContent || "").slice(0, 60));
+  if (emptyBack) {
+    emptyBack.dispatchEvent(new T1.w.MouseEvent("click", { bubbles: true }));
+    ok("点「看全部」后回到全部（卡片回来）", qa(T1.w, ".fv-d-grid .fv-d-cell").length > 0,
+      String(qa(T1.w, ".fv-d-grid .fv-d-cell").length));
+  }
+
+  /* (2) 从榜单卡片直接拖到「上装」上：收藏 + 同时写二分类 */
+  const T2 = boot();
+  await T2.w.FavDrawer.open();
+  const dropChip = qa(T2.w, "#fv-subbar [data-sub-drop]").filter((c) => c.getAttribute("data-sub-drop") === "top")[0];
+  const dt = { types: ["application/x-fav-row"], getData: function (t) { return t === "application/x-fav-row" ? JSON.stringify({ image_url: IMG("new"), title: "新拖入款" }) : ""; }, setData: function () {}, dropEffect: "", effectAllowed: "" };
+  const mkEv = (type) => { const e = new T2.w.Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(e, "dataTransfer", { value: dt }); return e; };
+  dropChip.dispatchEvent(mkEv("dragover"));
+  ok("外部拖拽时「上装」亮起落点态（原来完全不理）", /is-drop/.test(dropChip.className), dropChip.className);
+  dropChip.dispatchEvent(mkEv("drop"));
+  await new Promise((r) => setTimeout(r, 120));
+  ok("拖到「上装」上确实收藏了这张（addFavItems 被调用）",
+    (T2.added || []).some((r) => r && r.image_url === IMG("new")), JSON.stringify(T2.added || []));
+  ok("收藏的同时写入了二分类 top",
+    T2.calls.some((c) => c.sub === "top"), JSON.stringify(T2.calls));
+
+  /* (3) 数据库还没加 sub_cat 列：不给一排死按钮，直接给出要执行哪个脚本 */
+  const noSub = makeItems().map(function (r) { const o = Object.assign({}, r); delete o.sub_cat; return o; });
+  const T3 = boot({ items: noSub });
+  await T3.w.FavDrawer.open();
+  ok("缺 sub_cat 列时不显示点了必然失败的按钮", qa(T3.w, "#fv-subbar [data-sub]").length === 0);
+  ok("缺 sub_cat 列时明确告知要执行哪个脚本",
+    /patch_20261023I\.sql/.test((q(T3.w, "#fv-subbar") || {}).textContent || ""),
+    ((q(T3.w, "#fv-subbar") || {}).textContent || "").slice(0, 60));
 
   console.log("\n================ 汇总 ================");
   console.log("PASS " + pass + " / FAIL " + fail);

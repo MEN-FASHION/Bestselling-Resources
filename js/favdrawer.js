@@ -359,6 +359,14 @@
     });
   }
 
+  /* 当前筛选范围落成一个分类 id：拖进来的图默认收进"你正在看的那一类" */
+  function currentFilterCid() {
+    if (ST.filter === "none") return null;
+    if (ST.filter === "all" || ST.filter == null || ST.filter === "") return null;
+    var n = Number(ST.filter);
+    return isNaN(n) ? null : n;
+  }
+
   /* ---------- 从榜单卡片拖进来（收藏） ---------- */
   function hasExt(e) {
     var dt = e && e.dataTransfer;
@@ -377,15 +385,33 @@
     } catch (x) { return null; }
   }
 
-  async function addDropped(row, cid) {
+  async function addDropped(row, cid, sub) {
     var SB = SBX();
     if (!SB || typeof SB.addFavItems !== "function") { toast("数据服务未就绪，请刷新页面重试"); return; }
     var realCid = (cid == null || cid === "__none__" || cid === undefined) ? null : Number(cid);
     var c = realCid == null ? null : catOf(realCid);
+    var wantSub = (sub === "top" || sub === "bottom") ? sub : null;
     try {
       var n = await SB.addFavItems([row], realCid);
-      /* 立刻本地插入，不必等整表重读 */
       await refresh();
+      /* 拖到「上装 / 下装」上：收藏完顺手把二分类写掉，省一次点击 */
+      if (wantSub && SB.setFavSubCat) {
+        var url = String((row && (row.image_url || row.imageUrl)) || "");
+        var hit = ST.items.filter(function (x) { return String(x.image_url || "") === url; })[0];
+        if (hit && hit.id != null) {
+          try {
+            await SB.setFavSubCat([hit.id], wantSub);
+            hit.sub_cat = wantSub;
+            render();
+            flashSaved("已收藏 " + (n || 1) + " 张到「" + (c ? c.name : "未分类") + "」· 归为" + subName(wantSub));
+            return;
+          } catch (e) {
+            /* 补丁没跑时只影响二分类，收藏本身是成功的，别把用户吓一跳 */
+            toast((e && e.message) ? e.message : "收藏成功，但二分类没写进去");
+            return;
+          }
+        }
+      }
       flashSaved("已收藏 " + (n || 1) + " 张到「" + (c ? c.name : "未分类") + "」");
     } catch (e) {
       toast((e && e.message) ? e.message : "收藏失败");
@@ -601,6 +627,9 @@
       if (v === "top") top++; else if (v === "bottom") bot++; else none++;
     });
     if (!base.length) return '';
+    /* 数据库里还没加 sub_cat 列时，按钮点下去必然失败、点完还会变成空页。
+       这里直接给一句能照做的提示，比放一排死按钮好。 */
+    if (!subReady()) return subOffHtml();
     var item = function (k, label, n) {
       return '<button type="button" class="fv-sub' + (ST.sub === k ? " is-on" : "") + (k === "none" ? " is-quiet" : "")
         + '" data-sub="' + k + '" data-sub-drop="' + k + '">' + label + '<i>' + n + '</i></button>';
@@ -612,6 +641,17 @@
       + item("bottom", "下装", bot)
       + (none ? item("none", "未分", none) : '')
       + '</div>';
+  }
+
+  /* sub_cat 列是否已存在：只要有一行带这个键就说明列在（值为 null 也算存在） */
+  function subReady() {
+    if (!ST.items.length) return true;          /* 空库时无法判断，先按可用处理 */
+    for (var i = 0; i < ST.items.length; i++) { if (ST.items[i] && "sub_cat" in ST.items[i]) return true; }
+    return false;
+  }
+  function subOffHtml() {
+    return '<div class="fv-subbar is-off" id="fv-subbar"><span class="fv-subbar-t">二分类</span>'
+      + '<span class="fv-sub-off-tip">未启用：请在数据库执行一次 <code>tools/patch_20261023I.sql</code> 后刷新</span></div>';
   }
 
   function bindSubBar(root) {
@@ -628,18 +668,39 @@
       var k = el.getAttribute("data-sub-drop");
       if (k === "all" || k === "none") return;
       el.addEventListener("dragover", function (e) {
-        if (ST.dragId == null) return;      /* 只接抽屉内部卡片，从榜单拖来的不算 */
+        /* 两种来源都要接：①抽屉里的图改二分类 ②从榜单卡片直接拖进来（收藏的同时归到这一类） */
+        var back = hasExt(e);
+        if (ST.dragId == null && !back) return;
         e.preventDefault();
+        if (e.dataTransfer) { try { e.dataTransfer.dropEffect = back ? "copy" : "move"; } catch (x) { } }
         el.classList.add("is-drop");
       });
       el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
       el.addEventListener("drop", function (e) {
         el.classList.remove("is-drop");
+        /* 从榜单拖进来：先收藏到当前分类范围，再直接打上 上装 / 下装 */
+        if (hasExt(e)) {
+          e.preventDefault(); e.stopPropagation();
+          var row = extRow(e);
+          endDropMode(true);
+          if (row) addDropped(row, currentFilterCid(), k);
+          return;
+        }
         if (ST.dragId == null) return;
         e.preventDefault(); e.stopPropagation();
         var id = ST.dragId;
         clearDragState(id);
         setSub(id, k);
+      });
+    });
+
+    /* 空态里的「看全部」：点了就能退出当前二分类筛选（避免"进去出不来"） */
+    all("[data-sub='all']", root).forEach(function (b) {
+      if (b.closest && !b.closest(".fv-d-empty")) return;
+      b.addEventListener("click", function (e) {
+        e.preventDefault();
+        ST.sub = "all";
+        render();
       });
     });
   }
@@ -679,9 +740,24 @@
 
     var list = filtered();
     if (!list.length) {
-      box.innerHTML = '<div class="fv-d-empty">'
-        + (ST.items.length ? '这个分类下还没有图。' : '还没有收藏。在图卡片右下角点 <b>☆</b> 即可收藏，收藏后会立刻出现在这里。')
+      /* 关键：即使当前筛选下没有图，也要照常渲染二分类工具条。
+         否则点了「上装」发现 0 张、工具条跟着消失，就没有「全部」可点 → 用户会觉得"进去就出不来"。 */
+      var bar0 = subBarHtml(list);
+      var why;
+      if (!ST.items.length) {
+        why = '还没有收藏。在图卡片右下角点 <b>☆</b> 即可收藏，收藏后会立刻出现在这里。';
+      } else if (ST.sub === "top" || ST.sub === "bottom") {
+        why = '「' + subName(ST.sub) + '」下还没有图。把图拖到上方「' + subName(ST.sub) + '」上，或把鼠标移到图上点「'
+          + (ST.sub === "top" ? "上" : "下") + '」，就会归到这里。';
+      } else if (ST.sub === "none") {
+        why = '「未分」下没有图 —— 说明现有收藏都已经分好上装 / 下装了。';
+      } else {
+        why = '这个分类下还没有图。';
+      }
+      box.innerHTML = bar0 + '<div class="fv-d-empty">' + why
+        + (ST.sub && ST.sub !== "all" ? ' <button type="button" class="fv-d-empty-back" data-sub="all">看全部</button>' : '')
         + '</div>';
+      bindSubBar(box);
       return;
     }
 

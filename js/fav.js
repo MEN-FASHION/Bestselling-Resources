@@ -295,9 +295,23 @@
       return catIdKey(it.category_id) === ST.filter;
     }).filter(subHit);
     if (!items.length) {
-      box.innerHTML = ST.items.length
-        ? '<div class="fv-empty">这个分类下还没有图。到「趋势上升榜」点图片右上角的 ☆ 就能收藏。</div>'
-        : '<div class="fv-empty">还没有收藏任何图。到<a href="rank.html">趋势上升榜</a>点图片右上角的 ☆ 即可收藏，收藏时可以选择或新建分类。</div>';
+      /* 空的时候也要保留二分类工具条：否则点了「上装」变空页，就没法点回「全部」 */
+      var bar0 = subBarHtml();
+      var why0;
+      if (!ST.items.length) {
+        why0 = '还没有收藏任何图。到<a href="rank.html">趋势上升榜</a>点图片右上角的 ☆ 即可收藏，收藏时可以选择或新建分类。';
+      } else if (ST.sub === "top" || ST.sub === "bottom") {
+        why0 = '「' + subName(ST.sub) + '」下还没有图：把图拖到上方「' + subName(ST.sub) + '」上，或在图上点「'
+          + (ST.sub === "top" ? "上" : "下") + '」。';
+      } else if (ST.sub === "none") {
+        why0 = '「未分」下没有图 —— 现有收藏都已经分好上装 / 下装了。';
+      } else {
+        why0 = '这个分类下还没有图。到「趋势上升榜」点图片右上角的 ☆ 就能收藏。';
+      }
+      box.innerHTML = bar0 + '<div class="fv-empty">' + why0
+        + (ST.sub ? ' <button type="button" class="fv-empty-back" data-subview="">看全部</button>' : '')
+        + '</div>';
+      syncSelUI();
       return;
     }
     var weeks = groupWeeks(items, ST.cats);
@@ -318,6 +332,10 @@
       var v = subOf(it);
       if (v === "top") top++; else if (v === "bottom") bot++; else none++;
     });
+    if (!subReady()) {
+      return '<div class="fv-subbar is-off" id="fv-subbar"><span class="fv-subbar-t">二分类</span>'
+        + '<span class="fv-sub-off-tip">未启用：请在数据库执行一次 <code>tools/patch_20261023I.sql</code> 后刷新</span></div>';
+    }
     var it2 = function (k, label, n) {
       return '<button type="button" class="fv-sub' + (ST.sub === k ? " is-on" : "") + (k === "none" ? " is-quiet" : "")
         + '" data-subview="' + k + '">' + label + '<i>' + n + '</i></button>';
@@ -329,6 +347,32 @@
       + it2("bottom", "下装", bot)
       + (none ? it2("none", "未分", none) : '')
       + '</div>';
+  }
+
+  /* 批量设置二分类（拖到 chip 上、或选中多张后拖） */
+  async function setSubMany(ids, sub) {
+    var SB = window.SB;
+    if (!SB || !SB.setFavSubCat) { toast("二分类功能未就绪，请刷新页面重试"); return; }
+    var want = (sub === "top" || sub === "bottom") ? sub : null;
+    var real = ids.filter(function (id) {
+      var it = ST.items.filter(function (x) { return String(x.id) === String(id); })[0];
+      return it && subOf(it) !== want;
+    });
+    if (!real.length) { toast("已经是" + subName(want)); return; }
+    try {
+      await SB.setFavSubCat(real, want);
+      ST.items.forEach(function (x) { if (real.indexOf(String(x.id)) >= 0) x.sub_cat = want; });
+      render();
+      toast(real.length + " 张已归为" + subName(want));
+    } catch (e) {
+      toast((e && e.message) ? e.message : "设置失败");
+    }
+  }
+
+  function subReady() {
+    if (!ST.items.length) return true;
+    for (var i = 0; i < ST.items.length; i++) { if (ST.items[i] && "sub_cat" in ST.items[i]) return true; }
+    return false;
   }
 
   async function setSub(id, sub) {
@@ -571,7 +615,33 @@
       var tgt = e.target && e.target.closest ? (e.target.closest(".fv-catblock") || e.target.closest(".fv-flat-group")) : null;
       if (tgt) tgt.classList.remove("is-over");
     });
+    /* 拖到二分类 chips 上 → 批量改上装 / 下装（分类块那套落点之外再补一个） */
+    body.addEventListener("dragover", function (e) {
+      var chip = e.target && e.target.closest ? e.target.closest("#fv-subbar [data-subview]") : null;
+      if (!chip) return;
+      var k = chip.getAttribute("data-subview");
+      if (k !== "top" && k !== "bottom") return;
+      e.preventDefault();
+      chip.classList.add("is-over");
+    });
+    body.addEventListener("dragleave", function (e) {
+      var chip = e.target && e.target.closest ? e.target.closest("#fv-subbar [data-subview]") : null;
+      if (chip) chip.classList.remove("is-over");
+    });
     body.addEventListener("drop", function (e) {
+      var chip = e.target && e.target.closest ? e.target.closest("#fv-subbar [data-subview]") : null;
+      if (chip) {
+        var k = chip.getAttribute("data-subview");
+        if (k === "top" || k === "bottom") {
+          e.preventDefault();
+          chip.classList.remove("is-over");
+          var ids0 = [];
+          try { ids0 = JSON.parse(e.dataTransfer.getData("text/plain") || "[]"); } catch (err) { ids0 = []; }
+          if (!Array.isArray(ids0) || !ids0.length) return;
+          setSubMany(ids0.map(String), k);
+          return;
+        }
+      }
       var tgt = e.target && e.target.closest ? (e.target.closest(".fv-catblock") || e.target.closest(".fv-flat-group")) : null;
       if (!tgt) return;
       e.preventDefault();

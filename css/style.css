@@ -5264,6 +5264,28 @@ html, body{
   transform: translateY(-1px) scale(1.03);
 }
 
+/* 6.1) 二分类未启用（数据库还没加 sub_cat 列）时的说明条 */
+.fv-subbar.is-off { gap: 8px; }
+.fv-sub-off-tip {
+  font-size: 11px; color: rgba(140,96,60,.92);
+  background: rgba(200,164,92,.12); border: 1px solid rgba(200,164,92,.3);
+  padding: 3px 9px; border-radius: 999px;
+}
+.fv-sub-off-tip code {
+  font-family: inherit; background: rgba(255,255,255,.7);
+  padding: 0 4px; border-radius: 4px;
+}
+
+/* 6.2) 空态里的「看全部」：二分类筛到没图时能一键退回去 */
+.fv-empty-back, .fv-d-empty-back {
+  display: inline-block; margin-left: 6px; cursor: pointer;
+  font-family: inherit; font-size: 12px;
+  padding: 3px 12px; border-radius: 999px;
+  border: 1px solid rgba(200,164,92,.55); background: rgba(200,164,92,.12);
+  color: #8b6b28; transition: background .2s ease, border-color .2s ease;
+}
+.fv-empty-back:hover, .fv-d-empty-back:hover { background: rgba(200,164,92,.22); border-color: #c8a45c; }
+
 /* 7) 触屏 / 无 hover 设备：文字常显，否则这些信息在手机上永远看不到 */
 @media (hover: none) {
   .fv-d-cell figcaption, .fv-card .fv-cap,
