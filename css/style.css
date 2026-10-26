@@ -5705,3 +5705,74 @@ html, body{
 
 /* 分类列 + 上装下装栏一共占掉 164px，窄抽屉里 3 列会把图压成细条 → 改 2 列 */
 .fv-drawer:not(.is-full) .fv-d-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ============================================================
+ * 6.9) 二分类展示为「标签页」+ 图片左侧竖排小标签（20261026Z）
+ *      · 工具条从一排按钮改成标签页：选中项下面一条金线，读起来是"切换视图"而不是"按钮"
+ *      · 每张图左侧挂一枚竖排小标签，已归为上装/下装的图一眼可辨
+ * ============================================================ */
+.fv-subbar {
+  gap: 2px;
+  margin: -2px -2px 12px;
+  padding: 9px 2px 0;
+  border-bottom: 1px solid rgba(28,24,18,.07);
+  background: linear-gradient(to bottom, rgba(251,250,247,.97) 70%, rgba(251,250,247,.80));
+}
+.fv-subbar-t {
+  padding: 0 8px 11px 2px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .1em;
+  color: rgba(90,82,70,.52);
+}
+.fv-sub {
+  position: relative;
+  padding: 8px 15px 11px;
+  border: 0; border-radius: 9px 9px 0 0;
+  background: transparent;
+  font-size: 15px; font-weight: 600; color: rgba(60,52,42,.60);
+  transition: color .18s ease, background .18s ease;
+}
+.fv-sub:hover {
+  background: rgba(28,24,18,.045); color: var(--txt); transform: none;
+}
+.fv-sub i {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 19px; padding: 0 6px; margin-left: 7px;
+  border-radius: 10px; background: rgba(28,24,18,.065);
+  font-size: 11.5px; font-weight: 700; color: rgba(70,62,50,.72);
+  font-variant-numeric: tabular-nums; transition: background .18s ease, color .18s ease;
+}
+.fv-sub.is-on {
+  color: #8b6b28; background: rgba(200,164,92,.10); border: 0;
+}
+.fv-sub.is-on i { background: #c8a45c; color: #fff; }
+.fv-sub.is-on::after {
+  content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px;
+  border-radius: 2px; background: linear-gradient(90deg, #d3ae66, #a9833f);
+}
+.fv-sub.is-quiet { opacity: 1; color: rgba(60,52,42,.5); }
+.fv-sub.is-drop {
+  background: rgba(200,164,92,.24); color: #8b6b28;
+  box-shadow: inset 0 0 0 1px rgba(200,164,92,.55);
+  transform: none;
+}
+@media (max-width: 640px) {
+  .fv-sub { padding: 7px 11px 10px; font-size: 14px; }
+  .fv-sub i { min-width: 18px; height: 17px; font-size: 11px; }
+}
+
+/* 图片左侧竖排小标签 */
+.fv-subtag {
+  position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  padding: 8px 5px;
+  border-radius: 0 8px 8px 0;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .16em;
+  line-height: 1.1;
+  writing-mode: vertical-rl; text-orientation: upright;
+  color: #fff; pointer-events: none; z-index: 3;
+  box-shadow: 1px 2px 8px rgba(60,48,28,.28);
+}
+.fv-subtag.is-top { background: linear-gradient(180deg, #d2ac63, #a9833f); }
+.fv-subtag.is-bottom { background: linear-gradient(180deg, #8b8272, #6a6152); }
+.fv-d-cell:hover .fv-subtag, .fv-card:hover .fv-subtag { transform: translateY(-50%) translateX(1px); }
+.fv-subtag { transition: transform .2s ease; }

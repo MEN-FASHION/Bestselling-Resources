@@ -525,6 +525,10 @@
       + ' title="' + esc(full) + '">'
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
+      /* 左侧竖排小标签：已归了上装/下装的图，进抽屉一眼就能看出是哪一类。
+         未分的不挂标签——不挂才是"还没归"，挂个"未分"反而显脏。 */
+      + (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
+          + subName(subOf(it)) + '</span>' : '')
       + '<button type="button" class="fv-d-unfav" data-unfav="' + esc(it.id) + '" title="取消收藏">×</button>'
       + (meta ? '<span class="fv-d-meta">' + meta + '</span>' : '')
       + '<figcaption>' + esc(String(it.title || "").slice(0, 16)) + '</figcaption>'

@@ -156,6 +156,8 @@
       + '<figure class="fv-card" draggable="true" data-id="' + it.id + '" data-cat="' + (it.category_id || "") + '"'
       + ' data-url="' + esc(it.image_url) + '" title="' + esc(tips) + '">'
       +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
+      +   (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
+            + subName(subOf(it)) + '</span>' : '')
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
       +   '<button type="button" class="fv-del" data-del="1" title="取消收藏">×</button>'
       +   (meta ? '<span class="fv-meta">' + meta + '</span>' : '')
