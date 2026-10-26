@@ -407,7 +407,30 @@
     if (ca) ca.disabled = !weeks.length;
   }
 
-  function render() { renderCats(); renderBody(); renderSummary(); }
+  /* ---------------- 地址栏记忆：刷新后停在同一分类 / 同一二分类 / 平铺展开状态 ---------------- */
+  function syncUrl() {
+    try {
+      if (!window.history || !history.replaceState) return;
+      var q = new URLSearchParams(location.search);
+      if (ST.filter) q.set("f", ST.filter); else q.delete("f");
+      if (ST.sub) q.set("sub", ST.sub); else q.delete("sub");
+      var flat = Object.keys(ST.flat).filter(function (k) { return ST.flat[k]; });
+      if (flat.length) q.set("flat", flat.join(",")); else q.delete("flat");
+      var next = location.pathname + "?" + q.toString();
+      if (next !== location.pathname + location.search) history.replaceState(null, "", next);
+    } catch (e) { /* 忽略 */ }
+  }
+  function readUrl() {
+    try {
+      var q = new URLSearchParams(location.search);
+      var f = q.get("f"); if (f) ST.filter = f;
+      var sb = q.get("sub"); if (sb) ST.sub = sb;
+      var fl = (q.get("flat") || "").split(",").filter(function (v) { return v; });
+      fl.forEach(function (w) { ST.flat[w] = true; });
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function render() { renderCats(); renderBody(); renderSummary(); syncUrl(); }
 
   function syncSelUI() {
     var box = $("#fv-body");
@@ -771,6 +794,7 @@
   }
 
   async function boot() {
+    readUrl();
     if (!SBX) {
       var body = $("#fv-body");
       if (body) body.innerHTML = '<div class="fv-empty">数据服务未就绪，请刷新页面重试。</div>';

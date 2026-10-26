@@ -754,9 +754,32 @@
     return base + "（仅 " + MOVE_SCOPE + "）";
   }
 
+  /* ---------------- 把当前视图写回地址栏 ----------------
+     目的：**刷新后停在同一处**。以前所有筛选只存在内存里，F5 一按就回到默认口径，
+     用户会以为"刷新就跳回首页"。这里把选择同步进 URL（replaceState，不产生历史记录），
+     刷新时再走上面那段 URL 解析，状态自然就回来了。 */
+  function syncUrl() {
+    try {
+      if (!window.history || !history.replaceState) return;
+      var q = new URLSearchParams(location.search);
+      q.set("mode", MODE);
+      q.set("size", SIZE);
+      if (CAT && CAT !== ALL) q.set("cat", CAT); else q.delete("cat");
+      var sites = (MODE === "h") ? SEL_SITES.slice() : SEL_SITES.slice(0, 1);
+      if (sites.length) q.set("sites", sites.join(",")); else q.delete("sites");
+      if (SEL_GROUP) q.set("group", SEL_GROUP); else q.delete("group");
+      if (SEL_PERIODS && SEL_PERIODS.length) q.set("periods", SEL_PERIODS.join(",")); else q.delete("periods");
+      var cats = (MODE === "c") ? SEL_CATS.slice() : [];
+      if (cats.length) q.set("cats", cats.join(",")); else q.delete("cats");
+      var next = location.pathname + "?" + q.toString();
+      if (next !== location.pathname + location.search) history.replaceState(null, "", next);
+    } catch (e) { /* 地址栏写不进去不影响功能 */ }
+  }
+
   function renderBar() {
     var el = $("#rk-bar");
     if (!el) return;
+    syncUrl();
     var sites = sitesForQuery();
     var periods = activePeriods();
     /* 类目对比：CACHE 里含「上一周基线」（只为算位次），直接拿它当总数会把上周的图也算进来，

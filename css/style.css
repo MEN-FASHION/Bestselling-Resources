@@ -3871,7 +3871,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   .fv-layout { grid-template-columns: 1fr; padding: 12px; }
   .fv-side { position: static; }
   .fv-cats { flex-direction: row; flex-wrap: wrap; }
-  .fv-catrow { width: auto; }
+  .fv-catrow { width: auto; min-height: 44px; padding: 10px 13px; }
   .fv-catrow .fv-cn { max-width: 110px; }
   .fv-bar { flex-direction: column; align-items: flex-start; }
   .fv-flat-grid .fv-card { width: 92px; }
@@ -4351,7 +4351,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
       旧样式保留 = 万一某段没覆盖到，退回的是能用的旧外观，而不是完全没样式。
    ========================================================================== */
 :root{
-  --fv-w: 424px;                                /* 抽屉宽度（含内边距） */
+  --fv-w: 470px;                                /* 抽屉宽度（含内边距）：分类列放大后要留足图片空间 */
   --fv-ease: cubic-bezier(.32,.72,0,1);         /* 面板出入：起步果断、收尾极慢 */
   --fv-spring: cubic-bezier(.16,1,.3,1);        /* 元素微交互：轻微回弹 */
   --fv-glass: rgba(252,251,249,.82);
@@ -4749,7 +4749,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 /* ---------------- 响应式 ---------------- */
 @media (max-width: 880px){
-  :root{ --fv-w: 380px; }
+  :root{ --fv-w: 412px; }
   .fv-d-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px){
@@ -5554,20 +5554,20 @@ html, body{
 /* 分类列：一列方框，纵向排列，可纵向滚动 */
 .fv-d-filter {
   position: relative; z-index: 2;
-  order: 2;
-  flex: 0 0 112px; width: 112px; min-width: 112px;
-  display: flex; flex-direction: column; gap: 7px;
+  order: 3;                            /* 分类列在菜单区最右，整块仍贴屏幕右侧 */
+  flex: 0 0 158px; width: 158px; min-width: 158px;
+  display: flex; flex-direction: column; gap: 9px;
   overflow-x: visible; overflow-y: auto;
-  padding: 8px 8px 12px 7px;
-  border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1));
-  background: linear-gradient(to left, rgba(252,250,246,.94), rgba(252,250,246,.5));
+  padding: 9px 9px 14px 9px;
+  border-left: 0;                        /* 分隔线交给上装/下装栏去画 */
+  background: linear-gradient(to left, rgba(252,250,246,.94), rgba(252,250,246,.55));
   scrollbar-width: none;
   overscroll-behavior: contain;
 }
 .fv-d-filter::-webkit-scrollbar { width: 0; height: 0; }
 .fv-d-catcol-h {
   flex: 0 0 auto;
-  font-size: 10.5px; font-weight: 600; letter-spacing: .16em;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .16em;
   color: rgba(120,104,84,.72);
   padding: 2px 3px 4px;
   text-align: center;
@@ -5576,13 +5576,14 @@ html, body{
 /* 每个分类 = 一个方框（一整列） */
 .fv-d-filter .fv-d-chip {
   flex: 0 0 auto; width: 100%; box-sizing: border-box;
-  display: flex; align-items: center; gap: 6px;
-  padding: 9px 9px;
-  border-radius: 12px;
-  border: 1px solid rgba(28,24,18,.1);
-  background: rgba(255,255,255,.8);
+  min-height: 56px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(28,24,18,.12);
+  background: rgba(255,255,255,.85);
   color: var(--txt);
-  font-size: 13.5px; font-weight: 600; font-family: inherit;
+  font-size: 15px; font-weight: 600; font-family: inherit;
   white-space: nowrap; text-align: left; cursor: pointer;
   transition: background .22s ease, border-color .22s ease, color .22s ease,
               transform .26s var(--fv-spring, cubic-bezier(.22,1,.36,1)),
@@ -5594,11 +5595,11 @@ html, body{
 }
 .fv-d-filter .fv-d-chip i {
   flex: 0 0 auto; font-style: normal;
-  font-size: 11px; font-weight: 600;
+  font-size: 12.5px; font-weight: 600;
   color: rgba(120,104,84,.82);
   font-variant-numeric: tabular-nums;
 }
-.fv-d-filter .fv-d-chip .fv-d-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.fv-d-filter .fv-d-chip .fv-d-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 .fv-d-filter .fv-d-chip .fv-d-dot.is-all { background: transparent; border: 1px solid rgba(156,139,116,.85); }
 .fv-d-filter .fv-d-chip .fv-d-dot.is-none { background: transparent; border: 1px dashed rgba(156,139,116,.85); }
 .fv-d-filter .fv-d-chip:hover {
@@ -5631,34 +5632,34 @@ html, body{
 /* 新建：贴在这一列末尾，虚线框 */
 .fv-d-filter .fv-d-newbtn {
   flex: 0 0 auto; width: 100%; box-sizing: border-box;
-  margin-top: 2px; padding: 9px 6px;
-  border: 1px dashed rgba(156,139,116,.6); border-radius: 12px;
+  margin-top: 2px; padding: 13px 8px;
+  border: 1px dashed rgba(156,139,116,.6); border-radius: 14px;
   background: transparent; color: rgba(120,104,84,.95);
-  font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+  font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;
   transition: border-color .2s ease, color .2s ease, background .2s ease;
 }
 .fv-d-filter .fv-d-newbtn:hover { border-color: #c8a45c; color: #8b6b28; background: rgba(200,164,92,.08); }
 .fv-d-filter .fv-d-newbox { padding: 4px 0 2px; display: flex; flex-direction: column; gap: 6px; }
 .fv-d-filter .fv-d-newbox input {
   width: 100%; box-sizing: border-box;
-  padding: 7px 8px; border-radius: 9px;
+  padding: 9px 10px; border-radius: 10px;
   border: 1px solid rgba(28,24,18,.14); background: #fff;
-  font-size: 12px; font-family: inherit; color: var(--txt);
+  font-size: 13.5px; font-family: inherit; color: var(--txt);
 }
 .fv-d-filter .fv-d-newbox input:focus { outline: none; border-color: #c8a45c; }
 .fv-d-filter .fv-d-newrow { display: flex; gap: 5px; }
 .fv-d-filter .fv-d-newrow .fv-d-btn { flex: 1 1 0; padding: 5px 0; font-size: 11.5px; border-radius: 8px; }
 
-/* 上装/下装栏：贴最右，order 最大 */
-.fv-d-rail { order: 3; }
+/* 上装/下装栏：在菜单区的最左侧（紧贴分类列左边），菜单区整块仍在屏幕右侧 */
+.fv-d-rail { order: 2; border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1)); padding-left: 8px; }
 .fv-d-body { order: 1; }
 
 /* 窄屏：列再收一点，图片区优先 */
 @media (max-width: 720px) {
-  .fv-d-filter { flex-basis: 96px; width: 96px; min-width: 96px; gap: 6px; padding: 6px 6px 10px 6px; }
-  .fv-d-filter .fv-d-chip { padding: 8px; font-size: 12.5px; border-radius: 11px; }
-  .fv-d-filter .fv-d-chip i { font-size: 10.5px; }
-  .fv-d-catcol-h { font-size: 10px; letter-spacing: .1em; }
+  .fv-d-filter { flex-basis: 118px; width: 118px; min-width: 118px; gap: 7px; padding: 7px 7px 11px 7px; }
+  .fv-d-filter .fv-d-chip { padding: 11px 9px; min-height: 48px; font-size: 13.5px; border-radius: 12px; }
+  .fv-d-filter .fv-d-chip i { font-size: 11.5px; }
+  .fv-d-catcol-h { font-size: 10.5px; letter-spacing: .1em; }
 }
 
 /* 分类列变窄后，那条横向提示文案没地方放，交给上装/下装栏去说 */
@@ -5667,18 +5668,19 @@ html, body{
 /* ==================================================================
    20261026V · 收藏页（fav.html）：分类也挪到右侧，并做成方框一列
    ================================================================== */
-.fv-layout { grid-template-columns: 1fr 236px; }
+.fv-layout { grid-template-columns: 1fr 268px; }
 .fv-main { order: 1; min-width: 0; }
 .fv-side { order: 2; }
 
-.fv-cats { display: flex; flex-direction: column; gap: 6px; }
+.fv-cats { display: flex; flex-direction: column; gap: 9px; }
 .fv-catrow {
   width: 100%; box-sizing: border-box;
-  padding: 10px 11px;
-  border: 1px solid rgba(28,24,18,.1);
-  border-radius: 11px;
+  min-height: 56px;
+  padding: 14px 13px;
+  border: 1px solid rgba(28,24,18,.12);
+  border-radius: 14px;
   background: rgba(255,255,255,.85);
-  font-size: 13.5px; font-weight: 600;
+  font-size: 15px; font-weight: 600;
   transition: background .2s ease, border-color .2s ease, color .2s ease, transform .22s var(--fv-spring, cubic-bezier(.22,1,.36,1));
 }
 .fv-catrow:hover { background: #fff; border-color: rgba(156,139,116,.55); transform: translateX(-2px); }
@@ -5688,7 +5690,7 @@ html, body{
 }
 .fv-catrow.is-on .fv-cn { color: #8b6b28; }
 .fv-catrow .fv-cn {
-  font-style: normal; font-size: 11.5px; font-weight: 600;
+  font-style: normal; font-size: 12.5px; font-weight: 600;
   color: rgba(120,104,84,.85); font-variant-numeric: tabular-nums;
 }
 

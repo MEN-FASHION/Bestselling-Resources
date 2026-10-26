@@ -63,8 +63,40 @@
   }
   function sortPeriods(a) { return (a || []).slice().sort(function (x, y) { return periodKey(x) - periodKey(y); }); }
 
+  /* ---------------- 地址栏记忆 ----------------
+     刷新后要停在同一处：把「期次 / 类目 / 站点 / 是否解锁 / 只看大码机会」写进 URL，
+     刷新时再读回来。用 replaceState，不留历史记录，也不会打断分享链接。 */
+  function syncUrl() {
+    try {
+      if (!window.history || !history.replaceState) return;
+      var q = new URLSearchParams(location.search);
+      if (ST.plusPeriod) q.set("plus", ST.plusPeriod); else q.delete("plus");
+      if (ST.stdPeriod && ST.stdPeriod !== ST.plusPeriod) q.set("std", ST.stdPeriod); else q.delete("std");
+      if (ST.cat) q.set("cat", ST.cat); else q.delete("cat");
+      if (ST.site) q.set("site", ST.site); else q.delete("site");
+      if (ST.unlock) q.set("unlock", "1"); else q.delete("unlock");
+      if (ST.onlyGap) q.set("gap", "1"); else q.delete("gap");
+      if (ST.onlyReview) q.set("review", "1"); else q.delete("review");
+      var next = location.pathname + "?" + q.toString();
+      if (next !== location.pathname + location.search) history.replaceState(null, "", next);
+    } catch (e) { /* 写不进地址栏不影响功能 */ }
+  }
+  function readUrl() {
+    try {
+      var q = new URLSearchParams(location.search);
+      var p = q.get("plus"); if (p) ST.plusPeriod = p;
+      var d = q.get("std"); if (d) { ST.stdPeriod = d; ST.unlock = true; }
+      var c = q.get("cat"); if (c) ST.cat = c;
+      var st = q.get("site"); if (st) ST.site = st;
+      if (q.get("unlock") === "1") ST.unlock = true;
+      if (q.get("gap") === "1") ST.onlyGap = true;
+      if (q.get("review") === "1") ST.onlyReview = true;
+    } catch (e) { /* 无参数 */ }
+  }
+
   /* ---------------- 筛选条 ---------------- */
   function fillSelects() {
+    syncUrl();
     var ps = $("#plz-plus-period"), ss = $("#plz-std-period"), st = $("#plz-site");
     if (ps) {
       ps.innerHTML = ST.periods.length
@@ -391,6 +423,12 @@
     if (Array.isArray(myz) && myz.length && myz.indexOf("plus") === -1) { renderGate("账号授权：你的账号未获授权访问本专区"); return; }
     bind();
     await loadFacets();
+    readUrl();                 /* 先按地址栏恢复上次的选择，再渲染 */
+    /* 恢复的期次/类目若已不存在（换了期次、类目被删），回落到最新一期 */
+    if (ST.periods.indexOf(ST.plusPeriod) < 0) ST.plusPeriod = ST.periods[ST.periods.length - 1] || "";
+    if (ST.stdPeriod && ST.periods.indexOf(ST.stdPeriod) < 0) ST.stdPeriod = ST.plusPeriod;
+    if (ST.cat && ST.cats.indexOf(ST.cat) < 0) ST.cat = "";
+    if (ST.site && ST.sites.indexOf(ST.site) < 0) ST.site = "";
     renderCats();
     fillSelects();
     await load();

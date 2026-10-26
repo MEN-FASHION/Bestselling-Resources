@@ -325,6 +325,7 @@
   // 中央放大展示公告全文（标题 + 富文本正文 + 附加图片）
 
   async function loadGallery() {
+    readUrl();                     // 先按地址栏恢复上次的类目/标签，再渲染
     try {
       const [active, used, defs, favs] = await Promise.all([
         SB.listActiveCats().catch(() => []),
@@ -926,8 +927,36 @@
     };
   }
 
+  // 把当前视图（类目 / 标签筛选）写回地址栏：刷新后停在同一处，不会回到默认「全部」
+  function syncUrl() {
+    try {
+      if (!window.history || !history.replaceState) return;
+      const q = new URLSearchParams(location.search);
+      if (currentCat && currentCat !== "全部") q.set("cat", currentCat); else q.delete("cat");
+      const put = (k, v) => { if (v) q.set(k, v); else q.delete(k); };
+      put("ch", curChannel); put("st", curStyle); put("el", curElement);
+      put("sc", curScene); put("sh", curShoot); put("sk", curSkin);
+      const next = location.pathname + "?" + q.toString();
+      if (next !== location.pathname + location.search) history.replaceState(null, "", next);
+    } catch (e) { /* 忽略 */ }
+  }
+  function readUrl() {
+    try {
+      const q = new URLSearchParams(location.search);
+      const c = q.get("cat");
+      if (c) currentCat = c;
+      const ch = q.get("ch"); if (ch) curChannel = ch;
+      const st = q.get("st"); if (st) curStyle = st;
+      const el = q.get("el"); if (el) curElement = el;
+      const sc = q.get("sc"); if (sc) curScene = sc;
+      const sh = q.get("sh"); if (sh) curShoot = sh;
+      const sk = q.get("sk"); if (sk) curSkin = sk;
+    } catch (e) { /* 无参数 */ }
+  }
+
   async function renderGrid(setCat) {
     if (setCat) currentCat = setCat;
+    syncUrl();
     const grid = $("#grid");
     grid.innerHTML = "";
     removePageSentinel();

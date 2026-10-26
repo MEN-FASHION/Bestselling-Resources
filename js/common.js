@@ -8,6 +8,35 @@
  * 各页面通过 Common.xxx() 调用，避免"改一处漏一处"。
  * 依赖：必须在本文件之前引入 supabase.js（内部使用全局 SB）。
  * ============================================================ */
+/* ============================================================
+ * 刷新归位（页面护送）
+ * ------------------------------------------------------------
+ * 现象：在榜单 / 大码 / 收藏页里按 F5，有时会被带回首页（或落到默认视图），
+ *       因为一旦落回首页，页面状态就丢了。
+ * 做法：每个页面加载时把自己记进 sessionStorage；**仅当**这次是「刷新」且当前
+ *       确实停在首页（没有带任何参数/锚点）时，才把人送回上次所在的那一页。
+ * 为什么限定"刷新"：点顶部菜单回视觉专区是用户的主动选择，不能被弹走；
+ *       performance.navigation 的 type=reload 正好能区分这两种情形。
+ * ============================================================ */
+(function refreshEscort() {
+  try {
+    const KEY = "nl_last_page";
+    const nav = (performance.getEntriesByType && performance.getEntriesByType("navigation")[0]) || null;
+    const isReload = !!nav && nav.type === "reload";
+    const file = (location.pathname.split("/").pop() || "index.html").toLowerCase();
+    const here = file + location.search + location.hash;
+    const allowed = ["index.html", "rank.html", "plus.html", "trends.html", "marketing.html", "fav.html"];
+    if ((file === "index.html" || file === "") && isReload && !location.search && !location.hash) {
+      const last = sessionStorage.getItem(KEY);
+      if (last && allowed.indexOf(last.split(/[?#]/)[0]) >= 0 && last.split(/[?#]/)[0] !== "index.html") {
+        location.replace(last);   // 送回刷新前那一页（replace：不污染后退栈）
+        return;
+      }
+    }
+    sessionStorage.setItem(KEY, here);
+  } catch (e) { /* 记不住不影响浏览 */ }
+})();
+
 window.Common = (function () {
   "use strict";
   if (window.Common) return window.Common;

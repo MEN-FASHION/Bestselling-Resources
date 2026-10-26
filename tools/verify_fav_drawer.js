@@ -340,13 +340,19 @@ function bootDom(sb) {
 
     ok("默认是抽屉形态（不铺满）",
       w.FavDrawer.view() === "drawer" && drawer.className.indexOf("is-full") === -1);
-    /* 20261026V：分类不再占左边，改成右侧一列方框；旧左栏 DOM 已删干净 */
+    /* 20261026V：分类不再占左边，改成右侧一列方框；旧左栏 DOM 已删干净
+       20261026X：菜单区整块仍在右侧，但「上装/下装」要挪到菜单区最左侧（分类列左边） */
     ok("分类不再是左栏（旧的左栏元素已移除）", doc.getElementById("fv-d-side") === null);
-    ok("分类列紧挨在上装下装栏左侧（靠右一列）", (function () {
+    ok("上装下装栏紧挨在分类列左侧（菜单区最左，菜单区仍在屏幕右侧）", (function () {
       const main = doc.querySelector(".fv-d-main");
       if (!main || !catCol) return false;
       const kids = Array.prototype.slice.call(main.children);
-      return kids.indexOf(catCol) === kids.indexOf(doc.getElementById("fv-d-rail")) - 1;
+      return kids.indexOf(doc.getElementById("fv-d-rail")) === kids.indexOf(catCol) - 1;
+    })());
+    ok("上装下装栏在分类列之前（order 更小）", (function () {
+      const railSeg = (CSS.match(/\.fv-d-rail \{ order: (\d+);[^}]*\}/) || [])[1];
+      const catSeg = (CSS.match(/\.fv-d-filter \{[^}]*?order: (\d+);/) || [])[1];
+      return Number(railSeg) < Number(catSeg);
     })());
     /* 20261023E：按钮从"文字"改成"线性图标 + aria-label / title"，
        所以验证改看 aria-label 与 title——它们才是读屏和悬停真正呈现给用户的文案。 */
@@ -396,11 +402,19 @@ function bootDom(sb) {
       const m = cssFull.match(/z-index:\s*(\d+)/);
       return m && Number(m[1]) >= 70;
     })());
-    ok("分类列是竖排一列方框（flex-direction: column + 固定宽度）", (function () {
-      /* 有多条同名规则（含窄屏覆盖），取"声明了固定宽度 112px"的那条 */
+    ok("分类列是竖排一列方框（flex-direction: column + 固定宽度 ≥150px）", (function () {
+      /* 有多条同名规则（含窄屏覆盖），取桌面端那条（带 order: 3 的主规则） */
       const segs = CSS.match(/\.fv-d-filter\s*\{[^}]*\}/g) || [""];
-      const seg = segs.filter((x) => /112px/.test(x))[0] || "";
-      return /flex-direction:\s*column/.test(seg) && /flex:\s*0 0 112px/.test(seg);
+      const seg = segs.filter((x) => /order:\s*3/.test(x))[0] || segs[0] || "";
+      const w = Number((seg.match(/flex:\s*0 0 (\d+)px/) || [])[1] || 0);
+      return /flex-direction:\s*column/.test(seg) && w >= 150;
+    })());
+    ok("分类方框够大（最小高度 ≥52px、字号 ≥14px、内距 ≥11px）", (function () {
+      const seg = (CSS.match(/\.fv-d-filter \.fv-d-chip \{[^}]*\}/) || [""])[0];
+      const minH = Number((seg.match(/min-height:\s*(\d+)px/) || [])[1] || 0);
+      const fs = Number((seg.match(/font-size:\s*([\d.]+)px/) || [])[1] || 0);
+      const pad = Number((seg.match(/padding:\s*(\d+)px/) || [])[1] || 0);
+      return minH >= 52 && fs >= 14 && pad >= 11;
     })());
     ok("全屏仍是浮层（不影响对比池布局）", /position:\s*fixed/.test(cssFull) === false ? true : true);
     ok("抽屉整体保持 fixed（浮层不占列宽）", /\.fv-drawer \{[^}]*position:\s*fixed/.test(CSS)

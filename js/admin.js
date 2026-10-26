@@ -156,6 +156,7 @@ let visualTab = "manage";
 
 function setVisualTab(name) {
     visualTab = name === "dash" ? "dash" : "manage";
+    try { if (typeof rememberPanel === "function") rememberPanel("manage-card", visualTab); } catch (e) {}
     const paneM = document.getElementById("vis-manage");
     const paneD = document.getElementById("vis-dash");
     if (paneM) paneM.classList.toggle("hidden", visualTab !== "manage");
@@ -175,6 +176,35 @@ function bindVisualTabs() {
     });
 }
 
+// ================= 后台当前位置记忆 =================
+// 刷新后要停在同一面板：把面板 id 记进地址栏（replaceState，不产生历史）与 sessionStorage。
+// 以前刷新一律回到默认第一项（图片管理 + 自动弹智能打标），在写权限/大码这类面板里干活时很打断。
+const PANEL_STORE_KEY = "nl_admin_panel";
+
+function rememberPanel(target, sub) {
+  try {
+    if (target) sessionStorage.setItem(PANEL_STORE_KEY, target);
+    if (sub) sessionStorage.setItem(PANEL_STORE_KEY + "_sub", sub);
+    if (!window.history || !history.replaceState) return;
+    const q = new URLSearchParams(location.search);
+    if (target) q.set("panel", target); else q.delete("panel");
+    if (sub) q.set("sub", sub); else q.delete("sub");
+    const next = location.pathname + "?" + q.toString();
+    if (next !== location.pathname + location.search) history.replaceState(null, "", next);
+  } catch (e) { /* 记不住不影响使用 */ }
+}
+
+function recallPanel() {
+  try {
+    const q = new URLSearchParams(location.search);
+    const fromUrl = q.get("panel");
+    if (fromUrl) return { target: fromUrl, sub: q.get("sub") || "" };
+    const t = sessionStorage.getItem(PANEL_STORE_KEY);
+    if (t) return { target: t, sub: sessionStorage.getItem(PANEL_STORE_KEY + "_sub") || "" };
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
+
 function switchPanel(target) {
     // 权限守卫：当前角色无权访问该面板时拦截（防菜单隐藏后仍被 JS 调用/手动切换）
     if (!canAccessPanel(target)) {
@@ -189,6 +219,7 @@ function switchPanel(target) {
     document.querySelectorAll("#admin-panel .nav-item").forEach(n => {
       n.classList.toggle("active", n.dataset.target === target);
     });
+    rememberPanel(target);
     // 视觉专区：合并了「图片管理 + 数据看板」，进入时回到上次的子页签
     if (target === "manage-card") { setVisualTab(visualTab); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
@@ -439,11 +470,24 @@ function bindChangepwd() {
     loadAccess();
     // 默认进入第一个当前角色可访问的面板（超管/全量管理员：图片管理；专区受限管理员：其授权专区页面）
     const firstPanel = document.querySelector("#admin-panel .nav-item:not(.hidden)");
-    const defaultTarget = firstPanel ? firstPanel.dataset.target : "manage-card";
+    const fallback = firstPanel ? firstPanel.dataset.target : "manage-card";
+    /* 刷新记忆：上次停在哪个面板就回哪个面板（前提：该菜单对当前角色可见且有权访问），
+       否则才回落到默认第一项。这是在「写权限 / 大码专区」里干活时最省事的一步。 */
+    const memo = recallPanel();
+    let defaultTarget = fallback;
+    if (memo && memo.target) {
+      const navEl = document.querySelector('#admin-panel .nav-item[data-target="' + memo.target + '"]');
+      const usable = navEl && !navEl.classList.contains("hidden") && canAccessPanel(memo.target);
+      if (usable) {
+        defaultTarget = memo.target;
+        if (memo.sub === "dash") visualTab = "dash";
+      }
+    }
     switchPanel(defaultTarget);
     // 需求（本版）：进入后台直接展示智能打标内容，不再展示「全部已上传图片」
     // → 默认全屏打开智能打标；关闭它之后才自动加载并显示图片列表（见 closeSmartModal）
-    if (defaultTarget === "manage-card" && typeof openSmartModal === "function") {
+    // 例外：本次是"刷新恢复"到图片管理，则不再自动弹智能打标，避免刚回来就被盖一层弹窗。
+    if (defaultTarget === "manage-card" && !(memo && memo.target === "manage-card") && typeof openSmartModal === "function") {
       openSmartModal();
       if (typeof toggleSmartFullscreen === "function") {
         const _sm = document.querySelector("#smart-modal");
