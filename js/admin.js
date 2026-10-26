@@ -41,7 +41,6 @@ const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
-  "rank-tag-card": "",      // 榜单打标：与「趋势上升榜」同口径（任一管理员），与图库打标互不相干
   "plus-card": "",          // 大码专区：大码数据上传 + 同款匹配（与趋势上升榜同口径，任一管理员）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
@@ -106,7 +105,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "rank-tag-card" || target === "plus-card" || target === "insight-card") return true;
+    if (target === "rank-card" || target === "plus-card" || target === "insight-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -202,7 +201,6 @@ function switchPanel(target) {
       if (window.FEST && typeof FEST.mount === "function") FEST.mount();
     }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
-    if (target === "rank-tag-card" && typeof enterRankTagPanel === "function") { enterRankTagPanel(); }
     // 用户动向：三个子页各自懒加载（只读，不发写请求）
     if (target === "insight-card" && typeof loadInsight === "function") { loadInsight(); }
     // 版本恢复：列出快照（不自动生成，避免每次进入都占用一次快照名额）

@@ -832,7 +832,7 @@
           onProgress: function (t) { rep.textContent = t; },
           tagOf: function (urls) {
             if (!SBX) return Promise.resolve({});
-            /* 先读「图库标签 + 榜单独立标签」的合并结果（后台「榜单打标」写的就是后者）；
+            /* 先读「图库标签 + 榜单独立标签」的合并结果（后者是历史上榜单打标写下的，数据保留、入口已下线）；
                老版本没有合并方法时退回只读图库，保证不会因此报错。 */
             var fn = SBX.listImageTagsForReport || SBX.listImageTags;
             if (!fn) return Promise.resolve({});

@@ -43,6 +43,12 @@ ok("没有「有面板但菜单进不去」的孤儿面板", orphan.length === 0
 const panels2 = [...html.matchAll(/id="([a-z-]+-card)"[^>]*class="panel-card/g)].map(m => m[1]);
 ok("面板属性顺序变体也已覆盖", panels2.every(p => uniqNav.indexOf(p) !== -1 || panels.indexOf(p) !== -1));
 
+console.log("\n=== 1b. 已下线的菜单不再出现（防止旧入口被手滑加回来）===");
+ok("侧栏没有「榜单打标」入口", html.indexOf('data-target="rank-tag-card"') === -1);
+ok("面板 #rank-tag-card 已移除", html.indexOf('id="rank-tag-card"') === -1);
+ok("不再加载榜单打标脚本", !/js\/admin-ranktag\.js/.test(html));
+ok("权限映射表里也没有它了", !/"rank-tag-card"\s*:/.test(admin));
+
 console.log("\n=== 2. 每个菜单项都在权限映射表里（否则点进去会被判无权限）===");
 const zoneBlock = (admin.match(/const PANEL_ZONE = \{([\s\S]*?)\};/) || [])[1] || "";
 const zones = [...zoneBlock.matchAll(/"([a-z-]+-card)"\s*:/g)].map(m => m[1]);

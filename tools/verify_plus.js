@@ -164,8 +164,9 @@ function mkImg(fn, w, h) {
   console.log("\n=== ③ 后台上传（多 sheet 多类目 / 超链接取真网址 / 大批量） ===\n");
   const adminHtml = read("admin.html");
   const start = adminHtml.indexOf('<div class="panel-card hidden" id="plus-card">');
-  const endMark = "<!-- ================= 榜单打标";
-  const end = adminHtml.indexOf(endMark, start);
+  /* 面板结束边界：取紧随其后的下一个 panel-card（榜单打标已下线，不能再拿它当界标） */
+  const nextPanel = adminHtml.indexOf('<div class="panel-card hidden" id="insight-card">', start);
+  const end = nextPanel > start ? nextPanel : adminHtml.length;
   ok("admin.html 里有 #plus-card 面板", start > 0 && end > start);
   ok("后台侧栏有「大码专区」入口", /data-target="plus-card">大码专区/.test(adminHtml));
   ok("后台引入大码三个脚本", /admin-plus\.js\?v=/.test(adminHtml) && /plus-sb\.js\?v=/.test(adminHtml) && /plus-match\.js\?v=/.test(adminHtml));
