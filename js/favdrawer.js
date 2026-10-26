@@ -115,16 +115,15 @@
         +   '<span class="fv-drop-hint-dot" aria-hidden="true"></span>'
         +   '<span>把图拖到分类，或拖进「上装 / 下装」栏，松手即归入</span>'
         + '</div>'
-        + '<div class="fv-d-filter" id="fv-d-filter"></div>'
         + '<div class="fv-d-main">'
+        +   '<div class="fv-d-body" id="fv-d-body"></div>'
+        +   '<div class="fv-d-filter" id="fv-d-filter" aria-label="我的分类"></div>'
         +   '<div class="fv-d-rail" id="fv-d-rail" aria-label="拖到这里归为上装或下装">'
         +     '<button type="button" class="fv-d-rail-z" data-railk="top" title="拖到这里归为上装">'
         +       '<span>上装</span><i id="fv-rail-n-top">0</i></button>'
         +     '<button type="button" class="fv-d-rail-z" data-railk="bottom" title="拖到这里归为下装">'
         +       '<span>下装</span><i id="fv-rail-n-bottom">0</i></button>'
         +   '</div>'
-        +   '<aside class="fv-d-side" id="fv-d-side" aria-label="我的分类"></aside>'
-        +   '<div class="fv-d-body" id="fv-d-body"></div>'
         + '</div>'
         + '<div class="fv-d-save" id="fv-d-save" hidden></div>';
       body.appendChild(d);
@@ -238,79 +237,44 @@
   function renderFilter() {
     var box = $("#fv-d-filter");
     if (!box) return;
-    var h = '<button type="button" class="fv-d-chip' + (ST.filter === "all" ? " is-on" : "") + '" data-fv-f="all">全部<i>'
-      + ST.items.length + '</i></button>';
+    var h = '<div class="fv-d-catcol-h">我的分类</div>';
+    h += '<button type="button" class="fv-d-chip' + (ST.filter === "all" ? " is-on" : "") + '" data-fv-f="all">'
+      + '<span class="fv-d-dot is-all"></span><span class="fv-d-cname">全部</span><i>' + ST.items.length + '</i></button>';
     (ST.cats || []).forEach(function (c) {
       var n = ST.items.filter(function (it) { return Number(it.category_id) === Number(c.id); }).length;
-      h += '<button type="button" class="fv-d-chip' + (Number(ST.filter) === Number(c.id) ? " is-on" : "") + '"'
-        + ' data-fv-f="' + c.id + '"><span class="fv-d-dot" style="background:' + esc(c.color || "#8b7355") + '"></span>'
-        + esc(c.name) + '<i>' + n + '</i></button>';
-    });
-    var none = ST.items.filter(function (it) { return it.category_id == null; }).length;
-    if (none) {
-      h += '<button type="button" class="fv-d-chip' + (ST.filter === "none" ? " is-on" : "")
-        + '" data-fv-f="none">未分类<i>' + none + '</i></button>';
-    }
-    box.innerHTML = h;
-    all("[data-fv-f]", box).forEach(function (b) {
-      b.addEventListener("click", function () {
-        ST.filter = b.getAttribute("data-fv-f");
-        render();
-      });
-      bindDropTarget(b, catDropValue(b));   /* 直接把图拖到分类 chip 上即可归类 */
-    });
-  }
-
-  /* 全屏形态的左栏：分类列表 + 新建 + 删除；同时是拖放目标 */
-  function renderSide() {
-    var box = $("#fv-d-side");
-    if (!box) return;
-    var h = '<div class="fv-d-side-h"><span>我的分类</span>'
-      + '<button type="button" class="fv-d-newbtn" id="fv-d-new">＋ 新建</button></div>'
-      + '<div class="fv-d-newbox" id="fv-d-newbox" hidden>'
-      +   '<input type="text" id="fv-d-newname" maxlength="40" placeholder="分类名，如 印花T恤">'
-      +   '<div class="fv-d-newrow"><button type="button" class="fv-d-btn ok" id="fv-d-newok">建好</button>'
-      +   '<button type="button" class="fv-d-btn" id="fv-d-newcancel">取消</button></div>'
-      + '</div>';
-
-    h += '<div class="fv-d-cats" id="fv-d-cats">';
-    h += '<div class="fv-d-cat' + (ST.filter === "all" ? " is-on" : "") + '" data-drop="__all__">'
-      + '<span class="fv-d-cdot" style="background:transparent;border:1px solid var(--line)"></span>'
-      + '<span class="fv-d-cname">全部</span><i class="fv-d-cn">' + ST.items.length + '</i></div>';
-    (ST.cats || []).forEach(function (c, i) {
-      var n = ST.items.filter(function (it) { return Number(it.category_id) === Number(c.id); }).length;
-      h += '<div class="fv-d-cat' + (Number(ST.filter) === Number(c.id) ? " is-on" : "") + '"'
-        + ' data-drop="' + c.id + '" data-cid="' + c.id + '">'
-        + '<span class="fv-d-cdot" style="background:' + esc(c.color || colorAt(i)) + '"></span>'
+      h += '<div class="fv-d-chip' + (Number(ST.filter) === Number(c.id) ? " is-on" : "") + '"'
+        + ' data-fv-f="' + c.id + '" data-drop="' + c.id + '" data-cid="' + c.id + '">'
+        + '<span class="fv-d-dot" style="background:' + esc(c.color || "#8b7355") + '"></span>'
         + '<span class="fv-d-cname" title="' + esc(c.name) + '">' + esc(c.name) + '</span>'
-        + '<i class="fv-d-cn">' + n + '</i>'
-        + '<button type="button" class="fv-d-cdel" data-del="' + c.id + '" title="删除分类（图退回未分类）">×</button>'
+        + '<i>' + n + '</i>'
+        + '<button type="button" class="fv-d-cdel" data-del="' + c.id + '" title="删除这个分类">×</button>'
         + '</div>';
     });
     var none = ST.items.filter(function (it) { return it.category_id == null; }).length;
-    h += '<div class="fv-d-cat' + (ST.filter === "none" ? " is-on" : "") + '" data-drop="__none__">'
-      + '<span class="fv-d-cdot" style="background:transparent;border:1px dashed var(--line)"></span>'
-      + '<span class="fv-d-cname">未分类</span><i class="fv-d-cn">' + none + '</i></div>';
-    h += '</div>';
-    h += '<div class="fv-d-side-tip">把图拖到分类上即可归类</div>';
+    h += '<button type="button" class="fv-d-chip' + (ST.filter === "none" ? " is-on" : "")
+      + '" data-fv-f="none"><span class="fv-d-dot is-none"></span><span class="fv-d-cname">未分类</span><i>' + none + '</i></button>';
+    h += '<div class="fv-d-newbox" id="fv-d-newbox" hidden>'
+      +   '<input type="text" id="fv-d-newname" maxlength="40" placeholder="新分类名">'
+      +   '<div class="fv-d-newrow"><button type="button" class="fv-d-btn ok" id="fv-d-newok">建好</button>'
+      +   '<button type="button" class="fv-d-btn" id="fv-d-newcancel">取消</button></div>'
+      + '</div>';
+    h += '<button type="button" class="fv-d-newbtn" id="fv-d-new">＋ 新建分类</button>';
     box.innerHTML = h;
 
-    /* 点分类 = 筛选 */
-    all("[data-cid]", box).forEach(function (el) {
-      el.addEventListener("click", function (e) {
+    /* 点框 = 筛选（点 × 是删，不触发筛选） */
+    all("[data-fv-f]", box).forEach(function (b) {
+      b.addEventListener("click", function (e) {
         if (e.target && e.target.closest && e.target.closest("[data-del]")) return;
-        ST.filter = el.getAttribute("data-cid");
+        ST.filter = b.getAttribute("data-fv-f");
         render();
       });
+      bindDropTarget(b, catDropValue(b));   /* 把图拖到这个框上即可归类 */
     });
     all("[data-del]", box).forEach(function (b) {
-      b.addEventListener("click", function (e) {
-        e.stopPropagation();
-        delCat(Number(b.getAttribute("data-del")));
-      });
+      b.addEventListener("click", function (e) { e.stopPropagation(); delCat(Number(b.getAttribute("data-del"))); });
     });
 
-    /* 新建分类 */
+    /* 新建 */
     var nw = $("#fv-d-new"), nwb = $("#fv-d-newbox");
     if (nw && nwb) {
       nw.addEventListener("click", function () {
@@ -324,9 +288,6 @@
     if (okb) okb.addEventListener("click", function () { createCat(); });
     var nameInp = $("#fv-d-newname");
     if (nameInp) nameInp.addEventListener("keydown", function (e) { if (e.key === "Enter") createCat(); });
-
-    /* 拖放目标：分类 / 未分类（「全部」不是有效归类目标） */
-    all("[data-drop]", box).forEach(function (el) { bindDropTarget(el, catDropValue(el)); });
   }
 
   /* 统一的拖放目标绑定：任何承载"一个分类"的元素都能接图。
@@ -934,8 +895,9 @@
       box.id = "fv-d-warn";
       box.className = "fv-d-warn";
       var host = $("#fv-drawer");
-      var filt = $("#fv-d-filter");
-      if (host && filt) host.insertBefore(box, filt);
+      var anchor = $("#fv-d-main") || $("#fv-d-filter");   /* 分类列现在嵌在主体里，锚点要取它的父级 */
+      if (host && anchor && anchor.parentNode === host) host.insertBefore(box, anchor);
+      else if (host) host.appendChild(box);
     }
     var hasItems = (ST.items || []).length > 0;
     var on = (ST.tagsReady === false) && hasItems;
@@ -984,7 +946,6 @@
     renderWarn();
     renderHead();
     renderCount();
-    renderSide();
     renderFilter();
     renderBody();
   }

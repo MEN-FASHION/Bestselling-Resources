@@ -84,7 +84,8 @@ ok("prefers-reduced-motion 下关掉全部动效", /@media \(prefers-reduced-mot
 
 /* ⑨ 全屏工作台：左栏分类在窄屏不挤占 */
 ok("全屏铺满视口", /\.fv-drawer\.is-full\{[\s\S]*?width:\s*100vw/.test(CSS));
-ok("全屏左栏是可拖放目标的竖排栏", /\.fv-drawer\.is-full \.fv-d-side\{[\s\S]*?display:\s*flex/.test(CSS));
+ok("分类靠右成一列方框（不再占左边）", /\.fv-d-filter\s*\{[^}]*flex-direction:\s*column/.test(CSS)
+  && /\.fv-d-filter \.fv-d-chip\s*\{[^}]*width:\s*100%/.test(CSS));
 
 console.log("\n================ 汇总 ================");
 console.log("PASS " + pass + " / FAIL " + fail);

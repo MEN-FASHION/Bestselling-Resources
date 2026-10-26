@@ -336,10 +336,18 @@ function bootDom(sb) {
     const doc = w.document;
     const drawer = doc.getElementById("fv-drawer");
     const fullBtn = doc.getElementById("fv-d-full");
-    const side = doc.getElementById("fv-d-side");
+    const catCol = doc.getElementById("fv-d-filter");
 
-    ok("默认是抽屉形态（不铺满、不显示左栏）",
-      w.FavDrawer.view() === "drawer" && drawer.className.indexOf("is-full") === -1 && side.hidden === true);
+    ok("默认是抽屉形态（不铺满）",
+      w.FavDrawer.view() === "drawer" && drawer.className.indexOf("is-full") === -1);
+    /* 20261026V：分类不再占左边，改成右侧一列方框；旧左栏 DOM 已删干净 */
+    ok("分类不再是左栏（旧的左栏元素已移除）", doc.getElementById("fv-d-side") === null);
+    ok("分类列紧挨在上装下装栏左侧（靠右一列）", (function () {
+      const main = doc.querySelector(".fv-d-main");
+      if (!main || !catCol) return false;
+      const kids = Array.prototype.slice.call(main.children);
+      return kids.indexOf(catCol) === kids.indexOf(doc.getElementById("fv-d-rail")) - 1;
+    })());
     /* 20261023E：按钮从"文字"改成"线性图标 + aria-label / title"，
        所以验证改看 aria-label 与 title——它们才是读屏和悬停真正呈现给用户的文案。 */
     ok("头部有全屏按钮，且带「全屏」文案（aria-label / title）",
@@ -357,9 +365,11 @@ function bootDom(sb) {
     ok("全屏时按钮变成「退出全屏」",
       /退出全屏/.test(fullBtn.getAttribute("aria-label") || "") || /退出全屏/.test(fullBtn.getAttribute("title") || ""),
       fullBtn.getAttribute("aria-label") || "");
-    ok("全屏时左栏分类可见", side.hidden === false);
-    ok("全屏时分类栏渲染了分类与未分类", doc.querySelectorAll("#fv-d-side .fv-d-cat").length === 3,
-      doc.querySelectorAll("#fv-d-side .fv-d-cat").length);
+    ok("全屏时分类列仍在（右侧一列）", !!doc.querySelector("#fv-d-filter .fv-d-chip"));
+    /* 该用例 3 张图全都已分类，所以「未分类」框不出现 → 全部 + 2 分类 = 3 个框 */
+    ok("分类列渲染为多个框（全部 + 各分类）",
+      doc.querySelectorAll("#fv-d-filter .fv-d-chip").length === 3,
+      doc.querySelectorAll("#fv-d-filter .fv-d-chip").length);
     ok("全屏时图片可拖拽", all2(doc, ".fv-d-cell").every((c) => c.getAttribute("draggable") === "true"));
     ok("抽屉形态下不启用拖拽（避免与对比池抢手势）",
       (function () { return true; })() && all2(doc, ".fv-d-cell").length > 0);
@@ -370,7 +380,8 @@ function bootDom(sb) {
     ok("全屏时按 Esc 先退回抽屉（不直接关闭）",
       w.FavDrawer.isOpen() === true && w.FavDrawer.view() === "drawer"
       && drawer.className.indexOf("is-open") >= 0 && drawer.className.indexOf("is-full") === -1);
-    ok("退回抽屉后左栏隐藏", side.hidden === true);
+    ok("退回抽屉后仍是同一套分类列（不靠左右栏切换形态）",
+      !!doc.querySelector("#fv-d-filter .fv-d-chip") && drawer.className.indexOf("is-full") === -1);
 
     /* 再按 Esc 才关闭 */
     doc.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -385,9 +396,11 @@ function bootDom(sb) {
       const m = cssFull.match(/z-index:\s*(\d+)/);
       return m && Number(m[1]) >= 70;
     })());
-    ok("全屏时左栏是竖排独立栏（display: flex + 固定宽度）", (function () {
-      const seg = (CSS.match(/\.fv-drawer\.is-full \.fv-d-side\s*\{[^}]*\}/) || [""])[0];
-      return /display:\s*flex/.test(seg) && /flex:\s*0 0 208px/.test(seg);
+    ok("分类列是竖排一列方框（flex-direction: column + 固定宽度）", (function () {
+      /* 有多条同名规则（含窄屏覆盖），取"声明了固定宽度 112px"的那条 */
+      const segs = CSS.match(/\.fv-d-filter\s*\{[^}]*\}/g) || [""];
+      const seg = segs.filter((x) => /112px/.test(x))[0] || "";
+      return /flex-direction:\s*column/.test(seg) && /flex:\s*0 0 112px/.test(seg);
     })());
     ok("全屏仍是浮层（不影响对比池布局）", /position:\s*fixed/.test(cssFull) === false ? true : true);
     ok("抽屉整体保持 fixed（浮层不占列宽）", /\.fv-drawer \{[^}]*position:\s*fixed/.test(CSS)
@@ -502,7 +515,7 @@ function bootDom(sb) {
     ok("全屏下图片带 data-id（拖拽需要）", cell.getAttribute("data-id") === "11");
 
     /* 模拟拖到「连帽卫衣」 */
-    const target = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="2"]');
+    const target = doc.querySelector('#fv-d-filter .fv-d-chip[data-drop="2"]');
     const dt = { data: {}, setData(k, v) { this.data[k] = v; }, getData(k) { return this.data[k]; }, effectAllowed: "" };
     cell.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
     target.dispatchEvent(new w.Event("dragover", { bubbles: true, cancelable: true }));
@@ -511,11 +524,11 @@ function bootDom(sb) {
     ok("拖到分类上真的写库（moveFavItems 收到 id 与目标分类）",
       moved.length === 1 && moved[0][0][0] === 11 && moved[0][1] === 2, JSON.stringify(moved));
     ok("归类后就地更新（不再整表重读）", w.FavDrawer.state().items[0].category_id === 2);
-    ok("归类后左栏计数同步", /连帽卫衣/.test(doc.querySelector("#fv-d-side").textContent));
+    ok("归类后分类列计数同步", /连帽卫衣/.test(doc.querySelector("#fv-d-filter").textContent));
 
     /* 拖到「未分类」 */
     moved.length = 0;
-    const noneTarget = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="__none__"]');
+    const noneTarget = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="none"]');
     const cell2 = doc.querySelector(".fv-d-cell");
     cell2.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
     noneTarget.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
@@ -525,7 +538,7 @@ function bootDom(sb) {
 
     /* 拖到「全部」不是有效归类目标 */
     moved.length = 0;
-    const allTarget = doc.querySelector('#fv-d-side .fv-d-cat[data-drop="__all__"]');
+    const allTarget = doc.querySelector('#fv-d-filter .fv-d-chip[data-fv-f="all"]');
     const cell3 = doc.querySelector(".fv-d-cell");
     cell3.dispatchEvent(Object.assign(new w.Event("dragstart", { bubbles: true }), { dataTransfer: dt }));
     allTarget.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
