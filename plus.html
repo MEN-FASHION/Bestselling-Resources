@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大码专区 · TREND BANK</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css?v=20261026P">
+</head>
+<body class="front">
+  <div id="toast" class="toast"></div>
+  <div id="plz-toast" class="toast"></div>
+
+  <section id="plus-view">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span>大码专区</span></div>
+        <nav class="top-tabs">
+          <a href="rank.html" class="tab-link">趋势上升榜</a>
+          <a href="plus.html" class="tab-link active">大码专区</a>
+          <a href="marketing.html" class="tab-link">营销日历</a>
+          <a href="index.html" class="tab-link">视觉专区</a>
+          <a href="trends.html" class="tab-link">趋势专区</a>
+          <a href="trends.html#recruit" class="tab-link">招品回品</a>
+          <a href="trends.html#bestseller" class="tab-link">BESTSELLER</a>
+          <a href="fav.html" class="tab-link">我的收藏</a>
+        </nav>
+        <div class="topbar-actions">
+          <span id="plz-user" class="rk-user hidden"></span>
+          <a href="index.html" id="plz-login" class="btn-ghost hidden">去登录</a>
+          <button type="button" id="plz-logout" class="btn-ghost hidden">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="gallery-layout">
+      <aside class="sidebar">
+        <div class="side-head">大码类目</div>
+        <nav id="plz-cats" class="cat-menu"><div class="rk-empty">加载中…</div></nav>
+        <div class="plz-side-tip">类目以<b>大码</b>为准：大码没做的类目不会出现。</div>
+      </aside>
+
+      <main class="grid-wrap">
+        <div class="plz-filter">
+          <label class="plz-f"><span>大码期次</span><select id="plz-plus-period"></select></label>
+          <label class="plz-f"><span>标码期次</span><select id="plz-std-period"></select></label>
+          <button type="button" id="plz-unlock" class="plz-btn" title="点一下解锁，两边可以各选期次">跟随大码</button>
+          <label class="plz-f"><span>国家站点</span><select id="plz-site"></select></label>
+          <button type="button" id="plz-only-gap" class="plz-btn" title="只看标码有大码没有的款">只看大码机会</button>
+          <button type="button" id="plz-only-review" class="plz-btn" title="只看相似度落在边界档、需要人工确认的款">只看待确认</button>
+          <button type="button" id="plz-refresh" class="plz-btn ghost">刷新</button>
+        </div>
+
+        <div id="plz-sum" class="plz-sum"></div>
+
+        <div id="plz-body" class="plz-body"><div class="rk-empty">加载中…</div></div>
+      </main>
+    </div>
+    <footer class="plz-foot">© 2026 TREND BANK · 大码专区 · 大码数据与趋势上升榜（标码）按同类目并排对比</footer>
+  </section>
+
+  <div id="plz-lb" class="plz-lb"><img alt=""></div>
+
+<script src="vendor/supabase.js?v=20261026P"></script>
+<script src="js/config.js?v=20261026P"></script>
+<script src="js/supabase.js?v=20261026P"></script>
+<script src="js/common.js?v=20261026P"></script>
+<script src="js/track-menu.js?v=20261026P"></script>
+<script src="js/plus-sb.js?v=20261026P"></script>
+<script src="js/plus-match.js?v=20261026P"></script>
+<script src="js/plus.js?v=20261026P"></script>
+</body>
+</html>

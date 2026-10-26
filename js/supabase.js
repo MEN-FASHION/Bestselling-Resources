@@ -2884,6 +2884,9 @@ async removeTrendRecord(id) {
       if (error) return [];   // 星标是装饰性状态，读不到不该让榜单白屏
       return data || [];
     },
+    /* 只读出口：供同级模块（大码专区数据层 plus-sb.js）复用同一个已登录客户端。
+       不新建第二个 createClient —— 两个客户端各自维护会话，会出现"一边登录一边未登录"。 */
+    _client() { return client; },
   };
 })();
 

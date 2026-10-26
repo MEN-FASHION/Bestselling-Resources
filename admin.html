@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261023J">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261023J">
+<link rel="stylesheet" href="css/style.css?v=20261026P">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261026P">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -114,6 +114,7 @@
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
+        <a class="nav-item" data-target="plus-card">大码专区</a>
         <a class="nav-item" data-target="rank-tag-card">榜单打标</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
           <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
@@ -960,6 +961,111 @@
         </section>
       </div>
 
+      <!-- ================= 大码专区 · 数据上传与同款匹配 =================
+           与「趋势上升榜」完全独立：大码有自己的期次、自己的类目、自己的上传记录。
+           前台「大码专区」把这里传的数据与趋势上升榜（标码）按同类目并排对比。 -->
+      <div class="panel-card hidden" id="plus-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>大码专区 · 数据上传与同款匹配</h3>
+            <p class="hint">
+              大码数据走<b>独立入口</b>，不影响趋势上升榜的任何数据。支持<b>一个 sheet 一个类目</b>（sheet 名即类目名），
+              也支持表内带「类目」列；单次上传建议 5000 条以内，超过会自动分块写入并显示进度。
+            </p>
+          </div>
+          <div class="rkadm-head-act">
+            <button id="rkadm-plus-open-front" class="btn-ghost" type="button">前台打开大码专区</button>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>① 上传大码数据</h4>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>期次类型</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-period" value="week" checked> 周度</label>
+                <label class="chk"><input type="radio" name="pl-period" value="month"> 月度</label>
+              </span>
+            </label>
+            <label class="rank-field" id="pl-pw-wrap">
+              <span>选周（选任意一天，自动定位到该周）</span>
+              <span class="rank-inline">
+                <input id="pl-period-date" type="date">
+                <b id="pl-period-week" class="rank-week-out">—</b>
+              </span>
+            </label>
+            <label class="rank-field" id="pl-pm-wrap" style="display:none">
+              <span>选月份</span>
+              <input id="pl-period-month" type="month">
+            </label>
+            <input id="pl-period-label" type="hidden" value="">
+            <label class="rank-field">
+              <span>备注（可选）</span>
+              <input id="pl-note" type="text" placeholder="例如：W43 大码整理表">
+            </label>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">导入方式（覆盖 = 先清掉该期次的旧大码数据再整表写入；追加 = 保留旧数据、只补库里还没有的图）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-mode" value="replace" checked> 覆盖（推荐）</label>
+                <label class="chk"><input type="radio" name="pl-mode" value="append"> 追加</label>
+              </span>
+            </div>
+          </div>
+          <div class="rank-inline">
+            <input id="pl-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="pl-import" class="btn-primary" type="button" disabled>导入大码数据</button>
+          </div>
+          <div id="pl-file-tip" class="rank-file-tip"></div>
+          <div id="pl-preview" class="rank-preview"></div>
+          <div id="pl-progress" class="pl-prog hidden">
+            <div class="pl-prog-track"><div class="pl-prog-bar"></div></div>
+            <div class="pl-prog-txt"></div>
+          </div>
+          <div id="pl-failed"></div>
+          <div id="pl-facets" class="hint"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>② 已上传记录</h4>
+          <div id="pl-batches" class="pl-batches"><div class="hint">正在读取…</div></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>③ 同款匹配（标码 ↔ 大码）</h4>
+          <p class="hint">
+            标码侧直接取<b>趋势上升榜</b>的数据，大码侧取上面上传的数据。逐类目比对后给出三档结论：
+            <b>同款</b>（大码已有）、<b>待确认</b>（相似度落在边界档）、<b>大码机会</b>（标码有、大码没有）。
+            人工判定过的条目，重算时不会被覆盖。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field"><span>大码期次</span><select id="pl-match-period"></select></label>
+            <label class="rank-field"><span>标码期次</span><select id="pl-match-std"></select></label>
+            <label class="rank-field"><span>类目</span><select id="pl-match-cat"></select></label>
+          </div>
+          <div class="rank-inline" style="padding-top:8px">
+            <button id="pl-run-match" class="btn-primary" type="button">开始匹配</button>
+            <button id="pl-review-load" class="btn-ghost" type="button">刷新结论</button>
+            <button id="pl-match-reset" class="btn-ghost" type="button">清空该期次结论</button>
+          </div>
+          <div id="pl-match-result" class="pl-match-result"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>④ 待确认清单
+            <span class="rkadm-sec-act">
+              <button type="button" class="btn-ghost small pl-rv-filter on" data-f="review">只看待确认</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="gap">大码机会</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="same">同款</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="all">全部</button>
+            </span>
+          </h4>
+          <div id="pl-review" class="pl-review"><div class="hint">正在读取…</div></div>
+        </section>
+      </div>
+
       <!-- ================= 榜单打标（趋势上升榜 · 独立作业台） =================
            与「图片管理 → 智能打标」完全独立：
              * 数据源不同 —— 这里取的是 rank_items 里的榜单图（外链），不读图库；
@@ -1317,30 +1423,33 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261023J"></script>
-  <script src="vendor/quill.js?v=20261023J"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261023J"></script>
-  <script src="vendor/qrcode.min.js?v=20261023J"></script>
-  <script src="js/config.js?v=20261023J"></script>
-  <script src="js/supabase.js?v=20261023J"></script>
-  <script src="js/track-menu.js?v=20261023J"></script>
+  <script src="vendor/supabase.js?v=20261026P"></script>
+  <script src="vendor/quill.js?v=20261026P"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261026P"></script>
+  <script src="vendor/qrcode.min.js?v=20261026P"></script>
+  <script src="js/config.js?v=20261026P"></script>
+  <script src="js/supabase.js?v=20261026P"></script>
+  <script src="js/track-menu.js?v=20261026P"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261023J"></script>
-  <script src="js/admin.js?v=20261023J"></script>
-  <script src="js/admin-images.js?v=20261023J"></script>
-  <script src="js/admin-smart.js?v=20261023J"></script>
-  <script src="js/admin-trend.js?v=20261023J"></script>
-  <script src="js/admin-notice.js?v=20261023J"></script>
-  <script src="js/marketing-data.js?v=20261023J"></script>
-  <script src="js/admin-festival.js?v=20261023J"></script>
-  <script src="js/admin-tasks.js?v=20261023J"></script>
-  <script src="js/admin-bestseller.js?v=20261023J"></script>
-  <script src="js/admin-perm.js?v=20261023J"></script>
-  <script src="js/admin-pool.js?v=20261023J"></script>
-  <script src="js/admin-rank.js?v=20261023J"></script>
-  <script src="js/admin-ranktag.js?v=20261023J"></script>
-  <script src="js/admin-insight.js?v=20261023J"></script>
-  <script src="js/admin-backup.js?v=20261023J"></script>
+  <script src="js/admin-dialog.js?v=20261026P"></script>
+  <script src="js/admin.js?v=20261026P"></script>
+  <script src="js/admin-images.js?v=20261026P"></script>
+  <script src="js/admin-smart.js?v=20261026P"></script>
+  <script src="js/admin-trend.js?v=20261026P"></script>
+  <script src="js/admin-notice.js?v=20261026P"></script>
+  <script src="js/marketing-data.js?v=20261026P"></script>
+  <script src="js/admin-festival.js?v=20261026P"></script>
+  <script src="js/admin-tasks.js?v=20261026P"></script>
+  <script src="js/admin-bestseller.js?v=20261026P"></script>
+  <script src="js/admin-perm.js?v=20261026P"></script>
+  <script src="js/admin-pool.js?v=20261026P"></script>
+  <script src="js/admin-rank.js?v=20261026P"></script>
+  <script src="js/plus-sb.js?v=20261026P"></script>
+  <script src="js/plus-match.js?v=20261026P"></script>
+  <script src="js/admin-plus.js?v=20261026P"></script>
+  <script src="js/admin-ranktag.js?v=20261026P"></script>
+  <script src="js/admin-insight.js?v=20261026P"></script>
+  <script src="js/admin-backup.js?v=20261026P"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
