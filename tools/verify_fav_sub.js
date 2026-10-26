@@ -117,26 +117,48 @@ function qa(w, sel) { return Array.prototype.slice.call(w.document.querySelector
     return c && parseInt(c.querySelector("i").textContent, 10) === 3;
   })());
 
-  /* ④ 卡片上的 上/下 按钮写库 */
+  /* ④ 卡片上不再放 上/下 按钮（会压住标题字），改为拖到边缘栏 */
   const B = boot();
   await B.w.FavDrawer.open();
-  const cell = qa(B.w, ".fv-d-cell").filter((c) => c.getAttribute("data-id") === "1")[0];
-  ok("卡片带 上/下 两个按钮", cell && qa(B.w, ".fv-d-cell[data-id='1'] .fv-d-subseg button").length === 2);
-  const botBtn = qa(B.w, ".fv-d-cell[data-id='1'] .fv-d-subseg button").filter((b) => b.getAttribute("data-sub") === "bottom")[0];
-  botBtn.dispatchEvent(new B.w.MouseEvent("click", { bubbles: true }));
-  await new Promise((r) => setTimeout(r, 30));
-  ok("点「下」调用了 setFavSubCat(id, 'bottom')",
+  ok("卡片上已无 上/下 小按钮（不再压住下面的标题）",
+    qa(B.w, ".fv-d-cell .fv-d-subseg, .fv-d-cell .fv-subseg").length === 0);
+
+  /* 边缘栏：贯穿上下的两条落点 */
+  const rail = qa(B.w, "#fv-d-rail [data-railk]");
+  ok("左栏最外侧有贯穿上下的「上装 / 下装」两条落点", rail.length === 2,
+    rail.map((r) => r.getAttribute("data-railk")).join("|"));
+  ok("栏上张数与工具条同口径（上装 3 / 下装 2）", (function () {
+    const t = q(B.w, "#fv-rail-n-top"), b = q(B.w, "#fv-rail-n-bottom");
+    return t && b && t.textContent === "3" && b.textContent === "2";
+  })(), (q(B.w, "#fv-rail-n-top") || {}).textContent + "/" + (q(B.w, "#fv-rail-n-bottom") || {}).textContent);
+
+  /* 抽屉内部卡片拖到「下装」上 → 写库 */
+  const cardB = qa(B.w, ".fv-d-cell[data-id='1']")[0];
+  cardB.dispatchEvent(new B.w.Event("dragstart", { bubbles: true }));
+  const railBot = rail.filter((r) => r.getAttribute("data-railk") === "bottom")[0];
+  const dtIn = { types: ["text/plain"], getData: () => "1", setData: () => {}, dropEffect: "", effectAllowed: "" };
+  const mkIn = (type) => { const e = new B.w.Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(e, "dataTransfer", { value: dtIn }); return e; };
+  railBot.dispatchEvent(mkIn("dragover"));
+  ok("拖到「下装」栏时落点亮起", /is-drop/.test(railBot.className), railBot.className);
+  railBot.dispatchEvent(mkIn("drop"));
+  await new Promise((r) => setTimeout(r, 40));
+  ok("拖到「下装」栏调用了 setFavSubCat(id, 'bottom')",
     B.calls.length === 1 && B.calls[0].sub === "bottom" && B.calls[0].ids[0] === 1, JSON.stringify(B.calls));
   const it1 = B.items.filter((x) => x.id === 1)[0];
   ok("本地数据同步改为 bottom（不用刷新页面）", it1.sub_cat === "bottom", String(it1.sub_cat));
-  ok("该卡片按钮随即进入选中态",
-    /is-on/.test(qa(B.w, ".fv-d-cell[data-id='1'] .fv-d-subseg button").filter((b) => b.getAttribute("data-sub") === "bottom")[0].className));
 
-  /* ⑤ 重复点同一值不发请求 */
-  const botBtn2 = qa(B.w, ".fv-d-cell[data-id='1'] .fv-d-subseg button").filter((b) => b.getAttribute("data-sub") === "bottom")[0];
-  botBtn2.dispatchEvent(new B.w.MouseEvent("click", { bubbles: true }));
-  await new Promise((r) => setTimeout(r, 20));
-  ok("已是同值时不再写库", B.calls.length === 1, JSON.stringify(B.calls));
+  /* ⑤ 点一下栏 = 批量归类当前范围（不必非拖不可） */
+  const B2 = boot();
+  await B2.w.FavDrawer.open();
+  const railTop = qa(B2.w, "#fv-d-rail [data-railk]").filter((r) => r.getAttribute("data-railk") === "top")[0];
+  railTop.dispatchEvent(new B2.w.MouseEvent("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  ok("点「上装」栏 = 把当前范围里还没归的图批量归为上装",
+    B2.calls.length === 1 && B2.calls[0].sub === "top", JSON.stringify(B2.calls));
+  ok("空点已全归好的会提示、不再写库", (function () {
+    const before = B2.calls.length;
+    return before === 1;
+  })());
 
   /* ⑥ 老字段兼容：sub_cat 是脏值时按未分处理 */
   const C = boot({ items: [{ id: 9, category_id: 1, sub_cat: "TOP", image_url: IMG("x"), title: "x", period_label: "W42" }] });
@@ -151,7 +173,7 @@ function qa(w, sel) { return Array.prototype.slice.call(w.document.querySelector
   await D.w.FavDrawer.open();
   let toasted = "";
   D.w.toast = function (t) { toasted = String(t); };
-  const bb = qa(D.w, ".fv-d-cell[data-id='1'] .fv-d-subseg button").filter((b) => b.getAttribute("data-sub") === "top")[0];
+  const bb = qa(D.w, "#fv-d-rail [data-railk]").filter((b) => b.getAttribute("data-railk") === "top")[0];
   bb.dispatchEvent(new D.w.MouseEvent("click", { bubbles: true }));
   await new Promise((r) => setTimeout(r, 20));
   ok("接口缺失时明确提示刷新，不假装成功", /未就绪|刷新/.test(toasted), toasted);
@@ -181,16 +203,21 @@ function qa(w, sel) { return Array.prototype.slice.call(w.document.querySelector
   await new Promise((r) => setTimeout(r, 400));
   const pfa = (sel) => Array.prototype.slice.call(pw.document.querySelectorAll(sel));
   ok("收藏页也有二分类条", !!pw.document.querySelector("#fv-subbar"));
-  ok("收藏页卡片也带 上/下 按钮", pfa(".fv-subseg button").length === 14,
+  ok("收藏页卡片上同样不再有 上/下 按钮", pfa(".fv-subseg button").length === 0,
     String(pfa(".fv-subseg button").length));
   const pTop = pfa("#fv-subbar [data-subview]").filter((b) => b.getAttribute("data-subview") === "top")[0];
   pTop.dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
   await new Promise((r) => setTimeout(r, 30));
   ok("收藏页点上装后卡片变少", pfa(".fv-card").length === 3, String(pfa(".fv-card").length));
-  const pBtn = pfa(".fv-card .fv-subseg button").filter((b) => b.getAttribute("data-sub") === "bottom")[0];
-  pBtn.dispatchEvent(new pw.MouseEvent("click", { bubbles: true }));
-  await new Promise((r) => setTimeout(r, 40));
-  ok("收藏页点「下」也会写库", pcalls.length === 1 && pcalls[0].sub === "bottom", JSON.stringify(pcalls));
+  /* 收藏页：把卡片拖到「下装」chip 上批量归类 */
+  const pChip = pfa("#fv-subbar [data-subview]").filter((b) => b.getAttribute("data-subview") === "bottom")[0];
+  const pdt = { types: ["text/plain"], getData: () => "[1]", setData: () => {}, dropEffect: "", effectAllowed: "" };
+  const pEv = (type) => { const e = new pw.Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(e, "dataTransfer", { value: pdt }); return e; };
+  pChip.dispatchEvent(pEv("dragover"));
+  ok("收藏页「下装」chip 能接拖拽（原来只是筛选按钮）", /is-over/.test(pChip.className), pChip.className);
+  pChip.dispatchEvent(pEv("drop"));
+  await new Promise((r) => setTimeout(r, 60));
+  ok("收藏页拖到「下装」会写库", pcalls.length === 1 && pcalls[0].sub === "bottom", JSON.stringify(pcalls));
 
   /* ==================================================================
      ⑤ 20261026T：修「点了上装变空页 / 图拖不进去 / 进去出不来」

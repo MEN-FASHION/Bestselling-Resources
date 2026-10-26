@@ -113,10 +113,16 @@
         + '</div>'
         + '<div class="fv-drop-hint" id="fv-drop-hint" hidden>'
         +   '<span class="fv-drop-hint-dot" aria-hidden="true"></span>'
-        +   '<span>把图拖到下面的分类，松手即可归入</span>'
+        +   '<span>把图拖到分类，或拖进「上装 / 下装」栏，松手即归入</span>'
         + '</div>'
         + '<div class="fv-d-filter" id="fv-d-filter"></div>'
         + '<div class="fv-d-main">'
+        +   '<div class="fv-d-rail" id="fv-d-rail" aria-label="拖到这里归为上装或下装">'
+        +     '<button type="button" class="fv-d-rail-z" data-railk="top" title="拖到这里归为上装">'
+        +       '<span>上装</span><i id="fv-rail-n-top">0</i></button>'
+        +     '<button type="button" class="fv-d-rail-z" data-railk="bottom" title="拖到这里归为下装">'
+        +       '<span>下装</span><i id="fv-rail-n-bottom">0</i></button>'
+        +   '</div>'
         +   '<aside class="fv-d-side" id="fv-d-side" aria-label="我的分类"></aside>'
         +   '<div class="fv-d-body" id="fv-d-body"></div>'
         + '</div>'
@@ -557,10 +563,6 @@
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
       + '<button type="button" class="fv-d-unfav" data-unfav="' + esc(it.id) + '" title="取消收藏">×</button>'
-      + '<span class="fv-d-subseg" role="group" aria-label="上装或下装">'
-      +   '<button type="button" data-sub="top" class="' + (subOf(it) === "top" ? "is-on" : "") + '" title="归为上装">上</button>'
-      +   '<button type="button" data-sub="bottom" class="' + (subOf(it) === "bottom" ? "is-on" : "") + '" title="归为下装">下</button>'
-      + '</span>' 
       + (meta ? '<span class="fv-d-meta">' + meta + '</span>' : '')
       + '<figcaption>' + esc(String(it.title || "").slice(0, 16)) + '</figcaption>'
       + '</figure>';
@@ -573,14 +575,6 @@
       b.addEventListener("click", function (e) {
         e.preventDefault(); e.stopPropagation();
         unfav(b.getAttribute("data-unfav"));
-      });
-    });
-    all(".fv-d-subseg button", body).forEach(function (b) {
-      b.addEventListener("click", function (e) {
-        e.preventDefault(); e.stopPropagation();
-        var cell = b.parentNode && b.parentNode.parentNode;
-        var id = cell && cell.getAttribute("data-id");
-        if (id) setSub(Number(id), b.getAttribute("data-sub"));
       });
     });
     all(".fv-d-cell", body).forEach(function (c) {
@@ -705,6 +699,81 @@
     });
   }
 
+  /* 左栏最外侧那条贯穿上下的拖拽栏：上半 上装、下半 下装。
+     两种来源都接——抽屉里已有的图改分类，以及从榜单直接拖进来的图（收藏 + 归类一步到位）。 */
+  function bindRail(root) {
+    all("#fv-d-rail [data-railk]", root).forEach(function (el) {
+      if (el.dataset.railBound === "1") return;
+      el.dataset.railBound = "1";
+      var k = el.getAttribute("data-railk");
+      el.addEventListener("dragover", function (e) {
+        var back = hasExt(e);
+        if (ST.dragId == null && !back) return;
+        e.preventDefault();
+        if (e.dataTransfer) { try { e.dataTransfer.dropEffect = back ? "copy" : "move"; } catch (x) { } }
+        el.classList.add("is-drop");
+      });
+      el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
+      el.addEventListener("drop", function (e) {
+        el.classList.remove("is-drop");
+        if (hasExt(e)) {
+          e.preventDefault(); e.stopPropagation();
+          var row = extRow(e);
+          endDropMode(true);
+          if (row) addDropped(row, currentFilterCid(), k);
+          return;
+        }
+        if (ST.dragId == null) return;
+        e.preventDefault(); e.stopPropagation();
+        var id = ST.dragId;
+        clearDragState(id);
+        setSub(id, k);
+      });
+      /* 点一下也能把当前筛选范围里的图批量归过去，不用非拖不可 */
+      el.addEventListener("click", function () {
+        var base = filtered();
+        if (!base.length) { toast("当前范围里还没有图"); return; }
+        var ids = base.filter(function (it) { return subOf(it) !== k; }).map(function (it) { return it.id; });
+        if (!ids.length) { toast("都已经在「" + subName(k) + "」里了"); return; }
+        setSubMany(ids, k);
+      });
+    });
+  }
+
+  /* 栏上的张数：跟着当前分类范围走，与工具条同一口径 */
+  function updateRail() {
+    var top = 0, bot = 0, base = filtered();
+    base.forEach(function (it) {
+      var v = subOf(it);
+      if (v === "top") top++; else if (v === "bottom") bot++;
+    });
+    var nt = $("#fv-rail-n-top"), nb = $("#fv-rail-n-bottom");
+    if (nt) nt.textContent = top;
+    if (nb) nb.textContent = bot;
+    all("#fv-d-rail [data-railk]").forEach(function (el) {
+      el.classList.toggle("is-on", el.getAttribute("data-railk") === ST.sub);
+    });
+  }
+
+  /* 批量设置二分类（点边缘栏、或一次归类当前范围） */
+  async function setSubMany(ids, sub) {
+    var SB = SBX();
+    if (!SB || !SB.setFavSubCat) { toast("二分类功能未就绪，请刷新页面重试"); return; }
+    var want = (sub === "top" || sub === "bottom") ? sub : null;
+    var real = (ids || []).filter(function (id) { return id != null; });
+    if (!real.length) return;
+    try {
+      await SB.setFavSubCat(real, want);
+      ST.items.forEach(function (x) {
+        for (var i = 0; i < real.length; i++) { if (Number(real[i]) === Number(x.id)) { x.sub_cat = want; break; } }
+      });
+      render();
+      flashSaved(real.length + " 张已归为" + subName(want));
+    } catch (e) {
+      toast((e && e.message) ? e.message : "设置失败");
+    }
+  }
+
   /* 设置单张图的上装 / 下装；同值不发请求（避免无意义的写库） */
   async function setSub(id, sub) {
     var SB = SBX();
@@ -726,6 +795,8 @@
   }
 
   function renderBody() {
+    bindRail(document);
+    updateRail();
     var box = $("#fv-d-body");
     if (!box) return;
 

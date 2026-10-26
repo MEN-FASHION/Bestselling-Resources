@@ -158,10 +158,6 @@
       +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
       +   '<button type="button" class="fv-del" data-del="1" title="取消收藏">×</button>'
-      +   '<span class="fv-subseg" role="group" aria-label="上装或下装">'
-      +     '<button type="button" data-sub="top" class="' + (subOf(it) === "top" ? "is-on" : "") + '" title="归为上装">上</button>'
-      +     '<button type="button" data-sub="bottom" class="' + (subOf(it) === "bottom" ? "is-on" : "") + '" title="归为下装">下</button>'
-      +   '</span>' 
       +   (meta ? '<span class="fv-meta">' + meta + '</span>' : '')
       +   (cap ? '<figcaption class="fv-cap">' + esc(cap) + '</figcaption>' : '')
       + '</figure>';
@@ -554,14 +550,6 @@
       }
       var sv = t.closest("[data-subview]");
       if (sv) { ST.sub = sv.getAttribute("data-subview"); render(); return; }
-
-      var sb = t.closest(".fv-subseg [data-sub]");
-      if (sb) {
-        e.preventDefault(); e.stopPropagation();
-        var fg = sb.closest(".fv-card");
-        if (fg) setSub(fg.getAttribute("data-id"), sb.getAttribute("data-sub"));
-        return;
-      }
 
       var del = t.closest("[data-del]");
       if (del) {

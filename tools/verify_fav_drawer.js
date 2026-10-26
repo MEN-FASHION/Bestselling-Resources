@@ -846,16 +846,22 @@ function bootDom(sb) {
     ok("抽屉提供二分类工具条 subBarHtml",
       /function subBarHtml\(list\)/.test(DRAWER) && /二分类<\/span>/.test(DRAWER)
       && /item\("top", "上装"/.test(DRAWER) && /item\("bottom", "下装"/.test(DRAWER));
-    ok("卡片上带上/下切换按钮", /class="fv-d-subseg" role="group"/.test(DRAWER) && /data-sub="top"/.test(DRAWER));
+    /* 20261026U：卡片上的 上/下 小按钮会压住标题文字，已按要求去掉，改为只做拖拽 */
+    ok("卡片上不再有 上/下 小按钮（改为拖拽归类）",
+      !/fv-d-subseg/.test(DRAWER) && !/fv-subseg/.test(DRAWER));
+    ok("左栏最外侧有贯穿上下的「上装 / 下装」拖拽栏",
+      /id="fv-d-rail"/.test(DRAWER) && /data-railk="top"/.test(DRAWER)
+      && /data-railk="bottom"/.test(DRAWER) && /function bindRail\(/.test(DRAWER));
     ok("二分类工具条只绑自己的按钮（不会误绑卡片上的同名属性）",
       /all\("#fv-subbar \[data-sub\]", root\)/.test(DRAWER));
     ok("卡片可拖到上装/下装 chip 上直接改二分类",
       /data-sub-drop/.test(DRAWER) && /setSub\(id, k\)/.test(DRAWER));
     ok("切分类不重置二分类（两个条件是与关系）",
       /if \(ST\.sub === "none"\) return list\.filter/.test(DRAWER));
-    ok("收藏页同样有二分类条与按钮",
-      /function subBarHtml\(\)/.test(FAV_JS) && /class="fv-subseg" role="group"/.test(FAV_JS)
-      && /data-subview/.test(FAV_JS) && /setFavSubCat/.test(FAV_JS));
+    ok("收藏页同样有二分类条（卡片上不再放 上/下 按钮）",
+      /function subBarHtml\(\)/.test(FAV_JS) && /data-subview/.test(FAV_JS)
+      && /setFavSubCat/.test(FAV_JS) && !/fv-subseg/.test(FAV_JS));
+    ok("收藏页的 chips 也能当拖拽落点", /#fv-subbar \[data-subview\]/.test(FAV_JS) && /setSubMany/.test(FAV_JS));
 
     let SQLI = "";
     try { SQLI = read("tools/patch_20261023I.sql"); } catch (e) { SQLI = ""; }

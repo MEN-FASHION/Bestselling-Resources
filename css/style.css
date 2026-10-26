@@ -5196,61 +5196,31 @@ html, body{
 .fv-card:hover::after,
 .fv-card:focus-within::after { opacity: 1; }
 
-/* 5) 上装 / 下装：悬停后在图片下方浮出两个小按钮（默认不占图） */
-.fv-d-subseg,
-.fv-subseg {
-  position: absolute; left: 50%; bottom: 28px; z-index: 5;
-  display: flex; gap: 2px; padding: 2px; border-radius: 9px;
-  background: rgba(26,23,19,.62);
-  -webkit-backdrop-filter: blur(10px) saturate(150%); backdrop-filter: blur(10px) saturate(150%);
-  box-shadow: 0 4px 12px rgba(20,17,12,.28);
-  opacity: 0; transform: translate(-50%, 6px) scale(.96); pointer-events: none;
-  transition: opacity .22s var(--fv-ease), transform .3s var(--fv-spring);
-}
-.fv-d-cell:hover .fv-d-subseg,
-.fv-d-cell:focus-within .fv-d-subseg,
-.fv-card:hover .fv-subseg,
-.fv-card:focus-within .fv-subseg {
-  opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto;
-}
-.fv-d-subseg button,
-.fv-subseg button {
-  width: 26px; height: 22px; padding: 0; border: 0; border-radius: 7px;
-  background: transparent; color: rgba(255,255,255,.82); cursor: pointer;
-  font-size: 11px; line-height: 22px; font-family: inherit; font-weight: 600;
-  transition: background .18s ease, color .18s ease, transform .18s var(--fv-ease);
-}
-.fv-d-subseg button:hover,
-.fv-subseg button:hover { background: rgba(255,255,255,.16); color: #fff; }
-.fv-d-subseg button:active,
-.fv-subseg button:active { transform: scale(.94); }
-.fv-d-subseg button.on,
-.fv-subseg button.on,
-.fv-d-subseg button.is-on,
-.fv-subseg button.is-on { background: #c8a45c; color: #fff; }
+/* 5) 上装 / 下装：不做卡片上的小按钮（会压住标题字），改为拖拽。
+      落点是左栏最外侧那条贯穿上下的「上装 / 下装」栏，见 6.3。 */
 
 /* 6) 二分类工具条：贴在滚动区顶部，跟着滚动一直可见 */
 .fv-subbar {
   position: sticky; top: -10px; z-index: 4;
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  margin: -2px -2px 10px; padding: 8px 2px 9px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -2px -2px 10px; padding: 10px 2px 11px;
   background: linear-gradient(to bottom, rgba(251,250,247,.96) 62%, rgba(251,250,247,.72));
   -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
   border-bottom: 1px solid rgba(28,24,18,.05);
 }
 .fv-subbar-t {
-  font-size: 10px; letter-spacing: .08em; color: rgba(90,82,70,.55);
-  margin-right: 2px; text-transform: none;
+  font-size: 11.5px; letter-spacing: .08em; color: rgba(90,82,70,.55);
+  margin-right: 6px; text-transform: none;
 }
 .fv-sub {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 9px; border-radius: 999px; cursor: pointer;
-  border: 1px solid rgba(28,24,18,.1); background: rgba(255,255,255,.6);
-  color: var(--sub); font-size: 11.5px; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: 12px; cursor: pointer;
+  border: 1px solid rgba(28,24,18,.12); background: rgba(255,255,255,.72);
+  color: var(--txt); font-size: 14.5px; font-weight: 600; font-family: inherit;
   transition: border-color .2s ease, background .2s ease, color .2s ease, transform .2s var(--fv-ease);
 }
 .fv-sub i {
-  font-style: normal; font-size: 10px; color: rgba(90,82,70,.6);
+  font-style: normal; font-size: 12.5px; font-weight: 600; color: rgba(90,82,70,.72);
   font-variant-numeric: tabular-nums;
 }
 .fv-sub:hover { border-color: rgba(156,139,116,.55); color: var(--txt); transform: translateY(-1px); }
@@ -5262,6 +5232,47 @@ html, body{
 .fv-sub.is-drop {
   border-color: #c8a45c; background: rgba(200,164,92,.22);
   transform: translateY(-1px) scale(1.03);
+}
+
+/* 6.3) 边缘拖拽栏：贴在左栏最外侧，贯穿上下一整条。
+       上半格 = 上装，下半格 = 下装；拖到这里松手即归类，点一下则批量归类当前范围。 */
+.fv-d-rail {
+  flex: 0 0 52px; width: 52px; min-width: 52px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px 0 10px;
+  align-self: stretch;
+}
+.fv-d-rail-z {
+  flex: 1 1 50%; min-height: 120px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 0;
+  border: 1.5px dashed rgba(156,139,116,.5); border-radius: 16px;
+  background: rgba(255,255,255,.5);
+  color: rgba(104,90,72,.92);
+  font-family: inherit; font-size: 15px; font-weight: 700; letter-spacing: .2em;
+  writing-mode: vertical-rl; text-orientation: upright;
+  cursor: pointer; user-select: none;
+  transition: border-color .2s ease, background .2s ease, color .2s ease, transform .28s var(--fv-ease);
+}
+.fv-d-rail-z span { line-height: 1; }
+.fv-d-rail-z i {
+  writing-mode: horizontal-tb; font-style: normal;
+  font-size: 13px; font-weight: 600; color: rgba(120,104,84,.75);
+  font-variant-numeric: tabular-nums; letter-spacing: 0;
+}
+.fv-d-rail-z:hover { border-color: rgba(156,139,116,.85); background: rgba(255,255,255,.78); }
+.fv-d-rail-z.is-on {
+  border-style: solid; border-color: #c8a45c; background: rgba(200,164,92,.16); color: #8b6b28;
+}
+.fv-d-rail-z.is-on i { color: #8b6b28; }
+.fv-d-rail-z.is-drop {
+  border-style: solid; border-color: #c8a45c; background: rgba(200,164,92,.26);
+  color: #74580f; transform: scale(1.015);
+  box-shadow: 0 10px 24px -14px rgba(150,118,52,.65);
+}
+@media (max-width: 720px) {
+  .fv-d-rail { flex-basis: 44px; width: 44px; min-width: 44px; }
+  .fv-d-rail-z { font-size: 13.5px; min-height: 96px; border-radius: 13px; }
 }
 
 /* 6.1) 二分类未启用（数据库还没加 sub_cat 列）时的说明条 */
@@ -5294,7 +5305,6 @@ html, body{
     opacity: 1; transform: none;
   }
   .fv-d-cell::after, .fv-card::after { opacity: 1; }
-  .fv-d-subseg, .fv-subseg { opacity: 1; transform: translate(-50%, 0) scale(1); pointer-events: auto; }
 }
 
 /* 8) 尊重"减少动效" */
@@ -5302,7 +5312,7 @@ html, body{
   .fv-d-cell figcaption, .fv-card .fv-cap,
   .fv-d-cell .fv-d-tag, .fv-card .fv-d-tag,
   .fv-d-cell .fv-d-meta, .fv-card .fv-meta,
-  .fv-d-subseg, .fv-subseg, .fv-d-cell::after, .fv-card::after {
+  .fv-d-cell::after, .fv-card::after, .fv-d-rail-z {
     transition-duration: .01ms;
   }
 }
