@@ -165,6 +165,30 @@
       + '</figure>';
   }
 
+  /* 块内再按 上装 / 下装 分行（与收藏抽屉口径一致）：
+     整块都还没归二分类时不插行头；已在二分类筛选里时也不再分行。 */
+  function subRows(list, mode) {
+    var bucket = { top: [], bottom: [], none: [] };
+    (list || []).forEach(function (it) {
+      var v = subOf(it);
+      bucket[v === "top" ? "top" : (v === "bottom" ? "bottom" : "none")].push(it);
+    });
+    /* ST.sub 在收藏页里默认是空串（表示"全部"），抽屉里是 "all"，两种都要认 */
+    var allSub = (ST.sub === "all" || !ST.sub);
+    var mixed = allSub && (bucket.top.length || bucket.bottom.length);
+    if (!mixed) return '<div class="fv-grid">' + list.map(cardHtml).join("") + '</div>';
+    var rows = [{ k: "top", name: "上装" }, { k: "bottom", name: "下装" }, { k: "none", name: "未分" }];
+    return rows.map(function (r) {
+      var arr = bucket[r.k];
+      if (!arr.length) return "";
+      return '<div class="fv-subrow" data-subrow="' + r.k + '">'
+        + '<div class="fv-subrow-h"><span class="fv-subrow-t">' + r.name + '</span>'
+        + '<span class="fv-subrow-n">' + arr.length + ' 张</span></div>'
+        + '<div class="fv-grid">' + arr.map(cardHtml).join("") + '</div>'
+        + '</div>';
+    }).join("");
+  }
+
   function catBlockHtml(g, idx, mode) {
     var color = colorOf(g.cat, g.idx != null ? g.idx : idx);
     var n = g.items.length;
@@ -187,7 +211,7 @@
       +     '<span class="fv-catname">' + esc(g.cat.name) + '</span>'
       +     '<em class="fv-catn">' + n + ' 张</em>'
       +   '</div>'
-      +   '<div class="fv-grid">' + g.items.map(cardHtml).join("") + '</div>'
+      +   subRows(g.items, mode)
       + '</div>';
   }
 
@@ -210,7 +234,7 @@
     return ''
       + '<div class="fv-catblock is-none" data-cat="">'
       +   '<div class="fv-cathead"><i class="fv-dot is-empty"></i><span class="fv-catname">未分类</span><em class="fv-catn">' + list.length + ' 张</em></div>'
-      +   '<div class="fv-grid">' + list.map(cardHtml).join("") + '</div>'
+      +   subRows(list, mode)
       + '</div>';
   }
 
@@ -413,6 +437,8 @@
     if (ea) ea.disabled = !weeks.length;
     var ca = $("#fv-collapse-all");
     if (ca) ca.disabled = !weeks.length;
+    var ex = $("#fv-export");
+    if (ex && ex.getAttribute("data-busy") !== "1") ex.disabled = !ST.items.length;
   }
 
   /* ---------------- 地址栏记忆：刷新后停在同一分类 / 同一二分类 / 平铺展开状态 ---------------- */
@@ -549,6 +575,37 @@
   /* ============================================================
    * 五、事件
    * ============================================================ */
+  /* ---------------- 整张导出：收藏周报（所有登录用户可用，不限管理员） ----------------
+     导出的是「全部收藏」，不是当前筛选后的一屏——周报要的是完整，筛选只是看的时候方便。 */
+  function doExport() {
+    var btn = $("#fv-export");
+    if (!btn || btn.getAttribute("data-busy") === "1") return;
+    var label = "导出周报（整张高清图）";
+    function reset(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, ms || 2600);
+      btn.removeAttribute("data-busy");
+    }
+    if (!window.FavExport || !FavExport.exportPng) { reset("导出组件未加载，请刷新页面", 3200); return; }
+    if (!ST.items.length) { reset("还没有收藏，先把图拖进来", 2600); return; }
+
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+    btn.textContent = "正在排版…";
+
+    FavExport.exportPng(ST.items, ST.cats, { scale: 2, onProgress: function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; } })
+      .then(function (res) {
+        FavExport.download(res.blob, FavExport.fileName(new Date()));
+        btn.textContent = "已导出 " + res.count + " 张" + (res.failed ? " · " + res.failed + " 张未取到" : "");
+        btn.disabled = false;
+        setTimeout(function () { btn.textContent = label; }, 3000);
+        btn.removeAttribute("data-busy");
+      })
+      .catch(function (err) {
+        reset((err && err.message) ? err.message : "导出失败，请重试", 3400);
+      });
+  }
+
   function bind() {
     var body = $("#fv-body");
     if (!body) return;
@@ -716,6 +773,8 @@
     if (ea) ea.onclick = function () { expandAll(true); };
     var ca = $("#fv-collapse-all");
     if (ca) ca.onclick = function () { ST.flat = {}; render(); };
+    var eb = $("#fv-export");
+    if (eb) eb.onclick = doExport;
 
     /* 新建分类 */
     var nb = $("#fv-new"), nbox = $("#fv-newbox"), nin = $("#fv-newname");

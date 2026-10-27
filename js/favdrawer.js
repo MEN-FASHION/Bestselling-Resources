@@ -109,6 +109,7 @@
         +     '<div class="fv-d-sub" id="fv-d-sub"></div>'
         +   '</div>'
         +   '<div class="fv-d-acts">'
+        +     '<button type="button" class="fv-d-exp" id="fv-d-exp" title="把全部收藏按「期次 → 类目 → 上装/下装 → 元素」排成一张高清长图导出">导出</button>'
         +     '<button type="button" class="fv-d-ic" id="fv-d-flat" aria-label="平铺"></button>'
         +     '<button type="button" class="fv-d-ic" id="fv-d-full" aria-label="全屏"></button>'
         +     '<button type="button" class="fv-d-x" id="fv-d-x" aria-label="收起">' + SVG.close + '</button>'
@@ -135,6 +136,32 @@
       $("#fv-d-x").addEventListener("click", function () { close(); });
       $("#fv-d-full").addEventListener("click", function () { setView(ST.view === "full" ? "drawer" : "full"); });
       $("#fv-d-flat").addEventListener("click", function () { setFlat(!ST.flat); });
+
+      /* 整张导出：抽屉里也能直接用（所有登录用户，不限管理员） */
+      var expBtn = $("#fv-d-exp");
+      if (expBtn) expBtn.addEventListener("click", async function () {
+        if (expBtn.getAttribute("data-busy") === "1") return;
+        if (!window.FavExport || !FavExport.exportPng) { toast("导出组件未加载，请刷新页面"); return; }
+        if (!ST.items.length) { toast("还没有收藏，先把图拖进来"); return; }
+        expBtn.setAttribute("data-busy", "1");
+        expBtn.disabled = true;
+        expBtn.textContent = "排版中";
+        try {
+          var res = await FavExport.exportPng(ST.items, ST.cats, {
+            scale: 2,
+            onProgress: function (a, b) { expBtn.textContent = "图 " + a + "/" + b; },
+          });
+          FavExport.download(res.blob, FavExport.fileName(new Date()));
+          toast("已导出 " + res.count + " 张，PNG 已开始下载");
+          expBtn.textContent = "已导出";
+          setTimeout(function () { expBtn.textContent = "导出"; expBtn.disabled = false; }, 2600);
+        } catch (err) {
+          toast((err && err.message) ? err.message : "导出失败，请重试");
+          expBtn.textContent = "导出";
+          expBtn.disabled = false;
+        }
+        expBtn.removeAttribute("data-busy");
+      });
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
         if (!ST.open) return;
@@ -211,6 +238,46 @@
     return (v === "top" || v === "bottom") ? v : null;
   }
   function subName(v) { return v === "top" ? "上装" : (v === "bottom" ? "下装" : "未分"); }
+
+  /* 块内再按 上装 / 下装 分行：
+     · 某个分类里既有上装又有下装时，各起一行，行头写明"上装 3"，一眼能数清；
+     · 整块一张都还没归二分类时，不插行头（否则每块都顶一行"未分"，版面被撑散）；
+     · 当前已在二分类筛选里（只看上装/只看下装）时也不再分行——范围已经限定，行头是废话。 */
+  function subRowsHtml(items, opts) {
+    opts = opts || {};
+    var rows = [
+      { k: "top", name: "上装" },
+      { k: "bottom", name: "下装" },
+      { k: null, name: "未分" }
+    ];
+    var bucket = { top: [], bottom: [], none: [] };
+    (items || []).forEach(function (it) {
+      var v = subOf(it);
+      bucket[v === "top" ? "top" : (v === "bottom" ? "bottom" : "none")].push(it);
+    });
+    var allSub = (ST.sub === "all" || !ST.sub);
+    var mixed = allSub && (bucket.top.length || bucket.bottom.length);
+    var h = "";
+    if (!mixed) {
+      h += '<div class="fv-d-grid">';
+      items.forEach(function (it) { h += cellHtml(it, { drag: opts.canDrag, i: opts.nextI() }); });
+      h += '</div>';
+      return h;
+    }
+    rows.forEach(function (r) {
+      var arr = bucket[r.k === "top" ? "top" : (r.k === "bottom" ? "bottom" : "none")];
+      if (!arr.length) return;                 /* 空行不画：没内容的一行只会白占高度 */
+      h += '<div class="fv-d-subrow is-droppable" data-subrow="' + (r.k == null ? "none" : r.k) + '">';
+      h += '<div class="fv-d-subrow-h">'
+        + '<span class="fv-d-subrow-t">' + r.name + '</span>'
+        + '<span class="fv-d-subrow-n">' + arr.length + ' 张</span>'
+        + '</div>';
+      h += '<div class="fv-d-grid">';
+      arr.forEach(function (it) { h += cellHtml(it, { drag: opts.canDrag, i: opts.nextI() }); });
+      h += '</div></div>';
+    });
+    return h;
+  }
 
   /* 先按分类筛，再按上装/下装筛——两个条件是"与"关系，切分类不该重置二分类 */
   function filtered() {
@@ -857,9 +924,8 @@
             + '<span class="fv-d-catblk-nm">' + esc(grp.name) + '</span>'
             + '<span class="fv-d-catblk-n">' + grp.items.length + ' 张</span>'
             + '</div>';
-          h += '<div class="fv-d-grid">';
-          grp.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
-          h += '</div></div>';
+          h += subRowsHtml(grp.items, { canDrag: canDrag, nextI: nextI });
+          h += '</div>';
         });
         if (cg.others.length) {
           h += '<div class="fv-d-catblk is-droppable is-none" data-catblk-none="1">';
@@ -868,9 +934,8 @@
             + '<span class="fv-d-catblk-nm">未分类</span>'
             + '<span class="fv-d-catblk-n">' + cg.others.length + ' 张</span>'
             + '</div>';
-          h += '<div class="fv-d-grid">';
-          cg.others.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
-          h += '</div></div>';
+          h += subRowsHtml(cg.others, { canDrag: canDrag, nextI: nextI });
+          h += '</div>';
         }
         if (!cg.groups.length && !cg.others.length) {
           h += '<div class="fv-d-flat-none">这一周还没有收藏。</div>';
@@ -883,6 +948,26 @@
     bindSubBar(box);
     all(".fv-d-flat, .fv-d-flat-band, [data-flat-none], [data-catblk], [data-catblk-none]", box).forEach(function (el) {
       bindDropTarget(el, catDropValue(el));
+    });
+    /* 行本身也是"上装/下装"的放置目标：把图拖到「下装」那一行就归为下装 */
+    all("[data-subrow]", box).forEach(function (el) {
+      var k = el.getAttribute("data-subrow");
+      if (k === "none") k = null;
+      el.addEventListener("dragover", function (e) {
+        if (ST.dragId == null) return;
+        e.preventDefault(); e.stopPropagation();
+        if (e.dataTransfer) { try { e.dataTransfer.dropEffect = "move"; } catch (x) { } }
+        el.classList.add("is-drop");
+      });
+      el.addEventListener("dragleave", function () { el.classList.remove("is-drop"); });
+      el.addEventListener("drop", function (e) {
+        el.classList.remove("is-drop");
+        if (ST.dragId == null) return;
+        e.preventDefault(); e.stopPropagation();
+        var id = ST.dragId;
+        clearDragState(id);
+        setSub(id, k);
+      });
     });
   }
 

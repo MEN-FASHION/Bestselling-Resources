@@ -4477,6 +4477,20 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-d-ic:hover, .fv-d-x:hover{ background: rgba(28,24,18,.06); color: var(--txt); }
 .fv-d-ic:active, .fv-d-x:active{ transform: scale(.92); }
 .fv-d-ic.is-on{ background: rgba(156,139,116,.18); color: var(--gold); }
+
+/* 抽屉头部「导出」：文字按钮，比图标更明确（点了会出图并下载，不是开关） */
+.fv-d-exp{
+  height: 28px; padding: 0 11px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: #fff; color: var(--sub);
+  font: 600 12.5px/1 inherit; letter-spacing: .2px;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color .22s ease, color .22s ease, background .22s ease, transform .22s var(--fv-spring);
+}
+.fv-d-exp:hover{ border-color: var(--gold); color: var(--gold); background: rgba(156,139,116,.07); }
+.fv-d-exp:active{ transform: scale(.96); }
+.fv-d-exp:disabled{ opacity: .55; cursor: default; }
+.fv-d-exp[data-busy="1"]{ border-color: var(--gold); color: var(--gold); }
 .fv-d-ic:focus-visible, .fv-d-x:focus-visible, .fv-tab:focus-visible{
   outline: 2px solid rgba(156,139,116,.55); outline-offset: 2px;
 }
@@ -5865,3 +5879,39 @@ html, body{
 .fv-d-catblk.is-droppable:hover .fv-d-catblk-nm { color: #8b6b28; }
 .fv-d-catblk.is-drop { background: rgba(200,164,92,.07); border-radius: 12px; }
 .fv-d-catblk.is-none .fv-d-catblk-nm { color: rgba(90,80,66,.85); }
+
+/* ============================================================
+ * 6.12) 分类块内部按 上装 / 下装 分行（20261027D）
+ *      · 行头很小、贴左，不抢图的注意力，只用来分隔
+ *      · 行与行之间一条虚线，读的时候不会串
+ * ============================================================ */
+.fv-d-subrow { margin: 0 0 10px; }
+.fv-d-subrow:last-child { margin-bottom: 0; }
+.fv-d-subrow + .fv-d-subrow { padding-top: 9px; border-top: 1px dashed rgba(28,24,18,.07); }
+.fv-d-subrow-h {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 1px 6px;
+}
+.fv-d-subrow-t {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
+  color: rgba(120,104,84,.95);
+}
+.fv-d-subrow[data-subrow="top"] .fv-d-subrow-t { color: #96702a; }
+.fv-d-subrow[data-subrow="bottom"] .fv-d-subrow-t { color: #7b736a; }
+.fv-d-subrow[data-subrow="none"] .fv-d-subrow-t { color: rgba(120,110,96,.7); }
+.fv-d-subrow-n {
+  font-size: 10.5px; font-weight: 600; color: rgba(130,116,98,.75);
+  font-variant-numeric: tabular-nums;
+}
+.fv-d-subrow.is-drop { background: rgba(200,164,92,.08); border-radius: 10px; }
+
+/* 收藏页：块内上装 / 下装分行 */
+.fv-subrow { margin: 0 0 10px; }
+.fv-subrow:last-child { margin-bottom: 0; }
+.fv-subrow + .fv-subrow { padding-top: 9px; border-top: 1px dashed rgba(28,24,18,.07); }
+.fv-subrow-h { display: flex; align-items: center; gap: 6px; padding: 0 1px 6px; }
+.fv-subrow-t { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; color: rgba(120,104,84,.95); }
+.fv-subrow[data-subrow="top"] .fv-subrow-t { color: #96702a; }
+.fv-subrow[data-subrow="bottom"] .fv-subrow-t { color: #7b736a; }
+.fv-subrow[data-subrow="none"] .fv-subrow-t { color: rgba(120,110,96,.7); }
+.fv-subrow-n { font-size: 10.5px; font-weight: 600; color: rgba(130,116,98,.75); font-variant-numeric: tabular-nums; }

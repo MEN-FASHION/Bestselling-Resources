@@ -48,6 +48,7 @@
 | `plus-match.js` | 大码/标码「同款」判定（图指纹 + 标题 + 可选语义向量） |
 | `fav.js` | 我的收藏（独立页 fav.html） |
 | `favdrawer.js` | 右侧收藏抽屉 + 全屏工作台 |
+| `favexport.js` | 收藏周报整张高清导出（类目 / 上下装 / 元素排成一张长图，所有登录用户可用） |
 | `favfan.js` | 拖动时贴着拖动方向弹出的分类菜单 |
 | `trends.js` / `marketing.js` | 趋势专区 / 营销日历 |
 | `report.js` / `weekreport.js` | 生成报告：PDF·PPT / 周对比 PPT |
