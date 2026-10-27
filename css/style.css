@@ -2262,6 +2262,13 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   max-height: 62%; overflow: hidden;
 }
 .rk-card:hover .rk-cardtags{ display: flex; }
+/* 打标覆盖率提示条（20261027M）：让用户一眼看出「标进到前台了没」，不必逐张悬停 */
+.rk-covnote{
+  margin: 0 0 10px; padding: 7px 11px; border-radius: 8px;
+  font-size: 12px; line-height: 1.6; color: var(--sub);
+  background: rgba(139,115,85,.07); border: 1px solid rgba(139,115,85,.18);
+}
+.rk-covnote b{ color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rk-cardtags i{
   font-style: normal; font-size: 10px; line-height: 1.55; letter-spacing: .1px;
   color: #fff; background: rgba(255,255,255,.17);

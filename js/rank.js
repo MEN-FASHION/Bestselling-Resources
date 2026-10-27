@@ -58,6 +58,7 @@
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
   var MOVE_SCOPE = "all";
   var ONLY = "off";          /* 只看标签：off | up（位次上升）| new（新上榜）——仅纵向·时间对比有效 */
+  var TAGGED = "off";        /* 打标筛选：off（全部）| yes（只看已打标）| no（只看未打标）——任何模式都有效 */
   var EXPORT_ITEMS = [];     /* 当前屏幕上这批图（含位次标签），供「导出 PPT」范围说明使用 */
 
   /* 某期某张图的位次标签（与卡片上「上升 N 位 / 下降 N 位 / 新上榜」同源）：
@@ -85,6 +86,23 @@
     if (ONLY === "new") return s === "新上榜";
     return s.indexOf("上升") === 0;                 /* 位次上升（含「上升 N 位」） */
   }
+  /* 这张图有没有打标数据（六个维度任一非空）。用 TAG_INDEX，与卡片浮层同源。 */
+  function hasTagData(it) {
+    var u = String((it && it.image_url) || "");
+    var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
+    return !!(t && cardTagList(t).length);
+  }
+  function hitTagged(it) {
+    return TAGGED === "off" ? true : (hasTagData(it) === (TAGGED === "yes"));
+  }
+  /* 打标覆盖率：用户不想一张张悬停去数，这里直接给出「本视图共几张、几张有标」 */
+  function coverageOf() {
+    var items = (CACHE && CACHE.items) || [];
+    var total = items.length, has = 0;
+    items.forEach(function (it) { if (hasTagData(it)) has++; });
+    return { total: total, has: has, pct: total ? Math.round(has / total * 100) : 0 };
+  }
+
   /* 导出图片 / PPT 时写进文件名与封面的范围文字 */
   function exportScope() {
     var parts = [MODE === "c" ? ("类目 " + (activeCats().join(" / ") || "未选")) : (CAT || "全部类目")];
@@ -539,6 +557,15 @@
         '</div></div>'
       : "";
 
+    /* 打标筛选：任何模式都可用。用户要「一眼确认标有没有进前台」，
+       不必一张张悬停去数 —— 选「只看已打标」就能把有标的图单独挑出来。 */
+    var taggedGroup =
+      '<div class="tag-group"><span class="tag-group-name">打标筛选（按是否已打标筛图，任何模式都有效）</span><div class="tag-chips" id="rk-g-tagged">' +
+        chip("off", "全部", TAGGED === "off", "data-tagged") +
+        chip("yes", "只看已打标", TAGGED === "yes", "data-tagged") +
+        chip("no", "只看未打标", TAGGED === "no", "data-tagged") +
+      '</div></div>';
+
     /* 趋势标签 + 排序 / 图幅 / 位次排序 全部并列在同一排直接展示，无需再点开 */
     var mergedRow =
       '<div class="tag-group"><span class="tag-group-name">趋势标签 / 排序（均为单选）</span><div class="tag-chips" id="rk-g-merge">' +
@@ -573,12 +600,20 @@
       catsGroup +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "v" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
-      mergedRow + onlyGroup;
+      mergedRow + taggedGroup + onlyGroup;
 
     bindPanel();
   }
 
   function bindPanel() {
+    var tagBox0 = $("#rk-g-tagged");
+    if (tagBox0) Array.prototype.forEach.call(tagBox0.querySelectorAll("[data-tagged]"), function (b) {
+      b.onclick = function () {
+        var v = b.getAttribute("data-tagged");
+        TAGGED = v;
+        renderPanel(); renderSummary(); renderBody();
+      };
+    });
     var modeBox = $("#rk-g-mode");
     if (modeBox) Array.prototype.forEach.call(modeBox.querySelectorAll("[data-mode]"), function (b) {
       b.onclick = function () {
@@ -1122,6 +1157,7 @@
         if (ONLY !== "off" && prevC) {
           list = list.filter(function (it) { return hitOnly(moveOf(it, pC, prevC, hasOf, rankOf)); });
         }
+        if (TAGGED !== "off") list = list.filter(hitTagged);
         if (list.length > maxLen) maxLen = list.length;
         var metaC = siteC + (prevC ? (" · 较上一周（" + prevC + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
         if (ONLY !== "off") metaC += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
@@ -1200,6 +1236,7 @@
         if (ONLY !== "off" && prev) {
           list = list.filter(function (it) { return hitOnly(moveOf(it, p, prev, hasOf, rankOf)); });
         }
+        if (TAGGED !== "off") list = list.filter(hitTagged);
         if (list.length > maxLen) maxLen = list.length;
         var meta = site + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
         if (ONLY !== "off") meta += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
@@ -1469,7 +1506,7 @@
         (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
         fin();
         paintCardTags();                     /* 卡片悬停浮层：标签到位后再补画 */
-        if (MODE === "c") renderBody();      /* 标签到位后补上「拍摄方式 / 元素」两栏 */
+        renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
       }, function () { fin(); });
     } catch (e) { fin(); }
   }
@@ -1501,9 +1538,10 @@
       var pVIT = periods[periods.length - 1] || "";
       var VIT = vitalsOf(CACHE.items, pVIT);
       vit = vitalsHtml(VIT);
-      paintCardTags(box);             /* 卡片悬停浮层：重建卡片后立刻补画已有标签 */
-      ensureTags(CACHE.items);        /* 拍摄方式 / 元素：有打标就补上，没有就只显示三档占比 */
     }
+    /* 打标数据与展示模式无关：以前只在「类目对比」里调用 ensureTags，
+       结果普通的时间对比模式下标签压根没去取，卡片浮层自然永远不出。 */
+    ensureTags(CACHE.items);
     var R = buildPools(CAP);
     if (ONLY !== "off" && !R.kept) {
       box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
@@ -1524,6 +1562,13 @@
       html += '<div class="rk-dropnote">' + _dtxt + '，'
         + '剩余 <b>' + R.cols + '</b> 列已铺满宽度。</div>';
     }
+    var cov = coverageOf();
+    if (cov.total) {
+      var covTxt = '本视图共 <b>' + cov.total + '</b> 张图，其中 <b>' + cov.has + '</b> 张已打标（' + cov.pct + '%）';
+      if (!cov.has) covTxt += ' —— 一张都没有读到标签：请先确认后台「导出打标表 → 回填」是否真的写入，以及数据库补丁是否已执行。';
+      else if (TAGGED === "off") covTxt += '；点上方「只看已打标」可只显示这部分图。';
+      html += '<div class="rk-covnote">' + covTxt + '</div>';
+    }
     html += vit + '<div class="rk-pools" id="rk-pools">' + R.html + '</div>';
     var maxLen = R.maxLen;
 
@@ -1531,6 +1576,7 @@
       html += '<div class="rk-more-wrap"><button type="button" class="rk-loadmore" id="rk-loadmore">展开更多（已展示 ' + CAP + ' / 最多 ' + maxLen + '）</button></div>';
     }
     box.innerHTML = html;
+    paintCardTags(box);          /* 卡片刚生成，这里补画悬停标签（必须放在赋值之后） */
 
     var more = $("#rk-loadmore");
     if (more) more.onclick = function () {
