@@ -2138,6 +2138,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rank-site-del:hover { color: #c0392b; }
 .rank-site-defaults { display: flex; flex-wrap: wrap; gap: 10px 16px; }
 .rank-file-tip { margin-top: 8px; font-size: 13px; color: var(--sub); }
+.rank-file-tip.good { color: #2e7d32; }
+.rank-file-tip.bad { color: #c0392b; }
 .rank-preview { margin-top: 10px; }
 .rank-kv { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 0; font-size: 13px; color: var(--sub); }
 .rank-kv b { color: var(--ink); }

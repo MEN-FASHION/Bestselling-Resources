@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261027H">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027H">
+<link rel="stylesheet" href="css/style.css?v=20261027J">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027J">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -955,17 +955,75 @@
         </section>
 
         <section class="rkadm-sec">
+          <h4>① 导出打标表</h4>
+          <p class="hint">
+            导出属于管理动作，只在这里提供（前台不再有导出按钮）。一张图一行，标签列带出已打过的标，
+            另附「打标状态」列。<b>默认只导未打标的图</b>，所以导过一次、打完再导，不会把打过的又混进来。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>导出范围</span>
+              <select id="rank-export-scope">
+                <option value="todo" selected>仅未打标（推荐）</option>
+                <option value="partial">仅打标不完整</option>
+                <option value="done">仅已打标（核对 / 改错用）</option>
+                <option value="all">全部（含已打标）</option>
+              </select>
+            </label>
+            <label class="rank-field">
+              <span>类目（可选）</span>
+              <select id="rank-export-cat"><option value="">全部类目</option></select>
+            </label>
+            <label class="rank-field">
+              <span>关键词（可选，匹配图片URL / 类目 / 叶子类目）</span>
+              <input id="rank-export-kw" type="text" placeholder="例如某个图片地址片段">
+            </label>
+          </div>
+          <div class="rank-inline">
+            <button id="rank-export-preview" class="btn-ghost" type="button">先看会导出多少张</button>
+            <button id="rank-export-btn" class="btn-primary" type="button">导出打标表</button>
+          </div>
+          <div id="rank-export-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
           <h4>② 打标结果回填</h4>
           <p class="hint">
-            先把「导出数据」得到的表格拿去打标（表头保持不变，标签列直接填文字，多个值用逗号分隔），
-            再把填好的表格传到这里。<b>按「图片URL」精确匹配</b>榜单里的图：对不上的行不写入、单独计数；
-            枚举外的标签值也不写入，会在下面列出。写入带批次号，可按批次回滚。
+            把打好的表格传到这里。<b>按「图片URL」精确匹配</b>榜单里的图：对不上的行不写入、单独计数；
+            枚举外的标签值也不写入。
           </p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>写入模式</span>
+              <select id="rank-tag-mode">
+                <option value="fill" selected>补齐空白（已有值不动，重复导入无副作用）</option>
+                <option value="overwrite">覆盖同名列（改错用：填什么写什么）</option>
+              </select>
+            </label>
+            <label class="rank-field">
+              <span>覆盖模式的附加选项</span>
+              <label class="chk"><input id="rank-tag-clear-empty" type="checkbox" disabled> 空单元格也清空已有标签（删错标用）</label>
+            </label>
+          </div>
           <div class="rank-inline">
             <input id="rank-tag-file" type="file" accept=".xlsx,.xls,.csv">
             <button id="rank-tag-import" class="btn-primary" type="button" disabled>写入标签</button>
           </div>
           <div id="rank-tag-file-tip" class="rank-file-tip"></div>
+          <div id="rank-tag-plan-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>③ 批次与撤回</h4>
+          <p class="hint">
+            每次回填都会留下一条批次记录。<b>撤回会把该次改动前的标签写回去</b>（新建的图会退回空标签）；
+            如果某个字段在那之后又被人改过，撤回会跳过它、不覆盖新的改动。
+          </p>
+          <div class="rank-inline">
+            <button id="rank-tag-batch-refresh" class="btn-ghost" type="button">刷新批次</button>
+          </div>
+          <div id="rank-tag-batch-tip" class="rank-file-tip"></div>
+          <div id="rank-tag-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
         </section>
 
         <section class="rkadm-sec">
@@ -1378,34 +1436,34 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261027H"></script>
-  <script src="vendor/quill.js?v=20261027H"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261027H"></script>
-  <script src="vendor/qrcode.min.js?v=20261027H"></script>
-  <script src="js/config.js?v=20261027H"></script>
-  <script src="js/supabase.js?v=20261027H"></script>
-  <script src="js/track-menu.js?v=20261027H"></script>
+  <script src="vendor/supabase.js?v=20261027J"></script>
+  <script src="vendor/quill.js?v=20261027J"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261027J"></script>
+  <script src="vendor/qrcode.min.js?v=20261027J"></script>
+  <script src="js/config.js?v=20261027J"></script>
+  <script src="js/supabase.js?v=20261027J"></script>
+  <script src="js/track-menu.js?v=20261027J"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261027H"></script>
-  <script src="js/admin.js?v=20261027H"></script>
-  <script src="js/admin-images.js?v=20261027H"></script>
-  <script src="js/admin-smart.js?v=20261027H"></script>
-  <script src="js/admin-trend.js?v=20261027H"></script>
-  <script src="js/admin-notice.js?v=20261027H"></script>
-  <script src="js/marketing-data.js?v=20261027H"></script>
-  <script src="js/admin-festival.js?v=20261027H"></script>
-  <script src="js/admin-tasks.js?v=20261027H"></script>
-  <script src="js/admin-bestseller.js?v=20261027H"></script>
-  <script src="js/admin-perm.js?v=20261027H"></script>
-  <script src="js/admin-pool.js?v=20261027H"></script>
-  <script src="js/rankexport.js?v=20261027H"></script>
-  <script src="js/admin-rankimport.js?v=20261027H"></script>
-  <script src="js/admin-rank.js?v=20261027H"></script>
-  <script src="js/plus-sb.js?v=20261027H"></script>
-  <script src="js/plus-match.js?v=20261027H"></script>
-  <script src="js/admin-plus.js?v=20261027H"></script>
-  <script src="js/admin-insight.js?v=20261027H"></script>
-  <script src="js/admin-backup.js?v=20261027H"></script>
+  <script src="js/admin-dialog.js?v=20261027J"></script>
+  <script src="js/admin.js?v=20261027J"></script>
+  <script src="js/admin-images.js?v=20261027J"></script>
+  <script src="js/admin-smart.js?v=20261027J"></script>
+  <script src="js/admin-trend.js?v=20261027J"></script>
+  <script src="js/admin-notice.js?v=20261027J"></script>
+  <script src="js/marketing-data.js?v=20261027J"></script>
+  <script src="js/admin-festival.js?v=20261027J"></script>
+  <script src="js/admin-tasks.js?v=20261027J"></script>
+  <script src="js/admin-bestseller.js?v=20261027J"></script>
+  <script src="js/admin-perm.js?v=20261027J"></script>
+  <script src="js/admin-pool.js?v=20261027J"></script>
+  <script src="js/rankexport.js?v=20261027J"></script>
+  <script src="js/admin-rankimport.js?v=20261027J"></script>
+  <script src="js/admin-rank.js?v=20261027J"></script>
+  <script src="js/plus-sb.js?v=20261027J"></script>
+  <script src="js/plus-match.js?v=20261027J"></script>
+  <script src="js/admin-plus.js?v=20261027J"></script>
+  <script src="js/admin-insight.js?v=20261027J"></script>
+  <script src="js/admin-backup.js?v=20261027J"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

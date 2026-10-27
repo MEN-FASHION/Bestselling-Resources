@@ -2432,6 +2432,89 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "回滚失败");
       return true;
     },
+
+    /* ============================================================
+     * 打标批次台账 + 改动历史（20261027J）
+     * ------------------------------------------------------------
+     * 为什么要有这两张表：
+     *   以前只知道"这张图是哪个批次写的"，所以只能整批清空。
+     *   清空不是撤回 —— 某张图若在前一批已打过标、后一批又覆盖过，
+     *   清掉后一批会把它变成空标签，前一批的标也跟着没了。
+     *   现在每改一个字段就记一条 before/after，撤回时按 before 写回，
+     *   且只回滚「当前值仍等于当时写入值」的字段，后来人工改过的不动。
+     * ============================================================ */
+    async listRankTagBatches(limit) {
+      const { data, error } = await client.from("rank_tag_batches")
+        .select("batch_id,file_name,mode,scope,image_count,changed_count,field_count,skipped_count,unmatched_count,unknown_tags,status,note,created_at,reverted_at")
+        .order("created_at", { ascending: false })
+        .limit(limit || 60);
+      if (error) throw new Error(error.message || "读取打标批次失败");
+      return data || [];
+    },
+    async saveRankTagBatch(meta) {
+      const m = meta || {};
+      if (!m.batch_id) return false;
+      const row = {
+        batch_id: m.batch_id,
+        file_name: m.file_name || "",
+        mode: m.mode || "fill",
+        scope: m.scope || "",
+        image_count: m.image_count || 0,
+        changed_count: m.changed_count || 0,
+        field_count: m.field_count || 0,
+        skipped_count: m.skipped_count || 0,
+        unmatched_count: m.unmatched_count || 0,
+        unknown_tags: Array.isArray(m.unknown_tags) ? m.unknown_tags.slice(0, 200) : [],
+        status: m.status || "applied",
+        note: m.note || "",
+        created_by: m.created_by || null,
+      };
+      const { error } = await client.from("rank_tag_batches").upsert([row], { onConflict: "batch_id" });
+      if (error) throw new Error(error.message || "写入打标批次失败");
+      return true;
+    },
+    async updateRankTagBatch(batchId, patch) {
+      const b = String(batchId || "").trim();
+      if (!b) return false;
+      const { error } = await client.from("rank_tag_batches").update(patch || {}).eq("batch_id", b);
+      if (error) throw new Error(error.message || "更新打标批次失败");
+      return true;
+    },
+    /* 历史明细：一次导入可能上千条，分批写 */
+    async saveRankTagHistory(rows) {
+      const list = (rows || []).filter((r) => r && r.batch_id && r.image_url && r.field);
+      if (!list.length) return 0;
+      let n = 0;
+      for (let i = 0; i < list.length; i += 200) {
+        const chunk = list.slice(i, i + 200).map((r) => ({
+          batch_id: r.batch_id,
+          image_url: r.image_url,
+          field: r.field,
+          before_tags: Array.isArray(r.before_tags) ? r.before_tags : [],
+          after_tags: Array.isArray(r.after_tags) ? r.after_tags : [],
+        }));
+        const { error } = await client.from("rank_tag_history").insert(chunk);
+        if (error) throw new Error(error.message || "写入打标历史失败");
+        n += chunk.length;
+      }
+      return n;
+    },
+    async listRankTagHistory(batchId) {
+      const b = String(batchId || "").trim();
+      if (!b) return [];
+      const PAGE = 1000, MAX = 50000, out = [];
+      for (let from = 0; from < MAX; from += PAGE) {
+        const to = Math.min(from + PAGE, MAX) - 1;
+        const { data, error } = await client.from("rank_tag_history")
+          .select("image_url,field,before_tags,after_tags")
+          .eq("batch_id", b).order("id", { ascending: true }).range(from, to);
+        if (error) throw new Error(error.message || "读取打标历史失败");
+        const rows = data || [];
+        rows.forEach((r) => out.push(r));
+        if (rows.length < PAGE) break;
+      }
+      return out;
+    },
     /* 打标队列：榜单图（按地址去重），带出期次/站点/类目/叶子类目/位次
        filter: { category, period, site, limit } —— 不传即全部 */
     async listRankTagQueue(filter) {

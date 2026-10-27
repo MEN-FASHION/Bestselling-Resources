@@ -963,6 +963,15 @@
   async function enterRankPanel() {
     initRankPeriodPickers();
     await Promise.all([loadRankHidden(), loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups()]);
+    /* 打标相关（20261027J）：导出范围里的类目下拉 + 批次台账 */
+    const ecat = $("#rank-export-cat");
+    if (ecat) {
+      const keep = ecat.value;
+      ecat.innerHTML = '<option value="">全部类目</option>' +
+        rankCats.map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
+      if (keep && rankCats.indexOf(keep) >= 0) ecat.value = keep;
+    }
+    if (window.RankTagBatches) window.RankTagBatches.load();
     if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;
     fillRankPvControls();
