@@ -4491,6 +4491,24 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-d-exp:active{ transform: scale(.96); }
 .fv-d-exp:disabled{ opacity: .55; cursor: default; }
 .fv-d-exp[data-busy="1"]{ border-color: var(--gold); color: var(--gold); }
+
+/* 导出菜单：PNG / 网页 二选一（点空白处关闭） */
+.fv-d-expmenu{
+  position: fixed; z-index: 9999; min-width: 226px; padding: 6px;
+  background: #fff; border: 1px solid var(--line); border-radius: 13px;
+  box-shadow: 0 16px 38px rgba(38,30,20,.16), 0 2px 6px rgba(38,30,20,.06);
+  animation: fvMenuIn .18s cubic-bezier(.22,.61,.36,1) both;
+}
+@keyframes fvMenuIn{ from{ opacity: 0; transform: translateY(-5px) scale(.985); } to{ opacity: 1; transform: none; } }
+.fv-d-expmenu button{
+  display: block; width: 100%; text-align: left;
+  border: 0; background: none; border-radius: 9px;
+  padding: 9px 11px; cursor: pointer; font-family: inherit;
+  transition: background .16s ease;
+}
+.fv-d-expmenu button:hover{ background: rgba(156,139,116,.1); }
+.fv-d-expmenu button b{ display: block; font-size: 13px; font-weight: 600; color: var(--txt); }
+.fv-d-expmenu button span{ display: block; margin-top: 2px; font-size: 11.5px; color: var(--sub); }
 .fv-d-ic:focus-visible, .fv-d-x:focus-visible, .fv-tab:focus-visible{
   outline: 2px solid rgba(156,139,116,.55); outline-offset: 2px;
 }

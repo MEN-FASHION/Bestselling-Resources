@@ -439,6 +439,8 @@
     if (ca) ca.disabled = !weeks.length;
     var ex = $("#fv-export");
     if (ex && ex.getAttribute("data-busy") !== "1") ex.disabled = !ST.items.length;
+    var exh = $("#fv-export-html");
+    if (exh && exh.getAttribute("data-busy") !== "1") exh.disabled = !ST.items.length;
   }
 
   /* ---------------- 地址栏记忆：刷新后停在同一分类 / 同一二分类 / 平铺展开状态 ---------------- */
@@ -603,6 +605,36 @@
       })
       .catch(function (err) {
         reset((err && err.message) ? err.message : "导出失败，请重试", 3400);
+      });
+  }
+
+  /* 导出为「单个 HTML 文件」：双击就能看，自带筛选/搜索，不依赖本站 */
+  function doExportHtml() {
+    var btn = $("#fv-export-html");
+    if (!btn || btn.getAttribute("data-busy") === "1") return;
+    var label = "导出网页（单文件 HTML）";
+    function back(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, ms || 2600);
+      btn.removeAttribute("data-busy");
+    }
+    if (!window.FavExport || !FavExport.exportHtml) { back("导出组件未加载，请刷新页面", 3200); return; }
+    if (!ST.items.length) { back("还没有收藏，先把图拖进来", 2600); return; }
+
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+    btn.textContent = "正在生成网页…";
+
+    FavExport.exportHtml(ST.items, ST.cats)
+      .then(function (res) {
+        FavExport.download(res.blob, FavExport.htmlName(new Date()));
+        btn.textContent = "已导出网页 · " + res.count + " 张";
+        btn.disabled = false;
+        setTimeout(function () { btn.textContent = label; }, 3000);
+        btn.removeAttribute("data-busy");
+      })
+      .catch(function (err) {
+        back((err && err.message) ? err.message : "导出失败，请重试", 3400);
       });
   }
 
@@ -775,6 +807,8 @@
     if (ca) ca.onclick = function () { ST.flat = {}; render(); };
     var eb = $("#fv-export");
     if (eb) eb.onclick = doExport;
+    var eh = $("#fv-export-html");
+    if (eh) eh.onclick = doExportHtml;
 
     /* 新建分类 */
     var nb = $("#fv-new"), nbox = $("#fv-newbox"), nin = $("#fv-newname");

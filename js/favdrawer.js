@@ -53,6 +53,69 @@
     if (window.Common && Common.toast) { try { Common.toast(t); return; } catch (e) {} }
   }
 
+  /* 导出菜单：PNG（长图） / HTML（单文件网页） */
+  var expMenu = null;
+  function closeExportMenu() {
+    if (expMenu && expMenu.parentNode) expMenu.parentNode.removeChild(expMenu);
+    expMenu = null;
+    document.removeEventListener("click", onDocDown, true);
+  }
+  function onDocDown(ev) {
+    if (expMenu && !expMenu.contains(ev.target)) closeExportMenu();
+  }
+  function showExportMenu(btn) {
+    if (expMenu) { closeExportMenu(); return; }
+    if (!ST.items.length) { toast("还没有收藏，先把图拖进来"); return; }
+    if (!window.FavExport) { toast("导出组件未加载，请刷新页面"); return; }
+    var m = document.createElement("div");
+    m.className = "fv-d-expmenu";
+    m.innerHTML = '<button type="button" data-k="png"><b>整张图片（PNG）</b><span>一张高清长图，2 倍分辨率</span></button>'
+      + '<button type="button" data-k="html"><b>网页（单文件 HTML）</b><span>双击打开，可筛选 / 搜索 / 打印</span></button>';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect();
+    m.style.top = Math.round(r.bottom + 6) + "px";
+    m.style.left = Math.round(Math.min(r.left, window.innerWidth - m.offsetWidth - 12)) + "px";
+    expMenu = m;
+    setTimeout(function () { document.addEventListener("click", onDocDown, true); }, 0);
+
+    m.addEventListener("click", async function (ev) {
+      var b = ev.target.closest ? ev.target.closest("[data-k]") : null;
+      if (!b) return;
+      var kind = b.getAttribute("data-k");
+      closeExportMenu();
+      await runExport(kind, btn);
+    });
+  }
+  async function runExport(kind, btn) {
+    if (btn.getAttribute("data-busy") === "1") return;
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+    var old = "导出";
+    try {
+      if (kind === "html") {
+        btn.textContent = "生成网页";
+        var hr = await FavExport.exportHtml(ST.items, ST.cats);
+        FavExport.download(hr.blob, FavExport.htmlName(new Date()));
+        toast("已导出网页 · " + hr.count + " 张，可直接双击打开");
+      } else {
+        btn.textContent = "排版中";
+        var res = await FavExport.exportPng(ST.items, ST.cats, {
+          scale: 2,
+          onProgress: function (a, b) { btn.textContent = "图 " + a + "/" + b; },
+        });
+        FavExport.download(res.blob, FavExport.fileName(new Date()));
+        toast("已导出 " + res.count + " 张，PNG 已开始下载");
+      }
+      btn.textContent = "已导出";
+      setTimeout(function () { btn.textContent = old; btn.disabled = false; }, 2400);
+    } catch (err) {
+      toast((err && err.message) ? err.message : "导出失败，请重试");
+      btn.textContent = old;
+      btn.disabled = false;
+    }
+    btn.removeAttribute("data-busy");
+  }
+
   var COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f", "#8a6fa8", "#4f8f8a", "#a0685a"];
   /* 首次使用自动建好的五个默认大类（用户可改名、可删除；删了不会被自动塞回来） */
   var DEFAULT_CATS = ["印花", "面料", "图案", "工艺", "视觉"];
@@ -137,31 +200,14 @@
       $("#fv-d-full").addEventListener("click", function () { setView(ST.view === "full" ? "drawer" : "full"); });
       $("#fv-d-flat").addEventListener("click", function () { setFlat(!ST.flat); });
 
-      /* 整张导出：抽屉里也能直接用（所有登录用户，不限管理员） */
+      /* 导出：抽屉里也能直接用（所有登录用户，不限管理员）
+         两种产出：整张 PNG / 单文件 HTML，点一下先出选择菜单 */
       var expBtn = $("#fv-d-exp");
-      if (expBtn) expBtn.addEventListener("click", async function () {
-        if (expBtn.getAttribute("data-busy") === "1") return;
-        if (!window.FavExport || !FavExport.exportPng) { toast("导出组件未加载，请刷新页面"); return; }
-        if (!ST.items.length) { toast("还没有收藏，先把图拖进来"); return; }
-        expBtn.setAttribute("data-busy", "1");
-        expBtn.disabled = true;
-        expBtn.textContent = "排版中";
-        try {
-          var res = await FavExport.exportPng(ST.items, ST.cats, {
-            scale: 2,
-            onProgress: function (a, b) { expBtn.textContent = "图 " + a + "/" + b; },
-          });
-          FavExport.download(res.blob, FavExport.fileName(new Date()));
-          toast("已导出 " + res.count + " 张，PNG 已开始下载");
-          expBtn.textContent = "已导出";
-          setTimeout(function () { expBtn.textContent = "导出"; expBtn.disabled = false; }, 2600);
-        } catch (err) {
-          toast((err && err.message) ? err.message : "导出失败，请重试");
-          expBtn.textContent = "导出";
-          expBtn.disabled = false;
-        }
-        expBtn.removeAttribute("data-busy");
+      if (expBtn) expBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        showExportMenu(expBtn);
       });
+
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
         if (!ST.open) return;

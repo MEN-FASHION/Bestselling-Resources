@@ -1,5 +1,5 @@
 /* ============================================================================
- * 收藏周报 · 整张高清导出（20261027E）
+ * 收藏周报 · 整张高清导出（20261027F）
  *
  * 用途：把「我的收藏」里的图，按 期次 → 类目 → 上装/下装 → 元素标签 排成一张
  *       长图（PNG），一次导出，不用一张张存。
@@ -497,8 +497,219 @@
     return "收藏周报-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".png";
   }
 
+  /* ---------------------------------------------------------------- ⑦ 网页（单文件 HTML） */
+  /* 与 PNG 同一套分组，但输出成一张可直接双击打开的网页：
+     带筛选（全部/上装/下装）、搜索、类目跳转、打印样式；不引用任何外部脚本或样式。 */
+  function h(s) {
+    return str(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function buildHtml(p, opts) {
+    opts = opts || {};
+    var now = opts.now || new Date();
+    var s = p.totals;
+
+    /* 类目导航（按出现过的类目去重，保留顺序） */
+    var navSeen = {}, navs = [];
+    p.weeks.forEach(function (w) {
+      w.cats.concat(w.others ? [w.others] : []).forEach(function (c) {
+        var k = c.cid == null ? "__none" : String(c.cid);
+        if (navSeen[k]) return;
+        navSeen[k] = 1;
+        navs.push({ key: k, name: c.name, color: c.color || "#b9ae9c" });
+      });
+    });
+
+    var css = [
+      ":root{--ink:#221d17;--ink2:#5c5346;--ink3:#8c8175;--gold:#b08948;--line:#e6ddcd;--bg:#faf8f4;--card:#fff}",
+      "*{box-sizing:border-box}",
+      "body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;-webkit-font-smoothing:antialiased}",
+      "a{color:var(--gold);text-decoration:none}",
+      ".wrap{max-width:1440px;margin:0 auto;padding:0 28px}",
+      "header.top{background:#fff;border-bottom:1px solid var(--line);padding:26px 0 18px}",
+      ".brand{font:600 12px/1 inherit;letter-spacing:.34em;color:var(--gold);text-transform:uppercase}",
+      "h1{margin:10px 0 6px;font-size:27px;font-weight:700;letter-spacing:.5px}",
+      ".meta{color:var(--ink3);font-size:12.5px}",
+      ".chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}",
+      ".chip{border:1px solid var(--line);background:#fdfbf7;border-radius:999px;padding:4px 12px;font-size:12px;color:var(--ink2)}",
+      ".chip b{color:var(--ink);font-weight:600}",
+      ".bar{position:sticky;top:0;z-index:9;background:rgba(250,248,244,.94);backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}",
+      ".barin{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 0}",
+      ".tabs{display:flex;gap:2px}",
+      ".tab{border:0;background:none;font:600 13px/1 inherit;color:var(--ink3);padding:8px 12px;border-radius:8px;cursor:pointer;position:relative}",
+      ".tab[aria-selected=true]{color:var(--gold)}",
+      ".tab[aria-selected=true]:after{content:'';position:absolute;left:12px;right:12px;bottom:2px;height:2px;background:var(--gold);border-radius:2px}",
+      ".tab i{font-style:normal;font-size:11px;opacity:.62;margin-left:4px}",
+      ".search{margin-left:auto;display:flex;align-items:center;gap:8px}",
+      ".search input{width:220px;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 11px;font:inherit;font-size:13px;outline:none}",
+      ".search input:focus{border-color:var(--gold)}",
+      ".navcats{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}",
+      ".navcat{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;font-size:12px;color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;gap:6px}",
+      ".navcat:hover{border-color:var(--gold);color:var(--gold)}",
+      ".dot{width:8px;height:8px;border-radius:50%;display:inline-block}",
+      "main{padding:26px 0 60px}",
+      ".week{margin-bottom:34px}",
+      ".week-h{display:flex;align-items:baseline;gap:10px;margin:0 0 12px;font-size:20px;font-weight:700}",
+      ".week-h span{font-size:12.5px;font-weight:400;color:var(--ink3)}",
+      ".week-h:after{content:'';flex:1;height:1px;background:var(--line);margin-left:6px}",
+      ".cat{margin:0 0 18px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px 16px}",
+      ".cat-h{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700;margin-bottom:2px}",
+      ".cat-h .n{margin-left:auto;font-size:12px;font-weight:400;color:var(--ink3)}",
+      ".sub{margin-top:11px;padding-top:11px;border-top:1px dashed #efe7d9}",
+      ".sub:first-of-type{border-top:0;padding-top:6px}",
+      ".sub-h{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:9px;letter-spacing:.3px}",
+      ".sub-h em{font-style:normal;font-weight:400;color:var(--ink3)}",
+      ".sub-h.top{color:#8a6a1f}.sub-h.bottom{color:#6d655c}",
+      ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}",
+      ".card{border:1px solid #eee7db;border-radius:11px;overflow:hidden;background:#fdfbf7;transition:transform .2s ease,box-shadow .2s ease}",
+      ".card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(60,50,38,.09)}",
+      ".card .ph{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;background:#efeae2}",
+      ".card .tx{padding:8px 9px 10px}",
+      ".card .ti{font-size:12.5px;line-height:1.35;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
+      ".card .tg{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}",
+      ".card .tg span{font-size:10.5px;color:var(--gold);background:rgba(176,137,72,.1);border-radius:6px;padding:1px 6px}",
+      ".empty{padding:40px 0;color:var(--ink3);text-align:center}",
+      "footer{border-top:1px solid var(--line);color:var(--ink3);font-size:12px;padding:18px 0 40px}",
+      "@media print{body{background:#fff}.bar{position:static}.search{display:none}.card:hover{transform:none;box-shadow:none}.cat{break-inside:avoid}}",
+      "@media (max-width:760px){.wrap{padding:0 14px}h1{font-size:22px}.search input{width:100%}.grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}}",
+    ].join("");
+
+    var payload = {
+      title: "收藏周报",
+      generated: fmtDate(now),
+      stats: s,
+      weeks: p.weeks.map(function (w) {
+        return {
+          period: w.period,
+          total: w.total,
+          cats: w.cats.concat(w.others ? [w.others] : []).map(function (c) {
+            return {
+              key: c.cid == null ? "__none" : String(c.cid),
+              name: c.name,
+              color: c.color || "#b9ae9c",
+              count: c.count,
+              subs: c.subs.map(function (sb) {
+                return {
+                  key: sb.key,
+                  name: sb.name,
+                  items: sb.items.map(function (it) {
+                    return {
+                      id: it.id == null ? "" : String(it.id),
+                      title: str(it.title || it.leaf_category || ""),
+                      img: str(it.image_url || ""),
+                      _sub: str(it.sub_cat || "none"),
+                      tags: (Array.isArray(it.tags) ? it.tags : []).slice(0, 3).map(str).filter(Boolean),
+                    };
+                  }),
+                };
+              }),
+            };
+          }),
+        };
+      }),
+    };
+    /* </script> 出现在数据里会提前闭合脚本，必须转义 */
+    var json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+
+    var navHtml = navs.map(function (n) {
+      return '<button type="button" class="navcat" data-jump="' + h(n.key) + '"><i class="dot" style="background:' + h(n.color) + '"></i>' + h(n.name) + "</button>";
+    }).join("");
+
+    var js = [
+      "(function(){",
+      "var D=JSON.parse(document.getElementById('data').textContent);",
+      "var app=document.getElementById('app'),bar=document.getElementById('tabs'),q=document.getElementById('q');",
+      "var cur='all',kw='';",
+      "function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}",
+      "function img(u,t){var i=document.createElement('img');i.className='ph';i.loading='lazy';i.decoding='async';if(u){i.src=u;}else{i.alt='无图'}i.alt=i.alt||t;return i}",
+      "function card(it){var d=el('div','card'),a=document.createElement('a');a.href=it.img||'#';a.target='_blank';a.rel='noopener';a.appendChild(img(it.img,it.title));d.appendChild(a);var tx=el('div','tx');tx.appendChild(el('div','ti',it.title||'（无标题）'));if(it.tags&&it.tags.length){var g=el('div','tg');it.tags.forEach(function(t){g.appendChild(el('span',null,t))});tx.appendChild(g)}d.appendChild(tx);d.dataset.sub=it._sub||'none';d.dataset.kw=(it.title||'').toLowerCase();return d}",
+      "function render(){app.textContent='';var shown=0;",
+      " D.weeks.forEach(function(w){var wk=el('section','week');var hd=el('h2','week-h');hd.appendChild(document.createTextNode(w.period));hd.appendChild(el('span',null,w.total+' 张'));wk.appendChild(hd);",
+      "  var wkShown=0;",
+      "  w.cats.forEach(function(c){var box=el('div','cat');box.id='c-'+c.key;var ch=el('div','cat-h');var dot=el('i','dot');dot.style.background=c.color;ch.appendChild(dot);ch.appendChild(document.createTextNode(c.name));ch.appendChild(el('i','n',c.count+' 张'));box.appendChild(ch);",
+      "   var boxShown=0;",
+      "   c.subs.forEach(function(sb){var row=el('div','sub');if(sb.name){var sh=el('div','sub-h'+(sb.key?' '+sb.key:''));sh.appendChild(document.createTextNode(sb.name));sh.appendChild(el('em',null,sb.items.length+' 张'));row.appendChild(sh)}var g=el('div','grid');var n=0;",
+      "    sb.items.forEach(function(it){if(cur!=='all'&&(it._sub||'none')!==cur)return;if(kw&&(it.title||'').toLowerCase().indexOf(kw)<0)return;var d=card(it);d.dataset.sub=sb.key||'none';g.appendChild(d);n++;});",
+      "    if(n){row.appendChild(g);box.appendChild(row);boxShown+=n;} });",
+      "   if(boxShown){wk.appendChild(box);wkShown+=boxShown;} });",
+      "  if(wkShown){app.appendChild(wk);shown+=wkShown;} });",
+      " if(!shown){var e=el('div','empty');e.textContent=(kw||cur!=='all')?'没有符合条件的图，换个筛选试试':'这份收藏还没有图';app.appendChild(e)}",
+      " document.getElementById('cnt').textContent='显示 '+shown+' / '+D.stats.items+' 张';",
+      "}",
+      "function counts(){var c={all:0,top:0,bottom:0,none:0};D.weeks.forEach(function(w){w.cats.forEach(function(x){x.subs.forEach(function(sb){sb.items.forEach(function(it){c.all++;var k=it._sub||'none';c[k]=(c[k]||0)+1;})})})});return c}",
+      "var C=counts();",
+      "Array.prototype.forEach.call(bar.querySelectorAll('.tab'),function(b){var k=b.dataset.k;var n=C[k]||0;b.querySelector('i').textContent=n;b.setAttribute('aria-selected',k===cur?'true':'false');b.addEventListener('click',function(){cur=k;Array.prototype.forEach.call(bar.querySelectorAll('.tab'),function(x){x.setAttribute('aria-selected',x.dataset.k===k?'true':'false')});render()})});",
+      "q.addEventListener('input',function(){kw=q.value.trim().toLowerCase();render()});",
+      "Array.prototype.forEach.call(document.querySelectorAll('.navcat'),function(b){b.addEventListener('click',function(){var t=document.getElementById('c-'+b.dataset.jump);if(t){t.scrollIntoView({behavior:'smooth',block:'start'});t.style.outline='2px solid var(--gold)';setTimeout(function(){t.style.outline=''},1200)}})});",
+      "var _ac=document.getElementById('allcount');if(_ac)_ac.textContent=D.stats.items;",
+      "render();",
+      "})();",
+    ].join("\n");
+
+    var tags = [
+      "<!doctype html>",
+      '<html lang="zh-CN"><head><meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width,initial-scale=1">',
+      "<title>收藏周报 · " + h(fmtDate(now)) + "</title>",
+      "<style>" + css + "</style></head><body>",
+      '<header class="top"><div class="wrap">',
+      '<div class="brand">Trend Bank</div>',
+      "<h1>收藏周报</h1>",
+      '<div class="meta">导出时间 ' + h(fmtDate(now)) + " · 共 " + s.items + " 张图 · " + p.weeks.length + " 个期次</div>",
+      '<div class="chips">',
+      '<span class="chip">期次 <b>' + p.weeks.length + "</b></span>",
+      '<span class="chip">类目 <b>' + s.cats + "</b></span>",
+      '<span class="chip">上装 <b>' + s.top + "</b></span>",
+      '<span class="chip">下装 <b>' + s.bottom + "</b></span>",
+      '<span class="chip">未分 <b>' + s.none + "</b></span>",
+      "</div></div></header>",
+      '<div class="bar"><div class="wrap"><div class="barin">',
+      '<div class="tabs" id="tabs" role="tablist">',
+      '<button type="button" class="tab" data-k="all" role="tab" aria-selected="true">全部<i>0</i></button>',
+      '<button type="button" class="tab" data-k="top" role="tab" aria-selected="false">上装<i>0</i></button>',
+      '<button type="button" class="tab" data-k="bottom" role="tab" aria-selected="false">下装<i>0</i></button>',
+      '<button type="button" class="tab" data-k="none" role="tab" aria-selected="false">未分<i>0</i></button>',
+      "</div>",
+      '<div class="search"><span class="meta" id="cnt">显示 0 / 0 张</span><input id="q" type="search" placeholder="搜索标题…" autocomplete="off"></div>',
+      '</div><div class="navcats">' + navHtml + "</div>",
+      "</div></div>",
+      '<main><div class="wrap"><div id="app"></div></div></main>',
+      '<footer><div class="wrap">© 2026 TREND BANK · 收藏周报 · 单文件导出，可离线打开 · 数据来自「我的收藏」</div></footer>',
+      '<script type="application/json" id="data">' + json + "</script>",
+      "<script>" + js + "</script>",
+      "</body></html>",
+    ].join("\n");
+
+    return tags;
+  }
+
+  async function exportHtml(items, cats, opts) {
+    opts = opts || {};
+    var p = plan(items, cats);
+    if (!p.totals.items) throw new Error("没有收藏内容，先把图拖进收藏再导出。");
+    var html = buildHtml(p, opts);
+    var blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    return {
+      blob: blob,
+      html: html,
+      count: p.totals.items,
+      weeks: p.weeks.length,
+      cats: p.totals.cats,
+    };
+  }
+
+  function htmlName(now) {
+    var d = now || new Date();
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return "收藏周报-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".html";
+  }
+
   /* ---------------------------------------------------------------- 对外 */
   NS.plan = plan;
+  NS.exportHtml = exportHtml;
+  NS.buildHtml = buildHtml;
+  NS.htmlName = htmlName;
   NS.layout = layout;
   NS.exportPng = exportPng;
   NS.download = download;
