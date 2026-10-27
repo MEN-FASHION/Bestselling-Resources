@@ -5831,3 +5831,37 @@ html, body{
   content: ""; flex: 1 1 auto; height: 1px;
   background: linear-gradient(to right, rgba(156,139,116,.4), rgba(156,139,116,0));
 }
+
+/* ============================================================
+ * 6.11) 抽屉默认视图：按分类分块，不同类的图不并排（20261027C）
+ *      · 每一类单独一块：块头（色点 + 分类名 + 张数）+ 自己的网格
+ *      · 块与块之间留白 + 一条极淡分隔线，行与行不会看串
+ * ============================================================ */
+.fv-d-catblk { margin: 0 0 16px; }
+.fv-d-catblk:last-child { margin-bottom: 4px; }
+.fv-d-catblk + .fv-d-catblk { padding-top: 14px; border-top: 1px solid rgba(28,24,18,.06); }
+.fv-d-catblk-h {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 2px 8px;
+  min-width: 0;
+}
+.fv-d-catblk-dot {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.9);
+}
+.fv-d-catblk-dot.is-none {
+  background: transparent; border: 1px dashed rgba(156,139,116,.85); box-shadow: none;
+}
+.fv-d-catblk-nm {
+  flex: 0 1 auto; min-width: 0;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .02em;
+  color: rgba(60,50,38,.92);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fv-d-catblk-n {
+  flex: 0 0 auto; font-size: 11px; font-weight: 600;
+  color: rgba(120,104,84,.8); font-variant-numeric: tabular-nums;
+}
+.fv-d-catblk.is-droppable:hover .fv-d-catblk-nm { color: #8b6b28; }
+.fv-d-catblk.is-drop { background: rgba(200,164,92,.07); border-radius: 12px; }
+.fv-d-catblk.is-none .fv-d-catblk-nm { color: rgba(90,80,66,.85); }

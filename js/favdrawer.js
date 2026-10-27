@@ -490,7 +490,9 @@
       }
       var fl = el.getAttribute("data-flat");
       if (fl != null) return Number(fl);
-      if (el.getAttribute("data-flat-none") != null) return null;
+      var cb = el.getAttribute("data-catblk");
+      if (cb != null) return Number(cb);
+      if (el.getAttribute("data-flat-none") != null || el.getAttribute("data-catblk-none") != null) return null;
       return "__skip__";
     };
   }
@@ -845,16 +847,41 @@
           h += '</div></details>';
         }
       } else {
-        h += '<div class="fv-d-grid">';
-        g.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
-        h += '</div>';
+        /* 默认视图也按分类分块：每一类单独起一块、图上单独占行，
+           不同分类的图不会并排挤在同一行（用户明确要求"不是同一类的不要放在同一行"） */
+        var cg = flatGroups(g.items, ST.cats);
+        cg.groups.forEach(function (grp) {
+          h += '<div class="fv-d-catblk is-droppable" data-catblk="' + grp.cid + '">';
+          h += '<div class="fv-d-catblk-h">'
+            + '<span class="fv-d-catblk-dot" style="background:' + esc(grp.color) + '"></span>'
+            + '<span class="fv-d-catblk-nm">' + esc(grp.name) + '</span>'
+            + '<span class="fv-d-catblk-n">' + grp.items.length + ' 张</span>'
+            + '</div>';
+          h += '<div class="fv-d-grid">';
+          grp.items.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
+          h += '</div></div>';
+        });
+        if (cg.others.length) {
+          h += '<div class="fv-d-catblk is-droppable is-none" data-catblk-none="1">';
+          h += '<div class="fv-d-catblk-h">'
+            + '<span class="fv-d-catblk-dot is-none"></span>'
+            + '<span class="fv-d-catblk-nm">未分类</span>'
+            + '<span class="fv-d-catblk-n">' + cg.others.length + ' 张</span>'
+            + '</div>';
+          h += '<div class="fv-d-grid">';
+          cg.others.forEach(function (it) { h += cellHtml(it, { drag: canDrag, i: nextI() }); });
+          h += '</div></div>';
+        }
+        if (!cg.groups.length && !cg.others.length) {
+          h += '<div class="fv-d-flat-none">这一周还没有收藏。</div>';
+        }
       }
       h += '</section>';
     });
     box.innerHTML = h;
     bindCells();
     bindSubBar(box);
-    all(".fv-d-flat, .fv-d-flat-band, [data-flat-none]", box).forEach(function (el) {
+    all(".fv-d-flat, .fv-d-flat-band, [data-flat-none], [data-catblk], [data-catblk-none]", box).forEach(function (el) {
       bindDropTarget(el, catDropValue(el));
     });
   }
