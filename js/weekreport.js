@@ -100,6 +100,43 @@
     return {};
   }
 
+  /* 取某个维度在一条打标记录上的全部取值。
+     20261027K 之前的问题：榜单打标新增的 craft_tags / visual_tags / fit_tags
+     没有任何一处被读取，所以后台打好的工艺、视觉、版型在报告里永远是空的。
+     现在的取法：字段有值就用字段；没有才退回旧口径（工艺从元素词里抽）。 */
+  function valsOf(t, dimKey) {
+    var vals = [];
+    var push = function (arr) {
+      (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(function (x) { if (x) vals.push(String(x)); });
+    };
+    if (dimKey === "craft") {
+      if (Array.isArray(t.craft_tags) && t.craft_tags.length) push(t.craft_tags);
+      else push(extractCraft(Array.isArray(t.element_tags) ? t.element_tags : []));
+      return vals;
+    }
+    if (dimKey === "style_tags") {
+      push(t.style_tags);
+      push(t.fit_tags);              /* 版型标签形如「领型·圆领」，带前缀更利于阅读 */
+      return vals;
+    }
+    if (dimKey === "shoot_tags") {
+      push(t.shoot_tags);
+      push(t.visual_tags);           /* 画面视觉：背景 / 构图 / 呈现主体 */
+      return vals;
+    }
+    push(t[dimKey]);
+    return vals;
+  }
+
+  function extractCraft(el) {
+    var out = [];
+    (el || []).forEach(function (x) {
+      var s = String(x || "");
+      CRAFT_WORDS.forEach(function (w) { if (s.indexOf(w) >= 0) out.push(w); });
+    });
+    return out;
+  }
+
   /* 单期的维度计数：{ dimKey: { 标签: 次数 } } */
   function dimCount(cards, tagMap) {
     var m = {};
@@ -107,18 +144,7 @@
       var t = tagFor(tagMap, c.url);
       DIMS.forEach(function (d) {
         if (!m[d.key]) m[d.key] = {};
-        var vals = [];
-        if (d.key === "craft") {
-          var el = Array.isArray(t.element_tags) ? t.element_tags : [];
-          el.forEach(function (x) {
-            var s = String(x || "");
-            CRAFT_WORDS.forEach(function (w) { if (s.indexOf(w) >= 0) vals.push(w); });
-          });
-        } else {
-          var arr = Array.isArray(t[d.key]) ? t[d.key] : (t[d.key] ? [t[d.key]] : []);
-          arr.forEach(function (x) { if (x) vals.push(String(x)); });
-        }
-        vals.forEach(function (v) { m[d.key][v] = (m[d.key][v] || 0) + 1; });
+        valsOf(t, d.key).forEach(function (v) { m[d.key][v] = (m[d.key][v] || 0) + 1; });
       });
     });
     return m;
@@ -129,7 +155,8 @@
     var has = 0;
     cards.forEach(function (c) {
       var t = tagFor(tagMap, c.url);
-      var any = ["style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags", "category"].some(function (k) {
+      var any = ["style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags", "category",
+                 "visual_tags", "craft_tags", "fit_tags"].some(function (k) {
         return Array.isArray(t[k]) ? t[k].length > 0 : !!t[k];
       });
       if (any) has++;
@@ -141,11 +168,12 @@
   function hasTag(tagMap, url, dimKey, tag) {
     var t = tagFor(tagMap, url);
     if (dimKey === "craft") {
+      var cs = Array.isArray(t.craft_tags) ? t.craft_tags : [];
+      if (cs.map(String).indexOf(String(tag)) >= 0) return true;
       var el = Array.isArray(t.element_tags) ? t.element_tags : [];
       return el.some(function (x) { return String(x || "").indexOf(tag) >= 0; });
     }
-    var arr = Array.isArray(t[dimKey]) ? t[dimKey] : (t[dimKey] ? [t[dimKey]] : []);
-    return arr.map(function (x) { return String(x); }).indexOf(String(tag)) >= 0;
+    return valsOf(t, dimKey).indexOf(String(tag)) >= 0;
   }
 
   /* 找出带某标签的卡片（保持页面上原有的位次顺序） */

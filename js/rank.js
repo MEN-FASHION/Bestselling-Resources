@@ -1238,7 +1238,7 @@
       return v.filter(function (x) { return x != null && x !== ""; });
     }
     if (typeof v === "string") {
-      return v.split(/[,，、|\/]/).map(function (x) { return String(x).trim(); }).filter(Boolean);
+      return v.split(/[,，、|；;]/).map(function (x) { return String(x).trim(); }).filter(Boolean);
     }
     return [];
   }
@@ -1261,6 +1261,7 @@
       var pct = function (k, t) { return (t ? Math.round(k / t * 100) : 0); };
       /* 打标维度：分母只用「打过这个维度」的图，避免把"没打标"算成"其它" */
       var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
+      var stCnt = {}, stTot = 0, vCnt = {}, vTot = 0, fCnt = {}, fTot = 0;
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
@@ -1271,6 +1272,20 @@
         var eSet = {}, nE = 0;
         tagArr(t.element_tags).forEach(function (v) { if (eSet[v] === undefined) { eSet[v] = 1; eCnt[v] = (eCnt[v] || 0) + 1; nE++; } });
         if (nE) eTot++;
+        /* 20261027K 新增的三个维度：风格 / 视觉 / 版型（版型存的是「领型·圆领」，展示时去掉前缀） */
+        var stSet = {}, nSt = 0;
+        tagArr(t.style_tags).forEach(function (v) { if (stSet[v] === undefined) { stSet[v] = 1; stCnt[v] = (stCnt[v] || 0) + 1; nSt++; } });
+        if (nSt) stTot++;
+        var vSet = {}, nV = 0;
+        tagArr(t.visual_tags).forEach(function (v) { if (vSet[v] === undefined) { vSet[v] = 1; vCnt[v] = (vCnt[v] || 0) + 1; nV++; } });
+        if (nV) vTot++;
+        var fSet = {}, nF = 0;
+        tagArr(t.fit_tags).forEach(function (v) {
+          var k = String(v).indexOf("·") >= 0 ? String(v).split("·")[1] : String(v);
+          if (!k || fSet[k] !== undefined) return;
+          fSet[k] = 1; fCnt[k] = (fCnt[k] || 0) + 1; nF++;
+        });
+        if (nF) fTot++;
       });
       var tops = function (obj, tot, lim) {
         if (!tot) return [];
@@ -1281,6 +1296,7 @@
         cat: cat, n: n,
         oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
+        style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
         hasTag: sTot > 0 || eTot > 0, tagged: sTot
       };
     });   /* 本周没上传的类目也保留卡片：写「本周无数据」，不要静默消失 */
@@ -1365,6 +1381,12 @@
             + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
             + '</div>'
           : '');
+      [["风格", c.style], ["视觉", c.visual], ["版型", c.fit]].forEach(function (g) {
+        if (!g[1] || !g[1].length) return;
+        h += '<div class="rk-vit-sub">' + g[0] + '</div><div class="rk-vit-tags">'
+          + g[1].map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
+          + '</div>';
+      });
       if (c.shoot.length) {
         h += '<div class="rk-vit-sub">拍摄方式</div>';
         c.shoot.forEach(function (s) {
@@ -1399,7 +1421,10 @@
     TAG_BUSY = true;
     var fin = function () { TAG_BUSY = false; TAG_KEY = key; };
     try {
-      SBX.listImageTags(urls).then(function (m) {
+      /* 优先用「图库 + 榜单独立标签」的合并结果：榜单图不在图库表里，
+         只读图库永远取不到后台给榜单打的标。 */
+      var _fn = SBX.listImageTagsForReport || SBX.listImageTags;
+      _fn.call(SBX, urls).then(function (m) {
         (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
         fin();
         if (MODE === "c") renderBody();      /* 标签到位后补上「拍摄方式 / 元素」两栏 */

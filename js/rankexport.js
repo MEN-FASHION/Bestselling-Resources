@@ -55,7 +55,7 @@
   };
 
   function splitArr(v) {
-    return String(v == null ? "" : v).split(/[,，、/|]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    return String(v == null ? "" : v).split(/[,，、|；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }

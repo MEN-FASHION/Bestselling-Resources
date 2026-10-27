@@ -2570,6 +2570,11 @@ async removeTrendRecord(id) {
           scene_tags: pick("scene_tags"),
           shoot_tags: pick("shoot_tags"),
           skin_tags: pick("skin_tags"),
+          /* 20261027K 起榜单打标新增的三列：合并时以前一直被丢掉，
+             导致前台/周报看到的「视觉 / 二次工艺 / 版型」永远是空。 */
+          visual_tags: pick("visual_tags"),
+          craft_tags: pick("craft_tags"),
+          fit_tags: pick("fit_tags"),
         };
       });
       return out;

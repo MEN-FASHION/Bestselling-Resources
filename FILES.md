@@ -129,9 +129,10 @@
 
 | 补丁 | 作用 | 不跑会怎样 |
 |---|---|---|
-| `tools/patch_20261027K.sql` | **先跑这个**：榜单标签表 `rank_image_tags` 建表 + 补齐九列 + 唯一索引 + GIN 索引 + 读写策略（表已存在则只补缺列） | 报 `relation does not exist`，H 补丁第一条 `alter table` 直接失败 |
-| `tools/patch_20261027H.sql` | 给榜单打标表 `rank_image_tags` 加「视觉 / 二次工艺 / 版型」三个列（带 GIN 索引） | 三列读写失败：导出为空、回填报「列不存在」 |
-| `tools/patch_20261027J.sql` | 新建 `rank_tag_batches`（批次台账）与 `rank_tag_history`（改动明细）两张表 | 能导能写，但只能整批清空、不能精确撤回，页面会提示 |
+| `patch_20261027K.sql` | **先跑这个**：榜单标签表 `rank_image_tags` 建表 + 补齐九列 + 唯一索引 + GIN 索引 + 读写策略（表已存在则只补缺列） | 报 `relation does not exist`，H 补丁第一条 `alter table` 直接失败 |
+| `patch_20261027H.sql` | 给榜单打标表 `rank_image_tags` 加「视觉 / 二次工艺 / 版型」三个列（带 GIN 索引） | 三列读写失败：导出为空、回填报「列不存在」 |
+| `patch_20261027L.sql` | **前台读不到标签时跑这个**：给 `rank_image_tags` 加 `anon` 只读策略（访客能读、仍不能写），并附各维度有值行数诊断 | 后台导入成功、前台榜单页/周报看不到任何打标结果 |
+| `patch_20261027J.sql` | 新建 `rank_tag_batches`（批次台账）与 `rank_tag_history`（改动明细）两张表 | 能导能写，但只能整批清空、不能精确撤回，页面会提示 |
 
 三个都幂等，重复执行不会报错、不会动已有数据。
 
