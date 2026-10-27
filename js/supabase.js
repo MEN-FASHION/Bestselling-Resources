@@ -2385,7 +2385,7 @@ async removeTrendRecord(id) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
       const out = {};
       if (!list.length) return out;
-      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,batch_id,updated_at";
+      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,batch_id,updated_at";
       for (let i = 0; i < list.length; i += 80) {
         const part = list.slice(i, i + 80);
         const { data, error } = await client.from("rank_image_tags").select(COLS).in("image_url", part);
@@ -2409,6 +2409,9 @@ async removeTrendRecord(id) {
           shoot_tags: r.shoot_tags || [],
           skin_tags: r.skin_tags || [],
           tags: r.tags || [],
+          visual_tags: r.visual_tags || [],
+          craft_tags: r.craft_tags || [],
+          fit_tags: r.fit_tags || [],
           batch_id: r.batch_id || null,
           updated_by: r.updated_by || null,
           updated_at: now,
@@ -2424,7 +2427,7 @@ async removeTrendRecord(id) {
     async clearRankTagBatch(batchId) {
       const b = String(batchId || "").trim();
       if (!b) return 0;
-      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], batch_id: null, updated_at: new Date().toISOString() };
+      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], visual_tags: [], craft_tags: [], fit_tags: [], batch_id: null, updated_at: new Date().toISOString() };
       const { error } = await client.from("rank_image_tags").update(empty).eq("batch_id", b);
       if (error) throw new Error(error.message || "回滚失败");
       return true;

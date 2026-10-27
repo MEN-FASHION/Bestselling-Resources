@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261027F">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027F">
+<link rel="stylesheet" href="css/style.css?v=20261027H">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027H">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -955,6 +955,20 @@
         </section>
 
         <section class="rkadm-sec">
+          <h4>② 打标结果回填</h4>
+          <p class="hint">
+            先把「导出数据」得到的表格拿去打标（表头保持不变，标签列直接填文字，多个值用逗号分隔），
+            再把填好的表格传到这里。<b>按「图片URL」精确匹配</b>榜单里的图：对不上的行不写入、单独计数；
+            枚举外的标签值也不写入，会在下面列出。写入带批次号，可按批次回滚。
+          </p>
+          <div class="rank-inline">
+            <input id="rank-tag-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rank-tag-import" class="btn-primary" type="button" disabled>写入标签</button>
+          </div>
+          <div id="rank-tag-file-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
           <h4>已上传记录</h4>
           <div id="rank-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
         </section>
@@ -1364,32 +1378,34 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261027F"></script>
-  <script src="vendor/quill.js?v=20261027F"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261027F"></script>
-  <script src="vendor/qrcode.min.js?v=20261027F"></script>
-  <script src="js/config.js?v=20261027F"></script>
-  <script src="js/supabase.js?v=20261027F"></script>
-  <script src="js/track-menu.js?v=20261027F"></script>
+  <script src="vendor/supabase.js?v=20261027H"></script>
+  <script src="vendor/quill.js?v=20261027H"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261027H"></script>
+  <script src="vendor/qrcode.min.js?v=20261027H"></script>
+  <script src="js/config.js?v=20261027H"></script>
+  <script src="js/supabase.js?v=20261027H"></script>
+  <script src="js/track-menu.js?v=20261027H"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261027F"></script>
-  <script src="js/admin.js?v=20261027F"></script>
-  <script src="js/admin-images.js?v=20261027F"></script>
-  <script src="js/admin-smart.js?v=20261027F"></script>
-  <script src="js/admin-trend.js?v=20261027F"></script>
-  <script src="js/admin-notice.js?v=20261027F"></script>
-  <script src="js/marketing-data.js?v=20261027F"></script>
-  <script src="js/admin-festival.js?v=20261027F"></script>
-  <script src="js/admin-tasks.js?v=20261027F"></script>
-  <script src="js/admin-bestseller.js?v=20261027F"></script>
-  <script src="js/admin-perm.js?v=20261027F"></script>
-  <script src="js/admin-pool.js?v=20261027F"></script>
-  <script src="js/admin-rank.js?v=20261027F"></script>
-  <script src="js/plus-sb.js?v=20261027F"></script>
-  <script src="js/plus-match.js?v=20261027F"></script>
-  <script src="js/admin-plus.js?v=20261027F"></script>
-  <script src="js/admin-insight.js?v=20261027F"></script>
-  <script src="js/admin-backup.js?v=20261027F"></script>
+  <script src="js/admin-dialog.js?v=20261027H"></script>
+  <script src="js/admin.js?v=20261027H"></script>
+  <script src="js/admin-images.js?v=20261027H"></script>
+  <script src="js/admin-smart.js?v=20261027H"></script>
+  <script src="js/admin-trend.js?v=20261027H"></script>
+  <script src="js/admin-notice.js?v=20261027H"></script>
+  <script src="js/marketing-data.js?v=20261027H"></script>
+  <script src="js/admin-festival.js?v=20261027H"></script>
+  <script src="js/admin-tasks.js?v=20261027H"></script>
+  <script src="js/admin-bestseller.js?v=20261027H"></script>
+  <script src="js/admin-perm.js?v=20261027H"></script>
+  <script src="js/admin-pool.js?v=20261027H"></script>
+  <script src="js/rankexport.js?v=20261027H"></script>
+  <script src="js/admin-rankimport.js?v=20261027H"></script>
+  <script src="js/admin-rank.js?v=20261027H"></script>
+  <script src="js/plus-sb.js?v=20261027H"></script>
+  <script src="js/plus-match.js?v=20261027H"></script>
+  <script src="js/admin-plus.js?v=20261027H"></script>
+  <script src="js/admin-insight.js?v=20261027H"></script>
+  <script src="js/admin-backup.js?v=20261027H"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
