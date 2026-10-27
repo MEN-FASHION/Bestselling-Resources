@@ -285,42 +285,34 @@
   }
   function subName(v) { return v === "top" ? "上装" : (v === "bottom" ? "下装" : "未分"); }
 
-  /* 块内再按 上装 / 下装 分行：
-     · 某个分类里既有上装又有下装时，各起一行，行头写明"上装 3"，一眼能数清；
-     · 整块一张都还没归二分类时，不插行头（否则每块都顶一行"未分"，版面被撑散）；
-     · 当前已在二分类筛选里（只看上装/只看下装）时也不再分行——范围已经限定，行头是废话。 */
-  function subRowsHtml(items, opts) {
-    opts = opts || {};
-    var rows = [
-      { k: "top", name: "上装" },
-      { k: "bottom", name: "下装" },
-      { k: null, name: "未分" }
-    ];
-    var bucket = { top: [], bottom: [], none: [] };
+  /* 块内改为「按细分类目成组」：
+     · 同一款（如 T恤）的图排在一起，组下方一条矩形标签条，宽度正好覆盖这一组的图；
+     · 条上写类目名与张数——不用再给每张图挂「上装/下装」小标签（那会压住图）；
+     · 组按张数从多到少排，同数按名称，最常看的那一类自然在最前。 */
+  function leafKey(it) { return String((it && it.leaf_category) || "").trim(); }
+  function leafGroupsHtml(items, opts) {
+    var order = [], map = {};
     (items || []).forEach(function (it) {
-      var v = subOf(it);
-      bucket[v === "top" ? "top" : (v === "bottom" ? "bottom" : "none")].push(it);
+      var k = leafKey(it);
+      if (!map[k]) { map[k] = { name: k, items: [] }; order.push(k); }
+      map[k].items.push(it);
     });
-    var allSub = (ST.sub === "all" || !ST.sub);
-    var mixed = allSub && (bucket.top.length || bucket.bottom.length);
+    var groups = order.map(function (k) { return map[k]; }).sort(function (a, b) {
+      return b.items.length - a.items.length || String(a.name).localeCompare(String(b.name), "zh");
+    });
+    var maxK = (ST.view === "full") ? 4 : 2;
     var h = "";
-    if (!mixed) {
-      h += '<div class="fv-d-grid">';
-      items.forEach(function (it) { h += cellHtml(it, { drag: opts.canDrag, i: opts.nextI() }); });
+    groups.forEach(function (g) {
+      var k = Math.max(1, Math.min(g.items.length, maxK));
+      h += '<div class="fv-d-leafgrp" style="--k:' + k + '">';
+      h += '<div class="fv-d-leafgrid">';
+      g.items.forEach(function (it) { h += cellHtml(it, { drag: opts.canDrag, i: opts.nextI() }); });
       h += '</div>';
-      return h;
-    }
-    rows.forEach(function (r) {
-      var arr = bucket[r.k === "top" ? "top" : (r.k === "bottom" ? "bottom" : "none")];
-      if (!arr.length) return;                 /* 空行不画：没内容的一行只会白占高度 */
-      h += '<div class="fv-d-subrow is-droppable" data-subrow="' + (r.k == null ? "none" : r.k) + '">';
-      h += '<div class="fv-d-subrow-h">'
-        + '<span class="fv-d-subrow-t">' + r.name + '</span>'
-        + '<span class="fv-d-subrow-n">' + arr.length + ' 张</span>'
+      h += '<div class="fv-d-leafbar' + (g.name ? "" : " is-none") + '">'
+        + '<span class="fv-d-leafnm">' + esc(g.name || "未标类目") + '</span>'
+        + '<span class="fv-d-leafn">' + g.items.length + ' 张</span>'
         + '</div>';
-      h += '<div class="fv-d-grid">';
-      arr.forEach(function (it) { h += cellHtml(it, { drag: opts.canDrag, i: opts.nextI() }); });
-      h += '</div></div>';
+      h += '</div>';
     });
     return h;
   }
@@ -649,10 +641,6 @@
       + ' title="' + esc(full) + '">'
       + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
-      /* 左侧竖排小标签：已归了上装/下装的图，进抽屉一眼就能看出是哪一类。
-         未分的不挂标签——不挂才是"还没归"，挂个"未分"反而显脏。 */
-      + (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
-          + subName(subOf(it)) + '</span>' : '')
       + '<button type="button" class="fv-d-unfav" data-unfav="' + esc(it.id) + '" title="取消收藏">×</button>'
       + (meta ? '<span class="fv-d-meta">' + meta + '</span>' : '')
       + '<figcaption>' + esc(String(it.title || "").slice(0, 16)) + '</figcaption>'
@@ -970,7 +958,7 @@
             + '<span class="fv-d-catblk-nm">' + esc(grp.name) + '</span>'
             + '<span class="fv-d-catblk-n">' + grp.items.length + ' 张</span>'
             + '</div>';
-          h += subRowsHtml(grp.items, { canDrag: canDrag, nextI: nextI });
+          h += leafGroupsHtml(grp.items, { canDrag: canDrag, nextI: nextI });
           h += '</div>';
         });
         if (cg.others.length) {
@@ -980,7 +968,7 @@
             + '<span class="fv-d-catblk-nm">未分类</span>'
             + '<span class="fv-d-catblk-n">' + cg.others.length + ' 张</span>'
             + '</div>';
-          h += subRowsHtml(cg.others, { canDrag: canDrag, nextI: nextI });
+          h += leafGroupsHtml(cg.others, { canDrag: canDrag, nextI: nextI });
           h += '</div>';
         }
         if (!cg.groups.length && !cg.others.length) {
