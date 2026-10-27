@@ -156,6 +156,8 @@
       + '<figure class="fv-card" draggable="true" data-id="' + it.id + '" data-cat="' + (it.category_id || "") + '"'
       + ' data-url="' + esc(it.image_url) + '" title="' + esc(tips) + '">'
       +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
+      +   (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
+            + subName(subOf(it)) + '</span>' : '')
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
       +   '<button type="button" class="fv-del" data-del="1" title="取消收藏">×</button>'
       +   (meta ? '<span class="fv-meta">' + meta + '</span>' : '')
@@ -163,27 +165,26 @@
       + '</figure>';
   }
 
-  /* 块内按细分款类成组（与收藏抽屉口径一致）：
-     同一款（如 T恤）的图排在一起，组下方一条矩形标签条，宽度刚好覆盖这一组图。 */
-  function leafGroupsHtml(list, mode) {
-    var order = [], map = {};
+  /* 块内再按 上装 / 下装 分行（与收藏抽屉口径一致）：
+     整块都还没归二分类时不插行头；已在二分类筛选里时也不再分行。 */
+  function subRows(list, mode) {
+    var bucket = { top: [], bottom: [], none: [] };
     (list || []).forEach(function (it) {
-      var k = String((it && it.leaf_category) || "").trim();
-      if (!map[k]) { map[k] = { name: k, items: [] }; order.push(k); }
-      map[k].items.push(it);
+      var v = subOf(it);
+      bucket[v === "top" ? "top" : (v === "bottom" ? "bottom" : "none")].push(it);
     });
-    var groups = order.map(function (k) { return map[k]; }).sort(function (a, b) {
-      return b.items.length - a.items.length || String(a.name).localeCompare(String(b.name), "zh");
-    });
-    var maxK = (mode === "flat") ? 6 : 4;
-    return groups.map(function (g) {
-      var k = Math.max(1, Math.min(g.items.length, maxK));
-      return '<div class="fv-leafgrp" style="--k:' + k + '">'
-        + '<div class="fv-leafgrid">' + g.items.map(cardHtml).join("") + '</div>'
-        + '<div class="fv-leafbar' + (g.name ? "" : " is-none") + '">'
-        +   '<span class="fv-leafnm">' + esc(g.name || "未标类目") + '</span>'
-        +   '<span class="fv-leafn">' + g.items.length + ' 张</span>'
-        + '</div>'
+    /* ST.sub 在收藏页里默认是空串（表示"全部"），抽屉里是 "all"，两种都要认 */
+    var allSub = (ST.sub === "all" || !ST.sub);
+    var mixed = allSub && (bucket.top.length || bucket.bottom.length);
+    if (!mixed) return '<div class="fv-grid">' + list.map(cardHtml).join("") + '</div>';
+    var rows = [{ k: "top", name: "上装" }, { k: "bottom", name: "下装" }, { k: "none", name: "未分" }];
+    return rows.map(function (r) {
+      var arr = bucket[r.k];
+      if (!arr.length) return "";
+      return '<div class="fv-subrow" data-subrow="' + r.k + '">'
+        + '<div class="fv-subrow-h"><span class="fv-subrow-t">' + r.name + '</span>'
+        + '<span class="fv-subrow-n">' + arr.length + ' 张</span></div>'
+        + '<div class="fv-grid">' + arr.map(cardHtml).join("") + '</div>'
         + '</div>';
     }).join("");
   }
@@ -210,7 +211,7 @@
       +     '<span class="fv-catname">' + esc(g.cat.name) + '</span>'
       +     '<em class="fv-catn">' + n + ' 张</em>'
       +   '</div>'
-      +   leafGroupsHtml(g.items, mode)
+      +   subRows(g.items, mode)
       + '</div>';
   }
 
@@ -233,7 +234,7 @@
     return ''
       + '<div class="fv-catblock is-none" data-cat="">'
       +   '<div class="fv-cathead"><i class="fv-dot is-empty"></i><span class="fv-catname">未分类</span><em class="fv-catn">' + list.length + ' 张</em></div>'
-      +   leafGroupsHtml(list, mode)
+      +   subRows(list, mode)
       + '</div>';
   }
 
