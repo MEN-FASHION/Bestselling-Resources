@@ -2251,6 +2251,25 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 }
 .rk-card.is-new { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 
+/* 卡片打标浮层（20261027L）：常态不占位、不显示；鼠标移到卡片上才从底部浮出。
+   pointer-events:none 保证不挡收藏星标、多选勾选和「点开大图」。 */
+.rk-cardtags{
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: none; flex-wrap: wrap; gap: 3px;
+  padding: 14px 5px 5px;
+  background: linear-gradient(to top, rgba(18,16,14,.88) 30%, rgba(18,16,14,.62) 72%, rgba(18,16,14,0));
+  pointer-events: none; z-index: 7;
+  max-height: 62%; overflow: hidden;
+}
+.rk-card:hover .rk-cardtags{ display: flex; }
+.rk-cardtags i{
+  font-style: normal; font-size: 10px; line-height: 1.55; letter-spacing: .1px;
+  color: #fff; background: rgba(255,255,255,.17);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px; padding: 0 6px; white-space: nowrap;
+}
+@media (hover: none){ .rk-cardtags{ display: none !important; } }   /* 触屏无悬停，避免误挡 */
+
 /* ---- 展开更多 ---- */
 .rk-more-wrap { margin: 14px 0 30px; text-align: center; }
 .rk-more {

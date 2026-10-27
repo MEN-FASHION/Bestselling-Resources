@@ -1411,6 +1411,47 @@
     return h;
   }
 
+  /* ---------------------------------------------------------------- 卡片打标浮层
+     用户要求：标签不要常驻在卡片上（会让图墙变密），鼠标移上去才显示。
+     实现：常态隐藏，:hover 才展开一条半透明底栏，罗列该图六个维度的打标值。
+     浮层 pointer-events:none —— 不挡收藏星标、不挡点开大图。 */
+  function cardTagList(t) {
+    if (!t) return [];
+    var out = [], seen = {};
+    var push = function (arr) {
+      tagArr(arr).forEach(function (v) {
+        var k = String(v).trim();
+        if (!k || seen[k]) return;
+        seen[k] = 1; out.push(k);
+      });
+    };
+    push(t.style_tags);
+    push(t.visual_tags);
+    push(t.element_tags);
+    push(t.craft_tags);
+    push(t.shoot_tags);
+    push(t.fit_tags);
+    return out;
+  }
+
+  function paintCardTags(root) {
+    var box = root || document.querySelector("#rk-body") || document.body;
+    if (!box || !box.querySelectorAll) return;
+    Array.prototype.forEach.call(box.querySelectorAll(".rk-card[data-url]"), function (fig) {
+      var u = String(fig.getAttribute("data-url") || "");
+      var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
+      var chips = cardTagList(t);
+      var old = fig.querySelector(".rk-cardtags");
+      if (!chips.length) { if (old && old.parentNode) old.parentNode.removeChild(old); return; }
+      var html = chips.slice(0, 14).map(function (c) { return '<i>' + esc(c) + '</i>'; }).join("");
+      if (old) { if (old.innerHTML !== html) old.innerHTML = html; return; }
+      var d = document.createElement("div");
+      d.className = "rk-cardtags";
+      d.innerHTML = html;
+      fig.appendChild(d);
+    });
+  }
+
   /* 打标维度按当前这批图异步取一次；取不到就只显示三档占比，不阻塞主流程 */
   function ensureTags(items) {
     if (!SBX || !SBX.listImageTags) return;
@@ -1427,6 +1468,7 @@
       _fn.call(SBX, urls).then(function (m) {
         (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
         fin();
+        paintCardTags();                     /* 卡片悬停浮层：标签到位后再补画 */
         if (MODE === "c") renderBody();      /* 标签到位后补上「拍摄方式 / 元素」两栏 */
       }, function () { fin(); });
     } catch (e) { fin(); }
@@ -1459,6 +1501,7 @@
       var pVIT = periods[periods.length - 1] || "";
       var VIT = vitalsOf(CACHE.items, pVIT);
       vit = vitalsHtml(VIT);
+      paintCardTags(box);             /* 卡片悬停浮层：重建卡片后立刻补画已有标签 */
       ensureTags(CACHE.items);        /* 拍摄方式 / 元素：有打标就补上，没有就只显示三档占比 */
     }
     var R = buildPools(CAP);
