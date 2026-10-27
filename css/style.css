@@ -4703,7 +4703,11 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%);
 }
 .fv-drawer.is-full .fv-d-grid{ grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
-.fv-drawer.is-full .fv-d-filter{ padding: 0 26px 14px; }
+.fv-drawer.is-full .fv-d-filter{
+  /* 全屏时屏幕更宽，分类列给足一点，但仍保持"一列方框"的竖排形态 */
+  flex: 0 0 200px; width: 200px; min-width: 200px;
+  padding: 14px 12px 20px;
+}
 
 /* 全屏左栏：分类 */
 .fv-d-side-h{
@@ -4788,7 +4792,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 .fv-dock{
   position: fixed; z-index: 57;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 13px;
   width: 244px; max-width: calc(100vw - 32px);
   pointer-events: none;                     /* 整层不拦事件，只有行收事件 */
   opacity: 0; visibility: hidden;
@@ -4871,7 +4875,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 
 /* 清单本体：竖排是常态（贴左右时），贴上下时转成一行 */
 .fv-dock-list{
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 13px;   /* 每个分类独立一行，行与行之间留白，不连成一片 */
   pointer-events: none;
 }
 .fv-dock.is-top .fv-dock-list,
@@ -5555,8 +5559,8 @@ html, body{
 .fv-d-filter {
   position: relative; z-index: 2;
   order: 1;                            /* 分类列在抽屉最左：点选最顺手，右手也不用横跨整屏 */
-  flex: 0 0 158px; width: 158px; min-width: 158px;
-  display: flex; flex-direction: column; gap: 9px;
+  flex: 0 0 170px; width: 170px; min-width: 170px;
+  display: flex; flex-direction: column; gap: 11px;
   overflow-x: visible; overflow-y: auto;
   padding: 9px 9px 14px 9px;
   border-right: 1px solid var(--fv-hair, rgba(28,24,18,.1));
@@ -5651,8 +5655,13 @@ html, body{
 .fv-d-filter .fv-d-newrow .fv-d-btn { flex: 1 1 0; padding: 5px 0; font-size: 11.5px; border-radius: 8px; }
 
 /* 分类列在最左，内容居中，上装/下装栏贴最右一整条（贯穿上下） */
-.fv-d-rail { order: 3; border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1)); padding-left: 8px; }
-.fv-d-body { order: 2; }
+.fv-d-rail {
+  order: 2;                            /* 紧贴分类列的右侧，拖的时候不用横跨整屏去找落点 */
+  border-left: 1px solid var(--fv-hair, rgba(28,24,18,.1));
+  border-right: 1px solid var(--fv-hair, rgba(28,24,18,.08));
+  padding: 0 8px;
+}
+.fv-d-body { order: 3; }
 
 /* 窄屏：列再收一点，图片区优先 */
 @media (max-width: 720px) {
@@ -5689,9 +5698,16 @@ html, body{
   box-shadow: inset 0 0 0 1px rgba(200,164,92,.26);
 }
 .fv-catrow.is-on .fv-cn { color: #8b6b28; }
-.fv-catrow .fv-cn {
+/* 计数徽标（原来这条误写成 .fv-cn，把分类名压成 12.5px 灰字，长名更容易被截断） */
+.fv-catrow .fv-cnum {
   font-style: normal; font-size: 12.5px; font-weight: 600;
   color: rgba(120,104,84,.85); font-variant-numeric: tabular-nums;
+  flex: 0 0 auto; margin-left: auto;
+}
+.fv-catrow.is-on .fv-cnum { color: #8b6b28; }
+.fv-catrow .fv-cn {
+  font-size: 15px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* 窄屏：分类列回到上方，横排小方块（否则会挤掉图片） */
@@ -5776,3 +5792,42 @@ html, body{
 .fv-subtag.is-bottom { background: linear-gradient(180deg, #8b8272, #6a6152); }
 .fv-d-cell:hover .fv-subtag, .fv-card:hover .fv-subtag { transform: translateY(-50%) translateX(1px); }
 .fv-subtag { transition: transform .2s ease; }
+
+/* ============================================================
+ * 6.10) 分类分组：视觉单独成段（20261027A）
+ *      · 印花/面料/图案/工艺 是"品类"，视觉是"维度"，混在一列里容易串起来
+ *      · 一个分类 = 独立一行方框，行与行之间留白，不再连成一片
+ * ============================================================ */
+/* 竖排（抽屉分类列 / 拖拽浮层）里的分隔段头 */
+.fv-d-grp, .fv-dock-grp {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 2px 1px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em;
+  color: rgba(120,104,84,.62);
+  white-space: nowrap;
+}
+.fv-d-grp::after, .fv-dock-grp::after {
+  content: ""; flex: 1 1 auto; height: 1px;
+  background: linear-gradient(to right, rgba(156,139,116,.42), rgba(156,139,116,0));
+}
+/* 拖动中分类列变网格：段头占满一整行 */
+.fv-drawer.is-drop-ready .fv-d-filter .fv-d-grp { grid-column: 1 / -1; padding-bottom: 3px; }
+
+/* 拖拽浮层贴上下时是横排：段头占满一整行，视觉另起一排 */
+.fv-dock.is-top .fv-dock-grp, .fv-dock.is-bottom .fv-dock-grp {
+  flex: 0 0 100%; justify-content: center; padding: 2px 0 0;
+}
+.fv-dock.is-top .fv-dock-grp::after, .fv-dock.is-bottom .fv-dock-grp::after { display: none; }
+
+/* 收藏页（fav.html）左侧分类：段头 + 每行独立 */
+.fv-cat-grp {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 3px 1px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em;
+  color: rgba(120,104,84,.6);
+}
+.fv-cat-grp::after {
+  content: ""; flex: 1 1 auto; height: 1px;
+  background: linear-gradient(to right, rgba(156,139,116,.4), rgba(156,139,116,0));
+}

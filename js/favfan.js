@@ -185,9 +185,16 @@
     }
 
     var show = cats.slice(0, MAX_ROWS);
+    var visDone = false;
     list.innerHTML = show.map(function (c) {
       var n = countOf(c.id);
-      return '<div class="fv-dock-row" role="listitem"'
+      /* 视觉单独成段：它是"维度"，和印花/面料/图案/工艺这些"品类"不是一类 */
+      var grp = "";
+      if (!visDone && String(c.name || "").indexOf("视觉") >= 0) {
+        grp = '<div class="fv-dock-grp" role="separator"><span>视觉维度</span></div>';
+        visDone = true;
+      }
+      return grp + '<div class="fv-dock-row" role="listitem"'
         + ' data-cat="' + esc(c.id) + '" data-name="' + esc(c.name) + '"'
         + ' style="--fv-c:' + esc(c.color || "#8b7355") + '">'
         + '<span class="fv-dock-pin" aria-hidden="true"></span>'

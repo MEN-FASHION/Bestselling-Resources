@@ -69,6 +69,9 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>'
   };
+  /* 视觉类分类：视觉是"维度"，和印花/面料/图案/工艺这些"品类"分开显示 */
+  function isVisionCat(c) { return !!(c && String(c.name || "").indexOf("视觉") >= 0); }
+
   function colorAt(i) { return COLORS[((i % COLORS.length) + COLORS.length) % COLORS.length]; }
 
   /* ---------------------------------------------------------------- DOM */
@@ -116,16 +119,16 @@
         +   '<span>把图拖到分类，或拖进「上装 / 下装」栏，松手即归入</span>'
         + '</div>'
         + '<div class="fv-d-main">'
-        /* 顺序：分类列（最左）→ 内容 → 上装下装栏（最右，贯穿上下）。
+        /* 顺序：分类列（最左）→ 上装下装栏（紧跟分类列右侧，贯穿上下）→ 内容。
            DOM 顺序与视觉一致，Tab 键也走得顺。 */
         +   '<div class="fv-d-filter" id="fv-d-filter" aria-label="我的分类"></div>'
-        +   '<div class="fv-d-body" id="fv-d-body"></div>'
         +   '<div class="fv-d-rail" id="fv-d-rail" aria-label="拖到这里归为上装或下装">'
         +     '<button type="button" class="fv-d-rail-z" data-railk="top" title="拖到这里归为上装">'
         +       '<span>上装</span><i id="fv-rail-n-top">0</i></button>'
         +     '<button type="button" class="fv-d-rail-z" data-railk="bottom" title="拖到这里归为下装">'
         +       '<span>下装</span><i id="fv-rail-n-bottom">0</i></button>'
         +   '</div>'
+        +   '<div class="fv-d-body" id="fv-d-body"></div>'
         + '</div>'
         + '<div class="fv-d-save" id="fv-d-save" hidden></div>';
       body.appendChild(d);
@@ -242,7 +245,13 @@
     var h = '<div class="fv-d-catcol-h">我的分类</div>';
     h += '<button type="button" class="fv-d-chip' + (ST.filter === "all" ? " is-on" : "") + '" data-fv-f="all">'
       + '<span class="fv-d-dot is-all"></span><span class="fv-d-cname">全部</span><i>' + ST.items.length + '</i></button>';
+    var visDone = false;
     (ST.cats || []).forEach(function (c) {
+      /* 视觉是"维度"，和印花/面料/图案/工艺这些"品类"分开成段 */
+      if (!visDone && isVisionCat(c)) {
+        h += '<div class="fv-d-grp"><span>视觉维度</span></div>';
+        visDone = true;
+      }
       var n = ST.items.filter(function (it) { return Number(it.category_id) === Number(c.id); }).length;
       h += '<div class="fv-d-chip' + (Number(ST.filter) === Number(c.id) ? " is-on" : "") + '"'
         + ' data-fv-f="' + c.id + '" data-drop="' + c.id + '" data-cid="' + c.id + '">'

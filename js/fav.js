@@ -256,9 +256,15 @@
     var noneN = ST.items.filter(function (it) { return it.category_id == null || it.category_id === ""; }).length;
     var h = '<button type="button" class="fv-catrow' + (ST.filter === "" ? " is-on" : "") + '" data-filter="">'
       + '<i class="fv-dot is-all"></i><span class="fv-cn">全部收藏</span><em class="fv-cnum">' + all + '</em></button>';
+    var visDone = false;
     ST.cats.forEach(function (c, i) {
       var n = ST.items.filter(function (it) { return String(it.category_id) === String(c.id); }).length;
       var key = catIdKey(c.id);
+      /* 视觉是"维度"，和印花/面料/图案/工艺这些"品类"分开成段 */
+      if (!visDone && String(c.name || "").indexOf("视觉") >= 0) {
+        h += '<div class="fv-cat-grp"><span>视觉维度</span></div>';
+        visDone = true;
+      }
       h += '<button type="button" class="fv-catrow' + (ST.filter === key ? " is-on" : "") + '" data-filter="' + key + '" data-cat="' + c.id + '">'
         + '<i class="fv-dot" style="background:' + colorOf(c, i) + '"></i>'
         + '<span class="fv-cn">' + esc(c.name) + '</span><em class="fv-cnum">' + n + '</em>'
