@@ -2251,17 +2251,6 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 }
 .rk-card.is-new { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 
-/* 卡片打标浮层（20261027L）：常态不占位、不显示；鼠标移到卡片上才从底部浮出。
-   pointer-events:none 保证不挡收藏星标、多选勾选和「点开大图」。 */
-.rk-cardtags{
-  position: absolute; left: 0; right: 0; bottom: 0;
-  display: none; flex-wrap: wrap; gap: 3px;
-  padding: 14px 5px 5px;
-  background: linear-gradient(to top, rgba(18,16,14,.88) 30%, rgba(18,16,14,.62) 72%, rgba(18,16,14,0));
-  pointer-events: none; z-index: 7;
-  max-height: 62%; overflow: hidden;
-}
-.rk-card:hover .rk-cardtags{ display: flex; }
 /* 打标覆盖率提示条（20261027M）：让用户一眼看出「标进到前台了没」，不必逐张悬停 */
 .rk-covnote{
   margin: 0 0 10px; padding: 7px 11px; border-radius: 8px;
@@ -2269,13 +2258,6 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   background: rgba(139,115,85,.07); border: 1px solid rgba(139,115,85,.18);
 }
 .rk-covnote b{ color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
-.rk-cardtags i{
-  font-style: normal; font-size: 10px; line-height: 1.55; letter-spacing: .1px;
-  color: #fff; background: rgba(255,255,255,.17);
-  border: 1px solid rgba(255,255,255,.22);
-  border-radius: 999px; padding: 0 6px; white-space: nowrap;
-}
-@media (hover: none){ .rk-cardtags{ display: none !important; } }   /* 触屏无悬停，避免误挡 */
 
 /* ---- 展开更多 ---- */
 .rk-more-wrap { margin: 14px 0 30px; text-align: center; }
@@ -2285,19 +2267,114 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 }
 .rk-more:hover { border-color: var(--gold); color: var(--gold); }
 
-/* ---- 灯箱 ---- */
+/* ---- 灯箱：图片居中，打标信息竖排贴在左侧（20261027P） ---- */
 .rk-lb {
-  position: fixed; inset: 0; z-index: 9999; background: rgba(12,12,12,.86);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px;
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(10,9,8,.9);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 34px 30px;
+  animation: rk-lb-in .18s ease-out;
 }
-.rk-lb img { max-width: min(88vw, 760px); max-height: 74vh; object-fit: contain; border-radius: 10px; background: #111; }
+@keyframes rk-lb-in { from { opacity: 0 } to { opacity: 1 } }
+html.rk-lb-open, html.rk-lb-open body { overflow: hidden; }
+
+/* 舞台：左栏固定宽 + 图片自适应，整体不超视口 */
+.rk-lb-stage {
+  display: flex; align-items: stretch;
+  max-width: min(96vw, 1360px); max-height: 92vh;
+  background: #14120f;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+  animation: rk-lb-rise .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes rk-lb-rise { from { transform: translateY(10px) scale(.985) } to { transform: none } }
+
+/* 左栏 */
+.rk-lb-side {
+  width: 268px; flex: 0 0 268px;
+  padding: 20px 18px 18px;
+  overflow-y: auto; overscroll-behavior: contain;
+  background: linear-gradient(180deg, #1b1814 0%, #151311 100%);
+  border-right: 1px solid rgba(255,255,255,.08);
+  color: #f2ede5;
+  scrollbar-width: thin; scrollbar-color: rgba(166,141,109,.45) transparent;
+}
+.rk-lb-side::-webkit-scrollbar { width: 6px; }
+.rk-lb-side::-webkit-scrollbar-thumb { background: rgba(166,141,109,.4); border-radius: 99px; }
+
+.rk-lb-sh {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase;
+  color: #a68d6d; font-weight: 600;
+  padding-bottom: 11px; margin-bottom: 13px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+}
+.rk-lb-smark { font-size: 9px; opacity: .85; }
+
+/* 图片归属信息：键值两列 */
+.rk-lb-meta { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
+.rk-lb-mrow { display: flex; align-items: baseline; gap: 8px; font-size: 12px; line-height: 1.5; }
+.rk-lb-mk { flex: 0 0 56px; color: #837a6d; letter-spacing: .4px; }
+.rk-lb-mv { color: #ece5da; word-break: break-all; }
+
+/* 标签分组 */
+.rk-lb-tags { display: flex; flex-direction: column; gap: 13px; }
+.rk-lb-th {
+  font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase;
+  color: #a68d6d; font-weight: 600;
+  padding-bottom: 9px; border-bottom: 1px solid rgba(255,255,255,.09);
+}
+.rk-lb-tg { display: flex; flex-direction: column; gap: 6px; }
+.rk-lb-tl {
+  font-size: 11px; color: #8f8578; letter-spacing: .8px;
+  padding-left: 8px; position: relative;
+}
+.rk-lb-tl::before {
+  content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 3px;
+  margin-top: -1.5px; border-radius: 50%; background: #a68d6d; opacity: .8;
+}
+.rk-lb-tc { display: flex; flex-wrap: wrap; gap: 5px; }
+.rk-lb-tc i {
+  font-style: normal; font-size: 11.5px; line-height: 1.7; letter-spacing: .2px;
+  color: #f4efe6; background: rgba(166,141,109,.16);
+  border: 1px solid rgba(166,141,109,.3);
+  border-radius: 5px; padding: 1px 7px; white-space: nowrap;
+}
+.rk-lb-tempty { font-size: 12px; line-height: 1.8; color: #7d7568; }
+
+/* 右侧图片区 */
+.rk-lb-main {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: #0e0d0b;
+}
+.rk-lb-main img {
+  max-width: 100%; max-height: calc(92vh - 32px);
+  width: auto; height: auto;
+  object-fit: contain; border-radius: 8px; background: #111;
+  display: block;
+}
+
 .rk-lb-close {
-  position: absolute; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 999px;
+  position: fixed; top: 14px; right: 16px; width: 36px; height: 36px; border-radius: 999px;
   border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+  transition: .16s; z-index: 10000;
 }
-.rk-lb-close:hover { background: rgba(255,255,255,.26); }
-.rk-lb-meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.rk-lb-tag { padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.14); color: #fff; font-size: 12px; }
+.rk-lb-close:hover { background: rgba(255,255,255,.28); transform: rotate(90deg); }
+
+/* 窄屏：标签栏落到图片下方，横向铺开，仍然一屏看全 */
+@media (max-width: 820px) {
+  .rk-lb { padding: 16px 12px; align-items: flex-start; }
+  .rk-lb-stage { flex-direction: column; max-height: 94vh; width: 100%; }
+  .rk-lb-side {
+    order: 2; width: 100%; flex: 0 0 auto; max-height: 40vh;
+    border-right: 0; border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .rk-lb-main { order: 1; padding: 10px; }
+  .rk-lb-main img { max-height: 48vh; }
+}
 
 /* ---- 空态 ---- */
 .rk-empty { padding: 26px 16px; text-align: center; color: var(--sub); font-size: 13px; }

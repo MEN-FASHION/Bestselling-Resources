@@ -24,9 +24,11 @@
     ["图案元素", "element_tags", "element"],
     ["二次工艺", "craft_tags", "craft"],
     ["拍摄方式", "shoot_tags", "shoot"],
-    ["视觉-背景", "visual_tags", "visual"],
-    ["视觉-画面构成", "visual_tags", "visual"],
-    ["视觉-呈现主体", "visual_tags", "visual"],
+    /* 视觉三列各自校验各自的枚举：旧版三列共用「视觉」大枚举，
+       往里填什么都能过，等于没校验。 */
+    ["视觉-背景", "visual_tags", "视觉-背景"],
+    ["视觉-画面构成", "visual_tags", "视觉-画面构成"],
+    ["视觉-呈现主体", "visual_tags", "视觉-呈现主体"],
     ["领型", "fit_tags", "fit领型"],
     ["袖型", "fit_tags", "fit袖型"],
     ["袖长", "fit_tags", "fit袖长"],
@@ -62,9 +64,18 @@
 
   function enumOf(key) {
     var E = (window.RankExport && window.RankExport.ENUM) || {};
-    if (key.indexOf("fit") === 0) return E[key.slice(3)] || [];
-    var m = { style: "风格", element: "图案元素", craft: "二次工艺", shoot: "拍摄方式", visual: "视觉" };
-    return E[m[key]] || [];
+    var list;
+    if (E[key]) list = E[key];                       /* 视觉-背景 / 视觉-画面构成 / 视觉-呈现主体 ... */
+    else if (key.indexOf("fit") === 0) list = E[key.slice(3)] || [];
+    else {
+      var m = { style: "风格", element: "图案元素", craft: "二次工艺", shoot: "拍摄方式", visual: "视觉" };
+      list = E[m[key]] || [];
+    }
+    /* 旧口径遗留值继续放行：库里已有的老标签（如「场景实景」）再导回来时
+       不该被当成「未识别」丢掉，但导出下拉里不再提供这些老词。 */
+    var legacy = (window.RankExport && window.RankExport.VISUAL_LEGACY) || [];
+    if (key === "视觉-背景" && legacy.length) return list.concat(legacy);
+    return list;
   }
 
   function sameArr(a, b) {
@@ -98,8 +109,18 @@
     var fileFields = [];
     MAP.forEach(function (m) { if (headers.indexOf(m[0]) >= 0 && fileFields.indexOf(m[1]) < 0) fileFields.push(m[1]); });
 
+    var parsed = parseRows(aoa, headers);
+    return { rows: parsed.rows, bad: parsed.bad, unknown: parsed.unknownList, headers: headers, fields: fileFields, sheet: name };
+  }
+
+  /* 纯函数：表头 + 行数据 → 逐列按各自枚举校验后的结果。
+     抽出来是为了能单独测（不必造一个真的 Excel 文件）。 */
+  function parseRows(aoa, headersIn) {
+    var headers = headersIn || ((aoa && aoa[0]) || []).map(function (h) { return String(h || "").trim(); });
+    var iUrl = headers.indexOf("图片URL");
+    var iCat = headers.indexOf("类目");
     var rows = [], bad = [], unknown = {}, seen = {};
-    for (var r = 1; r < aoa.length; r++) {
+    for (var r = headersIn ? 0 : 1; r < aoa.length; r++) {
       var line = aoa[r] || [];
       var url = String(line[iUrl] || "").trim();
       if (!url) continue;
@@ -126,7 +147,7 @@
     }
     var unknownList = Object.keys(unknown).map(function (k) { return { v: k, n: unknown[k] }; })
       .sort(function (a, b) { return b.n - a.n; });
-    return { rows: rows, bad: bad, unknown: unknownList, headers: headers, fields: fileFields, sheet: name };
+    return { rows: rows, bad: bad, unknown: unknownList, unknownMap: unknown, headers: headers };
   }
 
   /* 纯函数：把「解析结果 + 库里现状」合并成最终要写的行与历史
@@ -452,7 +473,10 @@
     if (rf) rf.addEventListener("click", loadTagBatches);
   });
 
-  window.RankTagImport = { parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS };
+  window.RankTagImport = {
+    parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS,
+    __test: { parseRows: function (rows) { return parseRows(rows); } }
+  };
 
   /* 后台榜单面板打开时才读批次，避免进后台就发请求 */
   window.RankTagBatches = { load: loadTagBatches };

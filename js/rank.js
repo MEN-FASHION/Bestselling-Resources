@@ -86,11 +86,13 @@
     if (ONLY === "new") return s === "新上榜";
     return s.indexOf("上升") === 0;                 /* 位次上升（含「上升 N 位」） */
   }
-  /* 这张图有没有打标数据（六个维度任一非空）。用 TAG_INDEX，与卡片浮层同源。 */
+  /* 这张图有没有打标数据（六个维度任一非空）。用 TAG_INDEX，与大图标签面板同源。 */
   function hasTagData(it) {
     var u = String((it && it.image_url) || "");
     var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
-    return !!(t && cardTagList(t).length);
+    if (!t) return false;
+    return ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags"]
+      .some(function (k) { return tagArr(t[k]).length > 0; });
   }
   function hitTagged(it) {
     return TAGGED === "off" ? true : (hasTagData(it) === (TAGGED === "yes"));
@@ -1448,45 +1450,87 @@
     return h;
   }
 
-  /* ---------------------------------------------------------------- 卡片打标浮层
-     用户要求：标签不要常驻在卡片上（会让图墙变密），鼠标移上去才显示。
-     实现：常态隐藏，:hover 才展开一条半透明底栏，罗列该图六个维度的打标值。
-     浮层 pointer-events:none —— 不挡收藏星标、不挡点开大图。 */
-  function cardTagList(t) {
-    if (!t) return [];
-    var out = [], seen = {};
-    var push = function (arr) {
+  /* ---------------------------------------------------------------- 大图标签面板
+     20261027P：标签不再挂在卡片上（悬停浮层已取消），改为
+     「点开大图 → 标签整齐排在图片左侧」，一屏看全，不用逐张悬停。
+     按维度分组，视觉拆成 背景 / 构图 / 主体，版型按部位拆开，避免一大坨。 */
+  var LB_GROUPS = [
+    ["风格", "style_tags", "style"],
+    ["视觉 · 背景", "visual_tags", "视觉-背景"],
+    ["视觉 · 构图", "visual_tags", "视觉-画面构成"],
+    ["视觉 · 主体", "visual_tags", "视觉-呈现主体"],
+    ["图案元素", "element_tags", "element"],
+    ["二次工艺", "craft_tags", "craft"],
+    ["拍摄方式", "shoot_tags", "shoot"]
+  ];
+  var FIT_ORDER = ["领型", "袖型", "袖长", "衣长", "松紧度", "裤型", "裤长", "裙长"];
+
+  /* 取某个枚举键的允许值，用来把 visual_tags 里混在一起的值分到三个子组。
+     词表来自 js/rank-enums.js（与后台导出/导入同一份）；万一没加载到，
+     退回到「全部归入背景组」，只会分组粗一点，不会丢标签。 */
+  function enumList(key) {
+    var VE = window.RANK_VISUAL_ENUM || {};
+    if (key === "视觉-背景") return (VE.bg || []).concat(VE.legacy || []);
+    if (key === "视觉-画面构成") return VE.frame || [];
+    if (key === "视觉-呈现主体") return VE.subject || [];
+    var E = (window.RankExport && window.RankExport.ENUM) || {};
+    return E[key] || [];
+  }
+
+  function lbTagGroups(t) {
+    var groups = [], seen = {};
+    var take = function (list, arr, label, key) {
+      var allow = key ? (enumList(key) || []) : null;
       tagArr(arr).forEach(function (v) {
         var k = String(v).trim();
         if (!k || seen[k]) return;
-        seen[k] = 1; out.push(k);
+        if (allow && allow.length && allow.indexOf(k) < 0) return;   /* 不属于这个子组 */
+        seen[k] = 1;
+        var g = list.filter(function (x) { return x[0] === label; })[0];
+        if (!g) { g = [label, []]; list.push(g); }
+        g[1].push(k);
       });
     };
-    push(t.style_tags);
-    push(t.visual_tags);
-    push(t.element_tags);
-    push(t.craft_tags);
-    push(t.shoot_tags);
-    push(t.fit_tags);
-    return out;
+    if (!t) return groups;
+    LB_GROUPS.forEach(function (m) { take(groups, t[m[1]], m[0], m[2]); });
+
+    /* 版型：库里存成「领型·圆领」这种带前缀的值，按部位拆成多组 */
+    var fitRest = [];
+    tagArr(t.fit_tags).forEach(function (v) {
+      var s2 = String(v).trim();
+      if (!s2 || seen[s2]) return;
+      seen[s2] = 1;
+      var cut = s2.indexOf("·");
+      if (cut > 0) {
+        var part = s2.slice(0, cut), val = s2.slice(cut + 1);
+        var gi = FIT_ORDER.indexOf(part);
+        var label = "版型 · " + part;
+        var g = groups.filter(function (x) { return x[0] === label; })[0];
+        if (!g) { g = [label, []]; groups.push(g); }
+        if (gi >= 0) g.__ord = gi;
+        g[1].push(val);
+      } else fitRest.push(s2);
+    });
+    if (fitRest.length) groups.push(["版型", fitRest]);
+    return groups.filter(function (g) { return g[1].length; });
   }
 
-  function paintCardTags(root) {
-    var box = root || document.querySelector("#rk-body") || document.body;
-    if (!box || !box.querySelectorAll) return;
-    Array.prototype.forEach.call(box.querySelectorAll(".rk-card[data-url]"), function (fig) {
-      var u = String(fig.getAttribute("data-url") || "");
-      var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
-      var chips = cardTagList(t);
-      var old = fig.querySelector(".rk-cardtags");
-      if (!chips.length) { if (old && old.parentNode) old.parentNode.removeChild(old); return; }
-      var html = chips.slice(0, 14).map(function (c) { return '<i>' + esc(c) + '</i>'; }).join("");
-      if (old) { if (old.innerHTML !== html) old.innerHTML = html; return; }
-      var d = document.createElement("div");
-      d.className = "rk-cardtags";
-      d.innerHTML = html;
-      fig.appendChild(d);
+  function lbTagsHtml(url) {
+    var t = TAG_INDEX[url] || TAG_INDEX[String(url).split("?")[0].split("#")[0]] || null;
+    var groups = lbTagGroups(t);
+    if (!groups.length) {
+      return '<div class="rk-lb-tags"><div class="rk-lb-th">打标信息</div>'
+        + '<div class="rk-lb-tempty">这张图还没有打标。<br>在后台「导出打标表」里补齐后回填，这里就会出现。</div>'
+        + '</div>';
+    }
+    var h = '<div class="rk-lb-tags"><div class="rk-lb-th">打标信息</div>';
+    groups.forEach(function (g) {
+      h += '<div class="rk-lb-tg"><div class="rk-lb-tl">' + esc(g[0]) + '</div><div class="rk-lb-tc">'
+        + g[1].map(function (v) { return '<i>' + esc(v) + '</i>'; }).join("")
+        + '</div></div>';
     });
+    h += '</div>';
+    return h;
   }
 
   /* 打标维度按当前这批图异步取一次；取不到就只显示三档占比，不阻塞主流程 */
@@ -1505,8 +1549,7 @@
       _fn.call(SBX, urls).then(function (m) {
         (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
         fin();
-        paintCardTags();                     /* 卡片悬停浮层：标签到位后再补画 */
-        renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
+        renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
       }, function () { fin(); });
     } catch (e) { fin(); }
   }
@@ -1576,7 +1619,6 @@
       html += '<div class="rk-more-wrap"><button type="button" class="rk-loadmore" id="rk-loadmore">展开更多（已展示 ' + CAP + ' / 最多 ' + maxLen + '）</button></div>';
     }
     box.innerHTML = html;
-    paintCardTags(box);          /* 卡片刚生成，这里补画悬停标签（必须放在赋值之后） */
 
     var more = $("#rk-loadmore");
     if (more) more.onclick = function () {
@@ -2379,32 +2421,56 @@
     exitEyeFullscreen();       /* 关天眼时一并退出全屏（若本次是由天眼进入的） */
   }
 
-  /* ---------------- 灯箱（仅看图 + 归属信息，不显示任何环比数值） ---------------- */
+  /* ---------------- 灯箱（看图 + 左侧打标面板，不显示任何环比数值） ----------------
+     20261027P：标签从卡片悬停浮层搬到这里。点开大图，左侧一列完整列出
+     风格 / 视觉（背景·构图·主体）/ 图案元素 / 二次工艺 / 拍摄方式 / 版型，
+     一次看全，不必在图墙上逐张悬停。 */
+  function lbMetaBits(it) {
+    var bits = [], b = badgeOf(it || {});
+    if (it.site) bits.push(['站点', it.site]);
+    if (it.period_label) bits.push(['期次', it.period_label]);
+    if (it.leaf_category) bits.push(['叶子类目', it.leaf_category]);
+    if (it.category && it.category !== it.leaf_category) bits.push(['类目', it.category]);
+    if (b) bits.push(['趋势', b.txt]);
+    return bits;
+  }
+
   function openLB(url) {
     if (!url) return;
     var it = ITEMS_BY_URL[url] || {};
-    var b = badgeOf(it);
     var old = $("#rk-lb");
     if (old) old.parentNode.removeChild(old);
     var d = document.createElement("div");
     d.id = "rk-lb";
     d.className = "rk-lb";
-    var bits = [];
-    if (it.site) bits.push('<span class="rk-lb-tag">' + esc(it.site) + '</span>');
-    if (it.period_label) bits.push('<span class="rk-lb-tag">' + esc(it.period_label) + '</span>');
-    if (it.leaf_category) bits.push('<span class="rk-lb-tag">' + esc(it.leaf_category) + '</span>');
-    if (b) bits.push('<span class="rk-lb-tag">' + esc(b.txt) + '</span>');
-    d.innerHTML = '<button type="button" class="rk-lb-close" id="rk-lb-close">×</button>' +
-      '<img src="' + esc(url) + '" alt="榜单图片">' +
-      '<div class="rk-lb-meta">' + bits.join("") + '</div>';
+
+    var meta = lbMetaBits(it).map(function (m) {
+      return '<div class="rk-lb-mrow"><span class="rk-lb-mk">' + esc(m[0]) + '</span>'
+        + '<span class="rk-lb-mv">' + esc(m[1]) + '</span></div>';
+    }).join("");
+
+    d.innerHTML = '<div class="rk-lb-stage" role="dialog" aria-label="榜单图片与打标信息">'
+      + '<aside class="rk-lb-side">'
+      +   '<div class="rk-lb-sh"><span class="rk-lb-smark">◆</span>图片信息</div>'
+      +   (meta ? '<div class="rk-lb-meta">' + meta + '</div>' : '')
+      +   lbTagsHtml(url)
+      + '</aside>'
+      + '<div class="rk-lb-main"><img src="' + esc(url) + '" alt="榜单图片"></div>'
+      + '</div>'
+      + '<button type="button" class="rk-lb-close" id="rk-lb-close" aria-label="关闭">×</button>';
+
     document.body.appendChild(d);
-    d.onclick = function (e) { if (e.target === d || e.target.id === "rk-lb-close") closeLB(); };
+    document.documentElement.classList.add("rk-lb-open");
+    d.onclick = function (e) {
+      if (e.target === d || e.target.id === "rk-lb-close" || e.target.className === "rk-lb-close") closeLB();
+    };
     document.addEventListener("keydown", lbEsc);
   }
   function lbEsc(e) { if (e.key === "Escape") closeLB(); }
   function closeLB() {
     var d = $("#rk-lb");
     if (d) d.parentNode.removeChild(d);
+    document.documentElement.classList.remove("rk-lb-open");
     document.removeEventListener("keydown", lbEsc);
   }
 

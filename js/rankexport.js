@@ -38,9 +38,29 @@
   ];
   var DIM_TOTAL = DIMS.length;
 
+  /* ---------------- 视觉三个子分组 ----------------
+     20261027O：原来「视觉」是一个 19 项的大枚举，三列共用，导致
+       ① 场景只写「场景实景」，看不出用了什么场景、什么道具；
+       ② 平铺被当成背景/构图，和摆拍挂拍这些「衣服怎么呈现」混在一起。
+     现在按语义拆成三组，各自独立枚举、各自校验：
+       视觉-背景     = 衣服身后/底下是什么（含具体场景与道具）
+       视觉-画面构成 = 一张图怎么排版（单图 / 拼图 / 带角标 …）
+       视觉-呈现主体 = 衣服以什么形态出现（平铺 / 摆拍 / 挂拍 / 模特 / 人台 …）
+     平铺按用户要求归入「呈现主体」，与摆拍、挂拍同类。 */
+  /* 视觉三组枚举来自 js/rank-enums.js（前后台共用同一份，避免各写一套走样） */
+  var VE = window.RANK_VISUAL_ENUM || {};
+  var VISUAL_BG = VE.bg || [];
+  var VISUAL_FRAME = VE.frame || [];
+  var VISUAL_SUBJECT = VE.subject || [];
+  var VISUAL_LEGACY = VE.legacy || [];
+
   var ENUM = {
     风格: ["复古美式", "街头潮流", "高街潮牌", "极简", "商务通勤", "商务正装", "休闲", "学院风", "运动风", "户外机能", "工装", "日系cityboy", "韩系", "欧美街头", "老钱风", "轻奢", "机车风", "复古港风", "民族风", "度假风", "波西米亚", "中性风", "甜美风", "运动休闲"],
-    视觉: ["纯白底", "浅灰底", "纯色背景", "渐变色背景", "场景实景", "画布纹理", "单件平铺", "多件组合", "拼图/九宫格", "主图+细节小图", "带文字标签", "带促销角标", "模特全身", "模特半身", "模特局部", "人台（假人）", "无人台挂拍", "手持展示", "3D渲染图"],
+    "视觉-背景": VISUAL_BG,
+    "视觉-画面构成": VISUAL_FRAME,
+    "视觉-呈现主体": VISUAL_SUBJECT,
+    /* 三组合并视图：只用于「打标进度 / 统计」，不参与逐列校验 */
+    视觉: VISUAL_BG.concat(VISUAL_FRAME, VISUAL_SUBJECT),
     图案元素: ["纯色/无图案", "竖条纹", "横条纹", "格纹", "千鸟格", "威尔士格", "波点", "碎花", "大花/花卉", "植物叶纹", "动物纹", "豹纹", "蛇纹", "斑马纹", "迷彩", "几何图案", "卡通图案", "字母", "标语文字", "品牌LOGO", "扎染", "晕染/水墨", "渐变", "抽象图案", "民族图腾", "拼色", "满印", "局部印花", "拉链", "抽绳", "口袋", "工装口袋", "荷叶边", "蕾丝", "镂空", "绑带", "开衩", "流苏", "毛边", "撞钉", "铆钉", "拼接", "双层", "翻边", "腰带", "金属扣件", "织带"],
     二次工艺: ["刺绣", "贴布绣", "珠片绣", "钉珠", "亮片", "水钻", "烫钻", "撞钉", "铆钉", "丝网印花", "数码印花", "发泡印花", "厚板印花", "植绒印花", "反光印花", "烫图/热转印", "压花", "压皱", "绗缝", "打缆/抽褶", "抽褶", "编织", "手工钩织", "水洗", "做旧洗水", "手擦", "蜡染", "扎染", "破洞", "磨破", "毛边"],
     拍摄方式: ["摆拍", "挂拍", "平铺拍", "模拍", "人台拍", "3D", "细节特写", "买家秀", "直播截帧"],
@@ -145,7 +165,12 @@
       }
       if (!inScope(pr.filled, o.scope)) return;
 
-      var visual = arrOf(t.visual_tags).join("，");
+      /* 视觉按三组分流填到对应列：不再一股脑塞进「视觉-背景」，
+         否则在导出表里根本看不出哪一项属于背景、哪一项属于呈现主体。 */
+      var vAll = arrOf(t.visual_tags);
+      var vBg = vAll.filter(function (x) { return VISUAL_BG.indexOf(String(x)) >= 0 || VISUAL_LEGACY.indexOf(String(x)) >= 0; }).join("，");
+      var vFr = vAll.filter(function (x) { return VISUAL_FRAME.indexOf(String(x)) >= 0; }).join("，");
+      var vSj = vAll.filter(function (x) { return VISUAL_SUBJECT.indexOf(String(x)) >= 0; }).join("，");
       var fit = arrOf(t.fit_tags);
       var pickFit = function (g) {
         var hit = fit.filter(function (x) { return String(x).indexOf(g + "·") === 0; });
@@ -161,8 +186,8 @@
         h.bestRatio == null ? "" : h.bestRatio,
         pr.status,
         arrOf(t.style_tags).join("，"),
-        visual,
-        "", "",
+        vBg,
+        vFr, vSj,
         arrOf(t.element_tags).join("，"),
         arrOf(t.craft_tags).join("，"),
         arrOf(t.shoot_tags).join("，"),
@@ -277,6 +302,7 @@
   window.RankExport = {
     all: exportAll, preview: preview, buildBook: buildBook, collectImages: collectImages,
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, DIM_TOTAL: DIM_TOTAL,
+    VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME
   };
 
