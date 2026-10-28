@@ -649,7 +649,7 @@ const SB = (() => {
       return this.clearImageFields(ids, ["tags"]);
     },
 
-    /* ---------- 视觉专区批量打标（20261028A 导入用） ----------
+    /* ---------- 视觉专区批量打标（20261028B 导入用） ----------
        一次导入可能是上千行 × 11 个字段，逐条 update 会排成长队。
        这里按 20 条并发推送，单条失败不中断整批，返回 { ok, fail, errors }。
        patch 形如 { style_tags:[...], craft_tags:[...], ... }，只带要写的字段。 */
@@ -2422,6 +2422,59 @@ async removeTrendRecord(id) {
     async rankTagReady() {
       const { error } = await client.from("rank_image_tags").select("image_url", { head: true, count: "exact" }).limit(1);
       return !error;
+    },
+    /* 探测打标表的可选维度列是否存在。
+       用途：节日/文化/心理这些列是分批补丁加的，某个补丁没执行时，
+       读取会静默降级、页面只是"少一栏"，用户完全看不出原因。
+       后台一进来就问一次，缺列直接写在界面上，不用再靠猜。 */
+    async probeRankTagCols() {
+      const probe = async (col) => {
+        try {
+          const { error } = await client.from("rank_image_tags").select(col).limit(1);
+          return !error;
+        } catch (e) { return false; }
+      };
+      const [festival, culture, psych] = await Promise.all([
+        probe("festival_tags"), probe("culture_tags"), probe("psych_tags"),
+      ]);
+      return { festival, culture, psych };
+    },
+    /* 打标数据体检：直接问库——每个维度到底有多少行真的有值。
+       用途：界面"打了标却看不到"时，先分清是【没打进去】还是【读不出来】。
+       读不出来是补丁/列的问题，没打进去是导入的问题，两者处置完全不同。 */
+    async statRankTagDims() {
+      const dims = [
+        ["风格", "style_tags"], ["视觉", "visual_tags"], ["图案元素", "element_tags"],
+        ["二次工艺", "craft_tags"], ["拍摄方式", "shoot_tags"], ["版型", "fit_tags"],
+        ["文化背景", "culture_tags"], ["消费心理", "psych_tags"], ["节日", "festival_tags"],
+      ];
+      let cols = dims.map((d) => d[1]);
+      let data = null, error = null;
+      for (let i = 0; i < 3; i++) {
+        const r = await client.from("rank_image_tags").select(cols.join(",")).limit(50000);
+        data = r.data; error = r.error;
+        if (!error) break;
+        /* 某列不存在时整条查询会失败：退一列重试，并记下缺哪列 */
+        const msg = String(error.message || error.details || "");
+        const hit = dims.filter((d) => msg.indexOf(d[1]) >= 0).map((d) => d[1]);
+        if (!hit.length) break;
+        cols = cols.filter((c) => hit.indexOf(c) < 0);
+        dims.filter((d) => hit.indexOf(d[1]) >= 0).forEach((d) => { d[2] = "missing"; });
+      }
+      if (error) throw new Error(error.message || "读取打标表失败");
+      const rows = data || [];
+      const stat = {};
+      dims.forEach((d) => {
+        const col = d[1];
+        if (d[2] === "missing") { stat[d[0]] = { col, missing: true, n: 0 }; return; }
+        let n = 0;
+        rows.forEach((r) => {
+          const v = r[col];
+          if (Array.isArray(v) ? v.length : !!v) n++;
+        });
+        stat[d[0]] = { col, missing: false, n };
+      });
+      return { total: rows.length, stat };
     },
     async listRankTagRows(urls) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];

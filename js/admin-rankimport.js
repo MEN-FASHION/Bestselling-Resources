@@ -499,11 +499,31 @@
         } catch (e) { historyWarn += "；批次台账写入失败"; }
       }
 
+      /* 逐维统计本批真正写进去的行数：节日这类可选维度，
+         用户在表里填了却因为「列不存在」被判"写入成功"，会一直找不到原因。
+         这里把每一维写了几行报出来，数不对立刻能看出来。 */
+      var dimOf = { style_tags: "风格", visual_tags: "视觉", element_tags: "图案元素", craft_tags: "二次工艺",
+                    shoot_tags: "拍摄方式", fit_tags: "版型", culture_tags: "文化背景",
+                    psych_tags: "消费心理", festival_tags: "节日" };
+      var cntDim = {};
+      (plan.payload || []).forEach(function (r) {
+        Object.keys(dimOf).forEach(function (f) {
+          if ((r[f] || []).length) cntDim[f] = (cntDim[f] || 0) + 1;
+        });
+      });
+      var dimTxt = Object.keys(dimOf).map(function (f) {
+        return dimOf[f] + " " + (cntDim[f] || 0);
+      }).join(" · ");
+
       var msg = "已写入 " + n + " 张图的标签（批次 " + batch + "，"
         + (opts.mode === "overwrite" ? "覆盖" : "补齐") + "模式）"
         + (plan.stats.skipped ? "；跳过已有标签 " + plan.stats.skipped + " 处" : "")
         + (parsed.miss ? "；跳过对不上榜单的 " + parsed.miss + " 张" : "")
-        + historyWarn;
+        + historyWarn
+        + "。本批各维度写入行数：" + dimTxt;
+      if (!(cntDim.festival_tags || 0)) {
+        msg += "（节日 0 行＝表里这列是空的，或该列在数据库里不存在）";
+      }
       setTip(null, msg, true);
       if (window.sbToast) sbToast("已写入 " + n + " 张图的标签", true);
       loadTagBatches();
@@ -651,6 +671,7 @@
     if (ce) ce.addEventListener("change", refreshPlan);
     var rf = $("#rank-tag-batch-refresh");
     if (rf) rf.addEventListener("click", loadTagBatches);
+    probeCols();
   });
 
   window.RankTagImport = {
@@ -658,8 +679,51 @@
     checkConsistency: checkConsistency, checkCraft: checkCraft,
     SHOOT_RULE: SHOOT_RULE, CRAFT_BIG_AREA: BIG_AREA_PAT,
     /* 测试入口：传入的 aoa 仍以「表头行」开头（与 parseBook 同语义） */
-    __test: { parseRows: function (rows) { return parseRows(rows, null, true); } }
+    __test: { parseRows: function (rows) { return parseRows(rows, null, true); } },
+    probeCols: probeCols
   };
+
+  /* 数据库列自检：某个补丁没跑时，读取会「静默降级」——
+     页面只是少一栏，不报错，用户根本看不出是数据没打还是列不存在。
+     这里直接把缺哪一列写出来。 */
+  /* 打标数据体检：一次问清三件事——
+     ① 该有的列在不在（补丁跑没跑）
+     ② 每一维在库里到底有多少行有值（打没打进去）
+     ③ 哪一维是 0（通常是漏了这一步）
+     "打了标却看不到"这个问题，90% 是①②之一，不用再靠猜。 */
+  function probeCols() {
+    var box = $("#rank-tag-colstatus");
+    if (!box || !window.SB || !SB.statRankTagDims) return;
+    box.textContent = "正在体检打标数据…";
+    box.style.color = "";
+    SB.statRankTagDims().then(function (r) {
+      var missing = [], zero = [], parts = [];
+      Object.keys(r.stat).forEach(function (k) {
+        var o = r.stat[k];
+        if (o.missing) { missing.push(k); return; }
+        parts.push(k + " " + o.n);
+        if (!o.n) zero.push(k);
+      });
+      var h = "";
+      if (missing.length) {
+        h += '<span style="color:#b91c1c">⚠ 数据库缺少维度列：<b>' + missing.join("、") + '</b>'
+          + '（节日 → <code>tools/patch_20261027R.sql</code>；文化/心理 → <code>tools/patch_20261027Q.sql</code>）</span>'
+          + '<br><span style="color:#666">缺列时这几维写不进去、也读不出来，页面不会报错，只会「少一栏」。</span><br>';
+      }
+      h += '库里共 <b>' + r.total + '</b> 行打标记录 · 各维度有值行数：' + parts.join(" · ");
+      if (zero.length) {
+        h += '<br><span style="color:#b45309">⚠ 这些维度目前一行都没有：<b>' + zero.join("、")
+          + '</b>。如果表里填过，检查导入时是否被判「未识别」，或这列的列名和表头不一致。</span>';
+      }
+      if (!missing.length && !zero.length) {
+        h += '<br><span style="color:#15803d">✓ 数据齐全，前台应能正常显示。</span>';
+      }
+      box.innerHTML = h;
+    }, function () {
+      box.textContent = "体检失败：无法读取打标表（可能表还没建）";
+      box.style.color = "#b91c1c";
+    });
+  }
 
   /* 后台榜单面板打开时才读批次，避免进后台就发请求 */
   window.RankTagBatches = { load: loadTagBatches };
