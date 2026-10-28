@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的收藏 · TREND BANK</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css?v=20261028A">
+</head>
+<body class="front">
+  <div id="toast" class="toast"></div>
+
+  <section id="fav-view">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span>我的收藏</span></div>
+        <nav class="top-tabs is-booting">
+          <a href="rank.html" class="tab-link">趋势上升榜</a>
+          <a href="plus.html" class="tab-link">大码专区</a>
+          <a href="marketing.html" class="tab-link">营销日历</a>
+          <a href="index.html" class="tab-link">视觉专区</a>
+          <a href="trends.html" class="tab-link">趋势专区</a>
+          <a href="trends.html#recruit" class="tab-link">招品回品</a>
+          <a href="trends.html#bestseller" class="tab-link">BESTSELLER</a>
+          <a href="fav.html" class="tab-link active">我的收藏</a>
+        </nav>
+        <div class="topbar-actions">
+          <span id="fv-user" class="rk-user hidden"></span>
+          <a href="index.html" id="fv-login" class="btn-ghost hidden">去登录</a>
+          <button type="button" id="fv-logout" class="btn-ghost hidden">退出</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="fv-layout">
+      <aside class="fv-side">
+        <div class="fv-side-head">
+          <span>我的分类</span>
+          <button type="button" class="fv-new" id="fv-new">＋ 新建</button>
+        </div>
+        <div class="fv-newbox hidden" id="fv-newbox">
+          <input type="text" id="fv-newname" maxlength="40" placeholder="分类名，如 印花T恤">
+          <div class="fv-newrow">
+            <button type="button" class="fv-btn-on" id="fv-newok">建好</button>
+            <button type="button" class="fv-btn" id="fv-newcancel">取消</button>
+          </div>
+        </div>
+        <nav id="fv-cats" class="fv-cats"><div class="fv-empty-s">加载中…</div></nav>
+        <div class="fv-side-tip">把图拖到分类上即可归类；拖到「未分类」可以移出分类。</div>
+      </aside>
+
+      <main class="fv-main">
+        <div class="fv-bar">
+          <div class="fv-bar-l" id="fv-sum">加载中…</div>
+          <div class="fv-bar-r">
+            <button type="button" class="fv-btn" id="fv-expand-all" title="把所有周里已分类的图全部平铺：同类相邻排在一起，下方一条框写类别名与张数">展开全部周（平铺）</button>
+            <button type="button" class="fv-btn" id="fv-collapse-all">收起全部</button>
+            <button type="button" class="fv-btn" id="fv-export" title="把全部收藏按「期次 → 类目 → 上装/下装 → 元素」排成一张高清长图，一次导出">导出周报（整张高清图）</button>
+            <button type="button" class="fv-btn" id="fv-export-html" title="导出成一个可直接双击打开的 HTML 网页（单文件，含筛选与搜索）">导出网页（单文件 HTML）</button>
+          </div>
+        </div>
+        <div id="fv-body" class="fv-body"><div class="fv-empty">加载中…</div></div>
+      </main>
+    </div>
+    <footer class="fv-foot">© 2026 TREND BANK · 我的收藏 · 构建 20261027F</footer>
+  </section>
+
+  <script src="vendor/supabase.js?v=20261028A"></script>
+  <script src="js/config.js?v=20261028A"></script>
+  <script src="js/supabase.js?v=20261028A"></script>
+  <script src="js/common.js?v=20261028A"></script>
+  <script src="js/track-menu.js?v=20261028A"></script>
+  <script src="js/favexport.js?v=20261028A"></script>
+  <script src="js/fav.js?v=20261028A"></script>
+</body>
+</html>
