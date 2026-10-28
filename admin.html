@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261028D">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261028D">
+<link rel="stylesheet" href="css/style.css?v=20261028F">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261028F">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -592,6 +592,21 @@
             <span id="public-access-label">前台公开浏览（所有人可见）</span>
           </label>
           <button id="access-save" class="btn-primary" disabled>保存设置</button>
+          <hr class="tag-sub-hr">
+          <h4 class="perm-zone-title">外部只读取图 <span class="hint-inline">（打标、批量取图等外部工具用的临时只读通道）</span></h4>
+          <p class="hint">开启后，带上密钥的图片地址可被外部读取；不带密钥的请求一律拒绝。它只放宽「看图片」这一个动作，上传与删除仍然只认管理员登录。用完请关闭本开关或点「重置密钥」立即失效。</p>
+          <label class="switch-row">
+            <input type="checkbox" id="agent-read-toggle">
+            <span id="agent-read-label">允许外部只读取图</span>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap;">
+            <input type="text" id="agent-read-key" readonly placeholder="开启后自动生成密钥"
+                   style="flex:1;min-width:220px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;">
+            <button id="agent-read-copy" class="btn-ghost">复制密钥</button>
+            <button id="agent-read-reset" class="btn-ghost">重置密钥</button>
+          </div>
+          <button id="agent-read-save" class="btn-primary" disabled>保存设置</button>
+          <p class="hint" id="agent-read-state">状态：未开启</p>
           <hr class="tag-sub-hr">
           <div class="access-zone-block">
             <h4 class="perm-zone-title">顶部菜单项 · 前台可见 <span class="hint-inline">（可单独关闭任一菜单项：视觉专区/趋势专区/招品回品/BESTSELLER/公告；关闭后前台该项入口即隐藏；仅影响前台展示，不影响后台数据）</span></h4>
@@ -1490,38 +1505,38 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261028D"></script>
-  <script src="vendor/quill.js?v=20261028D"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261028D"></script>
-  <script src="vendor/jszip.min.js?v=20261028D"></script>
-  <script src="vendor/qrcode.min.js?v=20261028D"></script>
-  <script src="js/config.js?v=20261028D"></script>
-  <script src="js/supabase.js?v=20261028D"></script>
-  <script src="js/track-menu.js?v=20261028D"></script>
+  <script src="vendor/supabase.js?v=20261028F"></script>
+  <script src="vendor/quill.js?v=20261028F"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261028F"></script>
+  <script src="vendor/jszip.min.js?v=20261028F"></script>
+  <script src="vendor/qrcode.min.js?v=20261028F"></script>
+  <script src="js/config.js?v=20261028F"></script>
+  <script src="js/supabase.js?v=20261028F"></script>
+  <script src="js/track-menu.js?v=20261028F"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261028D"></script>
-  <script src="js/admin.js?v=20261028D"></script>
-  <script src="js/admin-images.js?v=20261028D"></script>
-  <script src="js/imageexport.js?v=20261028D"></script>
-  <script src="js/admin-imageimport.js?v=20261028D"></script>
-  <script src="js/admin-smart.js?v=20261028D"></script>
-  <script src="js/admin-trend.js?v=20261028D"></script>
-  <script src="js/admin-notice.js?v=20261028D"></script>
-  <script src="js/marketing-data.js?v=20261028D"></script>
-  <script src="js/admin-festival.js?v=20261028D"></script>
-  <script src="js/admin-tasks.js?v=20261028D"></script>
-  <script src="js/admin-bestseller.js?v=20261028D"></script>
-  <script src="js/admin-perm.js?v=20261028D"></script>
-  <script src="js/admin-pool.js?v=20261028D"></script>
-  <script src="js/rank-enums.js?v=20261028D"></script>
-  <script src="js/rankexport.js?v=20261028D"></script>
-  <script src="js/admin-rankimport.js?v=20261028D"></script>
-  <script src="js/admin-rank.js?v=20261028D"></script>
-  <script src="js/plus-sb.js?v=20261028D"></script>
-  <script src="js/plus-match.js?v=20261028D"></script>
-  <script src="js/admin-plus.js?v=20261028D"></script>
-  <script src="js/admin-insight.js?v=20261028D"></script>
-  <script src="js/admin-backup.js?v=20261028D"></script>
+  <script src="js/admin-dialog.js?v=20261028F"></script>
+  <script src="js/admin.js?v=20261028F"></script>
+  <script src="js/admin-images.js?v=20261028F"></script>
+  <script src="js/rank-enums.js?v=20261028F"></script>
+  <script src="js/imageexport.js?v=20261028F"></script>
+  <script src="js/admin-imageimport.js?v=20261028F"></script>
+  <script src="js/admin-smart.js?v=20261028F"></script>
+  <script src="js/admin-trend.js?v=20261028F"></script>
+  <script src="js/admin-notice.js?v=20261028F"></script>
+  <script src="js/marketing-data.js?v=20261028F"></script>
+  <script src="js/admin-festival.js?v=20261028F"></script>
+  <script src="js/admin-tasks.js?v=20261028F"></script>
+  <script src="js/admin-bestseller.js?v=20261028F"></script>
+  <script src="js/admin-perm.js?v=20261028F"></script>
+  <script src="js/admin-pool.js?v=20261028F"></script>
+  <script src="js/rankexport.js?v=20261028F"></script>
+  <script src="js/admin-rankimport.js?v=20261028F"></script>
+  <script src="js/admin-rank.js?v=20261028F"></script>
+  <script src="js/plus-sb.js?v=20261028F"></script>
+  <script src="js/plus-match.js?v=20261028F"></script>
+  <script src="js/admin-plus.js?v=20261028F"></script>
+  <script src="js/admin-insight.js?v=20261028F"></script>
+  <script src="js/admin-backup.js?v=20261028F"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

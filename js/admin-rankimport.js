@@ -50,7 +50,7 @@
   var FIELDS = ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags",
                 "culture_tags", "psych_tags"];
 
-  /* 20261028D：FIELDS 有两个用途被混用了 —— 既是「是否已打标」的判定口径，
+  /* 20261028E：FIELDS 有两个用途被混用了 —— 既是「是否已打标」的判定口径，
      又被当成「要写库的字段清单」。
      节日是可选维度，不进 FIELDS（留空不算未打标）是对的；
      但写入循环也只遍历 FIELDS，于是节日那一列解析出来了却从没写进库：

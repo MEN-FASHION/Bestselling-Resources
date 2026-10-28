@@ -1,5 +1,5 @@
 /* ============================================================================
- * imageexport.js —— 视觉专区（图库）打标表导出（20261028D，仅后台）
+ * imageexport.js —— 视觉专区（图库）打标表导出（20261028E，仅后台）
  *
  * 与趋势上升榜共用同一套枚举（js/rank-enums.js），数据源不同：
  *   榜单：rank_items + rank_image_tags（外链图）
@@ -27,13 +27,35 @@
  * 前台不再提供导出：打标是后台编辑动作，出入都在后台完成。
  * ==========================================================================*/
 (function () {
-  var AE = window.APP_ENUM || {};
-  var VE = window.RANK_VISUAL_ENUM || {};
-  var VISUAL_BG = VE.bg || [];
-  var VISUAL_FRAME = VE.frame || [];
-  var VISUAL_SUBJECT = VE.subject || [];
-  var LEGACY = VE.legacy || [];
-  var FIT_GROUPS = (window.APP_ENUM_GROUPS && window.APP_ENUM_GROUPS.fit) || [];
+  /* 枚举一律懒取（调用时才读 window）。
+     之前在这里一次性取 window.APP_ENUM / RANK_VISUAL_ENUM，但定义这两个全局的脚本
+     比本文件晚加载，取值时全是 undefined —— 结果是「枚举参考」表大部分维度空白，
+     导入校验的允许值也是空数组，任何值都会被判未识别。 */
+  function AE() { return window.APP_ENUM || {}; }
+  function VE() { return window.RANK_VISUAL_ENUM || {}; }
+  function VISUAL_BG() { return VE().bg || []; }
+  function VISUAL_FRAME() { return VE().frame || []; }
+  function VISUAL_SUBJECT() { return VE().subject || []; }
+  function LEGACY() { return VE().legacy || []; }
+  function FIT_GROUPS() { return (window.APP_ENUM_GROUPS && window.APP_ENUM_GROUPS.fit) || []; }
+
+  /* 榜单那套全量枚举（rank-enums.js 组装好的合并版），视觉专区与之共用 */
+  function RANK_ENUM() {
+    var RE = window.RankExport;
+    return (RE && RE.ENUM) || window.RANK_ENUM || {};
+  }
+  /* 取某维度的允许值：榜单全量枚举 → 图库原生枚举 → 视觉三组，逐级兜底 */
+  function enumOf(k) {
+    var v = RANK_ENUM()[k];
+    if (v && v.length) return v.slice();
+    v = AE()[k];
+    if (v && v.length) return v.slice();
+    if (k === "视觉-背景") return VISUAL_BG().slice();
+    if (k === "视觉-画面构成") return VISUAL_FRAME().slice();
+    if (k === "视觉-呈现主体") return VISUAL_SUBJECT().slice();
+    return [];
+  }
+  function fitGroups() { return FIT_GROUPS(); }
 
   /* 计入「打标是否完整」的 8 个主维度（与榜单口径一致） */
   var DIMS = [
@@ -70,24 +92,48 @@
      导出表只取 url 时整列全空——「导出来没有 URL」就是这么来的。
      所以按 外链 → 存储地址 逐级兜底，保证每一行都有可打开看图的地址。 */
   function extUrlOf(img) { return String((img && (img.url || img.image_url)) || "").trim(); }
+  /* 导出前确保已经拿到「外部只读密钥」。
+     开关开启时把密钥拼进图片地址，导出的表拿去哪台机器都能直接看图；
+     开关关闭时不拼任何东西，地址仍是裸地址（对外不可读）——这是默认状态。 */
+  async function ensureAgentReadKey() {
+    if (window.__agentReadLoaded === true) return;
+    try {
+      var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      if (!base || typeof SB === "undefined" || !SB.currentToken) return;
+      var tok = await SB.currentToken();
+      if (!tok) return;
+      var r = await fetch(base + "/agent-read", { headers: { Authorization: "Bearer " + tok } });
+      if (!r.ok) return;
+      var d = await r.json();
+      window.__agentReadOn = !!d.on;
+      window.__agentReadKey = d.key || "";
+      window.__agentReadLoaded = true;
+    } catch (e) { /* 拿不到就导出裸地址，不影响导出本身 */ }
+  }
+
   function storageUrlOf(img) {
     var p = String((img && img.path) || "").trim().replace(/^\/+/, "");
     if (!p) return "";
     var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
-    return base ? base + "/" + p : p;
+    if (!base) return p;
+    var u = base + "/" + p;
+    /* 外部只读开关开着才带上密钥；关着就是普通地址，外部读不到 */
+    var k = window.__agentReadOn ? String(window.__agentReadKey || "") : "";
+    if (k) u += "?read_key=" + encodeURIComponent(k);
+    return u;
   }
   function urlOf(img) { return extUrlOf(img) || storageUrlOf(img); }
 
   /* 视觉三个子组：背景走 scene_tags，构图/主体走 visual_tags */
   function visualParts(img) {
     var bg = arr(img && img.scene_tags)
-      .filter(function (x) { return VISUAL_BG.indexOf(String(x)) >= 0 || LEGACY.indexOf(String(x)) >= 0; });
+      .filter(function (x) { return VISUAL_BG().indexOf(String(x)) >= 0 || LEGACY().indexOf(String(x)) >= 0; });
     var vis = arr(img && img.visual_tags);
-    var fr = vis.filter(function (x) { return VISUAL_FRAME.indexOf(String(x)) >= 0; });
-    var sj = vis.filter(function (x) { return VISUAL_SUBJECT.indexOf(String(x)) >= 0; });
+    var fr = vis.filter(function (x) { return VISUAL_FRAME().indexOf(String(x)) >= 0; });
+    var sj = vis.filter(function (x) { return VISUAL_SUBJECT().indexOf(String(x)) >= 0; });
     /* 存量数据兼容：visual_tags 里可能直接放了背景值 */
     vis.forEach(function (x) {
-      if (VISUAL_BG.indexOf(String(x)) >= 0 && bg.indexOf(x) < 0) bg.push(x);
+      if (VISUAL_BG().indexOf(String(x)) >= 0 && bg.indexOf(x) < 0) bg.push(x);
     });
     return { bg: bg, frame: fr, subject: sj, all: bg.concat(fr, sj) };
   }
@@ -272,7 +318,7 @@
       "拍摄方式", "模特", "领型", "袖型", "袖长", "衣长", "松紧度", "裤型", "裤长", "裙长", "腰型",
       "文化背景", "消费心理", "节日", "渠道"];
     dimOrder.forEach(function (k) {
-      var vals = (AE[k] || []).slice();
+      var vals = enumOf(k);
       var mt = (o.manualTags && o.manualTags[k]) || [];
       mt.forEach(function (m) { if (vals.indexOf(m) < 0) vals.push(m); });
       var note = "";
@@ -288,7 +334,7 @@
     /* 版型按部位拆开列，避免把「圆领」填到「裤型」里 */
     enumAoa.push([]);
     enumAoa.push(["版型 · 按部位填写", "部位", "说明"]);
-    FIT_GROUPS.forEach(function (g) {
+    fitGroups().forEach(function (g) {
       enumAoa.push(["", g.label + "：" + g.values.join("、"), "填在打标表对应的「" + g.label + "」列，导入时按列校验"]);
     });
     var ws3 = XLSX.utils.aoa_to_sheet(enumAoa);
@@ -328,6 +374,7 @@
 
   /* 导出（单文件 / 按类目拆分 zip） */
   async function exportImages(images, opts, say) {
+    await ensureAgentReadKey();
     var o = opts || {};
     var manual = await loadManualTags();
     var tag = stamp();

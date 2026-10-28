@@ -638,6 +638,118 @@ function bindAccess() {
       });
     }
   }
+
+// ================= 外部只读取图开关（给打标/批量取图等外部工具临时用） =================
+// 与「前台公开浏览」相互独立：只放宽匿名读图，且必须带密钥；上传/删除仍只认管理员
+function _agentReadBase() {
+  return String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+}
+
+async function loadAgentRead() {
+  const toggle = document.querySelector("#agent-read-toggle");
+  const keyEl = document.querySelector("#agent-read-key");
+  const stateEl = document.querySelector("#agent-read-state");
+  const save = document.querySelector("#agent-read-save");
+  if (!toggle || !keyEl) return;
+  const base = _agentReadBase();
+  if (!base) return;
+  try {
+    const tok = await SB.currentToken();
+    if (!tok) return;           // 未登录：保持默认状态，登录后切面板会重新加载
+    const r = await fetch(base + "/agent-read", { headers: { Authorization: "Bearer " + tok } });
+    if (r.status === 403) return;   // 非超管：本面板不可见，静默跳过，不打扰
+    if (!r.ok) throw new Error("read failed");
+    const d = await r.json();
+    toggle.checked = !!d.on;
+    window.__agentReadLoaded = true;
+    keyEl.value = d.key || "";
+    window.__agentReadOn = !!d.on;
+    window.__agentReadKey = d.key || "";
+    if (stateEl) stateEl.textContent = d.on
+      ? "状态：已开启 —— 导出的图片地址会自动带上密钥；关闭后可立即失效"
+      : "状态：未开启";
+    if (save) save.disabled = true;
+  } catch (e) {
+    if (stateEl) stateEl.textContent = "状态：未开启（读取失败，请刷新重试）";
+  }
+}
+
+async function saveAgentRead(payload) {
+  const base = _agentReadBase();
+  if (!base) throw new Error("no base");
+  const tok = await SB.currentToken();
+  const r = await fetch(base + "/agent-read", {
+    method: "POST",
+    headers: Object.assign(
+      { "Content-Type": "application/json" },
+      tok ? { Authorization: "Bearer " + tok } : {}
+    ),
+    body: JSON.stringify(payload || {}),
+  });
+  if (!r.ok) throw new Error("save failed");
+  return await r.json();
+}
+
+function bindAgentRead() {
+  const toggle = document.querySelector("#agent-read-toggle");
+  const save = document.querySelector("#agent-read-save");
+  const keyEl = document.querySelector("#agent-read-key");
+  const stateEl = document.querySelector("#agent-read-state");
+  const copyBtn = document.querySelector("#agent-read-copy");
+  const resetBtn = document.querySelector("#agent-read-reset");
+  if (!toggle) return;
+
+  const apply = (d) => {
+    if (keyEl) keyEl.value = d.key || "";
+    window.__agentReadOn = !!d.on;
+    window.__agentReadKey = d.key || "";
+    if (stateEl) stateEl.textContent = d.on
+      ? "状态：已开启 —— 导出的图片地址会自动带上密钥；关闭后可立即失效"
+      : "状态：未开启";
+    if (save) save.disabled = true;
+  };
+
+  toggle.addEventListener("change", () => { if (save) save.disabled = false; });
+
+  if (save) save.addEventListener("click", async () => {
+    try {
+      const d = await saveAgentRead({ on: toggle.checked });
+      apply(d);
+      sbToast(d.on ? "已开启外部只读取图，导出时会自动带上密钥" : "已关闭外部只读取图", !!d.on);
+    } catch (e) {
+      sbToast("保存失败，请重试", false);
+    }
+  });
+
+  if (resetBtn) resetBtn.addEventListener("click", async () => {
+    try {
+      const d = await saveAgentRead({ reset: true });
+      apply(d);
+      sbToast("密钥已重置，之前的地址立即失效", true);
+    } catch (e) {
+      sbToast("重置失败，请重试", false);
+    }
+  });
+
+  if (copyBtn) copyBtn.addEventListener("click", async () => {
+    if (!keyEl || !keyEl.value) { sbToast("还没有密钥，先开启开关", false); return; }
+    try {
+      await navigator.clipboard.writeText(keyEl.value);
+      sbToast("密钥已复制", true);
+    } catch (e) {
+      keyEl.select();
+      sbToast("请手动复制选中的密钥", false);
+    }
+  });
+
+  // 切到「前台访问设置」子页签时重新拉一次，确保登录后能拿到最新状态
+  const tabs = document.querySelectorAll("#super-tabs .super-tab");
+  Array.prototype.forEach.call(tabs, (t) => {
+    t.addEventListener("click", () => { setTimeout(loadAgentRead, 100); });
+  });
+
+  loadAgentRead();
+}
 document.addEventListener("DOMContentLoaded", () => {
     /* 后台手动标签并入枚举：让「标签管理」里手工加的标签能被下拉选中、被导入放行。
        失败不阻断后台启动（读不到就只用静态枚举）。 */
@@ -707,6 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
       typeof bindFavCats === "function" && bindFavCats,
       typeof bindCatMgmt === "function" && bindCatMgmt,
       typeof bindAccess === "function" && bindAccess,
+      typeof bindAgentRead === "function" && bindAgentRead,
       typeof bindTagDefs === "function" && bindTagDefs,
       typeof bindDashboard === "function" && bindDashboard,
       typeof bindAdminNav === "function" && bindAdminNav,

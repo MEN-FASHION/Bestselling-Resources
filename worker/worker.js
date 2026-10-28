@@ -203,6 +203,41 @@ async function isPublicAccess(env) {
   return _pubVal;
 }
 
+// 外部只读取图开关（site_secrets）：独立于「前台公开浏览」，只影响匿名读图，不影响写操作
+// 密钥存独立表且 RLS 全禁，只有服务端能读，前端与访客都拿不到
+let _arVal = null;
+let _arAt = 0;
+async function getAgentRead(env, force) {
+  const now = Date.now();
+  if (!force && _arVal && now - _arAt < 60000) return _arVal;
+  try {
+    const res = await fetch(
+      env.SUPABASE_URL + "/rest/v1/site_secrets?select=agent_read,agent_read_key&id=eq.1",
+      {
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const arr = await res.json();
+    const r = Array.isArray(arr) && arr[0];
+    _arVal = { on: !!(r && r.agent_read), key: (r && r.agent_read_key) || "" };
+  } catch (e) {
+    _arVal = { on: false, key: "" };
+  }
+  _arAt = now;
+  return _arVal;
+}
+
+// 生成只读密钥（32 位十六进制）
+function genReadKey() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b).map(function (x) { return x.toString(16).padStart(2, "0"); }).join("");
+}
+
   // 兼容新旧存储：新图明文存中文路径，旧图曾以编码形式存储，先取解码后路径，取不到再取原始编码路径
   async function getObject(decodedPath, rawPath) {
     let obj = await env.IMAGES.get(decodedPath);
@@ -229,11 +264,18 @@ async function isPublicAccess(env) {
     }
   }
 
-  // ---------- 1. GET 看图：登录即可；公开浏览模式下免登录 ----------
+  // ---------- 1. GET 看图：登录即可；公开浏览模式或外部只读密钥放行 ----------
   if (method === "GET" && path.startsWith("images/")) {
     if (!userId) {
       const pub = await isPublicAccess(env);
-      if (!pub) return json({ error: "未登录" }, 401, CORS);
+      if (!pub) {
+        // 外部只读取图：开关开着且密钥匹配才放行，否则与未登录同等对待
+        const ar = await getAgentRead(env);
+        const gotKey = url.searchParams.get("read_key") || "";
+        if (!(ar.on && ar.key && gotKey === ar.key)) {
+          return json({ error: "未登录" }, 401, CORS);
+        }
+      }
     }
     const rawPath = url.pathname.replace(/^\//, "");
     const object = await getObject(path, rawPath);
@@ -248,6 +290,59 @@ async function isPublicAccess(env) {
     // 不设 Content-Disposition: attachment，避免图片变成"下载"。inline 仅用于提示
     headers.set("Content-Disposition", "inline");
     return new Response(object.body, { headers });
+  }
+
+  // ---------- 1.5 外部只读取图设置（仅超级管理员）：开关 + 密钥管理 ----------
+  // 界面入口在「超管权限 → 前台访问设置」，接口同样只放超管，避免普通管理员绕过界面直接调用
+  if (path === "agent-read" && (method === "GET" || method === "POST")) {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isSuperRole(role)) return json({ error: "仅超级管理员可操作" }, 403, CORS);
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ error: "服务端未配置读写权限" }, 500, CORS);
+
+    const base = env.SUPABASE_URL + "/rest/v1/site_secrets";
+    const srv = {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+      "Content-Type": "application/json",
+    };
+
+    // 读取当前设置（强制刷新，拿最新密钥）
+    if (method === "GET") {
+      const cur = await getAgentRead(env, true);
+      return json({ ok: true, on: cur.on, key: cur.key }, 200, CORS);
+    }
+
+    // 修改：开关、重置密钥
+    const body = await request.json().catch(function () { return {}; });
+    const cur = await getAgentRead(env, true);
+    const patch = { updated_at: new Date().toISOString() };
+    if (typeof body.on === "boolean") patch.agent_read = body.on;
+    if (body.reset === true) patch.agent_read_key = genReadKey();
+
+    // 开启时若还没有密钥，自动补一个
+    const willBeOn = typeof body.on === "boolean" ? body.on : cur.on;
+    const willHaveKey = patch.agent_read_key || cur.key;
+    if (willBeOn && !willHaveKey) patch.agent_read_key = genReadKey();
+
+    const res2 = await fetch(base + "?id=eq.1", {
+      method: "PATCH",
+      headers: Object.assign({ Prefer: "return=representation" }, srv),
+      body: JSON.stringify(patch),
+    });
+    if (!res2.ok) return json({ error: "保存失败" }, 502, CORS);
+    const arr2 = await res2.json().catch(function () { return []; });
+    const r2 = Array.isArray(arr2) && arr2[0];
+
+    // 清掉 60 秒缓存，开关切换后下一次读图立刻按新状态判定
+    _arVal = null;
+    _arAt = 0;
+
+    return json({
+      ok: true,
+      on: !!(r2 && r2.agent_read),
+      key: (r2 && r2.agent_read_key) || "",
+    }, 200, CORS);
   }
 
   // ---------- 2. POST 上传：需要管理员 ----------

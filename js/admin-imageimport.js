@@ -1,5 +1,5 @@
 /* ============================================================================
- * admin-imageimport.js —— 视觉专区打标表导入（20261028D，仅后台）
+ * admin-imageimport.js —— 视觉专区打标表导入（20261028E，仅后台）
  *
  * 流程：选文件 → 解析「打标表」→ 按图片URL（或图片ID）匹配 → 逐维校验 → 写回 images
  *
@@ -12,8 +12,25 @@
  *    这个坑在本模块里从一开始就避开。
  * ==========================================================================*/
 (function () {
-  var AE = window.APP_ENUM || {};
-  var VE = window.RANK_VISUAL_ENUM || {};
+  /* 枚举懒取：定义枚举的脚本比本文件晚加载，先取会拿到 undefined，
+     导致允许值列表为空、任何值都判「未识别」。 */
+  function AE() { return window.APP_ENUM || {}; }
+  function VE() { return window.RANK_VISUAL_ENUM || {}; }
+  function RANK_ENUM() {
+    var RE = window.RankExport;
+    return (RE && RE.ENUM) || window.RANK_ENUM || {};
+  }
+  /* 与榜单共用一套：榜单全量枚举优先，其次图库原生，最后视觉三组 */
+  function enumOf(k) {
+    var v = RANK_ENUM()[k];
+    if (v && v.length) return v.slice();
+    v = AE()[k];
+    if (v && v.length) return v.slice();
+    if (k === "视觉-背景") return (VE().bg || []).slice();
+    if (k === "视觉-画面构成") return (VE().frame || []).slice();
+    if (k === "视觉-呈现主体") return (VE().subject || []).slice();
+    return [];
+  }
   var VISUAL_BG = VE.bg || [];
   var VISUAL_FRAME = VE.frame || [];
   var VISUAL_SUBJECT = VE.subject || [];
@@ -104,7 +121,7 @@
     /* 普通维度：逐值比对枚举；手动标签（tag_defs 里的）一律放行 */
     function chk(dim, list) {
       if (!list) return;
-      var allow = (AE[dim] || []).concat((defs && defs[dim]) || []);
+      var allow = enumOf(dim).concat((defs && defs[dim]) || []);
       var miss = list.filter(function (x) { return allow.indexOf(x) < 0; });
       bad(dim, miss);
     }
@@ -120,7 +137,7 @@
 
     /* 节日：宽松匹配——节庆库里有的名字一律放行，拼错照样拦 */
     if (v["节日"]) {
-      var festAllow = (AE["节日"] || []);
+      var festAllow = enumOf("节日");
       v["节日"].forEach(function (f) {
         if (festAllow.indexOf(f) < 0 && !(defs && defs["节日"] && defs["节日"].indexOf(f) >= 0)) {
           unknown.push("节日：" + f);
