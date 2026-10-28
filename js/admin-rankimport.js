@@ -50,6 +50,14 @@
   var FIELDS = ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags",
                 "culture_tags", "psych_tags"];
 
+  /* 20261028D：FIELDS 有两个用途被混用了 —— 既是「是否已打标」的判定口径，
+     又被当成「要写库的字段清单」。
+     节日是可选维度，不进 FIELDS（留空不算未打标）是对的；
+     但写入循环也只遍历 FIELDS，于是节日那一列解析出来了却从没写进库：
+     导入照样报"写入 N 行"，节日永远 0 行，前台一直少一栏。
+     拆成两个常量：判定用 FIELDS（8 个必填），写入/清空用 WRITE_FIELDS（9 个含节日）。 */
+  var WRITE_FIELDS = FIELDS.concat(["festival_tags"]);
+
   var parsed = null;     // { rows:[{url, tags, provided}], fields:[], bad, unknown, headers, sheet }
   var historyOK = null;  // 历史表是否可用（null=未探测）
 
@@ -328,7 +336,7 @@
         festival_tags: (c.festival_tags || []).slice()
       };
       var changes = [];
-      FIELDS.forEach(function (f) {
+      WRITE_FIELDS.forEach(function (f) {
         var before = (c[f] || []).slice();
         var has = !!rec.provided[f];
         if (has) {
@@ -446,6 +454,18 @@
     return historyOK;
   }
 
+  /* 探测「补丁没跑、列不存在」的维度。写库和撤回都要用。 */
+  async function probeMissingCols() {
+    var missingDims = [];
+    try {
+      var probe = await SB.statRankTagDims();
+      Object.keys(probe.stat || {}).forEach(function (k) {
+        if (probe.stat[k] && probe.stat[k].missing) missingDims.push({ name: k, col: probe.stat[k].col });
+      });
+    } catch (e) { missingDims = []; }
+    return missingDims;
+  }
+
   async function doImport() {
     if (!parsed || !parsed.rows.length) return;
     var btn = $("#rank-tag-import");
@@ -467,7 +487,14 @@
         r.batch_id = batch;
         return r;
       });
-      var n = await SB.saveRankTagRows(payload);
+      /* 写库前先探测哪些维度列不存在（补丁没跑）。
+         不探测的后果：整批 upsert 因「列不存在」全部失败，页面只说"写入失败"，
+         而真正的病因是少跑一个补丁 —— 这类问题最难查。
+         探测到缺列就把这些字段从写入里剔掉，其余维度照常落库，缺的那维明确告知。 */
+      var missingDims = await probeMissingCols();
+      var skipCols = missingDims.map(function (d) { return d.col; });
+
+      var n = await SB.saveRankTagRows(payload, skipCols);
 
       var historySaved = 0, historyWarn = "";
       if (canHistory) {
@@ -508,6 +535,7 @@
       var cntDim = {};
       (plan.payload || []).forEach(function (r) {
         Object.keys(dimOf).forEach(function (f) {
+          if (skipCols.indexOf(f) >= 0) return;   /* 缺列的维度不计入，否则报数虚高 */
           if ((r[f] || []).length) cntDim[f] = (cntDim[f] || 0) + 1;
         });
       });
@@ -521,7 +549,11 @@
         + (parsed.miss ? "；跳过对不上榜单的 " + parsed.miss + " 张" : "")
         + historyWarn
         + "。本批各维度写入行数：" + dimTxt;
-      if (!(cntDim.festival_tags || 0)) {
+      if (missingDims.length) {
+        msg += "。⚠ 数据库缺少维度列：" + missingDims.map(function (d) { return d.name; }).join("、")
+             + "，这几维本批未写入（其余维度已正常落库）。节日 → tools/patch_20261027R.sql，"
+             + "文化背景/消费心理 → tools/patch_20261027Q.sql，执行后再导一次即可。";
+      } else if (!(cntDim.festival_tags || 0)) {
         msg += "（节日 0 行＝表里这列是空的，或该列在数据库里不存在）";
       }
       setTip(null, msg, true);
@@ -632,7 +664,8 @@
           hist.forEach(function (h) { if (urls.indexOf(h.image_url) < 0) urls.push(h.image_url); });
           var cur = await SB.listRankTagRows(urls);
           var plan = planRevert(hist, cur);
-          if (plan.payload.length) await SB.saveRankTagRows(plan.payload);
+          var missRev = await probeMissingCols();
+          if (plan.payload.length) await SB.saveRankTagRows(plan.payload, missRev.map(function (d) { return d.col; }));
           await SB.updateRankTagBatch(b.batch_id, { status: "reverted", reverted_at: new Date().toISOString() });
           var m = "已撤回：恢复 " + plan.restored + " 个字段（" + plan.payload.length + " 张图）"
             + (plan.conflict ? "；跳过 " + plan.conflict + " 个已被后续修改的字段" : "");
@@ -675,7 +708,7 @@
   });
 
   window.RankTagImport = {
-    parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS,
+    parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS, WRITE_FIELDS: WRITE_FIELDS,
     checkConsistency: checkConsistency, checkCraft: checkCraft,
     SHOOT_RULE: SHOOT_RULE, CRAFT_BIG_AREA: BIG_AREA_PAT,
     /* 测试入口：传入的 aoa 仍以「表头行」开头（与 parseBook 同语义） */

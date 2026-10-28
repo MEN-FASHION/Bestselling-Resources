@@ -1,5 +1,5 @@
 /* ============================================================================
- * imageexport.js —— 视觉专区（图库）打标表导出（20261028B，仅后台）
+ * imageexport.js —— 视觉专区（图库）打标表导出（20261028D，仅后台）
  *
  * 与趋势上升榜共用同一套枚举（js/rank-enums.js），数据源不同：
  *   榜单：rank_items + rank_image_tags（外链图）
@@ -64,7 +64,19 @@
     return String(v).split(/[,，、|；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
   function catOf(img) { return String((img && img.category) || "").trim() || "未分类"; }
-  function urlOf(img) { return String((img && (img.url || img.image_url)) || "").trim(); }
+  /* 图库里有两套地址，含义完全不同：
+       img.url       外链（可选，运营手工填的跳转地址），上传图绝大多数没有
+       img.path      图片在 R2 的存储路径，图片本体就在这里
+     导出表只取 url 时整列全空——「导出来没有 URL」就是这么来的。
+     所以按 外链 → 存储地址 逐级兜底，保证每一行都有可打开看图的地址。 */
+  function extUrlOf(img) { return String((img && (img.url || img.image_url)) || "").trim(); }
+  function storageUrlOf(img) {
+    var p = String((img && img.path) || "").trim().replace(/^\/+/, "");
+    if (!p) return "";
+    var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+    return base ? base + "/" + p : p;
+  }
+  function urlOf(img) { return extUrlOf(img) || storageUrlOf(img); }
 
   /* 视觉三个子组：背景走 scene_tags，构图/主体走 visual_tags */
   function visualParts(img) {
@@ -203,6 +215,8 @@
     picked.forEach(function (img) {
       var pr = progress(img), vp = visualParts(img);
       var u = urlOf(img);
+      var uNote = extUrlOf(img) ? ""
+        : (u ? "地址取自存储路径（非外链）" : "⚠ 无外链且无存储路径，无法回填");
       if (!u) urlMissing++;
       aoa.push([
         urlOf(img), img.id == null ? "" : String(img.id), img.name || "", catOf(img),
@@ -222,7 +236,7 @@
         arr(img.psych_tags).join("，"),
         arr(img.festival_tags).join("，"),
         arr(img.tags).join("，"),
-        u ? "" : "⚠ 图片URL为空（老数据未存外链，无法回填）"
+        uNote
       ]);
     });
     stats.picked = picked.length;
@@ -355,7 +369,7 @@
     download(pack.wb, nm);
     if (say) {
       var msg = "已导出 " + pack.images + " 张";
-      if (pack.urlMissing) msg += "（其中 " + pack.urlMissing + " 张图片URL为空，导入时无法匹配，已在备注列标注）";
+      if (pack.urlMissing) msg += "（其中 " + pack.urlMissing + " 张既无外链也无存储路径，导入时请靠「图片ID」列匹配）";
       say(msg);
     }
     return { files: 1, rows: pack.images, urlMissing: pack.urlMissing };
@@ -398,6 +412,9 @@
     dimCount: dimCount,
     filterImages: filterImages,
     buildBook: buildBook,
+    urlOf: urlOf,
+    extUrlOf: extUrlOf,
+    storageUrlOf: storageUrlOf,
     exportImages: exportImages,
     renderOverview: renderOverview,
     exportSplit: function (images, opts, say) { return exportImages(images, Object.assign({}, opts, { split: true }), say); },

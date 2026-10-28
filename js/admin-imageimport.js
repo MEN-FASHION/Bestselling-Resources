@@ -1,5 +1,5 @@
 /* ============================================================================
- * admin-imageimport.js —— 视觉专区打标表导入（20261028B，仅后台）
+ * admin-imageimport.js —— 视觉专区打标表导入（20261028D，仅后台）
  *
  * 流程：选文件 → 解析「打标表」→ 按图片URL（或图片ID）匹配 → 逐维校验 → 写回 images
  *
@@ -265,7 +265,10 @@
     var matched = [], unmatched = 0;
     var allUnknown = [], allMismatch = [];
     opts.rows.forEach(function (rec) {
-      var hit = (rec.url && byUrl[rec.url]) || (rec.id && byId[rec.id]);
+      /* ID 优先：图片ID 是主键，唯一且稳定；url 是「外链」字段，多数上传图为空，
+         导出时那一列是由存储路径兜底拼出来的，未必等于库里的值。
+         先按 URL 匹配会把这类行判成「对不上」，用 ID 才靠得住。 */
+      var hit = (rec.id && byId[rec.id]) || (rec.url && byUrl[rec.url]);
       if (!hit) { unmatched++; return; }
       var ck = checkOne(rec, defs);
       if (ck.unknown.length) allUnknown.push({ url: rec.url || rec.id, list: ck.unknown });

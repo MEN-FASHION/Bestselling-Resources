@@ -649,7 +649,7 @@ const SB = (() => {
       return this.clearImageFields(ids, ["tags"]);
     },
 
-    /* ---------- 视觉专区批量打标（20261028B 导入用） ----------
+    /* ---------- 视觉专区批量打标（20261028D 导入用） ----------
        一次导入可能是上千行 × 11 个字段，逐条 update 会排成长队。
        这里按 20 条并发推送，单条失败不中断整批，返回 { ok, fail, errors }。
        patch 形如 { style_tags:[...], craft_tags:[...], ... }，只带要写的字段。 */
@@ -2490,7 +2490,12 @@ async removeTrendRecord(id) {
       const C_BASE = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,batch_id,updated_at";
       const LADDER = [C_FULL, C_NEW2, C_BASE];
       let lv = this.__rankTagLevel;
+      /* 降级结果只记 60 秒。原来一旦降级就永久记住（同一页面会话内），
+         补丁跑完、列建好了也还是读不到节日，用户只能靠刷新页面撞运气。
+         过期后从最高级重试，补丁补上即可自动恢复。 */
+      const lvAt = this.__rankTagLevelAt || 0;
       if (typeof lv !== "number" || lv < 0 || lv > 2) lv = 0;
+      if (lv > 0 && Date.now() - lvAt > 60000) lv = 0;
 
       const fetchPart = async (part, cols) => {
         const r = await client.from("rank_image_tags").select(cols).in("image_url", part);
@@ -2526,12 +2531,17 @@ async removeTrendRecord(id) {
         }
       }
       this.__rankTagLevel = lv;
+      this.__rankTagLevelAt = Date.now();
       return out;
     },
-    async saveRankTagRows(rows) {
+    async saveRankTagRows(rows, skipCols) {
       const list = (rows || []).filter((r) => r && r.image_url);
       if (!list.length) return 0;
       const now = new Date().toISOString();
+      /* 缺列保护：补丁没跑时某一列不存在，整批 upsert 会因为「列不存在」全部失败，
+         用户只看到"导入失败"，不知道是补丁没跑。调用方探测出缺失列后传进来，
+         这里把这些字段剔掉 —— 其余维度照常写入，缺的那维由调用方明确告知。 */
+      const skip = new Set((Array.isArray(skipCols) ? skipCols : []).map((c) => String(c)));
       let n = 0;
       for (let i = 0; i < list.length; i += 100) {
         const chunk = list.slice(i, i + 100).map((r) => ({
@@ -2552,7 +2562,10 @@ async removeTrendRecord(id) {
           batch_id: r.batch_id || null,
           updated_by: r.updated_by || null,
           updated_at: now,
-        }));
+        })).map((o) => {
+          skip.forEach((c) => { delete o[c]; });
+          return o;
+        });
         const { error } = await client.from("rank_image_tags")
           .upsert(chunk, { onConflict: "image_url", ignoreDuplicates: false });
         if (error) throw new Error(error.message || "保存榜单标签失败");
