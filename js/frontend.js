@@ -1180,4 +1180,32 @@
     };
     const btn = $("#pwd-submit"); if (btn) btn.onclick = doSubmit;
   }
+
+  // ---------- 视觉专区：按类目导出图片清单 ----------
+  // 数据源用「前台全量取图」而不是当前已加载页：默认「全部」视图是无限滚动的，
+  // catalog 里只有滚过的那部分，直接导出会少图。
+  (function bindCatExport() {
+    const btn = $("#cat-export-btn");
+    if (!btn) return;
+    btn.onclick = async () => {
+      const msg = $("#cat-export-msg");
+      const say = (t) => { if (msg) msg.textContent = t || ""; };
+      if (!window.ImageExport) { say("导出模块未加载，请强刷页面"); return; }
+      btn.disabled = true;
+      say("正在读取图片清单…");
+      try {
+        const r = await SB.listAllFrontendImages();
+        const all = ((r && r.rows) || []).filter(i => catCatVisible("visual", i.category));
+        const picked = all.filter(_match);          // 复用当前类目 + 标签筛选条件
+        if (!picked.length) { say("当前条件下没有可导出的图片"); btn.disabled = false; return; }
+        say("正在生成文件…");
+        const catName = (currentCat && currentCat !== "全部") ? currentCat : "";
+        await ImageExport.exportOne(picked, { scope: "all", category: catName }, function (t) { say(t); });
+      } catch (e) {
+        say("导出失败：" + ((e && e.message) || "未知错误"));
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  })();
 })();

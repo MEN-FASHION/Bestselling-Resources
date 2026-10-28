@@ -1107,6 +1107,52 @@ async function refreshTagConsumers() {
     $("#dash-refresh").onclick = () => loadDashboard();
     const sel = document.getElementById("dash-cat-filter");
     if (sel) sel.onchange = () => loadDashboard();
+    bindDashExport();
+  }
+
+  /* 按类目导出（图片清单）：数据源 = 看板已拉到的全站图片，不再额外查库 */
+  let _dashImgs = [];
+  function bindDashExport() {
+    const btn = document.getElementById("dash-export-btn");
+    if (!btn) return;
+    const catSel = document.getElementById("dash-exp-cat");
+    const split = document.getElementById("dash-exp-split");
+    if (catSel) catSel.onchange = () => {
+      // 选了具体类目就没必要再拆分（拆出来只有一个文件）
+      if (split) split.disabled = !!catSel.value;
+      if (catSel.value && split) split.checked = false;
+    };
+    btn.onclick = async () => {
+      const msg = document.getElementById("dash-exp-msg");
+      const say = (t) => { if (msg) msg.textContent = t; };
+      if (!window.ImageExport) { say("导出模块未加载，请强刷页面重试"); return; }
+      if (!_dashImgs.length) { say("图片数据尚未加载，请点「刷新数据」后再试"); return; }
+      const scope = (document.getElementById("dash-exp-scope") || {}).value || "all";
+      const cat = catSel ? catSel.value : "";
+      btn.disabled = true;
+      say("导出中…");
+      try {
+        if (split && split.checked && !cat) {
+          await ImageExport.exportSplit(_dashImgs, { scope }, say);
+        } else {
+          await ImageExport.exportOne(_dashImgs, { scope, category: cat }, say);
+        }
+      } catch (e) {
+        say("导出失败：" + ((e && e.message) || "未知错误"));
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function buildDashExportCat(imgs) {
+    const sel = document.getElementById("dash-exp-cat");
+    if (!sel) return;
+    const cur = sel.value;
+    const cats = [...new Set((imgs || []).map(i => i.category))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh"));
+    sel.innerHTML = '<option value="">全部类目</option>' +
+      cats.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join("");
+    if (cur && cats.includes(cur)) sel.value = cur; else sel.value = "";
   }
 
 function buildDashCatFilter(imgs) {
@@ -1138,6 +1184,25 @@ async function loadDashboard() {
       [imgs, defs] = await Promise.all([imgsP, SB.listTagDefs()]);
     } catch (e) { meta.textContent = "统计失败，请点击刷新重试"; return; }
     buildDashCatFilter(imgs);
+    /* 导出与类目分布用「全站全量」，不受上方类目筛选影响（筛选在导出面板里单独选） */
+    _dashImgs = imgs.slice();
+/* 类目分布表：一眼看出哪一类打标覆盖最低，点行可直接按该类筛看板 */
+  function renderDashCatOverview(imgs) {
+    const box = document.getElementById("dash-cat-ov");
+    if (!box || !window.ImageExport) return;
+    ImageExport.renderOverview(box, imgs, function (cat) {
+      const sel = document.getElementById("dash-cat-filter");
+      if (sel) {
+        if (![...sel.options].some(o => o.value === cat)) { const op = document.createElement("option"); op.value = cat; op.textContent = cat; sel.appendChild(op); }
+        sel.value = cat;
+      }
+      const ecat = document.getElementById("dash-exp-cat");
+      if (ecat) { ecat.value = cat; const sp = document.getElementById("dash-exp-split"); if (sp) { sp.checked = false; sp.disabled = !!cat; } }
+      loadDashboard();
+    });
+  }
+    buildDashExportCat(_dashImgs);
+    renderDashCatOverview(_dashImgs);
     const sel = document.getElementById("dash-cat-filter");
     const cat = sel && sel.value ? sel.value : "";
     if (cat) imgs = imgs.filter(i => i.category === cat);

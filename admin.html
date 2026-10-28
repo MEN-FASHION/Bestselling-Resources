@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261027X">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027X">
+<link rel="stylesheet" href="css/style.css?v=20261027Y">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261027Y">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -167,6 +167,26 @@
         </label>
         <button id="dash-refresh" class="btn-ghost">刷新数据</button>
       </div>
+      <div class="dash-export">
+        <span class="dash-export-title">按类目导出图片清单</span>
+        <label>范围
+          <select id="dash-exp-scope" title="按打标进度筛选要导出的图片">
+            <option value="all">全部图片</option>
+            <option value="none">仅未打标</option>
+            <option value="partial">仅不完整（部分维度已打标）</option>
+            <option value="done">仅已打标</option>
+          </select>
+        </label>
+        <label>类目
+          <select id="dash-exp-cat" title="导出哪个类目；选「全部类目」后可勾选按类目拆分">
+            <option value="">全部类目</option>
+          </select>
+        </label>
+        <label class="dash-exp-split"><input type="checkbox" id="dash-exp-split" /> 按类目拆分成多个文件（zip）</label>
+        <button id="dash-export-btn" class="btn-primary">导出</button>
+        <span id="dash-exp-msg" class="hint-inline"></span>
+      </div>
+      <div id="dash-cat-ov" class="dash-cat-ov"></div>
       <p class="hint">选择某个类目后，各标签的数量、占比与打标覆盖率都只统计该类目下的图片。每条标签的「覆盖率」= 该类目下打了该标签的图片数 ÷ 该类目图片总数。</p>
       <div id="dash-overview" class="dash-overview"></div>
       <div class="dash-charts">
@@ -1454,36 +1474,37 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261027X"></script>
-  <script src="vendor/quill.js?v=20261027X"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261027X"></script>
-  <script src="vendor/jszip.min.js?v=20261027X"></script>
-  <script src="vendor/qrcode.min.js?v=20261027X"></script>
-  <script src="js/config.js?v=20261027X"></script>
-  <script src="js/supabase.js?v=20261027X"></script>
-  <script src="js/track-menu.js?v=20261027X"></script>
+  <script src="vendor/supabase.js?v=20261027Y"></script>
+  <script src="vendor/quill.js?v=20261027Y"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261027Y"></script>
+  <script src="vendor/jszip.min.js?v=20261027Y"></script>
+  <script src="vendor/qrcode.min.js?v=20261027Y"></script>
+  <script src="js/config.js?v=20261027Y"></script>
+  <script src="js/supabase.js?v=20261027Y"></script>
+  <script src="js/track-menu.js?v=20261027Y"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261027X"></script>
-  <script src="js/admin.js?v=20261027X"></script>
-  <script src="js/admin-images.js?v=20261027X"></script>
-  <script src="js/admin-smart.js?v=20261027X"></script>
-  <script src="js/admin-trend.js?v=20261027X"></script>
-  <script src="js/admin-notice.js?v=20261027X"></script>
-  <script src="js/marketing-data.js?v=20261027X"></script>
-  <script src="js/admin-festival.js?v=20261027X"></script>
-  <script src="js/admin-tasks.js?v=20261027X"></script>
-  <script src="js/admin-bestseller.js?v=20261027X"></script>
-  <script src="js/admin-perm.js?v=20261027X"></script>
-  <script src="js/admin-pool.js?v=20261027X"></script>
-  <script src="js/rank-enums.js?v=20261027X"></script>
-  <script src="js/rankexport.js?v=20261027X"></script>
-  <script src="js/admin-rankimport.js?v=20261027X"></script>
-  <script src="js/admin-rank.js?v=20261027X"></script>
-  <script src="js/plus-sb.js?v=20261027X"></script>
-  <script src="js/plus-match.js?v=20261027X"></script>
-  <script src="js/admin-plus.js?v=20261027X"></script>
-  <script src="js/admin-insight.js?v=20261027X"></script>
-  <script src="js/admin-backup.js?v=20261027X"></script>
+  <script src="js/admin-dialog.js?v=20261027Y"></script>
+  <script src="js/admin.js?v=20261027Y"></script>
+  <script src="js/admin-images.js?v=20261027Y"></script>
+  <script src="js/imageexport.js?v=20261027Y"></script>
+  <script src="js/admin-smart.js?v=20261027Y"></script>
+  <script src="js/admin-trend.js?v=20261027Y"></script>
+  <script src="js/admin-notice.js?v=20261027Y"></script>
+  <script src="js/marketing-data.js?v=20261027Y"></script>
+  <script src="js/admin-festival.js?v=20261027Y"></script>
+  <script src="js/admin-tasks.js?v=20261027Y"></script>
+  <script src="js/admin-bestseller.js?v=20261027Y"></script>
+  <script src="js/admin-perm.js?v=20261027Y"></script>
+  <script src="js/admin-pool.js?v=20261027Y"></script>
+  <script src="js/rank-enums.js?v=20261027Y"></script>
+  <script src="js/rankexport.js?v=20261027Y"></script>
+  <script src="js/admin-rankimport.js?v=20261027Y"></script>
+  <script src="js/admin-rank.js?v=20261027Y"></script>
+  <script src="js/plus-sb.js?v=20261027Y"></script>
+  <script src="js/plus-match.js?v=20261027Y"></script>
+  <script src="js/admin-plus.js?v=20261027Y"></script>
+  <script src="js/admin-insight.js?v=20261027Y"></script>
+  <script src="js/admin-backup.js?v=20261027Y"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
