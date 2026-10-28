@@ -979,6 +979,11 @@
         rankCats.map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
       if (keep && rankCats.indexOf(keep) >= 0) ecat.value = keep;
     }
+    /* 导出下拉增强：补上「叶子类目」一组，并给每个类目标上图数；
+       同时渲染类目分布表。取不到就保留上面用配置表铺的基础选项，不影响导出。 */
+    if (window.RankExport && window.RankExport.loadCats) {
+      try { await window.RankExport.loadCats(); } catch (e) { /* 忽略 */ }
+    }
     if (window.RankTagBatches) window.RankTagBatches.load();
     if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;

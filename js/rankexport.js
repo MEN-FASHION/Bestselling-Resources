@@ -152,17 +152,60 @@
       if (!u) return;
       var hit = byUrl.get(u);
       if (!hit) {
-        hit = { url: u, cats: {}, periods: {}, sites: {}, leaf: {}, bestRank: null, bestRatio: null };
+        hit = { url: u, cats: {}, periods: {}, sites: {}, leaf: {}, leafLeaf: {}, bestRank: null, bestRatio: null };
         byUrl.set(u, hit);
       }
       if (r.category) hit.cats[r.category] = 1;
-      if (r.leaf_category) hit.leaf[r.leaf_category] = 1;
+      if (r.leaf_category) {
+        hit.leaf[r.leaf_category] = 1;
+        /* 叶子类目是整条路径（「服装、鞋靴和珠宝饰品,男士时尚,男装,T 恤」），
+           做类目维度统计和筛选时，真正有用的是最后一级。 */
+        var lv = String(r.leaf_category).split(/[,，]/).pop().trim();
+        if (lv) hit.leafLeaf[lv] = 1;
+      }
       if (r.period_label) hit.periods[r.period_label] = 1;
       if (r.site) hit.sites[r.site] = 1;
       if (r.rank_ratio != null && (hit.bestRank == null || r.rank_ratio < hit.bestRank)) hit.bestRank = r.rank_ratio;
       if (r.ratio != null && (hit.bestRatio == null || r.ratio > hit.bestRatio)) hit.bestRatio = r.ratio;
     });
     return byUrl;
+  }
+
+  /* 类目筛选：支持两种粒度
+       c:主类目      —— 与榜单里的「类目」完全一致
+       l:叶子末级    —— 匹配叶子路径的最后一段（「男士 T 恤和背心」这类）
+     不带前缀时两种都试，兼容旧的选择值。 */
+  function hitCat(h, sel) {
+    var v = String(sel || "").trim();
+    if (!v) return true;
+    if (v.indexOf("c:") === 0) return !!h.cats[v.slice(2)];
+    if (v.indexOf("l:") === 0) return !!h.leafLeaf[v.slice(2)];
+    return !!h.cats[v] || !!h.leafLeaf[v];
+  }
+
+  /* 类目分布：每个主类目 / 叶子末级各有多少张图、打标进度如何
+     用途一：导出下拉里带出「共 N 张」，选之前就知道量级；
+     用途二：后台的类目概览，先看哪一类没打满，再决定优化哪一类。 */
+  function catStats(detail, tagMap) {
+    var byUrl = collectImages(detail);
+    var map = { c: {}, l: {} };
+    byUrl.forEach(function (h) {
+      var t = (tagMap && tagMap[h.url]) || {};
+      var pr = dimProgress(t);
+      var st = pr.filled === 0 && !pr.optFilled ? "todo" : (pr.filled === DIM_TOTAL ? "done" : "partial");
+      var add = function (box, name) {
+        var o = box[name] || (box[name] = { name: name, total: 0, todo: 0, partial: 0, done: 0 });
+        o.total++;
+        o[st]++;
+      };
+      Object.keys(h.cats).forEach(function (n) { add(map.c, n); });
+      Object.keys(h.leafLeaf).forEach(function (n) { add(map.l, n); });
+    });
+    var sortDesc = function (box) {
+      return Object.keys(box).map(function (k) { return box[k]; })
+        .sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name); });
+    };
+    return { cats: sortDesc(map.c), leaves: sortDesc(map.l), total: byUrl.size };
   }
 
   /* 组装工作簿
@@ -187,7 +230,7 @@
       else if (pr.filled === DIM_TOTAL) stats.done++;
       else stats.partial++;
 
-      if (cat && !h.cats[cat]) return;
+      if (!hitCat(h, cat)) return;
       if (kw) {
         var hay = [u, Object.keys(h.cats).join(" "), Object.keys(h.leaf).join(" ")].join(" ").toLowerCase();
         if (hay.indexOf(kw) < 0) return;
@@ -287,11 +330,114 @@
     var sc = q("#rank-export-scope");
     var ct = q("#rank-export-cat");
     var kw = q("#rank-export-kw");
+    var sp = q("#rank-export-split");
+    var lv = q("#rank-export-split-level");
     return {
       scope: sc ? sc.value : "todo",
       category: ct ? String(ct.value || "").trim() : "",
-      keyword: kw ? String(kw.value || "").trim() : ""
+      keyword: kw ? String(kw.value || "").trim() : "",
+      split: !!(sp && sp.checked),
+      splitLevel: (lv && lv.value === "leaf") ? "leaf" : "cat"
     };
+  }
+
+  /* 文件名里不能出现的字符统一换掉，避免 zip 内文件名非法 */
+  function safeName(v) {
+    return String(v == null ? "" : v).replace(/[\\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 60) || "未命名";
+  }
+
+  /* 按类目拆分导出：每个类目一个 xlsx，打包成 zip
+     给「分头优化不同类目」用 —— 一个类目一份，谁负责哪类就发给谁。 */
+  async function exportSplit(btn, o, detail, tagMap, say) {
+    if (typeof JSZip === "undefined") { say("缺少打包组件，无法拆分导出", false); return; }
+    var st = catStats(detail, tagMap);
+    var isLeaf = o.splitLevel === "leaf";
+    var list = (isLeaf ? st.leaves : st.cats).filter(function (x) { return x.total > 0; });
+    if (!list.length) { say("没有可拆分的类目", false); return; }
+
+    var zip = new JSZip();
+    var files = 0, imgs = 0;
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var pack = buildBook(detail, tagMap, {
+        scope: o.scope, keyword: o.keyword,
+        category: (isLeaf ? "l:" : "c:") + it.name
+      });
+      if (!pack.images) continue;
+      zip.file(safeName(it.name) + ".xlsx",
+        XLSX.write(pack.wb, { bookType: "xlsx", type: "array" }));
+      files++; imgs += pack.images;
+      if (btn) btn.textContent = "打包中… " + files + "/" + list.length;
+    }
+    if (!files) { say("按当前范围没有可导出的图", false); return; }
+    say("正在压缩 " + files + " 个文件…");
+    var blob = await zip.generateAsync({ type: "blob" });
+    download(blob, "趋势上升榜-打标表-按" + (isLeaf ? "叶子类目" : "类目") + "拆分-" + stamp() + ".zip");
+    say("已按" + (isLeaf ? "叶子类目" : "类目") + "拆成 " + files + " 个文件，合计 " + imgs + " 张图", true);
+  }
+
+  /* 填充导出用的类目下拉：分「主类目 / 叶子类目」两组，各带图数。
+     原来只有主类目，且不带数量 —— 选之前不知道这一类有多大，
+     想针对某一类优化时不好判断先做哪一类。 */
+  var CAT_CACHE = null;
+  async function loadCats(force) {
+    var sel = document.querySelector("#rank-export-cat");
+    if (!sel) return;
+    try {
+      if (!CAT_CACHE || force) {
+        var detail = await SB.listRankItems({});
+        var urls = detail.map(function (r) { return r.image_url; });
+        var tagMap = {};
+        try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
+        CAT_CACHE = catStats(detail, tagMap);
+        renderOverview(CAT_CACHE);
+      }
+      var keep = sel.value;
+      var html = '<option value="">全部类目</option>';
+      html += '<optgroup label="主类目">' + CAT_CACHE.cats.map(function (x) {
+        return '<option value="c:' + esc(x.name) + '">' + esc(x.name) + '（' + x.total + ' 张）</option>';
+      }).join("") + '</optgroup>';
+      if (CAT_CACHE.leaves.length) {
+        html += '<optgroup label="叶子类目">' + CAT_CACHE.leaves.map(function (x) {
+          return '<option value="l:' + esc(x.name) + '">' + esc(x.name) + '（' + x.total + ' 张）</option>';
+        }).join("") + '</optgroup>';
+      }
+      sel.innerHTML = html;
+      if (keep) sel.value = keep;
+    } catch (e) { /* 取不到就保留原来的选项，不影响导出 */ }
+  }
+
+  /* 类目概览：每类总图数 / 已打标 / 未打标 / 覆盖率，点一行就把筛选设好 */
+  function renderOverview(st) {
+    var box = document.querySelector("#rank-cat-overview");
+    if (!box) return;
+    if (!st || !st.cats.length) { box.innerHTML = ""; return; }
+    var rows = st.cats.map(function (x) {
+      var pct = x.total ? Math.round(x.done * 100 / x.total) : 0;
+      return '<tr data-cat="c:' + esc(x.name) + '" title="点这一行 → 筛选该类目">'
+        + '<td class="rk-ov-name">' + esc(x.name) + '</td>'
+        + '<td class="rk-ov-num">' + x.total + '</td>'
+        + '<td class="rk-ov-num">' + x.done + '</td>'
+        + '<td class="rk-ov-num">' + (x.total - x.done) + '</td>'
+        + '<td class="rk-ov-bar"><span style="display:inline-block;width:76px;height:6px;background:#e5e7eb;border-radius:3px;vertical-align:middle">'
+        + '<i style="display:block;height:6px;border-radius:3px;background:' + (pct >= 80 ? "#16a34a" : pct >= 40 ? "#d97706" : "#dc2626")
+        + ';width:' + pct + '%"></i></span> ' + pct + '%</td>'
+        + '</tr>';
+    }).join("");
+    box.innerHTML = '<div class="rk-ov-cap">类目分布（共 ' + st.total + ' 张图 / ' + st.cats.length + ' 个类目，点某行即按该类目筛选）</div>'
+      + '<table class="rk-ov"><thead><tr><th>类目</th><th>总图数</th><th>已打标</th><th>未打标</th><th>覆盖率</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>';
+    Array.prototype.forEach.call(box.querySelectorAll("tr[data-cat]"), function (tr) {
+      tr.onclick = function () {
+        var sel = document.querySelector("#rank-export-cat");
+        if (sel) { sel.value = tr.getAttribute("data-cat"); sel.dispatchEvent(new Event("change")); }
+      };
+    });
+  }
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   async function exportAll(btn, opts) {
@@ -311,6 +457,7 @@
       var urls = detail.map(function (r) { return r.image_url; });
       var tagMap = {};
       try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
+      if (o.split && !o.category) { await exportSplit(btn, o, detail, tagMap, say); return; }
       var pack = buildBook(detail, tagMap, o);
       if (!pack.images) {
         say("按当前范围没有可导出的图（全部 " + pack.stats.total + " 张：未打标 "
@@ -335,7 +482,8 @@
     all: exportAll, preview: preview, buildBook: buildBook, collectImages: collectImages,
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
-    splitArr: splitArr, scopeName: SCOPE_NAME
+    splitArr: splitArr, scopeName: SCOPE_NAME,
+    catStats: catStats, loadCats: loadCats, hitCat: hitCat
   };
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -345,7 +493,22 @@
     if (pv) pv.addEventListener("click", async function () {
       var tip = document.querySelector("#rank-export-tip");
       try {
-        var st = await preview(optsFromDom());
+        var o = optsFromDom();
+        if (o.split && !o.category) {
+          var dd = await SB.listRankItems({});
+          var uu = dd.map(function (r) { return r.image_url; });
+          var tm = {};
+          try { tm = await SB.listRankTagRows(uu); } catch (e) { tm = {}; }
+          var cs = catStats(dd, tm);
+          var lv = (o.splitLevel === "leaf") ? cs.leaves : cs.cats;
+          if (tip) {
+            tip.textContent = "将按「" + (o.splitLevel === "leaf" ? "叶子类目" : "主类目") + "」拆成 "
+              + lv.length + " 个文件（每个类目一个 xlsx，打包为 zip）";
+            tip.className = "rank-file-tip good";
+          }
+          return;
+        }
+        var st = await preview(o);
         if (tip) {
           tip.textContent = "榜单共 " + st.total + " 张图：未打标 " + st.todo + " / 部分 " + st.partial
             + " / 已打标 " + st.done + "；按当前范围将导出 " + st.picked + " 张";
