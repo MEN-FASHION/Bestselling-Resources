@@ -70,7 +70,16 @@
     return String(v == null ? "" : v).split(/[,，、|；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
-  function enumOf(key) {
+  /* 每次调用都重建数组（尤其「节日」要把节庆库 300 多条 concat 一遍），
+     上万行的表光这一步就要跑上万次。值表在整个导入过程中不变，缓存即可。 */
+  var ENUM_CACHE = {};
+  function enumOf(key, noCache) {
+    if (!noCache && ENUM_CACHE[key]) return ENUM_CACHE[key];
+    var out = enumOfRaw(key);
+    if (!noCache) ENUM_CACHE[key] = out;
+    return out;
+  }
+  function enumOfRaw(key) {
     var E = (window.RankExport && window.RankExport.ENUM) || {};
     var list;
     if (E[key]) list = E[key];                       /* 视觉-背景 / 视觉-画面构成 / 视觉-呈现主体 ... */
@@ -172,10 +181,14 @@
   /* 解析工作簿：优先取「打标表」工作表，否则取第一个
      返回 rows 里每行带 provided（这张图本次真正要写的维度），空白单元格不算"要写" */
   function parseBook(buf) {
-    var wb = XLSX.read(buf, { type: "array" });
-    var name = wb.SheetNames.indexOf("打标表") >= 0 ? "打标表" : wb.SheetNames[0];
+    /* 20261027V：先只读工作簿目录（bookSheets，不解单元格），拿到表名后再
+       单独解析「打标表」一张。导出的表里还有「全量明细」「枚举参考」两张，
+       其中全量明细动辄上万行 —— 整个工作簿一起解析会让解析慢一倍以上。 */
+    var wbIndex = XLSX.read(buf, { type: "array", bookSheets: true });
+    var name = wbIndex.SheetNames.indexOf("打标表") >= 0 ? "打标表" : (wbIndex.SheetNames[0] || "Sheet1");
+    var wb = XLSX.read(buf, { type: "array", sheets: [name] });
     var aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: "" });
-    if (!aoa.length) return { rows: [], bad: [], unknown: [], headers: [], fields: [] };
+    if (!aoa.length) return { rows: [], bad: [], unknown: [], headers: [], fields: [], sheet: "空表" };
     var headers = (aoa[0] || []).map(function (h) { return String(h || "").trim(); });
     var iUrl = headers.indexOf("图片URL");
     if (iUrl < 0) iUrl = headers.findIndex(function (h) { return /图片\s*url|图片地址|首图/i.test(h); });
@@ -186,18 +199,27 @@
     var fileFields = [];
     MAP.forEach(function (m) { if (headers.indexOf(m[0]) >= 0 && fileFields.indexOf(m[1]) < 0) fileFields.push(m[1]); });
 
-    var parsed = parseRows(aoa, headers);
-    return { rows: parsed.rows, bad: parsed.bad, unknown: parsed.unknownList, headers: headers, fields: fileFields, sheet: name };
+    var parsed = parseRows(aoa, headers, true);
+    /* 字段名要说清楚：parseRows 返回的清单叫 unknown，早先这里读成 unknownList
+       → 拿到 undefined → 调用方 res.unknown.length 直接抛
+       「Cannot read properties of undefined (reading 'length')」，
+       整份表解析失败。 */
+    return { rows: parsed.rows, bad: parsed.bad, unknown: parsed.unknown || [],
+             headers: headers, fields: fileFields, sheet: name };
   }
 
   /* 纯函数：表头 + 行数据 → 逐列按各自枚举校验后的结果。
      抽出来是为了能单独测（不必造一个真的 Excel 文件）。 */
-  function parseRows(aoa, headersIn) {
+  function parseRows(aoa, headersIn, hasHeader) {
     var headers = headersIn || ((aoa && aoa[0]) || []).map(function (h) { return String(h || "").trim(); });
     var iUrl = headers.indexOf("图片URL");
     var iCat = headers.indexOf("类目");
     var rows = [], bad = [], unknown = {}, seen = {};
-    for (var r = headersIn ? 0 : 1; r < aoa.length; r++) {
+    /* 早先这里用 headersIn 的有无来推「第一行是不是表头」，但 parseBook 既传 headers
+       又传含表头的 aoa —— 表头行被当成数据行读，报「第1行 URL 格式不对」。
+       现在由 hasHeader 明确指定：整体表（parseBook）传 true，只传数据行（测试）传 false。 */
+    var start = (hasHeader === undefined ? !headersIn : !!hasHeader) ? 1 : 0;
+    for (var r = start; r < aoa.length; r++) {
       var line = aoa[r] || [];
       var url = String(line[iUrl] || "").trim();
       if (!url) continue;
@@ -293,7 +315,8 @@
     try {
       var buf = await file.arrayBuffer();
       var res = parseBook(buf);
-      var detail = await SB.listRankItems({});
+      /* 这里只用来判断"表里的图在不在榜单里"，不需要每条记录的全部字段 */
+      var detail = await SB.listRankItems({ cols: "image_url" });
       var exist = {};
       detail.forEach(function (r) { exist[String(r.image_url || "").trim()] = 1; });
 
@@ -469,6 +492,11 @@
         visual_tags: (c.visual_tags || []).slice(),
         craft_tags: (c.craft_tags || []).slice(),
         fit_tags: (c.fit_tags || []).slice(),
+        /* 与 applyPlan 同理：撤回时若不带上这三列，写回会把它们清成空数组，
+           表现为「撤回一批旧标签，顺手把文化背景/消费心理/节日也删了」。 */
+        culture_tags: (c.culture_tags || []).slice(),
+        psych_tags: (c.psych_tags || []).slice(),
+        festival_tags: (c.festival_tags || []).slice(),
         batch_id: null
       };
       var touched = false;
@@ -573,7 +601,8 @@
   window.RankTagImport = {
     parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS,
     checkConsistency: checkConsistency, SHOOT_RULE: SHOOT_RULE,
-    __test: { parseRows: function (rows) { return parseRows(rows); } }
+    /* 测试入口：传入的 aoa 仍以「表头行」开头（与 parseBook 同语义） */
+    __test: { parseRows: function (rows) { return parseRows(rows, null, true); } }
   };
 
   /* 后台榜单面板打开时才读批次，避免进后台就发请求 */

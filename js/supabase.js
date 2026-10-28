@@ -2308,7 +2308,8 @@ async removeTrendRecord(id) {
       const PAGE = 1000, MAX = 20000;
       const wanted = f.limit || 0;
       const build = (from, to) => {
-        let q = client.from("rank_items").select("*");
+        /* cols：只需要 URL 做比对时不要拉全量字段（每条记录几十个字段，上万行就是几 MB） */
+        let q = client.from("rank_items").select(f.cols || "*");
         if (f.category) q = q.eq("category", f.category);
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
         if (f.periodType) q = q.eq("period_type", f.periodType);
@@ -2385,13 +2386,52 @@ async removeTrendRecord(id) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
       const out = {};
       if (!list.length) return out;
-      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,batch_id,updated_at";
-      for (let i = 0; i < list.length; i += 80) {
-        const part = list.slice(i, i + 80);
-        const { data, error } = await client.from("rank_image_tags").select(COLS).in("image_url", part);
-        if (error) throw new Error(error.message || "读取榜单标签失败");
-        (data || []).forEach((r) => { out[r.image_url] = r; });
+
+      /* 列清单分三级降级：
+         全量列若因为「补丁没跑、列还不存在」而报错，整个查询会失败，
+         前台就会一张标签都读不出来（看起来像"完全没打标"）。
+         所以按 全量 → 去掉节日 → 只留基础列 逐级退，保证有多少显示多少。 */
+      const C_FULL = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,batch_id,updated_at";
+      const C_NEW2 = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,batch_id,updated_at";
+      const C_BASE = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,batch_id,updated_at";
+      const LADDER = [C_FULL, C_NEW2, C_BASE];
+      let lv = this.__rankTagLevel;
+      if (typeof lv !== "number" || lv < 0 || lv > 2) lv = 0;
+
+      const fetchPart = async (part, cols) => {
+        const r = await client.from("rank_image_tags").select(cols).in("image_url", part);
+        return r;
+      };
+
+      /* 导入时命中几千上万行要发上百个请求，串行等会非常慢。
+         改成 4 路并发（批量仍按 60 条，避免 URL 过长被网关截断）。 */
+      const BATCH = 60, CONC = 4;
+      const chunks = [];
+      for (let i = 0; i < list.length; i += BATCH) chunks.push(list.slice(i, i + BATCH));
+      for (let i = 0; i < chunks.length; i += CONC) {
+        const group = chunks.slice(i, i + CONC);
+        const settled = await Promise.all(group.map(async (part) => {
+          let myLv = lv;
+          let res = await fetchPart(part, LADDER[myLv]);
+          while (res.error && myLv < LADDER.length - 1) {
+            myLv++;
+            res = await fetchPart(part, LADDER[myLv]);
+          }
+          return { res, myLv };
+        }));
+        for (const one of settled) {
+          if (one.res.error) throw new Error(one.res.error.message || "读取榜单标签失败");
+          lv = Math.max(lv, one.myLv);
+          (one.res.data || []).forEach((r) => {
+            /* 降级丢掉的新列补成空数组，调用方不用到处判 undefined */
+            if (!r.culture_tags) r.culture_tags = [];
+            if (!r.psych_tags) r.psych_tags = [];
+            if (!r.festival_tags) r.festival_tags = [];
+            out[r.image_url] = r;
+          });
+        }
       }
+      this.__rankTagLevel = lv;
       return out;
     },
     async saveRankTagRows(rows) {
@@ -2580,6 +2620,11 @@ async removeTrendRecord(id) {
           visual_tags: pick("visual_tags"),
           craft_tags: pick("craft_tags"),
           fit_tags: pick("fit_tags"),
+          /* 20261027T 补：这三列在合并时被漏掉，导致前台左栏的
+             「文化背景 / 消费心理 / 节日」永远是空的（数据在库里却读不出来）。 */
+          culture_tags: pick("culture_tags"),
+          psych_tags: pick("psych_tags"),
+          festival_tags: pick("festival_tags"),
         };
       });
       return out;

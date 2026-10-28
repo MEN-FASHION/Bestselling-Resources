@@ -86,12 +86,16 @@
     if (ONLY === "new") return s === "新上榜";
     return s.indexOf("上升") === 0;                 /* 位次上升（含「上升 N 位」） */
   }
-  /* 这张图有没有打标数据（六个维度任一非空）。用 TAG_INDEX，与大图标签面板同源。 */
+  /* 这张图有没有打标数据（8 个必填维度任一非空）。用 TAG_INDEX，与大图标签面板同源。
+     20261027T：原来只查 6 个维度，只打了「文化背景 / 消费心理」的图会被当成
+     未打标 —— 覆盖率不算它、"只看已打标"也筛不出它，等于白打。
+     节日是可选维度，不代表"打过标"，故不计入。 */
   function hasTagData(it) {
     var u = String((it && it.image_url) || "");
     var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
     if (!t) return false;
-    return ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags"]
+    return ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags",
+            "culture_tags", "psych_tags"]
       .some(function (k) { return tagArr(t[k]).length > 0; });
   }
   function hitTagged(it) {
@@ -1301,6 +1305,7 @@
       /* 打标维度：分母只用「打过这个维度」的图，避免把"没打标"算成"其它" */
       var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
       var stCnt = {}, stTot = 0, vCnt = {}, vTot = 0, fCnt = {}, fTot = 0;
+      var cfCnt = {}, cfTot = 0, cuCnt = {}, cuTot = 0, psCnt = {}, psTot = 0;
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
@@ -1324,6 +1329,17 @@
           if (!k || fSet[k] !== undefined) return;
           fSet[k] = 1; fCnt[k] = (fCnt[k] || 0) + 1; nF++;
         });
+        /* 20261027T 补：二次工艺 / 文化背景 / 消费心理 也要进体征卡，
+           否则后台打了标，统计块里依然看不到，和"没生效"一样。 */
+        var cfSet = {}, nCf = 0;
+        tagArr(t.craft_tags).forEach(function (v) { if (cfSet[v] === undefined) { cfSet[v] = 1; cfCnt[v] = (cfCnt[v] || 0) + 1; nCf++; } });
+        if (nCf) cfTot++;
+        var cuSet = {}, nCu = 0;
+        tagArr(t.culture_tags).forEach(function (v) { if (cuSet[v] === undefined) { cuSet[v] = 1; cuCnt[v] = (cuCnt[v] || 0) + 1; nCu++; } });
+        if (nCu) cuTot++;
+        var psSet = {}, nPs = 0;
+        tagArr(t.psych_tags).forEach(function (v) { if (psSet[v] === undefined) { psSet[v] = 1; psCnt[v] = (psCnt[v] || 0) + 1; nPs++; } });
+        if (nPs) psTot++;
         if (nF) fTot++;
       });
       var tops = function (obj, tot, lim) {
@@ -1336,7 +1352,8 @@
         oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
-        hasTag: sTot > 0 || eTot > 0, tagged: sTot
+        craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
+        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0, tagged: sTot
       };
     });   /* 本周没上传的类目也保留卡片：写「本周无数据」，不要静默消失 */
   }
@@ -1420,7 +1437,8 @@
             + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
             + '</div>'
           : '');
-      [["风格", c.style], ["视觉", c.visual], ["版型", c.fit]].forEach(function (g) {
+      [["风格", c.style], ["文化背景", c.culture], ["消费心理", c.psych],
+       ["视觉", c.visual], ["二次工艺", c.craft], ["版型", c.fit]].forEach(function (g) {
         if (!g[1] || !g[1].length) return;
         h += '<div class="rk-vit-sub">' + g[0] + '</div><div class="rk-vit-tags">'
           + g[1].map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
@@ -1487,29 +1505,56 @@
     return E[key] || [];
   }
 
+  /* 三个视觉子组的并集（含旧值）：用来判断"这个值到底属不属于视觉" */
+  function VISUAL_ALL() {
+    return (enumList("视觉-背景") || []).concat(enumList("视觉-画面构成") || [], enumList("视觉-呈现主体") || []);
+  }
+
   function lbTagGroups(t) {
-    var groups = [], seen = {};
-    var take = function (list, arr, label, key) {
+    /* 20261027T 修两处「标签被吞」：
+       ① 原来用全局 seen 去重，而「摆拍/挂拍/细节特写/买家秀」这几个值
+          在「视觉-主体」和「拍摄方式」里都存在。主体先收走，拍摄方式那一组
+          就整个消失——看起来像"没打标"。改成按维度去重，同词可在不同维度各显示一次。
+       ② 视觉子组的白名单过严：库里存了不在词表里的旧值（场景实景等）时
+          直接 return，标签彻底不显示。改成"认不出来的不丢，单独归到视觉·其他"。 */
+    var groups = [], seenIn = {};
+    var take = function (list, arr, label, key, dropIfUnknown) {
       var allow = key ? (enumList(key) || []) : null;
       tagArr(arr).forEach(function (v) {
         var k = String(v).trim();
-        if (!k || seen[k]) return;
-        if (allow && allow.length && allow.indexOf(k) < 0) return;   /* 不属于这个子组 */
-        seen[k] = 1;
+        if (!k) return;
+        var uid = label + "\u0001" + k;
+        if (seenIn[uid]) return;
+        if (allow && allow.length && allow.indexOf(k) < 0) {
+          if (dropIfUnknown) return;
+          /* 值属于另外的视觉子组 → 跳过，它会在自己那组显示，别重复兜底 */
+          if (VISUAL_ALL().indexOf(k) >= 0) return;
+          var og = list.filter(function (x) { return x[0] === "视觉 · 其他"; })[0];
+          if (!og) { og = ["视觉 · 其他", []]; list.push(og); }
+          if (og[1].indexOf(k) < 0) og[1].push(k);
+          seenIn[uid] = 1;
+          return;
+        }
+        seenIn[uid] = 1;
         var g = list.filter(function (x) { return x[0] === label; })[0];
         if (!g) { g = [label, []]; list.push(g); }
-        g[1].push(k);
+        if (g[1].indexOf(k) < 0) g[1].push(k);
       });
     };
     if (!t) return groups;
-    LB_GROUPS.forEach(function (m) { take(groups, t[m[1]], m[0], m[2]); });
+    LB_GROUPS.forEach(function (m) {
+      /* 视觉三组认不出来的值不丢（兜到"视觉·其他"），其它维度本来就不校验 */
+      var isVisual = m[2] && m[2].indexOf("视觉-") === 0;
+      take(groups, t[m[1]], m[0], m[2], !isVisual);
+    });
 
     /* 版型：库里存成「领型·圆领」这种带前缀的值，按部位拆成多组 */
     var fitRest = [];
+    var seenFit = {};
     tagArr(t.fit_tags).forEach(function (v) {
       var s2 = String(v).trim();
-      if (!s2 || seen[s2]) return;
-      seen[s2] = 1;
+      if (!s2 || seenFit[s2]) return;
+      seenFit[s2] = 1;
       var cut = s2.indexOf("·");
       if (cut > 0) {
         var part = s2.slice(0, cut), val = s2.slice(cut + 1);
