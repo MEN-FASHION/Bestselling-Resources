@@ -26,6 +26,18 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   };
 
+  /* 叶子类目取值可能有三种情况：
+     ① 正常名称（「服装、鞋靴和珠宝饰品,男士时尚,男装,T 恤」）；
+     ② 上游表里「叶子类目ID」列排在名称列前面，被误当成名称存进来的一串数字；
+     ③ 空。
+     只有 ① 才值得展示 —— ②③ 一律当空处理，避免页面和导出表里出现裸 ID。 */
+  function leafOf(it) {
+    var v = String((it && it.leaf_category) || "").trim();
+    if (!v) return "";
+    if (/^[\d\s,，、|_\-.]+$/.test(v)) return "";
+    return v;
+  }
+
   var ALL = "全部";
   var CAP_STEP = 48;         // 每列初始展示张数（先小，避免一次拉太多图片）
   var CAP_MAX = 288;         // 每列上限
@@ -925,12 +937,12 @@
     opt = opt || {};
     var b = badgeOf(it);
     var share = (opt.share && opt.share.length >= 2) ? opt.share : null;
-    var title = [it.site, it.period_label, it.leaf_category, b ? b.txt : ""].filter(Boolean).join(" · ");
+    var title = [it.site, it.period_label, leafOf(it), b ? b.txt : ""].filter(Boolean).join(" · ");
     /* 天眼模式：图上不叠任何文字（打开后就是一面纯图墙，密密麻麻的字不再挡图）。
        标签改挂在 data-* 上，鼠标移到那张图上时由放大浮窗显示 —— 放大图 + 图下方标签。 */
     var eyeMeta = "", eyeTags = [];
     if (opt.eye) {
-      eyeMeta = [it.site, it.period_label, it.leaf_category].filter(Boolean).join(" · ");
+      eyeMeta = [it.site, it.period_label, leafOf(it)].filter(Boolean).join(" · ");
       if (b) eyeTags.push(b.txt);
       if (opt.move) eyeTags.push(opt.move);
       if (share) eyeTags.push("共 " + share.length + " 国同款");
@@ -944,12 +956,12 @@
     var h = '<figure class="rk-card' + (opt.isNew ? " is-new" : "") + '" data-url="' + esc(it.image_url) + '" title="' + esc(title) + '"'
       + ' draggable="true" data-tags="' + esc(cardTags.join("|")) + '"'
       + ' data-period="' + esc(it.period_label || "") + '" data-ptype="' + esc(it.period_type || "week") + '"'
-      + ' data-title="' + esc(it.title || "") + '" data-leaf="' + esc(it.leaf_category || "") + '"'
+      + ' data-title="' + esc(it.title || "") + '" data-leaf="' + esc(leafOf(it)) + '"'
       + ' data-cat="' + esc(it.category || "") + '" data-site="' + esc(it.site || "") + '"'
       + ' data-ratio="' + esc(it.ratio == null ? "" : it.ratio) + '" data-rank="' + esc(it.rank_abs == null ? "" : it.rank_abs) + '"'
       + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
-    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "榜单图片") + '"' +
+    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(leafOf(it) || "榜单图片") + '"' +
       (opt.eager ? ' decoding="async"' : '') + '>';
     if (!opt.eye) {
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
@@ -1663,6 +1675,11 @@
     var cov = coverageOf();
     if (cov.total) {
       var covTxt = '本视图共 <b>' + cov.total + '</b> 张图，其中 <b>' + cov.has + '</b> 张已打标（' + cov.pct + '%）';
+      /* 降级提示：读标签时若因为「节日列不存在」退了一级，节日维度会静默消失，
+         看起来就像"这条标没打上"。这里明确说出来，避免再靠猜。 */
+      if (SBX && typeof SBX.__rankTagLevel === "number" && SBX.__rankTagLevel >= 1) {
+        covTxt += ' <span style="color:#b45309">· 节日维度暂不可用（数据库未执行 R 补丁），其余维度正常</span>';
+      }
       if (!cov.has) covTxt += ' —— 一张都没有读到标签：请先确认后台「导出打标表 → 回填」是否真的写入，以及数据库补丁是否已执行。';
       else if (TAGGED === "off") covTxt += '；点上方「只看已打标」可只显示这部分图。';
       html += '<div class="rk-covnote">' + covTxt + '</div>';
@@ -2484,7 +2501,8 @@
     var bits = [], b = badgeOf(it || {});
     if (it.site) bits.push(['站点', it.site]);
     if (it.period_label) bits.push(['期次', it.period_label]);
-    if (it.leaf_category) bits.push(['叶子类目', it.leaf_category]);
+    var leaf = leafOf(it);
+    if (leaf) bits.push(['叶子类目', leaf]);
     if (it.category && it.category !== it.leaf_category) bits.push(['类目', it.category]);
     if (b) bits.push(['趋势', b.txt]);
     return bits;

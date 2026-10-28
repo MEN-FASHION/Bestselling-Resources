@@ -164,7 +164,7 @@ function clearPane(inputId, previewId, fileId, resultId, progId, barId, clearSta
     pick(n => n.includes("开款类型") || n.includes("类型") || n.includes("type"), "type");
     pick(n => n.includes("招品原因") || n.includes("原因") || n.includes("reason"), "reason");
     pick(n => n.includes("提需时间") || n.includes("提需") || n.includes("时间") || n.includes("time"), "time");
-    pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");    pick(n => (n.includes("叶子类目名") || n.includes("类目名") || n.includes("类目") || n.includes("品类") || n.includes("category")) && !n.includes("行业") && !n.includes("英文") && !/english/i.test(n), "cat");
+    pick(n => n.includes("首图") || n.includes("主图") || n.includes("图片") || n.includes("img") || n.includes("url"), "img");    pick(n => (n.includes("叶子类目名") || n.includes("类目名") || n.includes("类目") || n.includes("品类") || n.includes("category")) && !n.includes("行业") && !n.includes("英文") && !/english/i.test(n) && !/id$/.test(n) && !/编号/.test(n), "cat");
     return out;
   }
 

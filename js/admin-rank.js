@@ -41,6 +41,14 @@
   function normHead(h) {
     return String(h == null ? "" : h).replace(/\s+/g, "").replace(/[（(].*?[)）]/g, "").toLowerCase();
   }
+  /* 表头是不是「ID / 编号」这类标识列。
+     踩过的坑：表里同时有「叶子类目」和「叶子类目ID」两列，而 ID 列排在前面，
+     按"含叶子类目"去找会先命中 ID 列 → 把一串数字当成类目名称存进去，
+     之后前台和导出表里显示的全是数字。 */
+  function isIdHead(h) {
+    var x = String(h == null ? "" : h).toLowerCase();
+    return /id$/i.test(x) || /(^|[^a-z])id([^a-z]|$)/i.test(x) || x.indexOf("编号") >= 0 || x.indexOf("code") >= 0;
+  }
   // 返回列索引映射；识别不到返回 null
   function mapHeaderRow(cells) {
     const hs = cells.map(normHead);
@@ -49,8 +57,8 @@
     const iRatio = find(h => h.indexOf("环比比例") >= 0 || (h.indexOf("比例") >= 0 && h.indexOf("绝对值") < 0));
     const iSite = find(h => h.indexOf("销量站点") >= 0 || h.indexOf("站点") >= 0 || h === "国家" || h.indexOf("国家") === 0);
     const iUrl = find(h => (h.indexOf("首图") >= 0 && h.indexOf("url") >= 0) || h === "首图url" || h.indexOf("首图") >= 0);
-    const iLeaf = find(h => h.indexOf("叶子类目") >= 0);
-    const iCat = find(h => h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0);
+    const iLeaf = find(h => h.indexOf("叶子类目") >= 0 && !isIdHead(h));
+    const iCat = find(h => h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0 && !isIdHead(h));
     if (iAbs < 0 && iRatio < 0 && iSite < 0 && iUrl < 0) return null;
     return { abs: iAbs, ratio: iRatio, site: iSite, url: iUrl, leaf: iLeaf >= 0 ? iLeaf : iCat };
   }

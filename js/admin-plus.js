@@ -48,8 +48,9 @@
     var title = find(function (h) { return h.indexOf("货品名称") >= 0 || h.indexOf("商品名称") >= 0 || h.indexOf("标题") >= 0 || h === "名称" || h.indexOf("品名") >= 0; });
     var ratio = find(function (h) { return h.indexOf("环比比例") >= 0 || (h.indexOf("比例") >= 0 && h.indexOf("绝对值") < 0); });
     var abs = find(function (h) { return h.indexOf("环比绝对值") >= 0 || (h.indexOf("绝对值") >= 0 && h.indexOf("比例") < 0); });
-    var leaf = find(function (h) { return h.indexOf("叶子类目") >= 0; });
-    var cat = find(function (h) { return h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0; });
+    var isId = function (h) { return /id$/i.test(h) || /(^|[^a-z])id([^a-z]|$)/i.test(h) || h.indexOf("编号") >= 0 || h.indexOf("code") >= 0; };
+    var leaf = find(function (h) { return h.indexOf("叶子类目") >= 0 && !isId(h); });
+    var cat = find(function (h) { return h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0 && !isId(h); });
     var site = find(function (h) { return h.indexOf("站点") >= 0 || h === "国家" || h.indexOf("国家") === 0; });
     if (url < 0) return null;
     return { url: url, title: title, ratio: ratio, abs: abs, leaf: leaf, cat: cat, site: site };
