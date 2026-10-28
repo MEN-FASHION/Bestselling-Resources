@@ -99,6 +99,62 @@
     return list;
   }
 
+  /* ============================================================
+   * 维度间一致性校验（20261027T）
+   * ------------------------------------------------------------
+   * 为什么要有：这 9 个维度是分别判断的，模型很容易各自"看起来合理"、
+   * 合起来自相矛盾。真实踩到的例子——「视觉-呈现主体 = 模特半身」，
+   * 同时「拍摄方式 = 摆拍」：有真人穿着就不可能是摆拍。40 张里一次错 16 张。
+   *
+   * 这里列出几组硬约束（不是风格偏好，是逻辑上互斥）：
+   *   模特全身/半身/局部、买家秀 → 只能是「模拍」（可再加「直播截帧」）
+   *   人台（假人）                → 只能是「人台拍」
+   *   单件平铺/多件组合平铺        → 「平铺拍」或「摆拍」（摆拍=把衣服摆出造型，无人）
+   *   挂拍                        → 「挂拍」
+   *   3D渲染图                    → 「3D」
+   *   细节特写                    → 「细节特写」或「模拍」
+   *   手持展示                    → 「模拍」或「摆拍」
+   * 只做提示、不阻断导入：口径可能随业务调整，报出来让人判断，比强行改写安全。
+   * ============================================================ */
+  var SHOOT_RULE = {
+    "模特全身": ["模拍", "直播截帧"],
+    "模特半身": ["模拍", "直播截帧"],
+    "模特局部": ["模拍", "直播截帧"],
+    "买家秀": ["模拍", "买家秀"],
+    "人台（假人）": ["人台拍"],
+    "单件平铺": ["平铺拍", "摆拍"],
+    "多件组合平铺": ["平铺拍", "摆拍"],
+    "挂拍": ["挂拍"],
+    "3D渲染图": ["3D"],
+    "细节特写": ["细节特写", "模拍"],
+    "手持展示": ["模拍", "摆拍"],
+    "摆拍": ["摆拍"]
+  };
+
+  /* 返回矛盾清单：[{ url, subject, shoot, expect }] */
+  function checkConsistency(rows) {
+    var out = [];
+    (rows || []).forEach(function (rec) {
+      var t = (rec.tags) || {};
+      var subs = t.visual_tags || [];
+      var shoots = t.shoot_tags || [];
+      if (!subs.length || !shoots.length) return;
+      /* 一张图可能有多个主体（如「挂拍，手持展示」）：
+         只要有一个主体和拍摄方式对得上，这张图就不算矛盾，避免误报。 */
+      var anyHit = false, firstAllow = null;
+      subs.forEach(function (sv) {
+        var allow = SHOOT_RULE[sv];
+        if (!allow) return;
+        if (!firstAllow) firstAllow = allow;
+        if (shoots.some(function (x) { return allow.indexOf(x) >= 0; })) anyHit = true;
+      });
+      if (!anyHit && firstAllow) {
+        out.push({ url: rec.url, subject: subs.join("，"), shoot: shoots.join("，"), expect: firstAllow.join(" 或 ") });
+      }
+    });
+    return out;
+  }
+
   function sameArr(a, b) {
     var x = Array.isArray(a) ? a : [], y = Array.isArray(b) ? b : [];
     if (x.length !== y.length) return false;
@@ -255,10 +311,24 @@
       var miss = res.rows.length - hit.length;
       parsed = { rows: hit, miss: miss, unknown: res.unknown, bad: res.bad, total: res.rows.length,
         exist: tagged, fields: res.fields, fileName: file.name || "", scope: "" };
+      /* 维度间自相矛盾：不阻断，但必须显式报出来——
+         这类错误在页面上"看着挺正常"，不提示就永远发现不了。 */
+      var conflicts = checkConsistency(hit).filter(function (c) {
+        var t = tagged[c.url] || {};
+        return !(Array.isArray(t.shoot_tags) && t.shoot_tags.length
+                 && t.shoot_tags.join("，") === c.shoot);
+      });
+      parsed.conflicts = conflicts;
+
       var msg = "解析完成：" + res.sheet + " · 有效 " + res.rows.length + " 张图 · 能对上榜单 " + hit.length + " 张"
         + (miss ? " · 对不上 " + miss + " 张（不会写入）" : "")
         + (already ? " · 其中 " + already + " 张已有标签（补齐模式下会跳过）" : "")
         + (res.unknown.length ? " · 枚举外标签 " + res.unknown.length + " 个（不会写入）" : "");
+      if (conflicts.length) {
+        var s0 = conflicts[0];
+        msg += " ⚠ " + conflicts.length + " 张存在维度矛盾，例如「" + s0.subject + "」却填了「" + s0.shoot
+             + "」，应为「" + s0.expect + "」。建议先在表里改掉再导入。";
+      }
       setTip(null, msg, hit.length > 0);
       refreshPlan();
       $("#rank-tag-import").disabled = hit.length === 0;
@@ -502,6 +572,7 @@
 
   window.RankTagImport = {
     parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS,
+    checkConsistency: checkConsistency, SHOOT_RULE: SHOOT_RULE,
     __test: { parseRows: function (rows) { return parseRows(rows); } }
   };
 
