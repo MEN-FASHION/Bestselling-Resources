@@ -140,6 +140,53 @@
     "摆拍": ["摆拍"]
   };
 
+  /* ------------------------------------------------------------
+   * 工艺 vs 图案元素 交叉校验（20261027Y）
+   * ------------------------------------------------------------
+   * 运营反馈：胸花、局部小图案基本都是烫画（烫图/热转印），数码印花其实很少，
+   * 只有满印和定位印花（大幅面）才算数码。实际打出来的标里一堆小图案被标成数码。
+   *
+   * 所以这里按「图案覆盖面积」判两条硬约束：
+   *   a) 元素含「满印 / 局部印花（定位）」而工艺是烫图/热转印 → 大概率应为数码印花
+   *   b) 工艺是「数码印花」但元素里没有任何满印/定位类大面积图案 → 大概率应为烫图
+   * 另加一条：元素是「纯色/无图案」却填了印花类工艺 → 自相矛盾。
+   * 同样只提示、不改写。 */
+  /* 只有「满印」能明确表达"整件铺满"。迷彩多数是满印。
+     注意「局部印花」字面就是局部，不能算大面积（早先误放进这里，
+     导致棒球服后背大面积烫金音符被误报成"大面积却标烫图"）。 */
+  var BIG_AREA_PAT = ["满印", "迷彩"];
+  var PRINT_CRAFT = ["数码印花", "丝网印花", "发泡印花", "厚板印花", "植绒印花", "反光印花", "烫图/热转印"];
+
+  function checkCraft(rows) {
+    var out = [];
+    (rows || []).forEach(function (rec) {
+      var t = rec.tags || {};
+      var els = t.element_tags || [];
+      var crs = t.craft_tags || [];
+      if (!crs.length) return;
+
+      var hasBig = els.some(function (e) { return BIG_AREA_PAT.indexOf(e) >= 0; });
+      var onlyPlain = els.length === 1 && els[0] === "纯色/无图案";
+      var hasHeat = crs.indexOf("烫图/热转印") >= 0;
+      var hasDigital = crs.indexOf("数码印花") >= 0;
+
+      if (onlyPlain && crs.some(function (c) { return PRINT_CRAFT.indexOf(c) >= 0; })) {
+        out.push({ url: rec.url, kind: "craft", msg: "图案元素是「纯色/无图案」，却填了印花类工艺「" + crs.join("，") + "」", expect: "删掉印花工艺，或补上对应的图案元素" });
+        return;
+      }
+      if (hasBig && hasHeat && !hasDigital) {
+        out.push({ url: rec.url, kind: "craft", msg: "元素含「" + els.filter(function (e) { return BIG_AREA_PAT.indexOf(e) >= 0; }).join("，") + "」（大幅面）却只填了烫图/热转印", expect: "满印 / 定位印花 应为「数码印花」" });
+        return;
+      }
+      /* 不自动判「数码印花是否该改成烫图」：
+         元素名（字母 / 标语文字 / 卡通图案）只说明图案内容，不说明覆盖面积。
+         实测 40 张里按元素名推断会误报 11 张——后背整幅大字标语确实用数码印，
+         但元素只能写「标语文字」，看起来就像小图案。
+         面积要靠看图判断，代码不做这个推断，只保留上面两条硬矛盾。 */
+    });
+    return out;
+  }
+
   /* 返回矛盾清单：[{ url, subject, shoot, expect }] */
   function checkConsistency(rows) {
     var out = [];
@@ -343,6 +390,10 @@
       });
       parsed.conflicts = conflicts;
 
+      /* 工艺 vs 图案元素：胸花/局部小图案被标成数码印花是高频错误，单独报 */
+      var craftIss = checkCraft(hit);
+      parsed.craftIssues = craftIss;
+
       var msg = "解析完成：" + res.sheet + " · 有效 " + res.rows.length + " 张图 · 能对上榜单 " + hit.length + " 张"
         + (miss ? " · 对不上 " + miss + " 张（不会写入）" : "")
         + (already ? " · 其中 " + already + " 张已有标签（补齐模式下会跳过）" : "")
@@ -351,6 +402,10 @@
         var s0 = conflicts[0];
         msg += " ⚠ " + conflicts.length + " 张存在维度矛盾，例如「" + s0.subject + "」却填了「" + s0.shoot
              + "」，应为「" + s0.expect + "」。建议先在表里改掉再导入。";
+      }
+      if (craftIss.length) {
+        var c0 = craftIss[0];
+        msg += " ⚠ " + craftIss.length + " 张工艺与图案对不上，例如：" + c0.msg + "，" + c0.expect + "。";
       }
       setTip(null, msg, hit.length > 0);
       refreshPlan();
@@ -600,7 +655,8 @@
 
   window.RankTagImport = {
     parseBook: parseBook, MAP: MAP, applyPlan: applyPlan, planRevert: planRevert, FIELDS: FIELDS,
-    checkConsistency: checkConsistency, SHOOT_RULE: SHOOT_RULE,
+    checkConsistency: checkConsistency, checkCraft: checkCraft,
+    SHOOT_RULE: SHOOT_RULE, CRAFT_BIG_AREA: BIG_AREA_PAT,
     /* 测试入口：传入的 aoa 仍以「表头行」开头（与 parseBook 同语义） */
     __test: { parseRows: function (rows) { return parseRows(rows, null, true); } }
   };

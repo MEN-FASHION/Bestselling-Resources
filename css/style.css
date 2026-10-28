@@ -2142,6 +2142,9 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rank-file-tip.bad { color: #c0392b; }
 /* 类目分布表：每类多少张、打标覆盖率如何 */
 .rk-ov-cap { font-size: 12px; color: var(--sub); margin: 8px 0 6px; }
+/* 维度体检条：各维度有值行数，某个维度是 0 时一眼能看见 */
+.rk-ov-dim { font-size: 12px; color: var(--sub); margin: 0 0 8px; line-height: 1.7; }
+.rk-ov-dim span { white-space: nowrap; }
 .rk-ov { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rk-ov th { text-align: left; font-weight: 600; color: var(--sub); padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
 .rk-ov td { padding: 6px 8px; border-bottom: 1px solid #f1f2f4; }

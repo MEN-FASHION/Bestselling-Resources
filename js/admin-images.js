@@ -1116,6 +1116,9 @@ async function refreshTagConsumers() {
     const btn = document.getElementById("dash-export-btn");
     if (!btn) return;
     const catSel = document.getElementById("dash-exp-cat");
+    const scopeSel = document.getElementById("dash-exp-scope");
+    /* 切换导出范围后，类目下拉要跟着重算——否则会残留「该范围下 0 张」的类目 */
+    if (scopeSel) scopeSel.onchange = () => { buildDashExportCat(_dashImgs); };
     const split = document.getElementById("dash-exp-split");
     if (catSel) catSel.onchange = () => {
       // 选了具体类目就没必要再拆分（拆出来只有一个文件）
@@ -1145,14 +1148,29 @@ async function refreshTagConsumers() {
     };
   }
 
+  /* 导出类目下拉：只列出「当前导出范围下确实有图」的类目。
+     之前是拿全站类目直接铺，选了「仅未打标」后仍能看到一堆 0 张的类目，
+     选中导出只会得到空文件，等于给用户挖坑。这里先按 scope 过滤再统计。 */
   function buildDashExportCat(imgs) {
     const sel = document.getElementById("dash-exp-cat");
     if (!sel) return;
     const cur = sel.value;
-    const cats = [...new Set((imgs || []).map(i => i.category))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh"));
-    sel.innerHTML = '<option value="">全部类目</option>' +
-      cats.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join("");
+    const scopeEl = document.getElementById("dash-exp-scope");
+    const scope = (scopeEl && scopeEl.value) || "all";
+    const pool = (window.ImageExport && ImageExport.filterImages)
+      ? ImageExport.filterImages(imgs, { scope })
+      : (imgs || []);
+    const cnt = Object.create(null);
+    pool.forEach(i => {
+      const c = String((i && i.category) || "").trim() || "未分类";
+      cnt[c] = (cnt[c] || 0) + 1;
+    });
+    const cats = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b, "zh"));
+    sel.innerHTML = '<option value="">全部类目（' + pool.length + ' 张）</option>' +
+      cats.map(c => `<option value="${escAttr(c)}">${escHtml(c)}（${cnt[c]} 张）</option>`).join("");
     if (cur && cats.includes(cur)) sel.value = cur; else sel.value = "";
+    const split = document.getElementById("dash-exp-split");
+    if (split) { split.disabled = !!sel.value; if (sel.value) split.checked = false; }
   }
 
 function buildDashCatFilter(imgs) {

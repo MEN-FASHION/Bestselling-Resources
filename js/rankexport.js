@@ -68,6 +68,30 @@
   var VISUAL_SUBJECT = VE.subject || [];
   var VISUAL_LEGACY = VE.legacy || [];
 
+  /* ============================================================
+   * 二次工艺判定口径（20261027Y）
+   * ------------------------------------------------------------
+   * 为什么要写死这张表：运营反馈「胸花、局部小图案基本都是烫画（烫图/热转印），
+   * 数码印花的其实很少——只有满印和定位印花（大幅面）才算数码」，
+   * 而实际打出来的标里，一堆小面积卡通 / 标语图案被标成了数码印花。
+   * 根因是「数码印花」这个词听起来最高级、最泛，模型没有面积概念就会默认选它。
+   *
+   * 这张表把判定依据固定成「图案覆盖面积 + 颜色数」，填表时按此判断，
+   * 导出的「枚举参考」工作表第三列会带上这些口径，人和模型都能对照。
+   * ============================================================ */
+  var CRAFT_GUIDE = {
+    "烫图/热转印": "【默认项】单个图案、胸花、局部小面积印花（含卡通、字母、标语、LOGO、单朵花）。绝大多数局部图案都是烫画，拿不准时选这个",
+    "数码印花": "只用于【满印】或【定位印花】（图案大幅面覆盖、整幅铺开、多色渐变照片级）。小块图案不要选这个",
+    "丝网印花": "单色或少色、大面积色块的平涂印（前胸大色块、条杠），非照片级、无明显渐变",
+    "刺绣": "有绣线立体感、针脚可见（含贴布绣/珠片绣另选）",
+    "烫钻": "有水钻/烫钻颗粒反光，不是印上去的图案",
+    "发泡印花": "图案有立体发泡凸起、边缘厚实",
+    "植绒印花": "图案表面有绒毛质感",
+    "反光印花": "图案在光下有反光条/反光涂层"
+  };
+  /* 面积口径速查：局部（单个图案/胸花）→ 烫图；整幅铺满 → 数码；大色块 → 丝网 */
+  var CRAFT_HINT = "局部小图案（胸花、单个卡通/字母/标语）默认烫图/热转印；只有满印、定位印花这类大幅面才是数码印花";
+
   var ENUM = {
     风格: ["复古美式", "街头潮流", "高街潮牌", "极简", "商务通勤", "商务正装", "休闲", "学院风", "运动风", "户外机能", "工装", "日系cityboy", "韩系", "欧美街头", "老钱风", "轻奢", "机车风", "复古港风", "民族风", "度假风", "波西米亚", "中性风", "甜美风", "运动休闲"],
     "视觉-背景": VISUAL_BG,
@@ -205,7 +229,29 @@
       return Object.keys(box).map(function (k) { return box[k]; })
         .sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name); });
     };
-    return { cats: sortDesc(map.c), leaves: sortDesc(map.l), total: byUrl.size };
+
+    /* 维度体检（20261027Y）：数一遍每个维度到底有多少行有值。
+       运营反复反馈「打了标前台看不到」，光看覆盖率看不出来是"数据没写进去"
+       还是"列不存在"还是"确实没打"。这里把 9 个维度各自的有值行数摆出来，
+       哪个维度是 0 一眼就知道。节日是可选维度，为 0 属正常（多数款没有节日元素）。 */
+    var dims = [
+      ["风格", "style_tags"], ["视觉", "visual_tags"], ["图案元素", "element_tags"],
+      ["二次工艺", "craft_tags"], ["拍摄方式", "shoot_tags"], ["版型", "fit_tags"],
+      ["文化背景", "culture_tags"], ["消费心理", "psych_tags"], ["节日", "festival_tags"]
+    ];
+    var dimCount = {};
+    dims.forEach(function (d) { dimCount[d[0]] = 0; });
+    byUrl.forEach(function (h) {
+      var t = (tagMap && tagMap[h.url]) || {};
+      dims.forEach(function (d) {
+        var v = t[d[1]];
+        if (Array.isArray(v) && v.length) dimCount[d[0]]++;
+      });
+    });
+
+    return { cats: sortDesc(map.c), leaves: sortDesc(map.l), total: byUrl.size,
+             dims: dims.map(function (d) { return { name: d[0], field: d[1], has: dimCount[d[0]] }; }),
+             taggedRows: Object.keys(tagMap || {}).length };
   }
 
   /* 组装工作簿
@@ -299,10 +345,18 @@
     var ws2 = XLSX.utils.aoa_to_sheet(detailAoa);
     ws2["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 58 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
 
-    var enumAoa = [["维度/子分组", "允许的取值（逗号分隔，导入时逐值校验）"]];
-    Object.keys(ENUM).forEach(function (k) { enumAoa.push([k, ENUM[k].join("，")]); });
+    var enumAoa = [["维度/子分组", "允许的取值（逗号分隔，导入时逐值校验）", "判定口径 / 备注"]];
+    Object.keys(ENUM).forEach(function (k) {
+      var note = "";
+      if (k === "二次工艺") note = CRAFT_HINT;
+      enumAoa.push([k, ENUM[k].join("，"), note]);
+    });
+    /* 二次工艺逐值口径：单独列在下面，方便填表时逐个对照 */
+    enumAoa.push([]);
+    enumAoa.push(["二次工艺 · 逐值口径", "取值", "什么情况下选它"]);
+    Object.keys(CRAFT_GUIDE).forEach(function (k) { enumAoa.push(["", k, CRAFT_GUIDE[k]]); });
     var ws3 = XLSX.utils.aoa_to_sheet(enumAoa);
-    ws3["!cols"] = [{ wch: 14 }, { wch: 120 }];
+    ws3["!cols"] = [{ wch: 20 }, { wch: 110 }, { wch: 90 }];
 
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "打标表");
@@ -424,7 +478,20 @@
         + ';width:' + pct + '%"></i></span> ' + pct + '%</td>'
         + '</tr>';
     }).join("");
+    /* 维度体检条：哪个维度是 0 一眼可见 */
+    var dimLine = "";
+    if (st.dims && st.dims.length) {
+      var parts = st.dims.map(function (d) {
+        var warn = d.has === 0 && d.name !== "节日";
+        return '<span style="' + (warn ? "color:#dc2626;font-weight:600" : "")
+          + '">' + esc(d.name) + ' ' + d.has + '</span>';
+      });
+      dimLine = '<div class="rk-ov-dim">各维度有值行数（共 ' + (st.taggedRows || 0) + ' 行打标记录）：'
+        + parts.join(' · ') + '</div>';
+    }
+
     box.innerHTML = '<div class="rk-ov-cap">类目分布（共 ' + st.total + ' 张图 / ' + st.cats.length + ' 个类目，点某行即按该类目筛选）</div>'
+      + dimLine
       + '<table class="rk-ov"><thead><tr><th>类目</th><th>总图数</th><th>已打标</th><th>未打标</th><th>覆盖率</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>';
     Array.prototype.forEach.call(box.querySelectorAll("tr[data-cat]"), function (tr) {
@@ -483,7 +550,8 @@
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME,
-    catStats: catStats, loadCats: loadCats, hitCat: hitCat
+    catStats: catStats, loadCats: loadCats, hitCat: hitCat,
+    CRAFT_GUIDE: CRAFT_GUIDE, CRAFT_HINT: CRAFT_HINT
   };
 
   document.addEventListener("DOMContentLoaded", function () {
