@@ -79,7 +79,13 @@
     { key: "craft", zh: "二次工艺", hint: "刺绣 / 印花工艺 / 水洗做旧 / 拼接 / 烫钻等" },
     { key: "scene_tags", zh: "场景与背景构成", hint: "外景 / 室内 / 平铺 / 背景元素" },
     { key: "shoot_tags", zh: "主图视觉", hint: "拍摄手法 · 光线 · 质感 · 姿势" },
-    { key: "skin_tags", zh: "模特肤色", hint: "肤色取向" }
+    { key: "skin_tags", zh: "模特肤色", hint: "肤色取向" },
+    /* 20261027Q：两个语义层维度。前面几维答「看起来是什么」，
+       这两维答「它来自哪种文化、想打动谁」——是真正能做趋势判断的部分。 */
+    { key: "culture_tags", zh: "文化背景", hint: "文化语境 · 圈层来源 · 时代印记" },
+    { key: "psych_tags", zh: "消费心理", hint: "购买动机 · 情感诉求" },
+    /* 20261027R 节日：可选维度，只有绑定节日的图才计入 */
+    { key: "festival_tags", zh: "节日", hint: "节日节点绑定 · 不含节日则留空" }
   ];
   var CRAFT_WORDS = [
     "刺绣", "绣花", "胶印", "水印", "数码印花", "丝网印", "烫印", "烫钻", "烫金", "烫银",
@@ -156,7 +162,7 @@
     cards.forEach(function (c) {
       var t = tagFor(tagMap, c.url);
       var any = ["style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags", "category",
-                 "visual_tags", "craft_tags", "fit_tags"].some(function (k) {
+                 "visual_tags", "craft_tags", "fit_tags", "culture_tags", "psych_tags", "festival_tags"].some(function (k) {
         return Array.isArray(t[k]) ? t[k].length > 0 : !!t[k];
       });
       if (any) has++;

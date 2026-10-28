@@ -6,14 +6,16 @@
  *
  * 依赖：SB（supabase.js）、XLSX（vendor/xlsx.full.min.js）
  * 三个工作表：
- *   1) 打标表   按图片地址去重，一行一张图；带「打标状态」列（已打标 / 部分 n/6 / 未打标）
+ *   1) 打标表   按图片地址去重，一行一张图；带「打标状态」列（已打标 / 部分 n/8 / 未打标）
+ *              20261027R 起多一列「节日」——它是**可选项**，不含节日的常规款留空即可，
+ *              留空不影响「已打标」判定（否则基础款会永远卡在"打标不完整"）。
  *   2) 全量明细 原始每一行（期次/站点/类目/位次/环比），不做去重
  *   3) 枚举参考 每个维度允许取的标签值，供填表与导入校验用
  *
  * 导出范围（scope）——解决「已经打过标的又被导出来」的问题：
- *   todo    仅未打标（6 个主维度一个都没填）—— 默认，增量打标就导这个
+ *   todo    仅未打标（8 个主维度一个都没填）—— 默认，增量打标就导这个
  *   partial 仅打标不完整（填了但没填全）
- *   done    仅已打标（6 个主维度齐全）—— 用来核对 / 改正打错的标
+ *   done    仅已打标（8 个主维度齐全）—— 用来核对 / 改正打错的标
  *   all     全部（含已打标，标签预填）
  * 另外可按「类目」和「关键词（图片URL / 类目 / 叶子类目）」再收窄；
  * 改正个别打错的图时：范围选 done + 关键词输入该图地址，即可只导出这一张。
@@ -23,20 +25,32 @@
     "图片URL", "类目", "叶子类目", "出现期次", "站点", "最优位次", "最高环比%", "打标状态",
     "风格", "视觉-背景", "视觉-画面构成", "视觉-呈现主体",
     "图案元素", "二次工艺", "拍摄方式",
+    "文化背景", "消费心理",
+    "节日",
     "领型", "袖型", "袖长", "衣长", "松紧度", "裤型", "裤长", "裙长",
     "备注"
   ];
 
-  /* 判断「打没打全」用的 6 个主维度 → 对应表里的字段 */
+  /* 判断「打没打全」用的 8 个主维度 → 对应表里的字段
+     20261027Q：新增「文化背景」「消费心理」两个语义层维度（原来 6 个只覆盖
+     可见的视觉属性，答不出"这身衣服来自哪种文化、想打动谁"）。 */
   var DIMS = [
     ["风格", "style_tags"],
     ["视觉", "visual_tags"],
     ["图案元素", "element_tags"],
     ["二次工艺", "craft_tags"],
     ["拍摄方式", "shoot_tags"],
-    ["版型", "fit_tags"]
+    ["版型", "fit_tags"],
+    ["文化背景", "culture_tags"],
+    ["消费心理", "psych_tags"]
   ];
   var DIM_TOTAL = DIMS.length;
+
+  /* 可选项：节日。
+     「不含节日元素的常规款」是多数，所以节日留空是正常状态，不能算作"打标不完整"，
+     否则每件基础款都会永远卡在「部分 n/8」，统计和筛选全废。
+     因此它不进 DIMS（不计入分母），单独列在这里只用于导出取值与状态提示。 */
+  var OPT_DIMS = [["节日", "festival_tags"]];
 
   /* ---------------- 视觉三个子分组 ----------------
      20261027O：原来「视觉」是一个 19 项的大枚举，三列共用，导致
@@ -64,6 +78,11 @@
     图案元素: ["纯色/无图案", "竖条纹", "横条纹", "格纹", "千鸟格", "威尔士格", "波点", "碎花", "大花/花卉", "植物叶纹", "动物纹", "豹纹", "蛇纹", "斑马纹", "迷彩", "几何图案", "卡通图案", "字母", "标语文字", "品牌LOGO", "扎染", "晕染/水墨", "渐变", "抽象图案", "民族图腾", "拼色", "满印", "局部印花", "拉链", "抽绳", "口袋", "工装口袋", "荷叶边", "蕾丝", "镂空", "绑带", "开衩", "流苏", "毛边", "撞钉", "铆钉", "拼接", "双层", "翻边", "腰带", "金属扣件", "织带"],
     二次工艺: ["刺绣", "贴布绣", "珠片绣", "钉珠", "亮片", "水钻", "烫钻", "撞钉", "铆钉", "丝网印花", "数码印花", "发泡印花", "厚板印花", "植绒印花", "反光印花", "烫图/热转印", "压花", "压皱", "绗缝", "打缆/抽褶", "抽褶", "编织", "手工钩织", "水洗", "做旧洗水", "手擦", "蜡染", "扎染", "破洞", "磨破", "毛边"],
     拍摄方式: ["摆拍", "挂拍", "平铺拍", "模拍", "人台拍", "3D", "细节特写", "买家秀", "直播截帧"],
+    /* 20261027Q 两个语义维度，词表来自 js/rank-enums.js */
+    文化背景: VE.culture || [],
+    消费心理: VE.psych || [],
+    /* 20261027R 节日（可选，取值与站点营销日历节庆库同名） */
+    节日: VE.festival || [],
     领型: ["圆领", "螺纹圆领", "V领", "方领", "一字领", "高领", "半高领", "翻领", "立领", "衬衫领", "西装领", "POLO领", "连帽", "挂脖", "露肩", "斜肩", "无领"],
     袖型: ["常规袖", "落肩袖", "插肩袖", "泡泡袖", "蝙蝠袖", "喇叭袖", "荷叶袖", "羊腿袖", "削肩", "无袖"],
     袖长: ["无袖", "短袖(3分)", "五分袖", "七分袖", "九分袖", "长袖"],
@@ -93,15 +112,25 @@
     var t = tag || {};
     var filled = 0;
     DIMS.forEach(function (d) { if (arrOf(t[d[1]]).length) filled++; });
-    var status = filled === 0 ? "未打标" : (filled === DIM_TOTAL ? "已打标" : "部分 " + filled + "/" + DIM_TOTAL);
-    return { filled: filled, status: status };
+    /* 节日是可选维度：只有它填了不算"已打标"，但也别当成"完全没打"，
+       否则导出「仅未打标」时会把它反复导出来。 */
+    var optFilled = 0;
+    OPT_DIMS.forEach(function (d) { if (arrOf(t[d[1]]).length) optFilled++; });
+    var status;
+    if (filled === 0) status = optFilled ? "部分 0/" + DIM_TOTAL + "（仅节日）" : "未打标";
+    else if (filled === DIM_TOTAL) status = "已打标";
+    else status = "部分 " + filled + "/" + DIM_TOTAL;
+    return { filled: filled, optFilled: optFilled, status: status };
   }
 
   /* 按 scope 判断这张图要不要导出 */
-  function inScope(filled, scope) {
+  function inScope(filled, scope, optFilled) {
     var s = String(scope || "todo");
+    var opt = optFilled || 0;
     if (s === "all") return true;
-    if (s === "todo") return filled === 0;
+    /* 「仅未打标」= 8 维一个都没填 **且** 节日也没填。
+       只有节日的不算未打标，否则每次导出都会把它重复导出来。 */
+    if (s === "todo") return filled === 0 && !opt;
     if (s === "partial") return filled > 0 && filled < DIM_TOTAL;
     if (s === "done") return filled === DIM_TOTAL;
     return true;
@@ -154,7 +183,7 @@
       var h = byUrl.get(u);
       var t = (tagMap && tagMap[u]) || {};
       var pr = dimProgress(t);
-      if (pr.filled === 0) stats.todo++;
+      if (pr.filled === 0 && !pr.optFilled) stats.todo++;
       else if (pr.filled === DIM_TOTAL) stats.done++;
       else stats.partial++;
 
@@ -163,7 +192,7 @@
         var hay = [u, Object.keys(h.cats).join(" "), Object.keys(h.leaf).join(" ")].join(" ").toLowerCase();
         if (hay.indexOf(kw) < 0) return;
       }
-      if (!inScope(pr.filled, o.scope)) return;
+      if (!inScope(pr.filled, o.scope, pr.optFilled)) return;
 
       /* 视觉按三组分流填到对应列：不再一股脑塞进「视觉-背景」，
          否则在导出表里根本看不出哪一项属于背景、哪一项属于呈现主体。 */
@@ -191,6 +220,9 @@
         arrOf(t.element_tags).join("，"),
         arrOf(t.craft_tags).join("，"),
         arrOf(t.shoot_tags).join("，"),
+        arrOf(t.culture_tags).join("，"),
+        arrOf(t.psych_tags).join("，"),
+        arrOf(t.festival_tags).join("，"),
         pickFit("领型"), pickFit("袖型"), pickFit("袖长"), pickFit("衣长"),
         pickFit("松紧度"), pickFit("裤型"), pickFit("裤长"), pickFit("裙长"),
         ""
@@ -301,7 +333,7 @@
 
   window.RankExport = {
     all: exportAll, preview: preview, buildBook: buildBook, collectImages: collectImages,
-    dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, DIM_TOTAL: DIM_TOTAL,
+    dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME
   };

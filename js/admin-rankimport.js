@@ -24,6 +24,11 @@
     ["图案元素", "element_tags", "element"],
     ["二次工艺", "craft_tags", "craft"],
     ["拍摄方式", "shoot_tags", "shoot"],
+    /* 20261027Q 语义维度：各自独立枚举，填错会被判「未识别」而不是静默写入 */
+    ["文化背景", "culture_tags", "culture"],
+    ["消费心理", "psych_tags", "psych"],
+    /* 20261027R 节日：可选项，留空即「不含节日」，不算未打标 */
+    ["节日", "festival_tags", "festival"],
     /* 视觉三列各自校验各自的枚举：旧版三列共用「视觉」大枚举，
        往里填什么都能过，等于没校验。 */
     ["视觉-背景", "visual_tags", "视觉-背景"],
@@ -39,8 +44,11 @@
     ["裙长", "fit_tags", "fit裙长"]
   ];
 
-  /* 参与「是否已打标」判断的 6 个主维度 */
-  var FIELDS = ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags"];
+  /* 参与「是否已打标」判断的 8 个主维度（20261027Q 起加入文化背景 / 消费心理）
+     20261027R：「节日」是可选维度，**故意不放进这里**——它留空是正常状态，
+     放进来会让所有不含节日的基础款永远判成"打标不完整"。 */
+  var FIELDS = ["style_tags", "visual_tags", "element_tags", "craft_tags", "shoot_tags", "fit_tags",
+                "culture_tags", "psych_tags"];
 
   var parsed = null;     // { rows:[{url, tags, provided}], fields:[], bad, unknown, headers, sheet }
   var historyOK = null;  // 历史表是否可用（null=未探测）
@@ -68,13 +76,26 @@
     if (E[key]) list = E[key];                       /* 视觉-背景 / 视觉-画面构成 / 视觉-呈现主体 ... */
     else if (key.indexOf("fit") === 0) list = E[key.slice(3)] || [];
     else {
-      var m = { style: "风格", element: "图案元素", craft: "二次工艺", shoot: "拍摄方式", visual: "视觉" };
+      var m = { style: "风格", element: "图案元素", craft: "二次工艺", shoot: "拍摄方式", visual: "视觉",
+                culture: "文化背景", psych: "消费心理", festival: "节日" };
       list = E[m[key]] || [];
     }
     /* 旧口径遗留值继续放行：库里已有的老标签（如「场景实景」）再导回来时
        不该被当成「未识别」丢掉，但导出下拉里不再提供这些老词。 */
     var legacy = (window.RankExport && window.RankExport.VISUAL_LEGACY) || [];
     if (key === "视觉-背景" && legacy.length) return list.concat(legacy);
+    /* 节日宽松匹配：后台已加载营销日历的节庆库（window.RAW），
+       库里存在的节日名一律放行。这样运营在表里手写「泰国守夏节」这类
+       库里有的节日不会被判「未识别」，而拼错的名字照样拦得住。 */
+    if (key === "festival") {
+      var lib = (typeof window !== "undefined" && Array.isArray(window.RAW)) ? window.RAW : [];
+      var extra = [];
+      lib.forEach(function (r) {
+        var n = r && r[0];
+        if (n && list.indexOf(n) < 0 && extra.indexOf(n) < 0) extra.push(n);
+      });
+      return list.concat(extra);
+    }
     return list;
   }
 

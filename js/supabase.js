@@ -2385,7 +2385,7 @@ async removeTrendRecord(id) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
       const out = {};
       if (!list.length) return out;
-      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,batch_id,updated_at";
+      const COLS = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,batch_id,updated_at";
       for (let i = 0; i < list.length; i += 80) {
         const part = list.slice(i, i + 80);
         const { data, error } = await client.from("rank_image_tags").select(COLS).in("image_url", part);
@@ -2407,6 +2407,9 @@ async removeTrendRecord(id) {
           element_tags: r.element_tags || [],
           scene_tags: r.scene_tags || [],
           shoot_tags: r.shoot_tags || [],
+          culture_tags: r.culture_tags || [],
+          psych_tags: r.psych_tags || [],
+          festival_tags: r.festival_tags || [],
           skin_tags: r.skin_tags || [],
           tags: r.tags || [],
           visual_tags: r.visual_tags || [],
