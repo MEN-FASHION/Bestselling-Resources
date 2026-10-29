@@ -806,6 +806,7 @@
       +     '<div class="rp-opts" id="rp-fmt">'
       +       '<button type="button" class="rp-opt on" data-fmt="pdf"><b>PDF（推荐）</b><span>矢量文字、中文可搜索、可直接打印或存档</span></button>'
       +       '<button type="button" class="rp-opt" data-fmt="ppt"><b>PPT（.pptx）</b><span>可编辑演示文件：封面 + 整体对照 + 每列一页图 + 明细表</span></button>'
+      +       '<button type="button" class="rp-opt" data-fmt="trend"><b>PDF 并上传趋势专区</b><span>自动生成封面、标题、标签与简介，生成后直接登记到前台趋势专区</span></button>'
       +     '</div>'
       +   '</div>'
       +   '<div class="rp-sec" id="rp-sec-pdf">'
@@ -875,6 +876,8 @@
     if (!t) return;
     t.textContent = FMT === "pdf"
       ? "PDF：浏览器会弹出打印窗口，把「目标 / 打印机」选成「另存为 PDF」即可；建议在「更多设置」里勾选「背景图形」，效果最佳。"
+      : FMT === "trend"
+      ? "上传趋势专区：生成 A4 横版 PDF（封面 + 整体对照 + 每列一页），同时自动填好标题、标签分类、类目与简介并直接登记到前台趋势专区。封面即前台卡片图。"
       : "PPT：会生成一个真正的 .pptx 文件。图片页与网页排版一致（图片形式）；最后的「明细表」是原生文字，可在 PowerPoint 里直接编辑。";
   }
 
@@ -912,6 +915,7 @@
         await CFG.expandAll();
       }
       if (FMT === "pdf") await makePDF(SPEC_PDF);
+      else if (FMT === "trend") await publishToTrend();
       else await makePPT(SPEC_PPT);
     } catch (e) {
       setProgress("导出失败，请重试。", 100, true);
@@ -922,7 +926,307 @@
   }
 
   /* ==========================================================================
-   *  六、对外接口
+   *  四·C、趋势上升榜 → 趋势专区（20261030D）
+   *  --------------------------------------------------------------------------
+   *  为什么单独做一条路径：
+   *   已有的「PDF」走浏览器原生打印，好处是文字是矢量的、可搜索，但那一步
+   *   产出的文件由浏览器直接交给用户，程序拿不到字节流，也就没法替用户上传。
+   *   趋势专区要一份真实的 PDF 文件，所以这里用绘制式 PDF：把同样的内容
+   *   （封面 + 整体对照 + 每列）按页画进 PDF，拿到字节后再上传。
+   *
+   *  自动带齐趋势专区的必填项：
+   *    文件标题 / 标签分类 / 类目 / 封面图 / 简介 —— 都从当前筛选与内容推导，
+   *    上传后前台趋势专区即可看到，不需要再到后台补。
+   * ========================================================================*/
+  var TREND_SPEC = { name: "A4 横版", w: 297, h: 210, margin: 10 };
+
+  async function loadJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return true;
+    var v = assetV();
+    try { await loadScript("vendor/jspdf.umd.min.js" + (v ? "?v=" + v : "")); } catch (e) { /* 落到下面判定 */ }
+    return !!(window.jspdf && window.jspdf.jsPDF);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* 封面：纯 canvas 绘制，文字全部由当前筛选自动生成。
+     封面同时有两个用途 —— 塞进 PDF 第一页、作为趋势专区的前台卡片图。 */
+  function buildCoverCanvas(st, total, cols, now) {
+    st = st || {};
+    var W = 1600, H = 1000;
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var c = cv.getContext("2d");
+    var FONT_CJK = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif';
+
+    // 底色 + 右侧浅色块，避免纯白显得空
+    c.fillStyle = "#F7F6F3"; c.fillRect(0, 0, W, H);
+    c.fillStyle = "#EFEBE4"; c.fillRect(W * 0.66, 0, W * 0.34, H);
+    c.fillStyle = "#C9B79C"; c.fillRect(0, 0, W, 10);
+
+    // 品牌行
+    c.fillStyle = "#8B7355";
+    c.font = "500 26px " + FONT_CJK;
+    c.fillText("TREND BANK · 趋势上升榜", 96, 132);
+
+    // 主标题：类目 + 趋势报告
+    var cat = (st.cat && st.cat !== "全部") ? st.cat : "全类目";
+    var title = cat + "趋势报告";
+    c.fillStyle = "#2C2C2C";
+    c.font = "700 92px " + FONT_CJK;
+    var tw = c.measureText(title).width;
+    if (tw > W - 200) {                       // 类目名过长时自动降字号，避免溢出
+      var fs = Math.max(48, Math.floor(92 * (W - 200) / tw));
+      c.font = "700 " + fs + "px " + FONT_CJK;
+    }
+    c.fillText(title, 96, 300);
+
+    // 副标题：地区 / 站点 · 期次
+    var place = st.group || ((st.sites && st.sites.length) ? st.sites.join(" / ") : "");
+    var sub = [place, (st.periods && st.periods.length) ? st.periods.join("、") : ""]
+      .filter(Boolean).join("　·　") || "全部站点";
+    c.fillStyle = "#5C5C5C";
+    c.font = "400 38px " + FONT_CJK;
+    c.fillText(sub, 96, 372);
+
+    // 口径行：同一行文字也出现在报表页眉，保持一致
+    var line = stateLine(st);
+    if (line) {
+      c.fillStyle = "#8A857C";
+      c.font = "400 26px " + FONT_CJK;
+      var words = line.split("　｜　");
+      var y = 440;
+      words.forEach(function (t) {
+        if (c.measureText(t).width > W - 220) {
+          while (t.length > 4 && c.measureText(t + "…").width > W - 220) t = t.slice(0, -1);
+          t += "…";
+        }
+        c.fillText(t, 96, y); y += 40;
+      });
+    }
+
+    // 三个数字块
+    var stats = [[String(total), "张图片"], [String(cols), "个对比列"], [fmtDate(now), "生成日期"]];
+    stats.forEach(function (s, i) {
+      var x = 96 + i * 300;
+      c.fillStyle = "#2C2C2C";
+      c.font = "700 56px " + FONT_CJK;
+      c.fillText(s[0], x, H - 190);
+      c.fillStyle = "#8A857C";
+      c.font = "400 24px " + FONT_CJK;
+      c.fillText(s[1], x, H - 150);
+    });
+
+    // 页脚
+    c.fillStyle = "#8A857C";
+    c.font = "400 22px " + FONT_CJK;
+    c.fillText("本报告由前台「生成报告 · 上传趋势专区」导出 · 仅供内部使用 · 请勿外传", 96, H - 68);
+
+    // 右下角装饰：品牌字
+    c.fillStyle = "rgba(139,115,85,0.18)";
+    c.font = "700 180px " + FONT_CJK;
+    c.fillText("TB", W - 400, H - 120);
+
+    return cv;
+  }
+
+  function canvasBlob(cv, type, quality) {
+    return new Promise(function (resolve) {
+      if (cv.toBlob) cv.toBlob(function (b) { resolve(b); }, type || "image/png", quality);
+      else resolve(null);
+    });
+  }
+
+  /* 内页也整页画成图片再贴进 PDF —— 原因：PDF 库内置字体不含中文字形，
+     直接写字会把中文丢成方块或空白。交给浏览器 canvas 渲染，中文才对，
+     且与网页排版完全一致。折中代价是内页文字不可搜索，
+     需要可搜索版本时用上面的「PDF（推荐）」原生打印即可。 */
+  function loadImage(src) {
+    return new Promise(function (resolve) {
+      var im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { resolve(null); };
+      im.src = src;
+    });
+  }
+
+  async function buildInnerPageCanvas(head, shot) {
+    var W = 1684, H = 1191;                  // A4 横版比例（297:210），约 150dpi
+    var PAD = 56, HEAD_H = 66;
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var c = cv.getContext("2d");
+    var FONT_CJK = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif';
+
+    c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
+    c.fillStyle = "#C9B79C"; c.fillRect(0, 0, W, 6);
+
+    c.fillStyle = "#2C2C2C";
+    c.font = "600 30px " + FONT_CJK;
+    var t = String(head || "");
+    while (t.length > 4 && c.measureText(t).width > W - PAD * 2) t = t.slice(0, -1);
+    if (t !== String(head || "")) t += "…";
+    c.fillText(t, PAD, HEAD_H);
+
+    if (!shot || !shot.data) {
+      c.fillStyle = "#C25E5A";
+      c.font = "400 24px " + FONT_CJK;
+      c.fillText("（本页图片未能抓取，可在网页上查看）", PAD, HEAD_H + 56);
+      return cv;
+    }
+    var bx = PAD, by = HEAD_H + 26;
+    var bw = W - PAD * 2, bh = H - by - PAD;
+    var r = Math.min(bw / shot.w, bh / shot.h);
+    var w = shot.w * r, h = shot.h * r;
+    var img = await loadImage(shot.data);
+    if (img) {
+      try { c.drawImage(img, bx + (bw - w) / 2, by + (bh - h) / 2, w, h); }
+      catch (e) { img = null; }
+    }
+    if (!img) {
+      c.fillStyle = "#C25E5A";
+      c.font = "400 24px " + FONT_CJK;
+      c.fillText("（本页图片未能绘制，可在网页上查看）", PAD, by + 40);
+    }
+    return cv;
+  }
+
+  /* 把封面 + 整体对照 + 每列拼成一份 A4 横版 PDF，返回 Blob 与封面 Blob */
+  async function buildTrendPdf(o) {
+    var st = o.state || {};
+    var pools = o.pools || [];
+    var total = pools.reduce(function (n, p) { return n + p.cards.length; }, 0);
+    var now = o.now || new Date();
+
+    var cover = buildCoverCanvas(st, total, pools.length, now);
+    var coverBlob = await canvasBlob(cover, "image/png");
+
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [TREND_SPEC.w, TREND_SPEC.h] });
+    var PW = TREND_SPEC.w, PH = TREND_SPEC.h;
+
+    // 第 1 页：封面铺满
+    pdf.addImage(cover.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PW, PH);
+
+    async function addPage(head, shot) {
+      pdf.addPage([PW, PH], "landscape");
+      var cv = await buildInnerPageCanvas(head, shot);
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.86), "JPEG", 0, 0, PW, PH);
+    }
+
+    if (o.shots && o.shots.all) {
+      await addPage("整体对照 · " + ((st.cat && st.cat !== "全部") ? st.cat : ""), o.shots.all);
+    }
+    for (var i = 0; i < pools.length; i++) {
+      var p = pools[i];
+      var head = p.name + (p.spec ? " · " + p.spec : "") + (p.meta ? " · " + p.meta : "");
+      setProgress("正在排版第 " + (i + 2) + " / " + (pools.length + 1) + " 页…", 64 + Math.round((i + 1) / (pools.length + 1) * 10));
+      await addPage(head, (o.shots && o.shots.pools) ? o.shots.pools[i] : null);
+    }
+
+    var blob = pdf.output("blob");
+    return { pdfBlob: blob, coverBlob: coverBlob, total: total, cols: pools.length };
+  }
+
+  /* 趋势专区的必填项由当前筛选推导，用户不用再填一遍 */
+  function autoTrendMeta(st, total, cols, now) {
+    st = st || {};
+    var cat = (st.cat && st.cat !== "全部") ? st.cat : "全类目";
+    var place = st.group || ((st.sites && st.sites.length) ? st.sites.join("、") : "");
+    var per = (st.periods && st.periods.length) ? st.periods.join("、") : "";
+
+    var title = [cat, place, per, "趋势报告"].filter(Boolean).join(" ");
+    if (title.length > 60) title = title.slice(0, 60);
+
+    /* 标签分类三选一：期次里带 W 视为周度，带年月视为月度，其余归到类目。
+       这样前台按「周度/月度」筛的时候，这份报告能落在正确的分组里。 */
+    var tag = "类目";
+    if (/W\d{1,2}/i.test(per) || /周/.test(per)) tag = "周度";
+    else if (/\d{4}[-年]\d{1,2}/.test(per) || /月/.test(per)) tag = "月度";
+
+    var desc = "共 " + total + " 张图片、" + cols + " 个对比列"
+      + (place ? "，覆盖 " + place : "")
+      + (per ? "，期次 " + per : "")
+      + "。由趋势上升榜自动生成于 " + fmtTime(now) + "。";
+
+    return { title: title, tag: tag, category: (st.cat && st.cat !== "全部") ? st.cat : "", description: desc };
+  }
+
+  async function publishToTrend() {
+    var SBX = window.SB;
+    if (!SBX || !SBX.uploadTrendFile || !SBX.addTrendRecord) {
+      setProgress("当前页面未加载上传组件，请刷新后重试。", 100, true); return;
+    }
+    var pools = readPools();
+    if (!hasContent(pools)) { setProgress(NO_DATA_TXT, 100, true); return; }
+
+    setProgress("正在准备导出组件…", 4);
+    var okLib = await ensureLibs();          // html2canvas（抓图）在这里面
+    var okPdf = await loadJsPdf();
+    if (!okLib || !okPdf) { setProgress("导出组件加载失败，请刷新页面重试。", 100, true); return; }
+
+    var wrap = CFG.poolsEl ? CFG.poolsEl() : null;
+    var poolEls = wrap ? $$(".rk-pool", wrap) : [];
+
+    setProgress("正在抓取「整体对照」图…", 12);
+    var shots = { all: null, pools: [] };
+    shots.all = await shoot(wrap);
+    for (var i = 0; i < pools.length; i++) {
+      setProgress("正在抓取第 " + (i + 1) + " / " + pools.length + " 列…", 12 + Math.round((i + 1) / pools.length * 48));
+      shots.pools.push(await shoot(poolEls[i]));
+      await new Promise(function (r) { setTimeout(r, 40); });
+    }
+
+    setProgress("正在生成 PDF…", 64);
+    var st = CFG.state ? CFG.state() : {};
+    var now = new Date();
+    var pack = await buildTrendPdf({ state: st, pools: pools, shots: shots, now: now });
+    var meta = autoTrendMeta(st, pack.total, pack.cols, now);
+
+    var fname = safeName(meta.title) + ".pdf";
+    var pdfFile = new File([pack.pdfBlob], fname, { type: "application/pdf" });
+    var coverFile = pack.coverBlob ? new File([pack.coverBlob], safeName(meta.title) + "-cover.png", { type: "image/png" }) : null;
+
+    setProgress("正在上传到趋势专区…", 74);
+    var onUp = function (p) {
+      setProgress("正在上传到趋势专区… " + p + "%", 74 + Math.round(p * 0.2));
+    };
+    var up = SBX.uploadTrendFileXHR
+      ? await SBX.uploadTrendFileXHR(pdfFile, coverFile, onUp)
+      : await SBX.uploadTrendFile(pdfFile, coverFile);
+
+    setProgress("正在登记到趋势清单…", 96);
+    try {
+      await SBX.addTrendRecord({
+        title: meta.title,
+        tag: meta.tag,
+        path: up.path,
+        category: meta.category,
+        file_type: "pdf",
+        cover: up.cover || "",
+        description: meta.description
+      });
+    } catch (e) {
+      /* 文件已经进了存储，只是清单没写成。这时候提示必须说清楚，
+         否则用户会重复上传，在存储里留下多份同样的文件。 */
+      setProgress("文件已上传成功，但登记到趋势清单失败：" + (e && e.message ? e.message : "未知原因")
+        + "。请到后台趋势专区手动补录，不要重复上传。", 100, true);
+      return;
+    }
+
+    setProgress("已上传趋势专区：" + meta.title + "（" + meta.tag + "）· 前台趋势专区可直接查看", 100);
+  }
+
+  /* ==========================================================================
+   *  五、对外接口
    * ========================================================================*/
   function init(o) {
     o = o || {};
