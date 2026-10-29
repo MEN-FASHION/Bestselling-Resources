@@ -233,6 +233,16 @@
     var sel = document.getElementById("mv-upload-cat");
     var cat = sel ? String(sel.value || "").trim() : "";
     if (!cat) { toast("请先选择上传类目", false); return; }
+    /* 类目授权：超管不受限；被分配了具体类目的管理员只能传自己那几个类目。
+       未配置任何类目时视为不限（与其它专区的口径一致）。 */
+    if (typeof isSuper === "function" && !isSuper()) {
+      var mine = [];
+      try { mine = await SB.myZonePermissions("movement"); } catch (e) { mine = []; }
+      if (mine.length && mine.indexOf(cat) < 0) {
+        toast("你没有「" + cat + "」类目的上传权限", false);
+        return;
+      }
+    }
     var btn = document.getElementById("mv-upload-btn");
     var prog = document.getElementById("mv-progress");
     var bar = document.getElementById("mv-progress-bar");

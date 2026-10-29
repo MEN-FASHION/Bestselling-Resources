@@ -21,6 +21,7 @@ let PERM_ZONES = [
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
   { key: "plus", label: "大码专区" },
+  { key: "movement", label: "趋势动向" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
@@ -496,7 +497,7 @@ function updatePermEditCatCount() {
       await SB.setUserManageZones(uid, manageZones);
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
-      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller"];
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement"];
       for (const z of ALL_CAT_ZONES) {
         await SB.setUserPermissions(uid, z, cats);
       }

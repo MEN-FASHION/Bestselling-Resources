@@ -41,7 +41,7 @@ const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
-  "movement-card": "",      // 趋势动向：批量传图打标，与榜单同结构，任一管理员可进入
+  "movement-card": "movement", // 趋势动向：独立专区，按「后台可管理专区」授权管控
   "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
