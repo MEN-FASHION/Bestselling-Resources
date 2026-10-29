@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TREND BANK · 营销日历</title>
+<link rel="stylesheet" href="css/style.css?v=20261030I">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+
+</head>
+<body class="front mk-page">
+  <!-- 提示条 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- 加载遮罩：判定登录态期间盖住，避免闪现登录页 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="login-view" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="trademark-avatar" aria-label="TREND BANK 商标">
+          <svg viewBox="0 0 120 120" width="92" height="92" role="img" aria-label="TREND BANK">
+            <circle cx="60" cy="60" r="58" fill="#ffffff"/>
+            <circle cx="60" cy="60" r="57.5" fill="none" stroke="#e2ddd4" stroke-width="1"/>
+            <text x="60" y="62" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" letter-spacing="3" fill="#2c2c2c">TB</text>
+            <text x="60" y="92" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="8" letter-spacing="4" fill="#9c8b74">TREND&nbsp;BANK</text>
+          </svg>
+        </div>
+        <div class="logo-mark" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
+        <h1 id="site-title"></h1>
+        <p class="subtitle">营销日历 · 登录后查看</p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <h2 class="form-title" id="auth-title">注册账号</h2>
+        <div id="auth-hint" class="auth-hint hidden"></div>
+        <label>邮箱</label>
+        <div class="email-wrap">
+          <input type="email" id="auth-email" placeholder="请输入邮箱" autocomplete="email" required>
+          <div id="email-suggest" class="email-suggest hidden"></div>
+        </div>
+        <label>密码</label>
+        <input type="password" id="auth-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="auth-submit">注册并进入</button>
+        <div id="auth-confirm" class="auth-confirm hidden">
+          <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path fill="#d4a017" d="M24 4a20 20 0 1 0 0 40 20 20 0 0 0 0-40zm9 15-10 8-10-8 0-2 10 8 10-8 0 2zm-19 13-6 2 2-6zm20 0 4-4-2 6z" opacity=".9"/></svg>
+          <div class="auth-confirm-title">注册成功，请到邮箱完成确认</div>
+          <div class="auth-confirm-step">1. 打开你注册时填写的邮箱（<b id="auth-confirm-email">--</b>）</div>
+          <div class="auth-confirm-step">2. 找到我们发送的「确认邮件」，点击邮件中的<b>确认链接</b></div>
+          <div class="auth-confirm-step">3. 确认成功后返回本站登录即可进入</div>
+          <div class="auth-confirm-tip">没收到邮件？请检查<b>垃圾邮件 / 其他</b>分栏，或点击下方重新发送。</div>
+          <div class="auth-confirm-actions">
+            <button type="button" class="btn-ghost" id="auth-resend">重新发送确认邮件</button>
+          </div>
+        </div>
+        <div class="auth-links">
+          <a href="#" id="auth-toggle-link">已有账号？去登录</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 营销日历主视图 ================= -->
+  <header class="topbar" id="front-topbar">
+    <div class="topbar-inner">
+      <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TREND BANK"><span class="logo-dot"></span><span class="logo-word">TB</span></span> <span id="front-brand">TREND BANK</span></div>
+      <nav class="top-tabs is-booting">
+        <a href="rank.html" class="tab-link">趋势上升榜</a>
+        <a href="plus.html" class="tab-link">大码专区</a>
+        <a href="marketing.html" class="tab-link active" data-viewtab="marketing">营销日历</a>
+        <a href="index.html" class="tab-link">视觉专区</a>
+        <a href="trends.html" class="tab-link" data-viewtab="trend">趋势专区</a>
+        <a href="trends.html#recruit" class="tab-link" data-viewtab="recruit">招品回品</a>
+        <a href="trends.html#bestseller" class="tab-link" data-viewtab="bestseller">BESTSELLER</a>
+        <a href="fav.html" class="tab-link">我的收藏</a>
+        <button type="button" id="notice-tab" class="tab-link notice-tab">公告<span id="notice-badge" class="notice-badge hidden">0</span></button>
+      </nav>
+      <div class="topbar-actions">
+        <button id="changepwd-btn" class="btn-ghost hidden">修改密码</button>
+        <button id="logout-btn" class="btn-ghost hidden">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <section id="marketing-view" class="gallery-view hidden">
+    <div class="mkzone">
+      <div class="mk-head mk-toolbar">
+        <div class="mk-head-l">
+          <h2 id="mkViewTitle">节庆机会卡片</h2>
+          <span class="sub" id="mkViewSub">含选品方向 · 按提前期倒推最晚启动日</span>
+          <span class="line"></span>
+        </div>
+        <div class="mk-head-r">
+          <div class="seg" id="viewTabs">
+            <button data-view="cards" class="active"><span class="seg-full">节庆卡片</span><span class="seg-mini">卡片</span></button>
+            <button data-view="timeline"><span class="seg-full">年度时间轴</span><span class="seg-mini">时间轴</span></button>
+            <button data-view="gantt"><span class="seg-full">开发倒推</span><span class="seg-mini">倒推</span></button>
+          </div>
+          <div class="today-pill"><span class="dot"></span><span id="todayText">—</span></div>
+        </div>
+      </div>
+
+      <!-- 编辑条：只有 ?mode=edit（后台实时预览）时才出现；前台访客看不到任何编辑入口 -->
+      <div class="mk-editbar" id="mkEditBar">
+        <span class="eb-tag"><i></i>编辑模式</span>
+        <span class="eb-hint">这里就是前台本身：改完即时生效。点任意节庆卡片 / 时间轴节点即可改；下方按钮做导入导出与整体维护。</span>
+        <span class="eb-live" id="ebLive">已同步</span>
+        <button type="button" class="eb-btn primary" id="ebAdd">＋ 新建节日</button>
+        <button type="button" class="eb-btn" id="ebImport">导入 JSON</button>
+        <button type="button" class="eb-btn" id="ebExport">导出 JSON</button>
+        <button type="button" class="eb-btn" id="ebRebuild">用内置库重建</button>
+        <button type="button" class="eb-btn" id="ebClear">清空库</button>
+        <input type="file" id="ebFile" accept=".json,application/json" style="display:none">
+      </div>
+
+      <aside class="sidebar" id="sidebar">
+  <div class="side-scroll">
+    <section class="side-sec">
+    <h3>节庆类别</h3>
+    <div class="chips" id="catChips"></div>
+    </section>
+
+    <section class="side-sec">
+    <h3>重要度</h3>
+    <div class="chips" id="starChips"></div>
+    </section>
+
+    <section class="side-sec">
+    <h3>开发进度</h3>
+    <div class="chips prog-chips" id="progChips"></div>
+    <p class="prog-tip">按下面的开发提前期自动判定；「已过期」只看本年度已经过去的节期。</p>
+    </section>
+
+    <section class="side-sec">
+    <h3>开发周期参数</h3>
+    <div class="toggle-row">
+    <button class="toggle" id="modeRec">节日推荐值</button>
+    <button class="toggle active" id="modeCus">自定义周期</button>
+    </div>
+    <div class="custom-panel" id="customPanel">
+    <p class="cycle-tip">商家按自己的开发打样节奏来调：设计打样 → 大货生产 → 物流入仓，三段相加就是合计提前期。</p>
+    <div class="slider-row">
+    <label>设计打样 <b id="vSample">45</b> 天</label>
+    <input type="range" id="sSample" min="0" max="150" step="5" value="45">
+    </div>
+    <div class="slider-row">
+    <label>大货生产 <b id="vProduce">30</b> 天</label>
+    <input type="range" id="sProduce" min="0" max="90" step="5" value="30">
+    </div>
+    <div class="slider-row">
+    <label>物流入仓 <b id="vShip">15</b> 天</label>
+    <input type="range" id="sShip" min="0" max="60" step="5" value="15">
+    </div>
+    <div class="lead-total"><span>合计提前期</span><b id="vTotal">90</b></div>
+    </div>
+    </section>
+
+    </div>
+  </aside>
+
+      <main class="main"><div class="main-inner">
+        <div class="mk-data-bar hidden" id="mkDataBar"></div>
+        <section class="filterbar" id="filterbar">
+      <button class="fb-trigger" id="fbTrigger" aria-expanded="false" aria-controls="regionPanel">
+        <span class="fb-title">地区筛选</span>
+        <span class="fb-hint" id="regionHint">全部地区</span>
+        <span class="fb-tags" id="regionTags"></span>
+        <span class="fb-chev" aria-hidden="true"></span>
+      </button>
+      <span class="fb-hover-tip">鼠标移到此处自动展开</span>
+      <div class="fb-bridge" aria-hidden="true"></div>
+      <div class="fb-panel" id="regionPanel">
+        <div class="fb-panel-head">
+          <span class="fb-tip">鼠标移到某个洲即可展开它的国家；点洲名 = 一次选中整洲，点国家 = 单独挑选</span>
+          <button class="fb-clear" id="regionClear">清空筛选</button>
+        </div>
+        <div class="region-list" id="regionList"></div>
+      </div>
+    </section>
+        <section class="stats" id="stats"></section>
+        <div id="view-timeline" class="view hidden"></div>
+        <div id="view-gantt" class="view hidden"></div>
+        <div id="view-cards" class="view"></div>
+        <footer class="footer">
+          <div class="cr"><span class="sq"></span><span>© 2026 TREND BANK · 营销日历 · 全球节庆与服装开发周期推演</span><span class="mk-build" id="mkBuild">构建 20261021Z</span></div>
+          <div>提前期 = 设计打样 + 大货生产 + 物流入仓 · 农历与浮动日期按年度校准</div>
+        </footer>
+      </div></main>
+
+      <div class="backdrop" id="backdrop"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+      <div class="mktoast" id="mkToast"></div>
+    </div>
+  </section>
+
+  <!-- ================= 修改密码弹窗 ================= -->
+  <div id="pwd-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="dialog-head">
+        <span class="dialog-title">修改密码</span>
+        <button type="button" class="modal-close" id="pwd-close">×</button>
+      </div>
+      <div class="dialog-body">
+        <label>旧密码</label>
+        <input type="password" id="pwd-old" placeholder="请输入当前密码" autocomplete="current-password" required>
+        <label>新密码</label>
+        <input type="password" id="pwd-new" placeholder="请输入新密码（至少6位）" autocomplete="new-password" required>
+        <label>确认新密码</label>
+        <input type="password" id="pwd-new2" placeholder="请再次输入新密码" autocomplete="new-password" required>
+        <div class="dialog-actions">
+          <button type="button" class="btn-ghost" id="pwd-cancel">取消</button>
+          <button type="button" class="btn-primary" id="pwd-submit">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 微信分享弹窗（专属链接 + 二维码） ================= -->
+  <div id="mk-share-modal" class="modal-mask hidden">
+    <div class="modal mk-share-dialog">
+      <div class="dialog-head">
+        <span class="dialog-title">分享到微信</span>
+        <button type="button" class="modal-close" id="mk-share-close-x">×</button>
+      </div>
+      <div class="dialog-body">
+        <div class="mk-share-title" id="mk-share-title"></div>
+        <div class="mk-share-qr" id="mk-share-qr"></div>
+        <input type="text" id="mk-share-link" class="input" readonly>
+        <div class="dialog-actions">
+          <button type="button" class="btn-ghost" id="mk-share-close">关闭</button>
+          <button type="button" class="btn-primary" id="mk-share-copy">复制链接</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 站内文章详情弹窗（无外链卡片点击打开展示正文） -->
+  <div id="mk-article-modal" class="modal-mask hidden">
+    <div class="modal mk-article-dialog">
+      <div class="dialog-head">
+        <span class="dialog-title" id="mk-article-title">趋势文章</span>
+        <button type="button" class="modal-close" id="mk-article-close-x">×</button>
+      </div>
+      <div class="dialog-body mk-article-body" id="mk-article-body"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="mk-article-close">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/supabase.js?v=20261030I"></script>
+  <script src="vendor/qrcode.min.js?v=20261030I"></script>
+  <script src="js/config.js?v=20261030I"></script>
+  <script src="js/supabase.js?v=20261030I"></script>
+  <script src="js/track-menu.js?v=20261030I"></script>
+  <script src="js/common.js?v=20261030I"></script>
+  <script src="js/marketing.js?v=20261030I"></script>
+  <script src="js/marketing-data.js?v=20261030I"></script>
+  <script src="js/marketing-main.js?v=20261030I"></script>
+  <script src="js/marketing-edit.js?v=20261030I"></script>
+</body>
+</html>

@@ -1,0 +1,1669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视觉与趋势管理系统</title>
+<link rel="stylesheet" href="css/style.css?v=20261030I">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261030I">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+    /* ==== 后台营销时间轴 自包含兜底样式 ==== */
+    .mk-wrap{max-width:1180px;margin:0 auto;padding:26px 18px 60px;}
+    .mk-timeline-title{font-size:20px;font-weight:700;letter-spacing:1px;color:#3a3226;margin:0 0 26px;position:relative;padding-left:16px;}
+    .mk-timeline-title::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:5px;border-radius:3px;background:linear-gradient(180deg,#d4a017,#8b7355);}
+    .mk-timeline-head{display:flex;align-items:baseline;gap:12px;}
+    .mk-timeline-head .mk-timeline-title{margin-bottom:0;}
+    .mk-timeline-head .mk-hint{color:#a89e8c;font-size:13px;}
+    .mk-timeline{position:relative;display:flex;gap:18px;overflow-x:auto;overflow-y:visible;padding:40px 26px 40px;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#d4a017 #f2efe8;-webkit-overflow-scrolling:touch;}
+    .mk-timeline::-webkit-scrollbar{height:8px;}
+    .mk-timeline::-webkit-scrollbar-track{background:#f2efe8;border-radius:8px;}
+    .mk-timeline::-webkit-scrollbar-thumb{background:linear-gradient(90deg,#d4a017,#8b7355);border-radius:8px;}
+    .mk-timeline::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#d9cfc0,#e0b84a,#d9cfc0);border-radius:3px;transform:translateY(-50%);}
+    .mk-axis-arrow{position:sticky;right:0;align-self:center;flex:0 0 auto;font-size:22px;color:#c9a13c;padding-left:10px;text-shadow:0 0 8px rgba(201,161,60,.4);}
+    .mk-node{position:relative;flex:0 0 218px;width:218px;height:500px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;scroll-snap-align:start;padding:0;}
+    .mk-dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:16px;height:16px;border-radius:50%;background:#d8382e;border:2px solid #fff;box-shadow:0 0 0 4px rgba(216,56,46,.18),0 0 12px rgba(216,56,46,.5);}
+    .mk-dot-inner{display:block;width:4px;height:4px;margin:3px auto 0;border-radius:50%;background:#fff;}
+    .mk-conn{position:absolute;left:50%;top:calc(50% - 172px);bottom:calc(50% + 132px);width:2px;transform:translateX(-50%);background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;z-index:1;}
+    .mk-tag-img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:204px;aspect-ratio:4/3;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.06);display:block;text-decoration:none;box-shadow:0 6px 16px rgba(60,52,42,.12);transition:transform .22s,box-shadow .22s;}
+    .mk-tag-img:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 12px 24px rgba(60,52,42,.18);}
+    .mk-tag-img.noimg{background:linear-gradient(150deg,rgba(143,111,216,.35),rgba(111,82,192,.35));}
+    .mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
+    .mk-tag{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:204px;border-radius:14px;padding:12px 13px;color:#fff;text-align:center;box-shadow:0 8px 20px rgba(60,52,42,.14);transition:transform .22s,box-shadow .22s;}
+    .mk-tag:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 14px 28px rgba(60,52,42,.22);}
+    .mk-tag-link{display:block;text-decoration:none;color:inherit;}
+    .mk-tag-date{font-size:12px;font-weight:800;letter-spacing:1.2px;opacity:.92;margin-bottom:5px;text-transform:uppercase;}
+    .mk-tag-title{font-size:17px;font-weight:800;line-height:1.3;letter-spacing:.5px;}
+    .mk-tag-desc{margin-top:7px;font-size:12px;line-height:1.55;opacity:.9;}
+    .mk-node.cat-festival .mk-tag{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
+    .mk-node.cat-event .mk-tag{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
+    .mk-node.cat-promo .mk-tag{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
+    .mk-empty{padding:40px;text-align:center;color:#b3ac9e;font-size:15px;background:#faf8f2;border-radius:14px;border:1px dashed #dcd4c4;}
+    .mk-hero{background:linear-gradient(150deg,#f8d46a,#eebf52 45%,#e58f3c);border-radius:18px;padding:28px 30px;margin-bottom:30px;box-shadow:0 12px 30px rgba(201,158,54,.28);position:relative;overflow:hidden;text-align:center;}
+    .mk-hero::after{content:"";position:absolute;right:-40px;bottom:-60px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.16);}
+    .mk-hero-title{font-size:30px;font-weight:900;color:#4a2f14;letter-spacing:1px;margin:0;line-height:1.3;}
+    .mk-hero-sep{font-weight:400;color:#7a5a2e;margin:0 4px;}
+    .mk-hero-year{color:#7a2f10;display:inline-block;background:#fff;border-radius:8px;padding:0 10px;}
+    .mk-hero-sub{margin:12px 0 0;font-size:14px;color:#6b4a24;letter-spacing:.5px;}
+    .mk-legend{display:flex;justify-content:center;gap:16px;margin-top:26px;flex-wrap:wrap;}
+    .mk-legend-item{border-radius:12px;padding:8px 18px;font-size:14px;font-weight:700;color:#fff;box-shadow:0 4px 12px rgba(60,52,42,.12);}
+    .mk-leg-festival{background:linear-gradient(150deg,#8f6fd8,#6f52c0);}
+    .mk-leg-event{background:linear-gradient(150deg,#5aa85a,#3f8f4a);}
+    .mk-leg-promo{background:linear-gradient(150deg,#7a3fae,#5a2d88);}
+    .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
+    .mk-card{position:relative;display:flex;flex-direction:column;background:#fbfaf6;border:1px solid #e4dcca;border-radius:14px;overflow:hidden;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.06);transition:transform .22s,box-shadow .22s,border-color .22s;}
+    .mk-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(60,52,42,.14);border-color:#d4a017;}
+    .mk-card-img{position:relative;aspect-ratio:3/4;background:#f0eee6;overflow:hidden;}
+    .mk-card-img img{width:100%;height:100%;object-fit:cover;object-position:center top;}
+    </style>
+
+</head>
+<body class="admin">
+  <div id="toast" class="toast"></div>
+
+  <!-- 加载遮罩：判定登录态期间盖住，避免刷新闪现登录页 -->
+  <div id="boot-splash" class="boot-splash">
+    <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
+  </div>
+
+  <!-- ================= 登录页 ================= -->
+  <section id="admin-login" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo-mark" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></div>
+        
+        <h1>视觉与趋势管理系统</h1>
+        <p class="subtitle">管理员登录</p>
+      </div>
+      <form id="admin-login-form" class="auth-form">
+        <h2 class="form-title">管理员登录</h2>
+        <label>邮箱</label>
+        <input type="email" id="admin-email" placeholder="请输入邮箱" autocomplete="email" required>
+        <label>密码</label>
+        <input type="password" id="admin-pass" placeholder="请输入密码" autocomplete="current-password" required>
+        <button type="submit" class="btn-primary" id="admin-login-btn">进入后台</button>
+        <button type="button" class="btn-ghost btn-block" id="admin-signup-btn" style="margin-top:10px;">暂无账号？注册一个</button>
+        <div class="auth-links">
+          <a href="#" id="admin-toggle">→ 如何成为管理员</a>
+          <span class="auth-sep">·</span>
+          <a href="index.html">返回前台</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ================= 后台主体 ================= -->
+  <section id="admin-panel" class="admin-panel hidden">
+    <header class="admin-head">
+      <div class="brand-sm"><span class="logo-mark logo-sm" aria-label="TB"><span class="logo-dot"></span><span class="logo-word">TB</span></span> 视觉与趋势管理系统</div>
+      <div>
+        <button id="admin-preview-btn" class="btn-ghost">预览前台</button>
+        <span class="ghost-chip" id="token-status">令牌：未配置</span>
+        <button id="admin-changepwd" class="btn-ghost">修改密码</button>
+        <button id="admin-logout" class="btn-ghost">退出</button>
+      </div>
+    </header>
+
+    <div class="admin-body">
+      <!-- 左侧菜单 -->
+      <aside class="admin-side">
+        <nav class="admin-nav">
+          <a class="nav-item" data-target="manage-card">视觉专区</a>
+          <a class="nav-item" data-target="tag-card">标签管理</a>
+          <a class="nav-item" data-target="trend-card">趋势专区</a>
+          <a class="nav-item" data-target="recruit-card">招品回品</a>
+          <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
+        <a class="nav-item" data-target="movement-card">趋势动向</a>
+        <a class="nav-item" data-target="rank-card">趋势上升榜</a>
+        <a class="nav-item" data-target="plus-card">大码专区</a>
+        <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
+          <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
+          <a class="nav-item" data-target="backup-card" data-super="1">版本恢复</a>
+          <a class="nav-item" data-target="super-card" data-super="1">超管权限</a>
+        </nav>
+      </aside>
+    <main class="admin-main">
+      <!-- 无权限提示 -->
+      <div id="no-perm" class="panel-card hidden">
+        <h2>无访问权限</h2>
+        <p class="hint">当前账号为访客角色，仅可浏览前台内容，不能操作后台任何管理功能（上传、删除、发布、类目/标签/权限设置等）。如需管理权限，请在 README 中查看设置方法。</p>
+      </div>
+
+      <!-- 图片管理区（与前台同款布局：左侧类目菜单 + 右侧网格，支持批量删除/批量打标；上传图片在智能打标弹窗内） -->
+      <div class="panel-card" id="manage-card">
+        <h2>视觉专区 <span class="hint-inline">（图片管理 · 数据看板）</span></h2>
+        <div class="vis-subtabs" role="tablist">
+          <button type="button" class="vis-tab is-active" data-vtab="manage" role="tab">图片管理</button>
+          <button type="button" class="vis-tab" data-vtab="dash" role="tab">数据看板</button>
+        </div>
+        <div class="vis-pane" id="vis-manage">
+        <div class="manage-toolbar">
+          <span id="manage-count" class="hint-inline">加载中…</span>
+          <button id="select-all-btn" class="btn-ghost">全选</button>
+          <button id="batch-tag-btn" class="btn-ghost">批量打标签（0）</button>
+          <button id="smart-tag-btn" class="btn-ghost">智能打标</button>
+          <button id="batch-del-btn" class="btn-danger">批量删除（0）</button>
+        </div>
+        <p class="hint">勾选图片后点击「批量打标签」，可分渠道/风格/元素/场景给选中的图片统一打标；打标后前台可按标签筛选并展示。</p>
+        <p class="hint">普通管理员在这里<b>只看到并只能编辑、删除自己上传的图片</b>；超级管理员可管理全部图片。想看全站的上传量与打标情况，请切到上方「数据看板」。</p>
+        <div class="manage-layout gallery-layout">
+          <!-- 左侧：类目菜单（有图的类目） -->
+          <aside class="sidebar">
+            <div class="side-head">图片类目</div>
+            <nav id="manage-menu" class="cat-menu"></nav>
+          </aside>
+          <!-- 右侧：图片网格 -->
+          <main class="grid-wrap">
+            <p id="manage-empty" class="empty-tip hidden">暂无图片</p>
+            <div id="manage-grid" class="grid"></div>
+          </main>
+        </div>
+        </div>
+        <div class="vis-pane hidden" id="vis-dash">
+        <p class="hint">本页统计<b>全站所有管理员</b>的上传与打标数据（普通管理员也能看到全员汇总）；但「图片管理」里的编辑、删除权限仍只作用于你自己上传的图片。</p>
+      <div class="dash-toolbar">
+        <span id="dash-meta" class="hint-inline">加载中…</span>
+        <label class="dash-cat-filter">类目
+          <select id="dash-cat-filter" title="按类目筛选后，下方占比与覆盖率只统计该类目"><option value="">全部类目</option></select>
+        </label>
+        <button id="dash-refresh" class="btn-ghost">刷新数据</button>
+      </div>
+      <div class="dash-export">
+        <span class="dash-export-title">① 导出打标表</span>
+        <label>范围
+          <select id="dash-exp-scope" title="按打标进度筛选要导出的图片">
+            <option value="all">全部图片</option>
+            <option value="none">仅未打标</option>
+            <option value="partial">仅不完整（部分维度已打标）</option>
+            <option value="done">仅已打标</option>
+          </select>
+        </label>
+        <label>类目
+          <select id="dash-exp-cat" title="只列当前范围下确实有图的类目">
+            <option value="">全部类目</option>
+          </select>
+        </label>
+        <label class="dash-exp-split"><input type="checkbox" id="dash-exp-split" /> 按类目拆分成多个文件（zip）</label>
+        <button id="dash-export-btn" class="btn-primary">导出</button>
+        <span id="dash-exp-msg" class="hint-inline"></span>
+      </div>
+      <div class="dash-import">
+        <span class="dash-export-title">② 导入打标表</span>
+        <input type="file" id="img-imp-file" accept=".xlsx,.xls" />
+        <label>模式
+          <select id="img-imp-mode" title="补齐：已有值不动；覆盖：填什么写什么（改错用）">
+            <option value="overwrite">覆盖同名列（改错用：填什么写什么）</option>
+            <option value="fill">补齐空白（已有值不动，重复导入无副作用）</option>
+          </select>
+        </label>
+        <label class="dash-exp-split"><input type="checkbox" id="img-imp-clear" /> 空单元格也清空已有标签</label>
+        <button id="img-imp-check" class="btn-ghost">先校验</button>
+        <button id="img-imp-btn" class="btn-primary">导入</button>
+        <span id="img-imp-msg" class="hint-inline"></span>
+        <p class="hint">「空单元格也清空」只在需要删掉某个维度时才勾；平时补数据、改错值都不要勾，否则表里空着的格子会把库里已有的标签清掉。</p>
+      </div>
+      <div id="dash-cat-ov" class="dash-cat-ov"></div>
+      <p class="hint">选择某个类目后，各标签的数量、占比与打标覆盖率都只统计该类目下的图片。每条标签的「覆盖率」= 该类目下打了该标签的图片数 ÷ 该类目图片总数。</p>
+      <div id="dash-overview" class="dash-overview"></div>
+      <div class="dash-charts">
+        <div class="dash-card">
+          <h3 class="dash-chart-title">渠道标签分布</h3>
+          <div id="dash-channel" class="hbar-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3 class="dash-chart-title">风格标签分布</h3>
+          <div id="dash-style" class="hbar-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3 class="dash-chart-title">元素标签分布</h3>
+          <div id="dash-element" class="hbar-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3 class="dash-chart-title">场景标签分布</h3>
+          <div id="dash-scene" class="hbar-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3 class="dash-chart-title">拍摄方式标签分布</h3>
+          <div id="dash-shoot" class="hbar-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3 class="dash-chart-title">肤色标签分布</h3>
+          <div id="dash-skin" class="hbar-list"></div>
+        </div>
+      </div>
+      <div class="dash-donut-wrap">
+        <div class="dash-card">
+          <h3 class="dash-chart-title">打标覆盖率</h3>
+          <div id="dash-donut" class="donut-box"></div>
+        </div>
+      </div>
+        </div>
+      </div>
+
+      <!-- 标签管理（综合：常用类目 / 前台类目 / 风格·元素标签） -->
+      <div class="panel-card hidden" id="tag-card">
+        <div class="tag-card-head">
+          <h2>④ 标签管理 <span class="hint-inline">（常用类目 / 前台类目 / 风格 · 元素 · 场景标签）</span></h2>
+          <button id="smart-back-btn" class="btn-ghost" type="button" title="回到智能打标继续打标，无需重新打开">返回智能打标</button>
+        </div>
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">我的常用类目 <span class="hint-inline">（上传时优先出现，仅自己可见）</span></h3>
+          <p class="hint">从候选中勾选你常用的类目，上传时分类下拉会把这些排在最前面。</p>
+          <div id="fav-list" class="check-list"></div>
+          <button id="fav-save" class="btn-primary" disabled>保存我的常用类目</button>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">前台类目（勾选后前台左侧显示）</h3>
+          <p class="hint">只有被勾选 == 添加进"前台类目"的类目，才在前台左侧菜单显示；且该类目下必须有图才会显示。</p>
+          <div id="cat-mgmt-list" class="check-list"></div>
+          <div class="row">
+            <input id="cat-mgmt-new" class="input" placeholder="自定义新增类目名">
+            <button id="cat-mgmt-add" class="btn-ghost">新增</button>
+          </div>
+          <button id="cat-mgmt-save" class="btn-primary" disabled>保存前台类目</button>
+          <div class="order-block" data-super="1">
+            <h3 class="order-title">展示顺序（数字越小越靠前，可用上下箭头调整）<span class="hint-inline">（仅超级管理员可设置）</span></h3>
+            <div id="cat-order-box" class="cat-order-box"></div>
+            <button id="cat-order-save" class="btn-primary" disabled>保存展示顺序</button>
+          </div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">前台展示开关 <span class="hint-inline">（关闭后该维度标签在前台不可见）</span></h3>
+          <p class="hint">每个标签维度都可单独控制是否在前台展示；关闭后，前台筛选栏与该维度在图片上的标签均不显示。</p>
+          <div id="frontend-dim-switches" class="frontend-dim-switches"></div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">风格 · 元素 · 场景 · 拍摄方式 · 肤色标签（自定义增删）</h3>
+          <p class="hint">删除标签时，会同步移除所有图片上的该标签。</p>
+          <div class="tag-mgmt-grid">
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">风格标签（自定义）</h3>
+              <div id="style-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="style-tag-new" class="input" placeholder="新增风格标签，如：复古美式">
+                <button id="style-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">元素标签（自定义）</h3>
+              <div id="element-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="element-tag-new" class="input" placeholder="新增元素标签，如：条纹、格纹">
+                <button id="element-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">场景标签（自定义）<span class="hint-inline">（室内 · 室外 两大类）</span></h3>
+              <div id="scene-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add tag-scene-add">
+                <div class="scene-add-row">
+                  <select id="scene-group-new" class="input scene-group-select">
+                    <option value="indoor">室内</option>
+                    <option value="outdoor">室外</option>
+                  </select>
+                  <input id="scene-tag-new" class="input" placeholder="场景名，如：客厅、街道">
+                  <button id="scene-tag-add" class="btn-ghost">添加</button>
+                </div>
+                <p class="hint">先选「室内/室外」大类，再填具体场景名（不用带前缀，系统自动归类）。</p>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">拍摄方式标签（自定义）</h3>
+              <div id="shoot-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="shoot-tag-new" class="input" placeholder="新增拍摄方式标签，如：摆拍、挂拍、模拍、3D">
+                <button id="shoot-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+            <div class="tag-mgmt-col">
+              <h3 class="tg-col-title">肤色标签（自定义）</h3>
+              <div id="skin-tag-list" class="tag-mgmt-list"></div>
+              <div class="tag-mgmt-add">
+                <input id="skin-tag-new" class="input" placeholder="新增肤色标签，如：黑、白、黄">
+                <button id="skin-tag-add" class="btn-ghost">添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tag-mgmt-search row-search-top">
+            <input id="tag-search-input" class="input tag-search-input" placeholder="搜索标签（按名称过滤所有维度）">
+            <span id="tag-search-res" class="hint-inline"></span>
+          </div>
+          <p class="hint">新增的标签会自动排在列表最前面；鼠标移到标签上可「改名」或「删除」。</p>
+        </div>
+      </div>
+
+      <!-- 趋势专区管理（上传趋势文件 / 列表 / 删除） -->
+      <div class="panel-card hidden" id="trend-card">
+        <h2>⑥ 趋势专区 <span class="hint-inline">（上传类目/月度/周度趋势文件，前台登录后在线预览、不可下载）</span></h2>
+        <div class="trend-upload">
+          <div class="row">
+            <label class="field"><span class="req">*</span> 文件标题</label>
+            <input id="trend-title" class="input" placeholder="例如：2026年9月男装趋势报告">
+          </div>
+          <div class="row">
+            <label class="field"><span class="req">*</span> 标签分类（单选）</label>
+            <div class="trend-tag-select" id="trend-tag-select">
+              <label class="chk"><input type="radio" name="trend-tag" value="类目" checked> 类目</label>
+              <label class="chk"><input type="radio" name="trend-tag" value="月度"> 月度</label>
+              <label class="chk"><input type="radio" name="trend-tag" value="周度"> 周度</label>
+            </div>
+          </div>
+          <div class="row">
+            <label class="field"><span class="req">*</span> 选择类目（复用视觉专区类目）</label>
+            <div class="cat-picker">
+              <input id="trend-cat-search" class="input" placeholder="输入关键词搜索已有类目…" autocomplete="off">
+              <div id="trend-cat-results" class="cat-results hidden"></div>
+              <div id="trend-cat-chosen" class="cat-chosen"></div>
+              <div class="cat-picker-actions">
+                <button id="trend-cat-add-btn" class="btn-ghost" type="button">＋ 自定义添加类目</button>
+              </div>
+              <div id="trend-cat-tip" class="hint"></div>
+            </div>
+          </div>
+          <div class="row">
+            <label class="field"><span class="req">*</span> 封面图（前台卡片展示）</label>
+            <div id="trend-cover-dropzone" class="dropzone">
+              <div class="dz-inner">
+                <span class="dz-icon">＋</span>
+                <p>拖拽封面图到这里，或 <em>点击选择文件</em></p>
+                <p class="dz-sub">支持 JPG / PNG</p>
+              </div>
+              <input type="file" id="trend-cover-input" accept="image/*" hidden>
+            </div>
+            <div id="trend-cover-pick" class="hint hidden" style="margin-top:8px;"></div>
+          </div>
+          <div class="row">
+            <label class="field"><span class="req">*</span> 简介/介绍</label>
+            <textarea id="trend-description" class="input" rows="2" placeholder="一句话介绍该趋势文件的内容，前台卡片会展示"></textarea>
+          </div>
+          <div id="trend-dropzone" class="dropzone">
+            <div class="dz-inner">
+              <span class="dz-icon">＋</span>
+              <p>拖拽 PDF 到这里，或 <em>点击选择文件</em></p>
+              <p class="dz-sub">支持 PDF</p>
+            </div>
+            <input type="file" id="trend-file-input" accept=".pdf,application/pdf" hidden>
+          </div>
+          <div id="trend-pick" class="hint hidden" style="margin-top:8px;"></div>
+          <div id="trend-progress-wrap" class="progress-wrap hidden">
+            <div class="progress-bar"><div id="trend-progress-bar" class="progress-fill" style="width:0%"></div></div>
+            <span id="trend-progress-text">0%</span>
+          </div>
+          <button id="trend-upload-btn" class="btn-primary" disabled>上传趋势文件</button>
+        </div>
+        <hr class="tag-sub-hr">
+        <div class="trend-manage-head">
+          <h3 class="tbs-title">已上传趋势文件</h3>
+          <span id="trend-count" class="hint-inline">加载中…</span>
+        </div>
+        <div id="trend-list" class="trend-admin-list"></div>
+        <button id="trend-refresh" class="btn-ghost">刷新列表</button>
+      </div>
+
+      <!-- 超管权限（公告管理 + 权限管理 + 前台访问设置 + 数据导出，仅超级管理员可见） -->
+      <div class="panel-card hidden" id="mk-card">
+        <h2>营销日历 <span class="hint-inline">（就是前台本身 · 点图即改 · 保存即时生效）</span></h2>
+
+        <div class="tag-sub">
+          <h3>节庆库（直接在这里编辑）</h3>
+          <p class="hint">这一块用的就是前台「营销日历」的版式与数据（节庆卡片 / 年度时间轴 / 开发倒推三视图）。点任意卡片或节点即可就地修改，新建、导入、导出、重建、清空都在这里；保存直接写库，前台刷新立刻同步，不需要另开窗口。</p>
+          <div class="mkzone mk-adm" id="mkFestZone">
+            <div class="mk-adm-empty">正在载入节庆库…</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 节庆编辑弹窗 -->
+
+      <div class="panel-card hidden" id="super-card">
+        <h2>⑪ 超管权限 <span class="hint-inline">（超级管理员 · 公告管理 + 权限管理 + 前台访问设置 + 数据导出 + 存量图片压缩池）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="super-tabs" id="super-tabs">
+          <button class="super-tab active" data-sv="sv-1" type="button">公告管理</button>
+          <button class="super-tab" data-sv="sv-2" type="button">权限管理</button>
+          <button class="super-tab" data-sv="sv-3" type="button">前台访问设置</button>
+          <button class="super-tab" data-sv="sv-4" type="button">数据导出</button>
+          <button class="super-tab" data-sv="sv-5" type="button">存量图片压缩池</button>
+        </div>
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-1">
+          <h3 class="tbs-title">公告管理 <span class="hint-inline">（编辑发布公告，前台登录后展示近一个月未读公告）</span></h3>
+        <div class="notice-form-box">
+          <input id="notice-title" class="input" placeholder="公告标题" maxlength="80">
+          <div class="notice-editor-wrap">
+            <div id="notice-toolbar" class="notice-toolbar">
+              <span class="ql-formats">
+                <select class="ql-header">
+                  <option value="1"></option><option value="2"></option><option value="3"></option>
+                  <option value="4"></option><option value="5"></option><option selected></option>
+                </select>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-bold"></button><button class="ql-italic"></button>
+                <button class="ql-underline"></button><button class="ql-strike"></button>
+              </span>
+              <span class="ql-formats">
+                <select class="ql-color"></select><select class="ql-background"></select>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-list" value="ordered"></button><button class="ql-list" value="bullet"></button>
+                <button class="ql-indent" value="-1"></button><button class="ql-indent" value="+1"></button>
+                <button class="ql-align" value=""></button><button class="ql-align" value="center"></button>
+                <button class="ql-align" value="right"></button>
+              </span>
+              <span class="ql-formats">
+                <button class="ql-image"></button><button class="ql-link"></button>
+                <button class="ql-clean"></button>
+              </span>
+            </div>
+            <div id="notice-content-editor"></div>
+          </div>
+          <div class="notice-img-box" style="margin-top:8px;">
+            <button id="notice-img-pick" class="btn-ghost" type="button">+ 添加图片（可多张）</button>
+            <input id="notice-img-input" type="file" accept="image/*" multiple style="display:none;">
+            <span class="hint-inline">额外图片会在公告正文下方一并展示（受控查看不可下载）。也可在编辑器内直接插图。</span>
+            <div id="notice-img-thumbs" class="notice-img-thumbs"></div>
+          </div>
+          <div class="notice-form-actions">
+            <label class="chk"><input type="checkbox" id="notice-published" checked> 发布到前台</label>
+            <button id="notice-save" class="btn-primary">发布/保存</button>
+            <button id="notice-reset" class="btn-ghost" type="button">清空新建</button>
+          </div>
+        </div>
+        <div id="notice-list-box" class="notice-list-box">
+          <p class="hint">点击「编辑」可回填到上方表单修改；「发布/下架」切换状态；「删除」移除公告。</p>
+        </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-2" style="display:none;">
+          <h3 class="tbs-title">权限管理（用户角色 / 类目分配 / 用户级专区） <span class="hint-inline">（超级管理员 · 设置用户角色、可管理类目、用户级可见专区）</span></h3>
+
+          <p class="hint">下表为「用户权限分配表」：可一眼看到每个用户的【用户】【角色】【标签】【可管理类目】【可见专区】，以及【登录设备】【登录 IP】，以及【登录设备】【登录 IP】（取每个用户最近一次登录记录）。点击某行「编辑」即把该用户载入下方配置区，改角色 / 勾类目 / 勾专区后保存，即可为其单独授权。授权类目对四个专区统一生效；用户级可见专区优先于全局前台设置（未勾选则按全局显示）。</p>
+
+          <!-- 按标签筛选：权限表顶部直接按用户标签筛选 -->
+          <div class="rg-row" style="margin-top:6px;margin-bottom:6px">
+            <label class="field">按标签筛选</label>
+            <select id="perm-tag-filter" class="input" style="max-width:200px">
+              <option value="">全部标签</option>
+              <option value="__none__">无标签</option>
+            </select>
+            <button id="perm-add-user-btn" class="btn-primary" style="margin-left:12px" type="button">＋ 新增用户</button>
+            <span class="hint-inline">（超管可用邮箱 + 密码直接生成账户）</span>
+          </div>
+
+          <!-- 批量维护：勾选多个用户后，批量打标签 / 改角色 / 加减专区 -->
+          <div id="perm-batch-bar" class="perm-batch-bar">
+            <span class="pbb-count">已选 <b id="perm-batch-n">0</b> 人</span>
+            <span class="pbb-group">
+              <label class="pbb-lab">标签</label>
+              <select id="perm-batch-tag" class="input"><option value="">选择标签…</option></select>
+              <button id="perm-batch-tag-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <span class="pbb-group">
+              <label class="pbb-lab">角色</label>
+              <select id="perm-batch-role" class="input">
+                <option value="">选择角色…</option>
+                <option value="visitor">访客</option>
+                <option value="admin">管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+              <button id="perm-batch-role-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <span class="pbb-group">
+              <label class="pbb-lab">专区</label>
+              <select id="perm-batch-zone" class="input"></select>
+              <select id="perm-batch-zone-act" class="input">
+                <option value="addFront">加入 · 前台可见</option>
+                <option value="remFront">移出 · 前台可见</option>
+                <option value="addManage">加入 · 后台管理</option>
+                <option value="remManage">移出 · 后台管理</option>
+              </select>
+              <button id="perm-batch-zone-apply" class="btn-ghost small" type="button">应用</button>
+            </span>
+            <button id="perm-batch-clear" class="btn-ghost small" type="button">清空选择</button>
+          </div>
+
+          <!-- 用户权限分配表：总览所有用户角色与权限内容 -->
+          <div class="perm-table-wrap">
+            <table class="perm-table" id="perm-table">
+              <thead>
+                <tr>
+                  <th class="perm-th-check"><input type="checkbox" id="perm-check-all" title="全选当前筛选出的用户"></th>
+                  <th>用户</th>
+                  <th>角色</th>
+                  <th>标签</th>
+                  <th>备注</th>
+                  <th>可管理类目</th>
+                  <th>前台可见专区</th>
+                  <th>后台管理专区</th>
+                  <th>登录设备</th>
+                  <th>登录 IP</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="perm-table-body" class="perm-table-body"><tr><td colspan="11" class="hint">加载中…</td></tr></tbody>
+            </table>
+          </div>
+
+          <!-- 分页条：用户多了以后不再从头拉到尾 -->
+          <div class="perm-pager" id="perm-pager"></div>
+
+          <hr class="tag-sub-hr">
+          <div class="perm-zone" style="margin-top:12px">
+            <h4 class="perm-zone-title">新用户默认权限设置 <span class="hint-inline">（对之后新注册的用户生效，不修改已有用户）</span></h4>
+            <div class="rg-row" style="margin-bottom:8px">
+              <label class="field">默认角色</label>
+              <select id="dperm-role" class="input">
+                <option value="visitor">访客</option>
+                <option value="admin">管理员</option>
+                <option value="super_admin">超级管理员</option>
+              </select>
+              <span class="hint" style="margin-left:10px">新用户注册后自动获得该角色（建议仅「访客」，管理员/超管用下方逐用户授权）</span>
+            </div>
+            <div class="perm-zone" style="margin-top:10px">
+              <h4 class="perm-zone-title">默认可见专区（前台）<span class="hint-inline">（勾选新用户注册后进入前台默认可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示。仅影响前台展示，不影响后台权限）</span></h4>
+              <div id="dperm-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            </div>
+            <div class="perm-zone" style="margin-top:10px">
+              <h4 class="perm-zone-title">默认管理专区（后台）<span class="hint-inline">（勾选新用户注册后默认可作为后台管理员的专区；不勾选任何项＝无后台操作权限，仅前台访问。仅影响后台，不影响前台可见性）</span></h4>
+              <div id="dperm-manage-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+            </div>
+            <div class="rg-btnrow">
+              <button id="dperm-save" class="btn-primary" type="button">保存默认权限</button>
+            </div>
+          </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-3" style="display:none;">
+          <h3 class="tbs-title">前台访问设置 <span class="hint-inline">（随时切换，立即生效）</span></h3>
+          <p class="hint">开启「公开浏览」后，任何人都能直接看前台图片，无需登录；关闭后必须登录才能看。</p>
+          <label class="switch-row">
+            <input type="checkbox" id="public-access-toggle">
+            <span id="public-access-label">前台公开浏览（所有人可见）</span>
+          </label>
+          <button id="access-save" class="btn-primary" disabled>保存设置</button>
+          <hr class="tag-sub-hr">
+          <h4 class="perm-zone-title">外部只读取图 <span class="hint-inline">（打标、批量取图等外部工具用的临时只读通道）</span></h4>
+          <p class="hint">开启后，带上密钥的图片地址可被外部读取；不带密钥的请求一律拒绝。它只放宽「看图片」这一个动作，上传与删除仍然只认管理员登录。用完请关闭本开关或点「重置密钥」立即失效。</p>
+          <label class="switch-row">
+            <input type="checkbox" id="agent-read-toggle">
+            <span id="agent-read-label">允许外部只读取图</span>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap;">
+            <input type="text" id="agent-read-key" readonly placeholder="开启后自动生成密钥"
+                   style="flex:1;min-width:220px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;">
+            <button id="agent-read-copy" class="btn-ghost">复制密钥</button>
+            <button id="agent-read-reset" class="btn-ghost">重置密钥</button>
+          </div>
+          <button id="agent-read-save" class="btn-primary" disabled>保存设置</button>
+          <p class="hint" id="agent-read-state">状态：未开启</p>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
+            <h4 class="perm-zone-title">顶部菜单项 · 前台可见 <span class="hint-inline">（可单独关闭任一菜单项：视觉专区/趋势专区/招品回品/BESTSELLER/公告；关闭后前台该项入口即隐藏；仅影响前台展示，不影响后台数据）</span></h4>
+            <p class="hint">开启「展示」= 前台该菜单项入口可见；关闭「隐藏」= 前台该菜单项入口不展示（用户看不见），可随时再开启。未配置的菜单项默认前台可见。</p>
+            <div id="zone-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
+          </div>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
+            <h4 class="perm-zone-title">专区管理 <span class="hint-inline">（新增 / 改名 / 删除专区。新增的专区会立刻出现在上面的「顶部菜单项 · 前台可见」、以及「权限管理」的「前台可见专区」「后台管理专区」勾选列表里；填了前台链接的专区还会出现在前台顶部菜单）</span></h4>
+            <div id="zone-defs-box" class="zdef-box"><p class="hint">加载中…</p></div>
+          </div>
+          <hr class="tag-sub-hr">
+          <div class="access-zone-block">
+            <h4 class="perm-zone-title">各专区 · 各类目 · 前台可见 <span class="hint-inline">（可随时关闭某专区某类目，前台该类目下内容立即隐藏；关闭仅影响前台展示，不影响后台数据）</span></h4>
+            <p class="hint">开启「展示」= 前台该类目可见；关闭「隐藏」= 前台该类目下内容不展示（用户看不见），可随时再开启。未配置的类目默认前台可见。</p>
+            <div id="cat-visibility-box" class="cat-visibility-box"><p class="hint">加载中…</p></div>
+          </div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-4" style="display:none;">
+          <h3 class="tbs-title">数据导出 <span class="hint-inline">（仅管理员）按前台筛选条件导出 Excel，含图片与分类标签</span></h3>
+          <div class="export-toolbar">
+            <button id="export-excel" class="btn-ghost export-excel-btn" title="按当前筛选条件导出 Excel">导出 Excel</button>
+            <button id="export-reset" class="btn-ghost">清除筛选</button>
+            <span id="export-meta" class="hint-inline">加载中…</span>
+          </div>
+          <div class="export-filter">
+            <label class="export-cat">类目
+              <select id="export-cat" title="按类目筛选"><option value="">全部类目</option></select>
+            </label>
+            <div id="export-dims" class="export-dims"></div>
+          </div>
+          <p class="hint">筛选栏与前台一致：每个维度单选，选中后按「类目 + 六维度」组合过滤。点击【导出 Excel】将按当前筛选条件导出全部匹配图片（含图片链接、文件名、分类、渠道/风格/元素/场景/拍摄方式/肤色标签、外链）。</p>
+          <div id="export-grid" class="export-grid"></div>
+        </div>
+
+        <hr class="tag-sub-hr">
+        <div class="super-sub" data-sv="sv-5" style="display:none;">
+          <h3 class="tbs-title">存量图片压缩池 <span class="hint-inline">（超级管理员 · 查看/压缩存储内已有图片，左＝已压缩(≤200KB)，右＝待压缩(&gt;200KB)）</span></h3>
+          <div class="imgpool-toolbar">
+            <button id="imgpool-refresh" class="btn-ghost" type="button">刷新清单</button>
+            <span class="imgpool-batch">
+              <span class="imgpool-tglabel">目标</span>
+              <select id="imgpool-global-target" class="imgpool-target" title="批量压缩统一目标档位">
+                <option value="200">200K</option>
+                <option value="100">100K</option>
+                <option value="40">40K</option>
+              </select>
+              <button id="imgpool-selall" class="btn-ghost" type="button">全选待压</button>
+              <button id="imgpool-selnone" class="btn-ghost" type="button">取消全选</button>
+              <button id="imgpool-compress" class="btn-primary" type="button" disabled>压缩选中(0)</button>
+              <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压全部</button>
+            </span>
+            <span id="imgpool-stat" class="imgpool-stat">-</span>
+          </div>
+          <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
+          <div class="imgpool-pools" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="smart-pool" id="imgpool-pool-done" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
+              <div class="smart-pool-head">已压缩（≤200KB）<span class="sp-count" id="imgpool-cnt-done">0</span></div>
+              <div class="smart-pool-grid" id="imgpool-grid-done" style="padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:560px;overflow-y:auto;align-content:start;grid-auto-rows:max-content;"></div>
+            </div>
+            <div class="smart-pool" id="imgpool-pool-todo" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
+              <div class="smart-pool-head">待压缩（&gt;200KB）<span class="sp-count" id="imgpool-cnt-todo">0</span>
+                <span class="su-spacer"></span>
+              </div>
+              <div class="smart-pool-grid" id="imgpool-grid-todo" style="padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:560px;overflow-y:auto;align-content:start;grid-auto-rows:max-content;"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="panel-card hidden" id="recruit-card">
+        <h2>⑧ 招品回品 <span class="hint-inline">（上传招品图片，商家前台按序号递交货品SPU；图片可打「IP/品牌/类目错放/无需回品」审核标记，仅后台可见）</span><span class="head-right"><button id="recruit-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+
+        <!-- 顶部统计图表：按类目筛选，展示各标签情况 -->
+        <div class="recruit-flag-stats">
+          <div class="recruit-flag-stats-head">
+            <label class="recruit-flag-cat">标记统计 · 类目
+              <select id="recruit-flag-cat-filter" title="按类目筛选后只统计该类目任务"><option value="">全部类目</option></select>
+            </label>
+            <span class="recruit-flag-total" id="recruit-flag-total">加载中…</span>
+          </div>
+          <div class="recruit-flag-charts" id="recruit-flag-charts"></div>
+          <div class="recruit-status-stats" id="recruit-status-stats"></div>
+      <div class="recruit-dash-section">
+        <h3 class="dash-chart-title">招品回品数据统计 <span class="hint-inline">（招品任务与商家SPU提交情况 · 由数据看板迁移至此）</span></h3>
+        <div id="dash-recruit-overview" class="dash-overview"></div>
+        <div class="dash-charts">
+          <div class="dash-card">
+            <h3 class="dash-chart-title">招品任务状态分布</h3>
+            <div id="dash-recruit-status" class="hbar-list"></div>
+          </div>
+        </div>
+      </div>
+        </div>
+        <hr class="tag-sub-hr">
+        <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
+
+        <div id="recruit-main-area">
+        <div class="zone-flex">
+          <aside class="zone-side" id="recruit-zone-side" aria-label="类目菜单"></aside>
+          <div class="zone-main">
+        <!-- 统一上传入口：先传表格（表格含首图URL直接成卡片；无首图URL则按任务ID补图） -->
+        <div class="recruit-upload">
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">1</span><b class="rg-step-title">上传招品表格</b></span><span class="rg-step-desc">先传表格。含「首图URL」的行直接生成任务卡片，无需再传图；无「首图URL」的行需在下一步补图（文件名=任务ID匹配，一个任务一张图）</span></label>
+            <div class="rg-row-inline">
+              <button id="recruit-xlsx-btn" class="btn-primary" type="button">选择表格</button>
+              <input type="file" id="recruit-xlsx-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="recruit-xlsx-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
+              <span id="recruit-xlsx-file" class="hint-inline"></span>
+              <span id="recruit-xlsx-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="recruit-xlsx-prog"><div class="upload-progress-bar" id="recruit-xlsx-progbar"></div><span class="upload-progress-txt" id="recruit-xlsx-progtxt"></span></div>
+            <div id="recruit-xlsx-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">2</span><b class="rg-step-title">确认/调整类目</b></span><span class="rg-step-desc">系统已按表格「站内叶子类目名称」自动匹配类目（含"裤"→裤子、含"棉服"→棉服…）；可在上方预览区对每行单独调整，防止匹配错误</span></label>
+            <div class="cat-pick-wrap">
+              <span class="hint-inline">自动匹配结果见上方预览区，每行可手动修改类目</span>
+              <button id="recruit-cat-mgr" class="btn-ghost small" type="button" data-super="1">类目设置</button>
+            </div></div>
+          <div class="rg-btnrow">
+            <button id="recruit-save" class="btn-primary" type="button">导入并生成任务卡片</button>
+            <button id="recruit-refresh" class="btn-ghost" type="button">刷新列表</button>
+          </div>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">3</span><b class="rg-step-title">补充图片 <em class="rg-step-opt">（可选）</em></b></span><span class="rg-step-desc">仅当表格有行缺少「首图URL」时才需要；上传带任务ID的图片，按文件名=任务ID匹配，一个任务一张图</span></label>
+            <div class="rg-row-inline">
+              <button id="recruit-imgxlsx-btn" class="btn-primary" type="button">选择图片（可多选）</button>
+              <input type="file" id="recruit-imgxlsx-input" accept="image/*" multiple hidden>
+              <button id="recruit-imgxlsx-clear" class="btn-ghost small" type="button" title="清除已选图片">清除</button>
+              <span id="recruit-imgxlsx-file" class="hint-inline"></span>
+              <span id="recruit-imgxlsx-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="recruit-imgxlsx-prog"><div class="upload-progress-bar" id="recruit-imgxlsx-progbar"></div><span class="upload-progress-txt" id="recruit-imgxlsx-progtxt"></span></div>
+            <div id="recruit-imgxlsx-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <!-- 筛选 + 批量操作工具条 -->
+        <div class="recruit-toolbar">
+          <div class="recruit-filters" id="recruit-filters">
+            <button class="recruit-filter active" data-st="">全部</button>
+            <button class="recruit-filter" data-st="published">已发布</button>
+            <button class="recruit-filter" data-st="submitted">商家已上传</button>
+            <button class="recruit-filter" data-st="bound">已回品</button>
+            <button class="recruit-filter" data-st="no_refill">无需回品</button>
+          </div>
+          <button id="recruit-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
+          <div class="recruit-batchops">
+            <label class="recruit-flag-filter">标记
+              <select id="recruit-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
+            </label>
+            <label class="recruit-count-label"><input type="checkbox" id="recruit-checkall"> 全选</label>
+            <span id="recruit-count" class="hint-inline">加载中…</span>
+            <button id="recruit-batch-pub" class="btn-ghost small" type="button">批量发布</button>
+            <button id="recruit-batch-bound" class="btn-ghost small" type="button">批量标记已绑定</button>
+            <button id="recruit-batch-unbound" class="btn-ghost small" type="button">取消已绑定</button>
+            <button id="recruit-batch-del" class="btn-ghost small" type="button">批量删除</button>
+            <button id="recruit-export" class="btn-ghost small" type="button">导出 Excel</button>
+          </div>
+        </div>
+        <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
+        <div id="recruit-list" class="recruit-grid-admin recruit-list"></div>
+          </div><!-- /zone-main -->
+        </div><!-- /zone-flex -->
+        </div><!-- /recruit-main-area -->
+
+        <!-- 回收站视图 -->
+        <div id="recruit-trash-view" class="hidden">
+          <div class="recruit-toolbar">
+            <div class="recruit-filters">
+              <button id="recruit-trash-back" class="btn-ghost small" type="button">← 返回招品列表</button>
+              <span class="hint-inline">回收站：已删除的任务可恢复或永久删除</span>
+            </div>
+            <div class="recruit-batchops">
+              <label class="recruit-count-label"><input type="checkbox" id="recruit-trash-checkall"> 全选</label>
+              <span id="recruit-trash-count" class="hint-inline">加载中…</span>
+              <button id="recruit-trash-restore" class="btn-ghost small" type="button">批量恢复</button>
+              <button id="recruit-trash-purge" class="btn-danger small" type="button">永久删除</button>
+            </div>
+          </div>
+          <div id="recruit-trash-list" class="recruit-grid-admin recruit-list"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="bestseller-card">
+        <h2>⑨ BESTSELLER <span class="hint-inline">（BESTSELLER 专区独立任务，商家前台按序号递交货品SPU；图片可打「IP/品牌/类目错放/无需回品」审核标记，仅后台可见）</span><span class="head-right"><button id="bestseller-trash-toggle" class="btn-ghost small" type="button">🗑 回收站</button></span></h2>
+
+        <!-- 顶部统计图表：按类目筛选，展示各标签情况 -->
+        <div class="recruit-flag-stats">
+          <div class="recruit-flag-stats-head">
+            <label class="recruit-flag-cat">标记统计 · 类目
+              <select id="bestseller-flag-cat-filter" title="按类目筛选后只统计该类目任务"><option value="">全部类目</option></select>
+            </label>
+            <span class="recruit-flag-total" id="bestseller-flag-total">加载中…</span>
+          </div>
+          <div class="recruit-flag-charts" id="bestseller-flag-charts"></div>
+          <div class="recruit-status-stats" id="bestseller-status-stats"></div>
+        </div>
+        <hr class="tag-sub-hr">
+        <p class="hint">图片右下角提供「IP / 品牌 / 类目错放 / 无需回品」四个勾选框，勾选即打标记；仅在后台显示，前台不展示。下方工具栏可按标记筛选，导出Excel会包含这些字段。</p>
+
+        <div id="bestseller-main-area">
+        <div class="zone-flex">
+          <aside class="zone-side" id="bestseller-zone-side" aria-label="类目菜单"></aside>
+          <div class="zone-main">
+        <!-- 批量上传区：上传 Excel（含主图URL + 信息）→ 每行生成一个独立任务卡片 -->
+        <div class="bestseller-upload">
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">方式一</span><b class="rg-step-title">URL匹配 · 批量导入</b></span><span class="rg-step-desc">上传含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接 / 主图URL」的Excel表格，每行生成一张任务卡片，图片使用主图URL直接显示</span></label>
+            <div class="rg-row-inline">
+              <button id="bestseller-urlimport-btn" class="btn-primary" type="button">选择表格（URL匹配）</button>
+              <input type="file" id="bestseller-urlimport-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="bestseller-urlimport-clear" class="btn-ghost small" type="button" title="清除已选表格">清除</button>
+              <span id="bestseller-urlimport-file" class="hint-inline"></span>
+              <span id="bestseller-urlimport-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="bestseller-urlimport-prog"><div class="upload-progress-bar" id="bestseller-urlimport-progbar"></div><span class="upload-progress-txt" id="bestseller-urlimport-progtxt"></span></div>
+            <div id="bestseller-urlimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+          <div class="rg-row"><label class="field rg-step"><span class="rg-step-head"><span class="rg-step-num">方式二</span><b class="rg-step-title">ID匹配 · 批量上传图片</b></span><span class="rg-step-desc">上传一批图片文件 + 一个含「Goods ID / SKUID / 站点 / 最新上榜时间 / 链接」的Excel，系统按图片文件名匹配 SKUID，匹配不到再按 Goods ID 智能匹配，图片存R2展示</span></label>
+            <div class="rg-row-inline">
+              <button id="bestseller-imgimport-btn" class="btn-primary" type="button">① 选择图片（可多选）</button>
+              <input type="file" id="bestseller-imgimport-input" accept="image/*" multiple hidden>
+              <button id="bestseller-imgxlsx-btn" class="btn-primary" type="button">② 选择匹配表格（ID匹配）</button>
+              <input type="file" id="bestseller-imgxlsx-input" accept=".xlsx,.xls,.csv" hidden>
+              <button id="bestseller-imgimport-clear" class="btn-ghost small" type="button" title="清除已选图片与表格">清除</button>
+              <span id="bestseller-imgimport-file" class="hint-inline"></span>
+              <span id="bestseller-imgimport-result" class="url-match-result"></span>
+            </div>
+            <div class="upload-progress hidden" id="bestseller-imgimport-prog"><div class="upload-progress-bar" id="bestseller-imgimport-progbar"></div><span class="upload-progress-txt" id="bestseller-imgimport-progtxt"></span></div>
+            <div id="bestseller-imgimport-preview" class="bestseller-upload-pre bestseller-pre hidden"></div></div>
+          <div class="rg-row"><label class="field">所属类目（必选，用于前台左栏筛选）</label>
+            <div class="cat-pick-wrap">
+              <select id="bestseller-category" class="input cat-pick-select"></select>
+              <button id="bestseller-cat-mgr" class="btn-ghost small" type="button" data-super="1">类目设置</button>
+            </div></div>
+          <div class="rg-btnrow">
+            <button id="bestseller-refresh" class="btn-ghost" type="button">刷新列表</button>
+          </div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <!-- 筛选 + 批量操作工具条 -->
+        <div class="bestseller-toolbar">
+          <div class="bestseller-filters" id="bestseller-filters">
+            <button class="bestseller-filter active" data-st="">全部</button>
+            <button class="bestseller-filter" data-st="published">已发布</button>
+            <button class="bestseller-filter" data-st="submitted">商家已上传</button>
+            <button class="bestseller-filter" data-st="bound">已回品</button>
+            <button class="bestseller-filter" data-st="no_refill">无需回品</button>
+          </div>
+          <button id="bestseller-share-cat" class="btn-ghost small" type="button" data-super="1" title="先在上方/左侧类目菜单点选一个类目，再点此复制其前台分享链接">复制分类</button>
+          <div class="bestseller-batchops">
+            <label class="recruit-flag-filter">标记
+              <select id="bestseller-flag-filter"><option value="">全部</option><option value="ip">IP</option><option value="brand">品牌</option><option value="cat_mismatch">类目错放</option><option value="no_refill">无需回品</option></select>
+            </label>
+            <label class="bestseller-count-label"><input type="checkbox" id="bestseller-checkall"> 全选</label>
+            <span id="bestseller-count" class="hint-inline">加载中…</span>
+            <button id="bestseller-batch-pub" class="btn-ghost small" type="button">批量发布</button>
+            <button id="bestseller-batch-bound" class="btn-ghost small" type="button">批量标记已绑定</button>
+            <button id="bestseller-batch-unbound" class="btn-ghost small" type="button">取消已绑定</button>
+            <button id="bestseller-batch-del" class="btn-ghost small" type="button">批量删除</button>
+            <button id="bestseller-export" class="btn-ghost small" type="button">导出 Excel</button>
+          </div>
+        </div>
+        <p class="hint">卡片右上角为「删除」按钮；卡片下方可编辑任务ID / 发布状态 / 已绑定勾选；已有商家提交SPU的会显示「已传SPU · 已上传」状态；悬浮任务ID或图片可查看已上传的货品SPU，点「复制SPU」一键复制该任务下所有SPU。</p>
+        <div id="bestseller-list" class="bestseller-grid-admin bestseller-list"></div>
+          </div><!-- /zone-main -->
+        </div><!-- /zone-flex -->
+        </div><!-- /bestseller-main-area -->
+
+        <!-- 回收站视图 -->
+        <div id="bestseller-trash-view" class="hidden">
+          <div class="bestseller-toolbar">
+            <div class="bestseller-filters">
+              <button id="bestseller-trash-back" class="btn-ghost small" type="button">← 返回BESTSELLER列表</button>
+              <span class="hint-inline">回收站：已删除的任务可恢复或永久删除</span>
+            </div>
+            <div class="bestseller-batchops">
+              <label class="bestseller-count-label"><input type="checkbox" id="bestseller-trash-checkall"> 全选</label>
+              <span id="bestseller-trash-count" class="hint-inline">加载中…</span>
+              <button id="bestseller-trash-restore" class="btn-ghost small" type="button">批量恢复</button>
+              <button id="bestseller-trash-purge" class="btn-danger small" type="button">永久删除</button>
+            </div>
+          </div>
+          <div id="bestseller-trash-list" class="bestseller-grid-admin bestseller-list"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="rank-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>趋势上升榜 · 榜单管理工作台</h3>
+            <p class="hint">左边维护<b>国家站点</b>与<b>期次 / 频次</b>，右边就是前台的样子 —— 改完即时可见。名称直接点一下就能改；<b>每行左边的 ◉ / ◌ 决定该站点 / 该周次在前台是否展示</b>（隐藏后前台不再出现，数据保留，随时可恢复）。</p>
+          </div>
+          <div class="rkadm-head-act">
+            <button id="rkadm-refresh" class="btn-ghost" type="button">刷新数据</button>
+            <button id="rkadm-open-front" class="btn-primary" type="button">前台打开</button>
+          </div>
+        </div>
+
+        <div class="rkadm-split">
+          <div class="rkadm-col">
+            <section class="rkadm-sec">
+              <h4>国家站点 <span class="rkadm-tip">点名称即改，↑↓ 排序，◉/◌ 控制前台是否展示</span></h4>
+              <div class="rkadm-add">
+                <input id="rank-site-new" type="text" placeholder="输入站点名，例如：美国">
+                <button id="rank-site-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rank-site-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>地区分组 <span class="rkadm-tip">把多个国家并成一个地区（如「欧洲」），前台可整区对比，也可只挑其中一个国家</span></h4>
+              <div class="rkadm-add">
+                <input id="rank-group-new" type="text" placeholder="输入地区名，例如：欧洲">
+                <button id="rank-group-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rank-group-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度 · ◉/◌ 控制前台是否展示</span></h4>
+              <div id="rank-period-list" class="rkadm-list"></div>
+            </section>
+          </div>
+
+          <div class="rkadm-col rkadm-col--main">
+            <section class="rkadm-sec rkadm-sec--pv">
+              <h4>实时预览 · 前台所见
+                <span class="rkadm-sec-act">
+                  <button id="rkadm-pv-reload" class="btn-ghost small" type="button">刷新</button>
+                  <button id="rkadm-pv-full" class="btn-ghost small" type="button">全屏</button>
+                </span>
+              </h4>
+              <div class="rkadm-pv-bar">
+                <label>类目<select id="rkadm-pv-cat"></select></label>
+                <label>国家<select id="rkadm-pv-site"></select></label>
+                <label>期次<select id="rkadm-pv-period"></select></label>
+                <label>对比<select id="rkadm-pv-mode"><option value="h">横向 · 国家对比</option><option value="v">纵向 · 时间对比</option><option value="c">横向 · 类目对比</option></select></label>
+                <label>图幅<select id="rkadm-pv-size"><option value="s">小</option><option value="m" selected>中</option><option value="l">大</option></select></label>
+              </div>
+              <div id="rkadm-pv-hint" class="rkadm-pv-hint"></div>
+              <div class="rkadm-frame"><iframe id="rkadm-pv-frame" title="前台实时预览" src="rank.html"></iframe></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>上传榜单表格</h4>
+          <p class="hint">Excel 需含「叶子类目名称 / 销量站点 / 首图url / 环比绝对值 / 环比比例」五列，系统自动打「潜力机会 / 趋势爆款 / 周度激增」标签。</p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>标签周期</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="rank-period" value="week" checked> 周度</label>
+                <label class="chk"><input type="radio" name="rank-period" value="month"> 月度</label>
+              </span>
+            </label>
+            <label class="rank-field" id="rank-pw-wrap">
+              <span>选周（日历选任意一天，自动定位到该周）</span>
+              <span class="rank-inline">
+                <input id="rank-period-date" type="date">
+                <b id="rank-period-week" class="rank-week-out">—</b>
+              </span>
+            </label>
+            <label class="rank-field" id="rank-pm-wrap" style="display:none">
+              <span>选月份</span>
+              <input id="rank-period-month" type="month">
+            </label>
+            <input id="rank-period-label" type="hidden" value="">
+            <label class="rank-field">
+              <span>类目</span>
+              <span class="rank-inline">
+                <select id="rank-cat" style="min-width:160px"></select>
+                <button id="rank-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">国家站点（<b>以这里勾选的为准</b>：勾了就整个表都归入你勾的站点，忽略表格里的「销量站点」列——欧盟这类合计表请勾「欧盟」；一个都不勾才按表格列逐行取，可多选）</span>
+            <div id="rank-site-defaults" class="rank-site-defaults"></div>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">导入方式（<b>以本次上传的表格为准</b>：覆盖 = 先清掉「本期次 · 本类目 · 上面勾选的站点」下的旧数据再整表写入，有效行 200 就写 200 条，<b>不跟以前传的表格查重</b>；追加 = 保留旧数据、只补库里还没有的图）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="rank-mode" value="replace" checked> 覆盖（推荐）</label>
+                <label class="chk"><input type="radio" name="rank-mode" value="append"> 追加</label>
+              </span>
+            </div>
+          </div>
+          <div class="rank-inline">
+            <input id="rank-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rank-import" class="btn-primary" type="button" disabled>导入榜单</button>
+          </div>
+          <div id="rank-file-tip" class="rank-file-tip"></div>
+          <div id="rank-preview" class="rank-preview"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>① 导出打标表</h4>
+          <p class="hint">
+            导出属于管理动作，只在这里提供（前台不再有导出按钮）。一张图一行，标签列带出已打过的标，
+            另附「打标状态」列。<b>默认只导未打标的图</b>，所以导过一次、打完再导，不会把打过的又混进来。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>导出范围</span>
+              <select id="rank-export-scope">
+                <option value="todo" selected>仅未打标（推荐）</option>
+                <option value="partial">仅打标不完整</option>
+                <option value="done">仅已打标（核对 / 改错用）</option>
+                <option value="all">全部（含已打标）</option>
+              </select>
+            </label>
+            <label class="rank-field">
+              <span>类目（可选）</span>
+              <select id="rank-export-cat"><option value="">全部类目</option></select>
+            </label>
+            <label class="rank-field">
+              <span>关键词（可选，匹配图片URL / 类目 / 叶子类目）</span>
+              <input id="rank-export-kw" type="text" placeholder="例如某个图片地址片段">
+            </label>
+            <label class="rank-field">
+              <span>按类目拆分成多个文件</span>
+              <span class="rank-inline">
+                <input id="rank-export-split" type="checkbox">
+                <select id="rank-export-split-level">
+                  <option value="cat" selected>按主类目拆</option>
+                  <option value="leaf">按叶子类目拆</option>
+                </select>
+              </span>
+            </label>
+          </div>
+          <p class="hint" style="margin-top:6px">
+            勾选「拆分」且「类目」保持「全部类目」时，每个类目生成一份 xlsx（含该类的打标表 / 明细 / 枚举参考），
+            打包成一个 zip 下载，适合把不同类目分给不同人分别优化。若已在「类目」里选定某一类，则仍导出该类的单份文件。
+          </p>
+          <details id="rank-cat-overview-wrap" style="margin:10px 0">
+            <summary style="cursor:pointer;font-weight:600">类目分布（先看哪一类没打满，再决定优化哪一类）</summary>
+            <div id="rank-cat-overview"></div>
+          </details>
+          <div class="rank-inline">
+            <button id="rank-export-preview" class="btn-ghost" type="button">先看会导出多少张</button>
+            <button id="rank-export-btn" class="btn-primary" type="button">导出打标表</button>
+          </div>
+          <div id="rank-export-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>② 打标结果回填</h4>
+          <p class="hint">
+            把打好的表格传到这里。<b>按「图片URL」精确匹配</b>榜单里的图：对不上的行不写入、单独计数；
+            枚举外的标签值也不写入。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>写入模式</span>
+              <select id="rank-tag-mode">
+                <option value="fill" selected>补齐空白（已有值不动，重复导入无副作用）</option>
+                <option value="overwrite">覆盖同名列（改错用：填什么写什么）</option>
+              </select>
+            </label>
+            <label class="rank-field">
+              <span>覆盖模式的附加选项</span>
+              <label class="chk"><input id="rank-tag-clear-empty" type="checkbox" disabled> 空单元格也清空已有标签（删错标用）</label>
+            </label>
+          </div>
+          <div class="rank-inline">
+            <input id="rank-tag-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rank-tag-import" class="btn-primary" type="button" disabled>写入标签</button>
+          </div>
+          <div id="rank-tag-colstatus" class="rank-file-tip"></div>
+          <div id="rank-tag-file-tip" class="rank-file-tip"></div>
+          <div id="rank-tag-plan-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>③ 批次与撤回</h4>
+          <p class="hint">
+            每次回填都会留下一条批次记录。<b>撤回会把该次改动前的标签写回去</b>（新建的图会退回空标签）；
+            如果某个字段在那之后又被人改过，撤回会跳过它、不覆盖新的改动。
+          </p>
+          <div class="rank-inline">
+            <button id="rank-tag-batch-refresh" class="btn-ghost" type="button">刷新批次</button>
+          </div>
+          <div id="rank-tag-batch-tip" class="rank-file-tip"></div>
+          <div id="rank-tag-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>已上传记录</h4>
+          <div id="rank-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
+        </section>
+      </div>
+
+      <!-- ================= 大码专区 · 数据上传与同款匹配 =================
+           与「趋势上升榜」完全独立：大码有自己的期次、自己的类目、自己的上传记录。
+           前台「大码专区」把这里传的数据与趋势上升榜（标码）按同类目并排对比。 -->
+      <div class="panel-card hidden" id="plus-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>大码专区 · 数据上传与同款匹配</h3>
+            <p class="hint">
+              大码数据走<b>独立入口</b>，不影响趋势上升榜的任何数据。类目三种给法，任选其一：<b>上面选一个类目</b>（整表归入，最省事）、
+              <b>一个 sheet 一个类目</b>（sheet 名即类目名）、<b>表内带「类目」列</b>。单次上传建议 5000 条以内，超过会自动分块写入并显示进度。
+            </p>
+          </div>
+          <div class="rkadm-head-act">
+            <button id="rkadm-plus-open-front" class="btn-ghost" type="button">前台打开大码专区</button>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>① 上传大码数据</h4>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>期次类型</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-period" value="week" checked> 周度</label>
+                <label class="chk"><input type="radio" name="pl-period" value="month"> 月度</label>
+              </span>
+            </label>
+            <label class="rank-field" id="pl-pw-wrap">
+              <span>选周（选任意一天，自动定位到该周）</span>
+              <span class="rank-inline">
+                <input id="pl-period-date" type="date">
+                <b id="pl-period-week" class="rank-week-out">—</b>
+              </span>
+            </label>
+            <label class="rank-field" id="pl-pm-wrap" style="display:none">
+              <span>选月份</span>
+              <input id="pl-period-month" type="month">
+            </label>
+            <input id="pl-period-label" type="hidden" value="">
+            <label class="rank-field">
+              <span>备注（可选）</span>
+              <input id="pl-note" type="text" placeholder="例如：W43 大码整理表">
+            </label>
+            <label class="rank-field">
+              <span>类目（可搜索，常用类目优先）</span>
+              <span class="rank-inline">
+                <select id="pl-cat" style="min-width:160px"></select>
+                <button id="pl-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+            <label class="rank-field">
+              <span>类目怎么用</span>
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-catmode" value="force" checked> 整表用这个类目</label>
+                <label class="chk"><input type="radio" name="pl-catmode" value="fallback"> 只兜底（sheet 名/类目列优先）</label>
+              </span>
+            </label>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">导入方式（覆盖 = 先清掉该期次的旧大码数据再整表写入；追加 = 保留旧数据、只补库里还没有的图）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="pl-mode" value="replace" checked> 覆盖（推荐）</label>
+                <label class="chk"><input type="radio" name="pl-mode" value="append"> 追加</label>
+              </span>
+            </div>
+          </div>
+          <div class="rank-inline">
+            <input id="pl-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="pl-import" class="btn-primary" type="button" disabled>导入大码数据</button>
+          </div>
+          <div id="pl-file-tip" class="rank-file-tip"></div>
+          <div id="pl-preview" class="rank-preview"></div>
+          <div id="pl-progress" class="pl-prog hidden">
+            <div class="pl-prog-track"><div class="pl-prog-bar"></div></div>
+            <div class="pl-prog-txt"></div>
+          </div>
+          <div id="pl-failed"></div>
+          <div id="pl-facets" class="hint"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>② 已上传记录</h4>
+          <div id="pl-batches" class="pl-batches"><div class="hint">正在读取…</div></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>③ 同款匹配（标码 ↔ 大码）</h4>
+          <p class="hint">
+            标码侧直接取<b>趋势上升榜</b>的数据，大码侧取上面上传的数据。逐类目比对后给出三档结论：
+            <b>同款</b>（大码已有）、<b>待确认</b>（相似度落在边界档）、<b>大码机会</b>（标码有、大码没有）。
+            人工判定过的条目，重算时不会被覆盖。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field"><span>大码期次</span><select id="pl-match-period"></select></label>
+            <label class="rank-field"><span>标码期次</span><select id="pl-match-std"></select></label>
+            <label class="rank-field"><span>类目</span><select id="pl-match-cat"></select></label>
+          </div>
+          <div class="rank-inline" style="padding-top:8px">
+            <button id="pl-run-match" class="btn-primary" type="button">开始匹配</button>
+            <button id="pl-review-load" class="btn-ghost" type="button">刷新结论</button>
+            <button id="pl-match-reset" class="btn-ghost" type="button">清空该期次结论</button>
+          </div>
+          <div id="pl-match-result" class="pl-match-result"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>④ 待确认清单
+            <span class="rkadm-sec-act">
+              <button type="button" class="btn-ghost small pl-rv-filter on" data-f="review">只看待确认</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="gap">大码机会</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="same">同款</button>
+              <button type="button" class="btn-ghost small pl-rv-filter" data-f="all">全部</button>
+            </span>
+          </h4>
+          <div id="pl-review" class="pl-review"><div class="hint">正在读取…</div></div>
+        </section>
+      </div>
+
+      <div class="panel-card hidden" id="insight-card">
+        <h2>⑬ 用户动向 <span class="hint-inline">（超级管理员 · 前台访客 + 后台管理员都在干什么）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="ins-toolbar">
+          <label class="field">时间范围</label>
+          <select id="ins-days" class="input" style="max-width:150px">
+            <option value="7">最近 7 天</option>
+            <option value="30" selected>最近 30 天</option>
+            <option value="90">最近 90 天</option>
+            <option value="365">最近一年</option>
+          </select>
+          <button id="ins-refresh" class="btn-primary" type="button">刷新</button>
+          <button id="ins-probe" class="btn-ghost" type="button">重新执行自检</button>
+          <span id="ins-updated" class="hint-inline"></span>
+          <span class="hint-inline">（只统计已登录用户；前台时长按页面停留累计，切到后台标签页时暂停累加）</span>
+        </div>
+
+        <div id="ins-probe-out" class="ins-probe-out"></div>
+
+        <div class="ins-tabs" id="ins-tabs">
+          <button class="ins-tab active" data-iv="iv-1" type="button">前台用户</button>
+          <button class="ins-tab" data-iv="iv-2" type="button">专区 · 菜单热度</button>
+          <button class="ins-tab" data-iv="iv-3" type="button">后台管理员</button>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-1">
+          <div id="ins-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">从哪来 <span class="hint-inline">（进入站点时的来源；直接进入记为「直接进入」）</span></h5>
+              <div id="ins-sources" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">地区分布 <span class="hint-inline">（按网络 IP 解析）</span></h5>
+              <div id="ins-regions" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">访客清单 <span class="hint-inline">（谁 · 来了几次 · 看了几个专区 · 待了多久 · 最近一次）</span></h5>
+          <div id="ins-visitors" class="dash-table-wrap"></div>
+          <h5 class="dash-sub">最近访问明细 <span class="hint-inline">（最近 80 次：谁、在哪个专区、从哪来、待了多久）</span></h5>
+          <div id="ins-recent" class="dash-table-wrap"></div>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-2" style="display:none">
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">专区热度 <span class="hint-inline">（按浏览最多排序 · 含停留时长）</span></h5>
+              <div id="ins-zones" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">菜单点击 <span class="hint-inline">（哪些专区的哪个菜单被点得最多）</span></h5>
+              <div id="ins-menus" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">每日趋势 <span class="hint-inline">（近 N 天：浏览次数 / 访客数 / 总时长）</span></h5>
+          <div id="ins-daily" class="dash-table-wrap"></div>
+        </div>
+
+        <div class="ins-sub" data-iv="iv-3" style="display:none">
+          <div id="ins-admin-cards" class="dash-cards"><span class="hint">加载中…</span></div>
+          <div class="ins-cols">
+            <div class="ins-col">
+              <h5 class="dash-sub">上传图片数 <span class="hint-inline">（按上传人统计，时间范围内）</span></h5>
+              <div id="ins-uploads" class="dash-table-wrap"></div>
+            </div>
+            <div class="ins-col">
+              <h5 class="dash-sub">管理员操作 <span class="hint-inline">（谁做了什么 · 次数 · 最近一次）</span></h5>
+              <div id="ins-admin-by-user" class="dash-table-wrap"></div>
+            </div>
+          </div>
+          <h5 class="dash-sub">操作明细 <span class="hint-inline">（最近 100 条后台操作）</span></h5>
+          <div id="ins-admin-recent" class="dash-table-wrap"></div>
+        </div>
+      </div>
+
+      <div class="panel-card hidden" id="backup-card">
+        <h2>⑭ 版本恢复 <span class="hint-inline">（超级管理员 · 生成数据快照，误删误改可一键回滚）</span></h2>
+        <hr class="tag-sub-hr">
+        <div class="bkp-note">
+          <b>它能保护什么：</b>站内核心数据表整体存成一份快照 —— 图片记录（含所属类目 / 各维度标签 / 上传人 / 首图链接）、类目、标签定义、榜单（站点 / 批次 / 条目）、公告、营销日历、招品回品与 BESTSELLER 类目、前台访问与专区设置、权限配置。<br>
+          <b>它不能保护什么：</b>快照存的是<b>数据库里的记录</b>，<b>不含图片文件本身</b>。图片文件存在对象存储上，本功能不复制文件；若文件已被物理删除，恢复只能找回「记录」而找不回文件。<br>
+          <b>恢复的安全性：</b>点恢复时，系统会<b>先把当前状态自动备份一份</b>（列表里标记为「恢复前自动备份」），整个恢复在一个事务里执行 —— 任何一步失败都会全部回滚，原数据不受影响。恢复后若发现问题，用那份自动备份再恢复一次即可退回。<br>
+          <b>上限：</b>最多保留最近 10 份快照，超出自动清理最早的。
+        </div>
+        <div class="bkp-actions">
+          <input id="bkp-note-input" class="input" placeholder="快照备注（可选，例如：改榜单前留底）" maxlength="60" style="max-width:340px">
+          <button id="bkp-create" class="btn-primary" type="button">立即生成快照</button>
+          <button id="bkp-refresh" class="btn-ghost" type="button">刷新列表</button>
+          <span id="bkp-status" class="hint-inline"></span>
+        </div>
+        <div id="bkp-list" class="dash-table-wrap"><span class="hint">加载中…</span></div>
+      </div>
+
+
+    <!-- ================= 趋势动向专区（20261030A 新增） =================
+         结构与「趋势上升榜」一致：图片本体与打标数据分开存。
+           图片本体 → movement_items（地址 / 类目 / 批次）
+           打标数据 → rank_image_tags（按图片地址唯一，与榜单共用同一套维度）
+         这样可以批量传图、批量打标，导入导出与榜单同一套逻辑。 -->
+    <div class="panel-card hidden" id="movement-card">
+      <h2>趋势动向 <span class="hint-inline">（批量传图 · 打标 · 导入导出）</span></h2>
+
+      <div class="movement-upload">
+        <div class="mv-up-row">
+          <label class="mv-field">
+            <span>上传类目</span>
+            <select id="mv-upload-cat" class="input"></select>
+          </label>
+          <button id="mv-pick-btn" class="btn-primary" type="button">选择图片（可多选）</button>
+          <button id="mv-upload-btn" class="btn-primary" type="button" disabled>上传（0）</button>
+          <button id="mv-clear-btn" class="btn-ghost" type="button">清空待传</button>
+          <span id="mv-upload-tip" class="hint-inline"></span>
+        </div>
+        <div id="mv-drop" class="mv-drop">把图片拖到这里，或点「选择图片」</div>
+        <div id="mv-pending" class="mv-pending"></div>
+        <div id="mv-progress" class="progress hidden"><div id="mv-progress-bar" class="progress-bar"></div></div>
+        <input type="file" id="mv-file" accept="image/*" multiple hidden>
+      </div>
+
+      <div class="mv-toolbar">
+        <span id="mv-count" class="hint-inline">加载中…</span>
+        <select id="mv-filter-cat" class="input"><option value="">全部类目</option></select>
+        <button id="mv-refresh" class="btn-ghost" type="button">刷新</button>
+        <button id="mv-export-btn" class="btn-ghost" type="button">导出打标表</button>
+        <button id="mv-import-btn" class="btn-ghost" type="button">导入打标表</button>
+        <input type="file" id="mv-import-file" accept=".xlsx,.xls" hidden>
+        <span id="mv-msg" class="hint-inline"></span>
+      </div>
+
+      <div class="manage-layout gallery-layout">
+        <aside class="sidebar">
+          <div class="side-head">图片类目</div>
+          <nav id="mv-menu" class="cat-menu"></nav>
+        </aside>
+        <main class="grid-wrap">
+          <p id="mv-empty" class="empty-tip hidden">暂无图片</p>
+          <div id="mv-grid" class="grid"></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- 趋势动向 · 大图打标面板（点击图片打开，按维度分组，与榜单面板一致） -->
+    <div id="mv-tag-modal" class="modal-mask hidden">
+      <div class="modal mv-tag-modal">
+        <div class="mv-tag-head">
+          <h3>趋势动向 · 打标</h3>
+          <span id="mv-tag-title" class="hint-inline"></span>
+        </div>
+        <div class="mv-tag-body">
+          <div class="mv-tag-img"><img id="mv-tag-img" alt=""></div>
+          <div class="mv-tag-dims" id="mv-tag-dims"></div>
+        </div>
+        <div class="mtag-actions">
+          <button id="mv-tag-save" class="btn-primary" type="button">保存</button>
+          <button id="mv-tag-del" class="btn-danger" type="button">删除这张图</button>
+          <button id="mv-tag-close" class="btn-ghost" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+      <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
+      
+    </main>
+    </div>
+
+    <!-- 智能打标弹窗（拖拽池：左=已打，右=未打） -->
+    <div id="smart-modal" class="modal-mask hidden">
+      <div class="modal smart-modal-box">
+        <div class="smart-head-bar">
+          <h3>智能打标（拖拽式）</h3>
+          <span class="smart-head-actions">
+            <button id="smart-urlmatch-btn" type="button" class="btn-ghost smart-url-btn" title="上传含 Name/Url 两列的 Excel 表格，按图片文件名（不含扩展名）给当前待传图片批量挂外链">上传链接Excel</button>
+            <button id="smart-tagmgr-btn" class="btn-ghost" title="打开标签管理，方便增删改维护标签">标签管理</button>
+            <button id="smart-fs" class="btn-ghost" title="切换全屏；全屏下按 Esc 可退出全屏，小屏下按 Esc 可关闭弹窗">全屏</button>
+            <span class="smart-esc-hint">Esc 退出</span>
+            <input type="file" id="smart-url-file" accept=".xlsx,.xls,.csv" hidden>
+          </span>
+        </div>
+        <p class="hint">选择标签维度后，左右两个池子会自动分类：左池＝已打该维度标签的图片，右池＝该维度<b>还没打任何标签</b>的图片（方便你挑还没打的）。再选一个具体标签，可按"是否含该标签"进一步区分已打/未打。把右池拖进左池＝打上标签；把左池拖回右池＝移除标签。也可点图片右下角的箭头按钮完成移动。</p>
+        <div class="smart-dims" id="smart-dims"></div>
+        <div class="smart-tags" id="smart-tags"></div>
+        <div class="smart-pools">
+          <div class="smart-pool" id="smart-pool-done">
+            <div class="smart-pool-head">已打该标签 <span class="sp-count" id="smart-cnt-done">0</span>
+              <button id="smart-deselect-all" class="smart-select-all">全选本池去标</button>
+            </div>
+            <div class="smart-pool-grid" id="smart-grid-done"></div>
+          </div>
+          <div class="smart-albums" id="smart-albums">
+            <div class="smart-albums-head">图册 <span class="sp-count" id="smart-album-cnt">0</span>
+              <button id="smart-album-add" class="smart-album-add" type="button" title="新增图册（自动同步到标签管理）">＋ 新增</button>
+            </div>
+            <div class="smart-albums-list" id="smart-albums-list"></div>
+          </div>
+          <div class="smart-pool" id="smart-pool-undone">
+            <div class="smart-pool-head">未打该标签 <span class="sp-count" id="smart-cnt-undone">0</span>
+              <button id="smart-select-all" class="smart-select-all">全选本池打标</button>
+              <!-- 20261030A：视觉专区不再提供批量上传（改由「趋势动向」专区批量传图打标）。
+                   控件移除，原有上传逻辑保留在 admin-smart.js 中未删，便于日后恢复。 -->
+            </div>
+            <div class="smart-pool-grid" id="smart-grid-undone"></div>
+          </div>
+        </div>
+        </div>
+        <div class="mtag-actions">
+          <button id="smart-close" class="btn-ghost">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量打标签弹窗 -->
+    <div id="tag-modal" class="modal-mask hidden">
+      <div class="modal">
+        <h3>批量打标签（渠道 / 风格 / 元素 / 场景）</h3>
+        <p class="hint" id="tag-modal-info"></p>
+        <div id="tag-modal-groups" class="mtag-groups"></div>
+        <div class="mtag-actions">
+          <button id="tag-apply" class="btn-primary">添加标签</button>
+          <button id="tag-remove" class="btn-danger">移除勾选标签</button>
+          <button id="tag-clear" class="btn-danger">清空所选图片标签</button>
+          <button id="tag-cancel" class="btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 前台预览（后台内嵌，无需另开页面） ================= -->
+  <div id="preview-mask" class="preview-mask hidden">
+    <div class="preview-shell">
+      <div class="preview-toolbar">
+        <div class="preview-title">前台预览</div>
+        <div class="preview-tabs">
+          <button type="button" class="preview-tab active" data-pview="index.html">视觉专区</button>
+          <button type="button" class="preview-tab" data-pview="trends.html">趋势专区</button>
+          <button type="button" class="preview-tab" data-pview="trends.html#recruit">招品回品</button>
+        </div>
+        <div class="preview-tools">
+          <button type="button" id="preview-refresh" class="btn-ghost">刷新</button>
+          <button type="button" id="preview-open" class="btn-ghost">新标签打开</button>
+          <button type="button" id="preview-close" class="btn-danger">关闭</button>
+        </div>
+      </div>
+      <iframe id="preview-frame" class="preview-frame" title="前台预览" src="about:blank"></iframe>
+    </div>
+  </div>
+
+  <div id="zone-cat-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span id="zone-cat-title" class="modal-title">类目设置</span>
+        <button type="button" id="zone-cat-close" class="modal-close">×</button>
+      </div>
+      <div class="zone-cat-body">
+        <div class="rg-row"><label class="field">新增类目</label>
+          <div class="cat-pick-wrap">
+            <input id="zone-cat-new" class="input" placeholder="输入新类目名，如 T恤">
+            <button id="zone-cat-add" class="btn-primary small" type="button">新增</button>
+          </div>
+        </div>
+        <div class="rg-row"><label class="field">搜索类目</label>
+          <input id="zone-cat-filter" class="input" placeholder="搜索类目（宽松模糊：忽略大小写与符号，可隔字，如「连衣」可搜到「连衣裙」）">
+        </div>
+        <div id="zone-cat-list" class="zone-cat-list"></div>
+      </div>
+    </div>
+  </div>
+
+<div id="perm-edit-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="perm-edit-title">编辑用户权限</span>
+        <button type="button" id="perm-edit-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">角色</label>
+        <select id="perm-edit-role" class="input">
+          <option value="visitor">访客</option>
+          <option value="admin">管理员</option>
+          <option value="super_admin">超级管理员</option>
+        </select>
+        <label class="field">标签</label>
+        <select id="perm-edit-tag" class="input" style="max-width:180px"><option value="">无标签</option></select>
+        <label class="field">备注</label>
+        <input id="perm-edit-note" class="input" placeholder="填写说明（如新用户名/来源/用途），可留空" maxlength="120">
+        <div class="perm-zone">
+          <h4 class="perm-zone-title">可管理类目（跨专区统一生效）
+            <span class="perm-cats-toolbar">
+              <span id="perm-edit-cats-count" class="perm-cats-count">0</span>
+              <button id="perm-edit-cats-all" class="btn-ghost small" type="button" title="勾选全部类目">全选</button>
+              <button id="perm-edit-cats-none" class="btn-ghost small" type="button" title="取消全部类目">全不选</button>
+            </span>
+          </h4>
+          <div id="perm-edit-cats" class="perm-cats"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="perm-zone" style="margin-top:10px">
+          <h4 class="perm-zone-title">用户级可见专区（前台）<span class="hint-inline">（勾选该用户进入前台后可见的专区；不勾选任何项＝未配置，按全局「前台访问设置」显示。与后台操作权限分离）</span></h4>
+          <div id="perm-edit-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="perm-zone" style="margin-top:10px">
+          <h4 class="perm-zone-title">后台可管理专区（后台操作权限）<span class="hint-inline">（勾选该管理员可进入并操作的后台专区；未勾选划分项＝无后台操作权限，仅前台访问。与前台可见性分离）</span></h4>
+          <div id="perm-edit-manage-zones" class="perm-zones"><span class="hint">加载中…</span></div>
+        </div>
+        <div class="modal-foot">
+          <button id="perm-edit-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="perm-edit-save" class="btn-primary" type="button">保存权限分配</button>
+        </div>
+      </div>
+    </div>
+  </div>
+<div id="perm-create-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title">新增用户</span>
+        <button type="button" id="perm-create-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="margin-bottom:10px">用邮箱 + 密码直接生成一个账户，创建后即可登录（默认角色为访客，可在权限表里再改）。邮箱需唯一。</p>
+        <label class="field">邮箱</label>
+        <input id="perm-create-email" class="input" type="email" placeholder="user@example.com" autocomplete="off">
+        <label class="field">密码</label>
+        <input id="perm-create-password" class="input" type="text" placeholder="至少 6 位" autocomplete="off">
+        <div class="modal-foot">
+          <button id="perm-create-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="perm-create-save" class="btn-primary" type="button">创建账户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="pwd-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title">修改密码</span>
+        <button type="button" id="pwd-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">旧密码</label>
+        <input id="pwd-old" class="input" type="password" placeholder="请输入当前密码" autocomplete="current-password" required>
+        <label class="field">新密码</label>
+        <input id="pwd-new" class="input" type="password" placeholder="请输入新密码（至少6位）" autocomplete="new-password" required>
+        <label class="field">确认新密码</label>
+        <input id="pwd-new2" class="input" type="password" placeholder="请再次输入新密码" autocomplete="new-password" required>
+        <div class="modal-foot">
+          <button id="pwd-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="pwd-submit" class="btn-primary" type="button">确认修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/supabase.js?v=20261030I"></script>
+  <script src="vendor/quill.js?v=20261030I"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261030I"></script>
+  <script src="vendor/jszip.min.js?v=20261030I"></script>
+  <script src="vendor/qrcode.min.js?v=20261030I"></script>
+  <script src="js/config.js?v=20261030I"></script>
+  <script src="js/supabase.js?v=20261030I"></script>
+  <script src="js/track-menu.js?v=20261030I"></script>
+  <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
+  <script src="js/admin-dialog.js?v=20261030I"></script>
+  <script src="js/admin.js?v=20261030I"></script>
+  <script src="js/admin-images.js?v=20261030I"></script>
+  <script src="js/rank-enums.js?v=20261030I"></script>
+  <script src="js/imageexport.js?v=20261030I"></script>
+  <script src="js/admin-imageimport.js?v=20261030I"></script>
+  <script src="js/admin-movement.js?v=20261030I"></script>
+  <script src="js/admin-smart.js?v=20261030I"></script>
+  <script src="js/admin-trend.js?v=20261030I"></script>
+  <script src="js/admin-notice.js?v=20261030I"></script>
+  <script src="js/marketing-data.js?v=20261030I"></script>
+  <script src="js/admin-festival.js?v=20261030I"></script>
+  <script src="js/admin-tasks.js?v=20261030I"></script>
+  <script src="js/admin-bestseller.js?v=20261030I"></script>
+  <script src="js/admin-perm.js?v=20261030I"></script>
+  <script src="js/admin-pool.js?v=20261030I"></script>
+  <script src="js/rankexport.js?v=20261030I"></script>
+  <script src="js/admin-rankimport.js?v=20261030I"></script>
+  <script src="js/admin-rank.js?v=20261030I"></script>
+  <script src="js/plus-sb.js?v=20261030I"></script>
+  <script src="js/plus-match.js?v=20261030I"></script>
+  <script src="js/admin-plus.js?v=20261030I"></script>
+  <script src="js/admin-insight.js?v=20261030I"></script>
+  <script src="js/admin-backup.js?v=20261030I"></script>
+
+  <!-- 营销日历 · 微信分享二维码弹窗 -->
+  <div class="mk-share-mask hidden" id="mk-share-mask">
+    <div class="mk-share-card">
+      <h4 id="mk-share-title">分享到微信</h4>
+      <p class="mk-share-tip">用微信「扫一扫」扫描二维码，即可打开并转发文章；也可复制下方链接分享。</p>
+      <div class="mk-share-qr" id="mk-share-qr"></div>
+      <div class="mk-share-link" id="mk-share-link"></div>
+      <button id="mk-share-close" class="btn-primary" type="button">关闭</button>
+    </div>
+  </div>
+
+  <!-- 趋势文件二次编辑弹窗 -->
+  <div id="trend-edit-modal" class="modal-mask hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title" id="trend-edit-title">编辑趋势文件</span>
+        <button type="button" id="trend-edit-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span class="req">*</span> 文件标题</label>
+        <input id="trend-edit-title-inp" class="input" placeholder="例如：2026年9月男装趋势报告">
+        <label class="field"><span class="req">*</span> 标签分类（单选）</label>
+        <div class="trend-tag-select" id="trend-edit-tag-select">
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="类目" checked> 类目</label>
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="月度"> 月度</label>
+          <label class="chk"><input type="radio" name="trend-edit-tag" value="周度"> 周度</label>
+        </div>
+        <label class="field"><span class="req">*</span> 选择类目（复用视觉专区类目）</label>
+        <div class="cat-picker">
+          <input id="trend-edit-cat-search" class="input" placeholder="输入关键词搜索已有类目…" autocomplete="off">
+          <div id="trend-edit-cat-results" class="cat-results hidden"></div>
+          <div id="trend-edit-cat-chosen" class="cat-chosen"></div>
+          <div class="cat-picker-actions">
+            <button id="trend-edit-cat-add-btn" class="btn-ghost" type="button">＋ 自定义添加类目</button>
+          </div>
+          <div id="trend-edit-cat-tip" class="hint"></div>
+        </div>
+        <label class="field"><span class="req">*</span> 简介/介绍</label>
+        <textarea id="trend-edit-desc" class="input" rows="2" placeholder="一句话介绍该趋势文件的内容，前台卡片会展示"></textarea>
+        <label class="field">封面图（可重新上传替换，前台 4:3 展示）</label>
+        <div id="trend-edit-cover-dropzone" class="dropzone">
+          <div class="dz-inner">
+            <span class="dz-icon">＋</span>
+            <p>拖拽新封面图到这里，或 <em>点击选择文件</em>（不选则保留原封面）</p>
+            <p class="dz-sub">支持 JPG / PNG</p>
+          </div>
+          <input type="file" id="trend-edit-cover-input" accept="image/*" hidden>
+        </div>
+        <div id="trend-edit-cover-pick" class="hint hidden" style="margin-top:8px;"></div>
+        <div id="trend-edit-progress-wrap" class="progress-wrap hidden">
+          <div class="progress-bar"><div id="trend-edit-progress-bar" class="progress-fill" style="width:0%"></div></div>
+          <span id="trend-edit-progress-text">0%</span>
+        </div>
+        <div class="modal-foot">
+          <button id="trend-edit-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="trend-edit-save" class="btn-primary" type="button">保存修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</body>
+</html>
