@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261028G">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261028G">
+<link rel="stylesheet" href="css/style.css?v=20261030A">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261030A">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -113,6 +113,7 @@
           <a class="nav-item" data-target="trend-card">趋势专区</a>
           <a class="nav-item" data-target="recruit-card">招品回品</a>
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
+        <a class="nav-item" data-target="movement-card">趋势动向</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
         <a class="nav-item" data-target="plus-card">大码专区</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
@@ -1314,6 +1315,72 @@
       </div>
 
 
+    <!-- ================= 趋势动向专区（20261030A 新增） =================
+         结构与「趋势上升榜」一致：图片本体与打标数据分开存。
+           图片本体 → movement_items（地址 / 类目 / 批次）
+           打标数据 → rank_image_tags（按图片地址唯一，与榜单共用同一套维度）
+         这样可以批量传图、批量打标，导入导出与榜单同一套逻辑。 -->
+    <div class="panel-card hidden" id="movement-card">
+      <h2>趋势动向 <span class="hint-inline">（批量传图 · 打标 · 导入导出）</span></h2>
+
+      <div class="movement-upload">
+        <div class="mv-up-row">
+          <label class="mv-field">
+            <span>上传类目</span>
+            <select id="mv-upload-cat" class="input"></select>
+          </label>
+          <button id="mv-pick-btn" class="btn-primary" type="button">选择图片（可多选）</button>
+          <button id="mv-upload-btn" class="btn-primary" type="button" disabled>上传（0）</button>
+          <button id="mv-clear-btn" class="btn-ghost" type="button">清空待传</button>
+          <span id="mv-upload-tip" class="hint-inline"></span>
+        </div>
+        <div id="mv-drop" class="mv-drop">把图片拖到这里，或点「选择图片」</div>
+        <div id="mv-pending" class="mv-pending"></div>
+        <div id="mv-progress" class="progress hidden"><div id="mv-progress-bar" class="progress-bar"></div></div>
+        <input type="file" id="mv-file" accept="image/*" multiple hidden>
+      </div>
+
+      <div class="mv-toolbar">
+        <span id="mv-count" class="hint-inline">加载中…</span>
+        <select id="mv-filter-cat" class="input"><option value="">全部类目</option></select>
+        <button id="mv-refresh" class="btn-ghost" type="button">刷新</button>
+        <button id="mv-export-btn" class="btn-ghost" type="button">导出打标表</button>
+        <button id="mv-import-btn" class="btn-ghost" type="button">导入打标表</button>
+        <input type="file" id="mv-import-file" accept=".xlsx,.xls" hidden>
+        <span id="mv-msg" class="hint-inline"></span>
+      </div>
+
+      <div class="manage-layout gallery-layout">
+        <aside class="sidebar">
+          <div class="side-head">图片类目</div>
+          <nav id="mv-menu" class="cat-menu"></nav>
+        </aside>
+        <main class="grid-wrap">
+          <p id="mv-empty" class="empty-tip hidden">暂无图片</p>
+          <div id="mv-grid" class="grid"></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- 趋势动向 · 大图打标面板（点击图片打开，按维度分组，与榜单面板一致） -->
+    <div id="mv-tag-modal" class="modal-mask hidden">
+      <div class="modal mv-tag-modal">
+        <div class="mv-tag-head">
+          <h3>趋势动向 · 打标</h3>
+          <span id="mv-tag-title" class="hint-inline"></span>
+        </div>
+        <div class="mv-tag-body">
+          <div class="mv-tag-img"><img id="mv-tag-img" alt=""></div>
+          <div class="mv-tag-dims" id="mv-tag-dims"></div>
+        </div>
+        <div class="mtag-actions">
+          <button id="mv-tag-save" class="btn-primary" type="button">保存</button>
+          <button id="mv-tag-del" class="btn-danger" type="button">删除这张图</button>
+          <button id="mv-tag-close" class="btn-ghost" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
       <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
       
     </main>
@@ -1351,14 +1418,12 @@
           <div class="smart-pool" id="smart-pool-undone">
             <div class="smart-pool-head">未打该标签 <span class="sp-count" id="smart-cnt-undone">0</span>
               <button id="smart-select-all" class="smart-select-all">全选本池打标</button>
-              <span class="su-spacer"></span>
-              <select id="smart-cat" class="input su-cat" title="上传类目"></select>
-              <button id="smart-upload-btn" class="btn-primary sm-upload" disabled>上传(0)</button>
-              <div id="smart-progress" class="progress hidden sm-progress"><div id="smart-progress-bar" class="progress-bar"></div></div>
+              <!-- 20261030A：视觉专区不再提供批量上传（改由「趋势动向」专区批量传图打标）。
+                   控件移除，原有上传逻辑保留在 admin-smart.js 中未删，便于日后恢复。 -->
             </div>
             <div class="smart-pool-grid" id="smart-grid-undone"></div>
           </div>
-          <input type="file" id="smart-file" accept="image/*" multiple hidden>
+        </div>
         </div>
         <div class="mtag-actions">
           <button id="smart-close" class="btn-ghost">关闭</button>
@@ -1505,38 +1570,39 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261028G"></script>
-  <script src="vendor/quill.js?v=20261028G"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261028G"></script>
-  <script src="vendor/jszip.min.js?v=20261028G"></script>
-  <script src="vendor/qrcode.min.js?v=20261028G"></script>
-  <script src="js/config.js?v=20261028G"></script>
-  <script src="js/supabase.js?v=20261028G"></script>
-  <script src="js/track-menu.js?v=20261028G"></script>
+  <script src="vendor/supabase.js?v=20261030A"></script>
+  <script src="vendor/quill.js?v=20261030A"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261030A"></script>
+  <script src="vendor/jszip.min.js?v=20261030A"></script>
+  <script src="vendor/qrcode.min.js?v=20261030A"></script>
+  <script src="js/config.js?v=20261030A"></script>
+  <script src="js/supabase.js?v=20261030A"></script>
+  <script src="js/track-menu.js?v=20261030A"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261028G"></script>
-  <script src="js/admin.js?v=20261028G"></script>
-  <script src="js/admin-images.js?v=20261028G"></script>
-  <script src="js/rank-enums.js?v=20261028G"></script>
-  <script src="js/imageexport.js?v=20261028G"></script>
-  <script src="js/admin-imageimport.js?v=20261028G"></script>
-  <script src="js/admin-smart.js?v=20261028G"></script>
-  <script src="js/admin-trend.js?v=20261028G"></script>
-  <script src="js/admin-notice.js?v=20261028G"></script>
-  <script src="js/marketing-data.js?v=20261028G"></script>
-  <script src="js/admin-festival.js?v=20261028G"></script>
-  <script src="js/admin-tasks.js?v=20261028G"></script>
-  <script src="js/admin-bestseller.js?v=20261028G"></script>
-  <script src="js/admin-perm.js?v=20261028G"></script>
-  <script src="js/admin-pool.js?v=20261028G"></script>
-  <script src="js/rankexport.js?v=20261028G"></script>
-  <script src="js/admin-rankimport.js?v=20261028G"></script>
-  <script src="js/admin-rank.js?v=20261028G"></script>
-  <script src="js/plus-sb.js?v=20261028G"></script>
-  <script src="js/plus-match.js?v=20261028G"></script>
-  <script src="js/admin-plus.js?v=20261028G"></script>
-  <script src="js/admin-insight.js?v=20261028G"></script>
-  <script src="js/admin-backup.js?v=20261028G"></script>
+  <script src="js/admin-dialog.js?v=20261030A"></script>
+  <script src="js/admin.js?v=20261030A"></script>
+  <script src="js/admin-images.js?v=20261030A"></script>
+  <script src="js/rank-enums.js?v=20261030A"></script>
+  <script src="js/imageexport.js?v=20261030A"></script>
+  <script src="js/admin-imageimport.js?v=20261030A"></script>
+  <script src="js/admin-movement.js?v=20261030A"></script>
+  <script src="js/admin-smart.js?v=20261030A"></script>
+  <script src="js/admin-trend.js?v=20261030A"></script>
+  <script src="js/admin-notice.js?v=20261030A"></script>
+  <script src="js/marketing-data.js?v=20261030A"></script>
+  <script src="js/admin-festival.js?v=20261030A"></script>
+  <script src="js/admin-tasks.js?v=20261030A"></script>
+  <script src="js/admin-bestseller.js?v=20261030A"></script>
+  <script src="js/admin-perm.js?v=20261030A"></script>
+  <script src="js/admin-pool.js?v=20261030A"></script>
+  <script src="js/rankexport.js?v=20261030A"></script>
+  <script src="js/admin-rankimport.js?v=20261030A"></script>
+  <script src="js/admin-rank.js?v=20261030A"></script>
+  <script src="js/plus-sb.js?v=20261030A"></script>
+  <script src="js/plus-match.js?v=20261030A"></script>
+  <script src="js/admin-plus.js?v=20261030A"></script>
+  <script src="js/admin-insight.js?v=20261030A"></script>
+  <script src="js/admin-backup.js?v=20261030A"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

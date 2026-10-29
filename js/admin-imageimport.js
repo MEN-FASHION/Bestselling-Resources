@@ -261,6 +261,21 @@
 
     say("读取图片清单…");
     var list = await SB.listImageIdUrls();
+    /* 20261030A：打标数据已独立到标签表，这里必须把现有标签合并回来。
+       否则 buildPatch 认为「库里原本是空的」：
+         · 「仅补空」模式会当成没标过，把已有值覆盖掉；
+         · 「空单元格也清空」的判定也不准。 */
+    try {
+      var _u = list.map(function (r) { return String((r && r.url) || "").trim(); }).filter(Boolean);
+      if (_u.length && typeof SB.listImageTags === "function") {
+        var _tm = await SB.listImageTags(_u);
+        list.forEach(function (r) {
+          var k = String((r && r.url) || "").trim();
+          var t = k && _tm[k];
+          if (t) Object.keys(t).forEach(function (f) { if (f !== "image_url") r[f] = t[f]; });
+        });
+      }
+    } catch (e) { /* 读不到就按空处理，写入分支仍会按 patch 提交 */ }
     var byUrl = {}, byId = {};
     list.forEach(function (r) {
       if (r.url) byUrl[String(r.url).trim()] = r;

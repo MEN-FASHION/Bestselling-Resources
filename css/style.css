@@ -6069,3 +6069,59 @@ html, body{
   .dash-export { flex-direction: column; align-items: stretch; }
   .dash-export select { max-width: none; width: 100%; }
 }
+
+/* ============================================================================
+   趋势动向专区（20261030A）
+   与榜单的打标面板保持同一视觉语言，这里的卡片只显示进度，不显示标签内容。
+   ========================================================================== */
+.mv-up-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.mv-field { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #41464e; }
+.mv-field select { min-width: 160px; }
+.mv-drop {
+  border: 1.5px dashed #c9cfd8; border-radius: 10px; padding: 28px 16px;
+  text-align: center; color: #8a919c; font-size: 13px; background: #fbfcfd;
+  transition: border-color .18s, background .18s; cursor: pointer;
+}
+.mv-drop.is-over { border-color: #2f6fed; background: #f2f6ff; color: #2f6fed; }
+.mv-pending { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mv-pending:empty { display: none; }
+.mv-pend-item {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
+  padding: 4px 8px; border: 1px solid #e2e6ec; border-radius: 6px;
+  background: #fff; font-size: 12px; color: #41464e;
+}
+.mv-pend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-pend-x { border: 0; background: none; color: #9aa1ab; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.mv-pend-x:hover { color: #e04b4b; }
+.mv-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 18px 0 12px; }
+.mv-toolbar select { min-width: 140px; }
+.mv-prog {
+  display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 10px;
+  background: #eef1f5; color: #7b8290; font-size: 11px;
+}
+.mv-prog.is-done { background: #e8f6ec; color: #2c9d52; }
+
+.mv-tag-modal { width: min(1180px, 96vw); max-height: 90vh; display: flex; flex-direction: column; }
+.mv-tag-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #eceff3; }
+.mv-tag-head h3 { margin: 0; font-size: 16px; }
+.mv-tag-body { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 18px; padding: 16px 18px; overflow: auto; }
+.mv-tag-img { position: sticky; top: 0; align-self: start; background: #f6f7f9; border-radius: 10px; padding: 10px; }
+.mv-tag-img img { width: 100%; max-height: 62vh; object-fit: contain; display: block; border-radius: 6px; }
+.mv-tag-dims { display: flex; flex-direction: column; gap: 14px; }
+.mv-dim { border: 1px solid #eceff3; border-radius: 8px; padding: 10px 12px; background: #fff; }
+.mv-dim-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
+.mv-dim-head span { color: #9aa1ab; font-size: 11px; }
+.mv-chosen { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 4px; }
+.mv-chosen:empty { display: none; }
+.mv-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px;
+  background: #eef4ff; color: #2f6fed; border-radius: 12px; font-size: 12px;
+}
+.mv-chip i { cursor: pointer; font-style: normal; opacity: .6; }
+.mv-chip i:hover { opacity: 1; color: #e04b4b; }
+.mv-dim-sel { width: 100%; font-size: 13px; }
+.mtag-actions { display: flex; gap: 10px; padding: 12px 18px; border-top: 1px solid #eceff3; }
+@media (max-width: 820px) {
+  .mv-tag-body { grid-template-columns: 1fr; }
+  .mv-tag-img { position: static; }
+}

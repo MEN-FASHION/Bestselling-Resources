@@ -917,6 +917,19 @@ function renderFrontendDims() {
     const usage = {};
     try {
       const imgs = await SB.listImages(null);
+      /* 20261030A：标签已迁到独立表，用量统计必须按地址合并后再算，
+         否则「标签管理」里的使用次数会全是 0。 */
+      try {
+        var _u = imgs.map(function (i) { return String((i && (i.url || i.image_url)) || "").trim(); }).filter(Boolean);
+        if (_u.length && typeof SB.listImageTags === "function") {
+          var _m = await SB.listImageTags(_u);
+          imgs.forEach(function (i) {
+            var k = String((i && (i.url || i.image_url)) || "").trim();
+            var t = k && _m[k];
+            if (t) Object.keys(t).forEach(function (f) { if (f !== "image_url") i[f] = t[f]; });
+          });
+        }
+      } catch (e) { /* 合并失败就按 0 计 */ }
       imgs.forEach(i => {
         (i.style_tags || []).forEach(t => usage["style:" + t] = (usage["style:" + t] || 0) + 1);
         (i.element_tags || []).forEach(t => usage["element:" + t] = (usage["element:" + t] || 0) + 1);
@@ -1281,6 +1294,21 @@ async function loadDashboard() {
     try {
       [imgs, defs] = await Promise.all([imgsP, SB.listTagDefs()]);
     } catch (e) { meta.textContent = "统计失败，请点击刷新重试"; return; }
+    /* 20261030A：打标数据已独立到标签表，images 里只剩图片本体。
+       看板/导出/覆盖率统计都基于 imgs，这里按图片地址把标签合并进来，
+       保证「看到的就是打过的」。读不到不影响页面，只是标签显示为空。 */
+    try {
+      var _urls = imgs.map(function (i) { return String((i && (i.url || i.image_url)) || "").trim(); }).filter(Boolean);
+      if (_urls.length && typeof SB.listImageTags === "function") {
+        var _tagMap = await SB.listImageTags(_urls);
+        imgs.forEach(function (i) {
+          var u = String((i && (i.url || i.image_url)) || "").trim();
+          var t = u && _tagMap[u];
+          if (!t) return;
+          Object.keys(t).forEach(function (k) { if (k !== "image_url") i[k] = t[k]; });
+        });
+      }
+    } catch (e) { /* 合并失败不影响看板主体 */ }
     buildDashCatFilter(imgs);
     /* 导出与类目分布用「全站全量」，不受上方类目筛选影响（筛选在导出面板里单独选） */
     _dashImgs = imgs.slice();

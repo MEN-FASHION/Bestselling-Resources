@@ -41,6 +41,7 @@ const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
+  "movement-card": "",      // 趋势动向：批量传图打标，与榜单同结构，任一管理员可进入
   "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
@@ -226,6 +227,10 @@ function switchPanel(target) {
     if (target === "plus-card" && window.PLUSADMIN && typeof window.PLUSADMIN.refresh === "function") { window.PLUSADMIN.refresh(); }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); if (typeof window.loadRecruitDashStats === "function") window.loadRecruitDashStats(); }
+    /* 趋势动向：首次进入才拉数据，避免进后台就多发一次请求 */
+    if (target === "movement-card" && window.MovementAdmin && typeof window.MovementAdmin.reload === "function") {
+      window.MovementAdmin.reload();
+    }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
     // 营销日历：节庆库（原生编辑器，直接在本页编辑；旧的素材区块已下线）

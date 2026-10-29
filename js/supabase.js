@@ -617,12 +617,75 @@ const SB = (() => {
       const { error } = await client.from("images").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除失败");
     },
+    /* ============================================================
+     * 图库打标写入 —— 20261030A 起统一落到 rank_image_tags
+     * ------------------------------------------------------------
+     * 为什么改：
+     *   原来图库把打标值直接写在 images 表的各 *_tags 列上，
+     *   于是每加一个维度都要 ALTER images，补丁没跑就整条导入失败（400）；
+     *   而且 images 同时承担「图片文件 + 打标数据」，上传与打标互相牵制，
+     *   权限口径也拧在一起（上传只能动自己的，打标要动全类目）。
+     *
+     * 现在（与趋势上升榜同一套）：
+     *   images        → 只管图片文件本身：url / 类目 / 名称 / 上传者 / 删除
+     *   rank_image_tags → 只管打标：image_url 唯一，一张图一行
+     *   两者按图片地址关联，互不覆盖：
+     *     上传/删除只碰 images，不会动到标签；
+     *     打标只 upsert 标签表里本次涉及的列，不会动图片记录。
+     *
+     * 调用方不用改：仍调 updateImageField / clearImageFields /
+     * batchUpdateImageTags，本层负责把 id 换成 url 再写标签表。
+     * ============================================================ */
+    _urlOfId: {},
+    async _mapIdToUrl(ids) {
+      const need = [...new Set((ids || []).filter((x) => x && !this._urlOfId[x]))];
+      if (need.length) {
+        for (let i = 0; i < need.length; i += 100) {
+          const part = need.slice(i, i + 100);
+          const { data, error } = await client.from("images").select("id,url").in("id", part);
+          if (error) throw new Error(error.message || "读取图片地址失败");
+          (data || []).forEach((r) => { if (r.url) this._urlOfId[r.id] = r.url; });
+        }
+      }
+      const out = {};
+      (ids || []).forEach((id) => { if (this._urlOfId[id]) out[id] = this._urlOfId[id]; });
+      return out;
+    },
+    /* 按地址 upsert 标签：只提交本次涉及的列，其余列原样保留
+       （upsert 的 onConflict 更新只覆盖提交的字段，未提交的保持库里原值） */
+    async _upsertTagsByUrl(entries) {
+      const list = (entries || []).filter((e) => e && e.url);
+      if (!list.length) return 0;
+      const now = new Date().toISOString();
+      let n = 0;
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100).map((e) => {
+          const o = { image_url: e.url, updated_at: now };
+          if (e.category !== undefined) o.category = e.category || "";
+          Object.keys(e.patch || {}).forEach((k) => { o[k] = e.patch[k]; });
+          return o;
+        });
+        const { error } = await client.from("rank_image_tags")
+          .upsert(chunk, { onConflict: "image_url", ignoreDuplicates: false });
+        if (error) throw new Error(error.message || "写入标签失败");
+        n += chunk.length;
+      }
+      return n;
+    },
     // 给单张图片设置指定字段的标签（覆盖式写入，去重、过滤空值）
-    // field 传入单元格名：tags(渠道) / style_tags(风格) / element_tags(元素)
+    // field 传入单元格名：tags(渠道) / style_tags(风格) / element_tags(元素) …
     async updateImageField(id, field, tags) {
       const arr = [...new Set((tags || []).map(x => String(x).trim()).filter(Boolean))];
-      const { error } = await client.from("images").update({ [field]: arr }).eq("id", id);
-      if (error) throw new Error(error.message || "打标失败");
+      if (String(field) === "category") {
+        /* 类目不是标签，仍写在 images 上 */
+        const { error } = await client.from("images").update({ category: arr[0] || "" }).eq("id", id);
+        if (error) throw new Error(error.message || "设置失败");
+        return arr;
+      }
+      const map = await this._mapIdToUrl([id]);
+      const url = map[id];
+      if (!url) throw new Error("这张图没有可用的图片地址，无法打标");
+      await this._upsertTagsByUrl([{ url, patch: { [field]: arr } }]);
       return arr;
     },
     // 给单张图片设置渠道标签（兼容旧调用）
@@ -639,10 +702,13 @@ const SB = (() => {
     // 清空一批图片的指定字段标签
     async clearImageFields(ids, fields) {
       if (!ids || !ids.length) return;
-      const patch = {};
-      (fields || []).forEach(f => { patch[f] = []; });
-      const { error } = await client.from("images").update(patch).in("id", ids);
-      if (error) throw new Error(error.message || "清除标签失败");
+      const map = await this._mapIdToUrl(ids);
+      const entries = ids.filter((id) => map[id]).map((id) => {
+        const patch = {};
+        (fields || []).forEach((f) => { patch[f] = []; });
+        return { url: map[id], patch };
+      });
+      await this._upsertTagsByUrl(entries);
     },
     // 清空一批图片的渠道标签（兼容旧调用）
     async clearImageTags(ids) {
@@ -655,22 +721,38 @@ const SB = (() => {
        patch 形如 { style_tags:[...], craft_tags:[...], ... }，只带要写的字段。 */
     async batchUpdateImageTags(updates, concurrency) {
       var list = (updates || []).filter(function (u) { return u && u.id != null && u.patch && Object.keys(u.patch).length; });
+      if (!list.length) return { ok: 0, fail: 0, errors: [] };
+      /* 20261030A：改写到 rank_image_tags（按图片地址）。
+         先把 id 批量换成 url，再按 url 分片 upsert。
+         提交的 patch 只含本次涉及的列，其余列库里原值不动。 */
       var ok = 0, fail = 0, errors = [];
-      var n = Math.max(1, concurrency || 20);
-      for (var i = 0; i < list.length; i += n) {
-        var slice = list.slice(i, i + n);
-        var rs = await Promise.all(slice.map(async function (u) {
-          var patch = {};
-          Object.keys(u.patch).forEach(function (k) {
-            var v = u.patch[k];
-            patch[k] = Array.isArray(v)
-              ? [...new Set(v.map(function (x) { return String(x).trim(); }).filter(Boolean))]
-              : v;
-          });
-          var r = await client.from("images").update(patch).eq("id", u.id);
-          return r && r.error ? (r.error.message || "写入失败") : "";
-        }));
-        rs.forEach(function (e) { if (e) { fail++; if (errors.length < 5) errors.push(e); } else ok++; });
+      var map = {};
+      try {
+        map = await this._mapIdToUrl(list.map(function (u) { return u.id; }));
+      } catch (e) {
+        return { ok: 0, fail: list.length, errors: [String((e && e.message) || e)] };
+      }
+      var entries = [], skipped = 0;
+      list.forEach(function (u) {
+        var url = map[u.id];
+        if (!url) { skipped++; return; }
+        var patch = {};
+        Object.keys(u.patch).forEach(function (k) {
+          var v = u.patch[k];
+          patch[k] = Array.isArray(v)
+            ? [...new Set(v.map(function (x) { return String(x).trim(); }).filter(Boolean))]
+            : v;
+        });
+        entries.push({ url: url, patch: patch });
+      });
+      fail += skipped;
+      if (skipped) errors.push(skipped + " 张图缺少图片地址，已跳过");
+      if (!entries.length) return { ok: 0, fail: fail, errors: errors };
+      try {
+        ok = await this._upsertTagsByUrl(entries);
+      } catch (e) {
+        fail += entries.length;
+        errors.unshift(String((e && e.message) || e));
       }
       return { ok: ok, fail: fail, errors: errors };
     },
@@ -2378,11 +2460,35 @@ async removeTrendRecord(id) {
       const list = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || "").trim()).filter(Boolean))];
       const out = {};
       if (!list.length) return out;
-      /* 列名要点：图库的外链列叫 url（setup.sql: alter table images add column url text），
-         并没有 image_url 列。早期这里按 image_url 查询 → Postgres 直接报「列不存在」→
-         整条查询抛错 → 六维永远为空（而且看起来像"没人打标"）。
-         现在先按 url 查，失败再回退 image_url，兼容手工加过该列的老库。 */
-      const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"];
+
+      /* 20261030A：两处数据源合并读取。
+         ① rank_image_tags —— 现行写入位置（手动打标、批量导入、榜单打标都在这里）
+         ② images 上残留的 *_tags —— 迁移之前打进老位置的数据，读出来兜底，
+            否则迁移完成前页面会显示成"全空"，看着像丢数据。
+         规则：逐字段取"有值的那一边"，新表优先。 */
+      const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags",
+        "tags", "visual_tags", "craft_tags", "fit_tags", "culture_tags", "psych_tags", "festival_tags"];
+
+      /* ① 读新表 */
+      const fromTagTable = {};
+      for (let i = 0; i < list.length; i += 80) {
+        const part = list.slice(i, i + 80);
+        let cols = ["image_url", ...FIELDS];
+        let data = null, error = null;
+        for (let t = 0; t < 3; t++) {
+          const r = await client.from("rank_image_tags").select(cols.join(",")).in("image_url", part);
+          data = r.data; error = r.error;
+          if (!error) break;
+          const msg = String(error.message || error.details || "");
+          const hit = cols.filter((c) => c !== "image_url" && msg.indexOf(c) >= 0);
+          if (!hit.length) break;
+          cols = cols.filter((c) => hit.indexOf(c) < 0);   /* 缺列就退一列重试 */
+        }
+        (data || []).forEach((r) => { fromTagTable[r.image_url] = r; });
+      }
+
+      /* ② 读 images 老位置的残留值 */
+      const fromImages = {};
       const readBy = async (col, cols) => {
         const res = {};
         for (let i = 0; i < list.length; i += 80) {
@@ -2393,18 +2499,23 @@ async removeTrendRecord(id) {
         }
         return res;
       };
-      const full = FIELDS.join(",");
-      let got = await readBy("url", "url," + full);
-      if (!got) got = await readBy("image_url", "image_url," + full);
-      if (!got) {
-        /* 连视觉维度列都没有（很老的库）：退化为只取类目，至少能出类目结构一页，不让整份报告失败 */
-        let cat = await readBy("url", "url,category");
-        if (!cat) cat = await readBy("image_url", "image_url,category");
-        if (!cat) throw new Error("读取图片标签失败");
-        Object.assign(out, cat);
-        return out;
-      }
-      Object.assign(out, got);
+      let got = await readBy("url", "url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags");
+      if (!got) got = await readBy("image_url", "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags");
+      if (got) Object.assign(fromImages, got);
+
+      /* ③ 逐字段合并 */
+      const has = (v) => (Array.isArray(v) ? v.length > 0 : !!v);
+      list.forEach((u) => {
+        const a = fromTagTable[u] || {}, b = fromImages[u] || {};
+        const rec = { image_url: u };
+        FIELDS.forEach((f) => {
+          if (has(a[f])) rec[f] = a[f];
+          else if (b[f] !== undefined && b[f] !== null) rec[f] = b[f];
+          else rec[f] = Array.isArray(a[f]) ? [] : (f === "category" ? "" : []);
+        });
+        if (!Object.keys(a).length && !Object.keys(b).length) return;
+        out[u] = rec;
+      });
       return out;
     },
 
@@ -2422,6 +2533,67 @@ async removeTrendRecord(id) {
     async rankTagReady() {
       const { error } = await client.from("rank_image_tags").select("image_url", { head: true, count: "exact" }).limit(1);
       return !error;
+    },
+
+    /* ============================================================
+     * 趋势动向专区（20261030A）
+     * ------------------------------------------------------------
+     * 结构与趋势上升榜一致，两者共用同一张打标表 rank_image_tags：
+     *   图片本体 → movement_items（图片地址唯一）
+     *   打标数据 → rank_image_tags（按图片地址唯一）
+     * 好处：批量传图不影响图片本体与标签的边界；导入导出沿用榜单那套，
+     *       新增维度只改标签表一处，两个专区同时生效。
+     * ============================================================ */
+    async listMovementItems(category) {
+      const PAGE = 1000, MAX = 20000;
+      const out = [];
+      for (let from = 0; from < MAX; from += PAGE) {
+        let q = client.from("movement_items").select("id,image_url,path,category,batch_id,created_at,title")
+          .order("id", { ascending: false }).range(from, from + PAGE - 1);
+        if (category) q = q.eq("category", category);
+        const { data, error } = await q;
+        if (error) throw new Error(error.message || "读取趋势动向图片失败");
+        const rows = data || [];
+        rows.forEach((r) => out.push(r));
+        if (rows.length < PAGE) break;
+      }
+      return out;
+    },
+    /* 批量上传：逐个传 R2 拿 path，再一次性写入 movement_items。
+       失败不中断其余图片，返回每一张的结果，界面据此提示。 */
+    async uploadMovementImages(files, category, onProgress) {
+      const list = Array.from(files || []);
+      const ok = [], bad = [];
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i];
+        try {
+          const path = await this.uploadImage(f, category || "趋势动向");
+          const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
+          const { error } = await client.from("movement_items").insert({
+            image_url: url, path: path, category: category || "", title: (f.name || "").replace(/\.[^.]+$/, ""),
+          });
+          if (error) throw new Error(error.message || "写入失败");
+          ok.push({ name: f.name, url: url });
+        } catch (e) {
+          bad.push({ name: f.name, reason: String((e && e.message) || e) });
+        }
+        if (typeof onProgress === "function") onProgress(i + 1, list.length);
+      }
+      return { ok: ok, failed: bad };
+    },
+    async deleteMovementItem(id) {
+      const { error } = await client.from("movement_items").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+    /* 按地址写打标（只提交本次涉及的列，其余保留） */
+    async saveMovementTags(url, patch) {
+      const u = String(url || "").trim();
+      if (!u) throw new Error("缺少图片地址");
+      return this._upsertTagsByUrl([{ url: u, patch: patch || {} }]);
+    },
+    /* 按地址批量取打标结果 —— 直接复用榜单读取，保证两个专区口径一致 */
+    async listMovementTags(urls) {
+      return this.listRankTagRows(urls);
     },
     /* 探测打标表的可选维度列是否存在。
        用途：节日/文化/心理这些列是分批补丁加的，某个补丁没执行时，

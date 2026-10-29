@@ -1189,6 +1189,12 @@ function smartRenderPending() {
     if (!undoneGrid) return;
     // 移除旧的上传入口/待传卡（保留真正的图片卡）
     [...undoneGrid.querySelectorAll(".smart-up-entry, .smart-up-thumb")].forEach(n => n.remove());
+    /* 20261030A：视觉专区不再提供批量上传。
+       上传与打标原本绑在同一个弹窗里，导致图库的数据边界和打标边界混在一起。
+       现在批量传图统一走「趋势动向」专区，这里只保留纯打标能力。
+       原上传逻辑（smartPick / doSmartUpload 等）保留未删，日后要恢复只需把下面
+       的 return 去掉即可。 */
+    return;
     // ① 上传入口卡片（占一个图片位）
     const entry = document.createElement("div");
     entry.className = "smart-card smart-up-entry";
