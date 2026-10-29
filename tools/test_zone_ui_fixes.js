@@ -29,7 +29,8 @@ group("超管专区可见性");
 const sbsrc = read("js/supabase.js");
 const mfw = (sbsrc.match(/async myFrontendZones\(\)[\s\S]{0,900}?\n    \},/) || [""])[0];
 ok("读取白名单时同时取 role 字段", /select\(\s*["'][^"']*frontend_zones[^"']*role|select\(\s*["'][^"']*role[^"']*frontend_zones/.test(mfw));
-ok("超管返回 null（表示不限专区）", /role[\s\S]{0,40}===?\s*["']super["'][\s\S]{0,40}return null/.test(mfw) || /String\(data\.role[\s\S]{0,60}super["'][\s\S]{0,40}return null/.test(mfw));
+ok("超管返回 null（表示不限专区）", /super_admin[\s\S]{0,40}return null/.test(mfw) || /String\(data\.role[\s\S]{0,60}super_admin["'][\s\S]{0,40}return null/.test(mfw));
+ok("角色字符串必须是 super_admin（写成 super 会永远不成立）", /super_admin/.test(mfw) && !/===\s*["']super["']/.test(mfw));
 ok("普通账号仍按白名单返回数组", /Array\.isArray\(data\.frontend_zones\)/.test(mfw));
 
 const fesrc = read("js/frontend.js");
@@ -82,6 +83,20 @@ ok("展开态维护箭头朝向", /cvz-caret/.test(catFn) && /open\s*\?\s*"▾"/
 const css = read("css/style.css");
 ok("折叠标题有样式", /\.cat-vis-zone-head\s*\{[^}]*cursor:\s*pointer/.test(css));
 ok("统计文字样式存在", /\.cvz-meta\s*\{/.test(css));
+
+// ---------- 4c. 数据库层：专区字段约束与诊断脚本 ----------
+group("数据库层补丁");
+const patchSql = read("tools/patch_20261030H_zone_constraint.sql");
+ok("补丁动态查找 zone 相关 CHECK 约束", /pg_constraint/.test(patchSql) && /pg_get_constraintdef\(con\.oid\)\s+ILIKE\s+'%zone%'/.test(patchSql));
+ok("补丁用 ALTER TABLE DROP CONSTRAINT 放开", /ALTER TABLE public\.%I DROP CONSTRAINT %I/.test(patchSql));
+ok("补丁覆盖四张涉及专区的表", ["zone_permissions", "frontend_zone_visibility", "frontend_cat_visibility", "zone_cats"].every(t => patchSql.includes(t)));
+ok("补丁幂等（循环内只删存在的约束）", /FOR v_rec IN/.test(patchSql) && /LOOP/.test(patchSql));
+ok("补丁不改数据（无 delete/update/insert）", !/\b(DELETE\s+FROM|UPDATE\s+public\.|INSERT\s+INTO)\b/i.test(patchSql));
+ok("补丁带改后自检", /改后自检/.test(patchSql));
+ok("诊断脚本只读（无写语句）", (() => { const d = read("tools/diagnose_zone_menu.sql"); return !/\b(DELETE\s+FROM|UPDATE\s+public\.|INSERT\s+INTO|ALTER\s+TABLE)\b/i.test(d); })());
+ok("诊断覆盖三层来源", (() => { const d = read("tools/diagnose_zone_menu.sql"); return /frontend_zones/.test(d) && /__defs/.test(d) && /frontend_zone_visibility/.test(d); })());
+ok("权限写入清单包含趋势动向", /ALL_CAT_ZONES\s*=\s*\[[^\]]*movement/.test(read("js/admin-perm.js")));
+ok("权限可选专区含趋势动向", /key:\s*"movement",\s*label:\s*"趋势动向"/.test(read("js/admin-perm.js")));
 
 // ---------- 5. 语法 ----------
 group("语法解析");
