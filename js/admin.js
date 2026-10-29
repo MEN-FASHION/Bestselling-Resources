@@ -542,24 +542,25 @@ async function loadAccess() {
     box.innerHTML = "";
     for (const z of ZONE_DEFS) {
       const item = document.createElement("div");
-      const on = zoneVisCfg[z.key] !== false; // 未配置默认可见
-      item.className = "cat-vis-item " + (on ? "on" : "off");
-      item.innerHTML = `<span class="cvi-name">${escHtml(z.label)}</span><span class="fds-switch${on ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${on ? "展示" : "隐藏"}</span>`;
+      // 用可变状态而不是闭包常量：否则第二次点击仍按「初始值取反」，必须刷新页面才生效
+      let state = zoneVisCfg[z.key] !== false; // 未配置默认可见
+      item.className = "cat-vis-item " + (state ? "on" : "off");
+      item.innerHTML = `<span class="cvi-name">${escHtml(z.label)}</span><span class="fds-switch${state ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${state ? "展示" : "隐藏"}</span>`;
+      const paint = (v) => {
+        item.className = "cat-vis-item " + (v ? "on" : "off");
+        const sw = item.querySelector(".fds-switch"); if (sw) sw.classList.toggle("on", v);
+        const st = item.querySelector(".cvi-state"); if (st) st.textContent = v ? "展示" : "隐藏";
+      };
       item.onclick = async () => {
-        const next = !on;
-        // 乐观更新 UI
-        item.className = "cat-vis-item " + (next ? "on" : "off");
-        item.querySelector(".fds-switch").classList.toggle("on", next);
-        item.querySelector(".cvi-state").textContent = next ? "展示" : "隐藏";
-        zoneVisCfg[z.key] = next;
+        const next = !state;
+        paint(next); // 乐观更新 UI
         try {
           await SB.setFrontendZoneVisibility(z.key, next);
+          state = next;                 // 成功后才提交本地状态
+          zoneVisCfg[z.key] = next;
           sbToast(`${z.label}专区已${next ? "开启前台展示" : "隐藏前台入口"}`);
         } catch (e) {
-          // 回退
-          item.className = "cat-vis-item " + (on ? "on" : "off");
-          item.querySelector(".fds-switch").classList.toggle("on", on);
-          item.querySelector(".cvi-state").textContent = on ? "展示" : "隐藏";
+          paint(state);                 // 回退到真实状态
           sbToast("保存失败：" + (e.message || ""), false);
         }
       };
@@ -568,25 +569,48 @@ async function loadAccess() {
   }
 
 // 读取可见性配置 + 各专区类目池，渲染可见开关列表
+  let catVisRenderSeq = 0;
   async function loadCatVisibility() {
     const box = document.querySelector("#cat-visibility-box");
     if (!box) return;
     try { catVisCfg = await SB.getFrontendCatVisibility(); } catch (e) { catVisCfg = {}; }
     // 视觉/趋势专区：用前台类目表；招品/BESTSELLER：用各自专区类目表
-    const zonesMeta = { visual: "cats", trend: "cats", recruit: "recruit", bestseller: "bestseller" };
-    box.innerHTML = "";
-    for (const z of ZONE_DEFS) {
+    // 渲染代际：loadCatVisibility 会被多次触发（切子页、刷新、其他模块回填），
+    // 而取类目池是异步的。若两次渲染交错，后一次先清空再被前一次追加，同一专区就会重复出现好几次。
+    // 因此用递增序号标记「最新一次渲染」，并在全部数据到齐后用 DocumentFragment 一次性替换。
+    const seq = ++catVisRenderSeq;
+    const zoneCats = await Promise.all(ZONE_DEFS.map(async (z) => {
+      try { return await SB.listZoneCatsForVis(z.key); } catch (e) { return []; }
+    }));
+    if (seq !== catVisRenderSeq) return; // 已有更新的一次渲染，本次丢弃
+
+    const frag = document.createDocumentFragment();
+    // 个人专区（我的收藏）没有类目维度，不列；营销日历 / 公告无类目池，自动显示空态。
+    const CAT_VIS_SKIP = { fav: 1 };
+    ZONE_DEFS.forEach((z, zi) => {
+      if (CAT_VIS_SKIP[z.key]) return;
       const wrap = document.createElement("div");
       wrap.className = "cat-vis-zone";
       const head = document.createElement("div");
       head.className = "cat-vis-zone-head";
-      head.textContent = z.label;
-      // 类目池
-      let cats = [];
-      try { cats = await SB.listZoneCatsForVis(z.key); } catch (e) {}
+      const cats = zoneCats[zi] || [];
       const visMap = catVisCfg[z.key] || {};
+      const hiddenCnt = cats.filter(c => visMap[c] === false).length;
+      // 多个专区共用同一份前台类目表（视觉/趋势/榜单/大码/趋势动向），
+      // 全展开会得到几百个同样的开关，故默认折叠，只显示统计；
+      // 已有隐藏项的专区默认展开，便于查看被关掉的有哪些。
+      let open = hiddenCnt > 0;
+      head.innerHTML = `<span class="cvz-title">${escHtml(z.label)}</span>`
+        + `<span class="cvz-meta">${cats.length} 个类目${hiddenCnt ? " · 已隐藏 " + hiddenCnt : ""}</span>`
+        + `<span class="cvz-caret">${open ? "▾" : "▸"}</span>`;
       const listWrap = document.createElement("div");
       listWrap.className = "cat-vis-list";
+      listWrap.style.display = open ? "" : "none";
+      head.onclick = () => {
+        open = !open;
+        listWrap.style.display = open ? "" : "none";
+        const c = head.querySelector(".cvz-caret"); if (c) c.textContent = open ? "▾" : "▸";
+      };
       if (!cats.length) {
         const empty = document.createElement("span");
         empty.className = "cat-vis-empty";
@@ -595,25 +619,26 @@ async function loadAccess() {
       } else {
         cats.forEach(cat => {
           const item = document.createElement("div");
-          const on = visMap[cat] !== false; // 未配置默认可见
-          item.className = "cat-vis-item " + (on ? "on" : "off");
-          item.innerHTML = `<span class="cvi-name">${escHtml(cat)}</span><span class="fds-switch${on ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${on ? "展示" : "隐藏"}</span>`;
+          // 可变状态：避免闭包常量导致第二次点击无效、必须刷新页面
+          let state = visMap[cat] !== false; // 未配置默认可见
+          item.className = "cat-vis-item " + (state ? "on" : "off");
+          item.innerHTML = `<span class="cvi-name">${escHtml(cat)}</span><span class="fds-switch${state ? " on" : ""}"><i></i></span><span class="cvi-state" style="font-size:12px;color:var(--sub);">${state ? "展示" : "隐藏"}</span>`;
+          const paint = (v) => {
+            item.className = "cat-vis-item " + (v ? "on" : "off");
+            const sw = item.querySelector(".fds-switch"); if (sw) sw.classList.toggle("on", v);
+            const st = item.querySelector(".cvi-state"); if (st) st.textContent = v ? "展示" : "隐藏";
+          };
           item.onclick = async () => {
-            const next = !on;
-            // 乐观更新 UI
-            item.className = "cat-vis-item " + (next ? "on" : "off");
-            item.querySelector(".fds-switch").classList.toggle("on", next);
-            item.querySelector(".cvi-state").textContent = next ? "展示" : "隐藏";
-            catVisCfg[z.key] = catVisCfg[z.key] || {};
-            catVisCfg[z.key][cat] = next;
+            const next = !state;
+            paint(next); // 乐观更新 UI
             try {
               await SB.setFrontendCatVisibility(z.key, cat, next);
+              state = next;
+              catVisCfg[z.key] = catVisCfg[z.key] || {};
+              catVisCfg[z.key][cat] = next;
               sbToast(`${z.label}「${cat}」已${next ? "开启前台展示" : "隐藏前台内容"}`);
             } catch (e) {
-              // 回退
-              item.className = "cat-vis-item " + (on ? "on" : "off");
-              item.querySelector(".fds-switch").classList.toggle("on", on);
-              item.querySelector(".cvi-state").textContent = on ? "展示" : "隐藏";
+              paint(state); // 回退到真实状态
               sbToast("保存失败：" + (e.message || ""), false);
             }
           };
@@ -622,8 +647,10 @@ async function loadAccess() {
       }
       wrap.appendChild(head);
       wrap.appendChild(listWrap);
-      box.appendChild(wrap);
-    }
+      frag.appendChild(wrap);
+    });
+    box.innerHTML = "";
+    box.appendChild(frag);
   }
 
 function bindAccess() {

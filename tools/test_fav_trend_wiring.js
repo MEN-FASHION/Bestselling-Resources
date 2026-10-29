@@ -25,9 +25,11 @@ ok("空收藏时按钮禁用", /fv-export-pdf"\)[\s\S]{0,120}disabled\s*=\s*!ST\
 console.log("\n【三】导出模块接线");
 ok("导出模块提供 exportPdfForTrend", /NS\.exportPdfForTrend\s*=/.test(fxJs));
 ok("jsPDF 懒加载（不拖慢首屏）", /loadJsPdf/.test(fxJs) && /vendor\/jspdf\.umd\.min\.js/.test(fxJs));
-ok("封面单独成页且在第 1 页", /addImage\(cover\.toDataURL[\s\S]{0,120}\)/.test(fxJs) && fxJs.indexOf("addImage(cover") < fxJs.indexOf("for (var i = 0; i < pg.cuts.length"));
-ok("内页按块边界切（不切卡片）", /function paginate\(/.test(fxJs) && /blocks/.test(fxJs));
-ok("A4 横版 297×210", /PDF_W_MM\s*=\s*297/.test(fxJs) && /PDF_H_MM\s*=\s*210/.test(fxJs));
+ok("改为一张连续长页（不再按 A4 多页切）", /LONG_W_MM/.test(fxJs) && /mmPerPx/.test(fxJs) && !/pg\s*=\s*paginate/.test(fxJs));
+ok("封面仍单独产出（前台卡片用）", /coverBlob/.test(fxJs) && /buildCover/.test(fxJs));
+ok("长页按内容高度等比延伸", /totalMm\s*=\s*stripH\s*\*\s*mmPerPx/.test(fxJs));
+ok("分段贴图避免超大单图", /LONG_CHUNK_PX/.test(fxJs));
+ok("A4 宽度 297mm（长页页宽）", /LONG_W_MM\s*=\s*297/.test(fxJs));
 ok("长图导出回传块坐标", /blocks:\s*box\.blocks/.test(fxJs));
 ok("标签三选一与前台页签对齐", /"周度"/.test(fxJs) && /"月度"/.test(fxJs) && /"类目"/.test(fxJs));
 ok("封面同时抽出给专区卡片用", /coverBlob/.test(fxJs));
@@ -51,7 +53,9 @@ ok("未改 exportPng / exportHtml 签名", /async function exportPng\(items, cat
 
 console.log("\n【六】版本号统一");
 const pages = ["admin.html", "fav.html", "index.html", "marketing.html", "movement.html", "plus.html", "rank.html", "trends.html"];
-const V = "20261030E";
+// 版本号不写死：以 rank.html 为基准读取，避免每次升版都要改测试
+const V = (fs.readFileSync("rank.html", "utf8").match(/\?v=([0-9A-Za-z]+)/) || [, ""])[1];
+ok("能从页面读出统一版本号", !!V);
 let bad = [];
 pages.forEach(p => {
   const s = fs.readFileSync(p, "utf8");

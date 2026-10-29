@@ -11,6 +11,10 @@
   let shownCats = [];
   // PDF 自绘预览状态
   let pdfDoc = null, pdfPage = 1, pdfScale = 1.0, pdfRendering = false;
+  /* 预览状态：按 path 缓存已解析的文档，二次打开秒开；页面按需渲染，不一次性全画 */
+  let pdfPath = "", pdfBaseScale = 1, pdfPages = [], pdfObserver = null, pdfLoadTask = null;
+  const pdfCache = new Map();       /* path -> { doc, buf } */
+  const PDF_CACHE_MAX = 3;          /* 最多留 3 份，避免占内存 */
   let recruitTasks = [];   // 招品任务清单
   let recruitSubs = [];    // 全部提交（前台悬浮显示用）
   let recruitCurUid = "";  // 当前登录商家 ID（前台只看自己的提交）
@@ -126,10 +130,24 @@
     const lbGoto = document.getElementById("lb-goto");
     if (lbGoto) lbGoto.addEventListener("click", (e) => { e.preventDefault(); showLogin(); });
     $("#pdf-close").onclick = closePdf;
-    $("#pdf-prev").onclick = () => goPage(-1);
-    $("#pdf-next").onclick = () => goPage(1);
-    $("#pdf-zoom-out").onclick = () => setPdfZoom(pdfScale - 0.1);
-    $("#pdf-zoom-in").onclick = () => setPdfZoom(pdfScale + 0.1);
+    $("#pdf-zoom-out").onclick = () => setPdfZoom(pdfScale - 0.15);
+    $("#pdf-zoom-in").onclick = () => setPdfZoom(pdfScale + 0.15);
+    $("#pdf-fit").onclick = () => { pdfScale = 1.0; relayoutPdf(); };
+    $("#pdf-full").onclick = togglePdfFull;
+
+    /* 全屏进出、窗口缩放后容器宽度变了，页宽要跟着重算 */
+    let pdfResizeTimer = 0;
+    const onPdfResize = () => {
+      if (!pdfDoc) return;
+      clearTimeout(pdfResizeTimer);
+      pdfResizeTimer = setTimeout(() => { relayoutPdf(); }, 160);
+    };
+    window.addEventListener("resize", onPdfResize);
+    document.addEventListener("fullscreenchange", () => {
+      const btn = $("#pdf-full");
+      if (btn) btn.textContent = document.fullscreenElement ? "退出全屏" : "全屏";
+      onPdfResize();
+    });
     $("#pdf-modal").addEventListener("click", (e) => { if (e.target.id === "pdf-modal") closePdf(); });
     window.addEventListener("keydown", (e) => {
       const m = $("#pdf-modal");
@@ -815,76 +833,180 @@
     return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // 受控预览：登录后经 Worker 取 PDF 二进制，用 pdf.js 自绘渲染（无任何下载/打印按钮），防下载
+  /* ============================================================================
+   * 受控预览（20261030F 重做）
+   * ----------------------------------------------------------------------------
+   * 原来一次只画一页、靠「上一页 / 下一页」翻，两个毛病：
+   *   · 每次打开都重新下载 + 重新解析整个 PDF，关掉再开又从头来一遍 → 慢
+   *   · 单页 canvas 撑不满窗口，翻页要点，读长报告很累
+   * 现在改为：
+   *   · 按文件路径缓存已解析的文档，第二次打开直接出图
+   *   · 连续纵向滚动，滚动到哪页才画哪页（IntersectionObserver 懒渲染）
+   *   · 可全屏、可缩放，「适宽」一键回到满宽
+   * 仍然用 pdf.js 自绘，不给任何下载 / 打印入口。
+   * ==========================================================================*/
   async function openPdf(t) {
+    const stage = $("#pdf-stage"), pages = $("#pdf-pages"), loading = $("#pdf-loading");
     try {
       if (!window.pdfjsLib) { toast("预览组件未就绪，请刷新重试", false); return; }
-      closePdf();
+      closePdf(true);                       /* 关掉上一个，但不清缓存 */
+      pdfPath = t.path || "";
       $("#pdf-title").textContent = t.title || "预览";
       $("#pdf-modal").classList.remove("hidden");
-      const loading = $("#pdf-loading");
       loading.textContent = "正在加载预览…";
       loading.classList.remove("hidden");
-      const url = await SB.trendPreviewUrl(t.path);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("load");
-      const buf = await res.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-      pdfDoc = pdf;
+      pages.innerHTML = "";
+
+      /* 命中缓存就直接用，省掉下载和解析 —— 这是之前「再开一次还是很慢」的根因 */
+      let doc = pdfCache.get(pdfPath) && pdfCache.get(pdfPath).doc;
+      if (!doc) {
+        /* 先要一个带签名的地址，再取二进制 */
+        const url = await SB.trendPreviewUrl(t.path);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("load");
+        const buf = await res.arrayBuffer();
+        pdfLoadTask = window.pdfjsLib.getDocument({ data: buf });
+        doc = await pdfLoadTask.promise;
+        pdfLoadTask = null;
+        pdfCache.set(pdfPath, { doc: doc, buf: buf });
+        /* 只留最近几份，超出的销毁最旧的 */
+        if (pdfCache.size > PDF_CACHE_MAX) {
+          const firstKey = pdfCache.keys().next().value;
+          if (firstKey !== pdfPath) {
+            const old = pdfCache.get(firstKey);
+            pdfCache.delete(firstKey);
+            if (old && old.doc) { try { old.doc.destroy(); } catch (e) {} }
+          }
+        }
+      }
+      pdfDoc = doc;
       pdfPage = 1;
       pdfScale = 1.0;
-      await renderPdfPage();
+
+      /* 用第 1 页的宽高比给所有页占位，滚动条长度一次算对，不会边滚边跳 */
+      const p1 = await doc.getPage(1);
+      const vp1 = p1.getViewport({ scale: 1 });
+      const ratio = vp1.height / vp1.width;
+
+      pdfPages = [];
+      for (let i = 1; i <= doc.numPages; i++) {
+        const wrap = document.createElement("div");
+        wrap.className = "pdf-page-wrap";
+        wrap.dataset.page = String(i);
+        const cv = document.createElement("canvas");
+        cv.className = "pdf-page-canvas";
+        wrap.appendChild(cv);
+        pages.appendChild(wrap);
+        pdfPages.push({ wrap: wrap, canvas: cv, rendered: false, task: null, ratio: ratio });
+      }
+
+      await relayoutPdf();                  /* 先把尺寸算好 */
       loading.classList.add("hidden");
+      $("#pdf-page").textContent = "1 / " + doc.numPages;
+
+      /* 首屏两页立刻画，其余滚到再画 —— 页数多时不会一开就卡住 */
+      renderPdfAt(0);
+      renderPdfAt(1);
+      observePdf();
     } catch (e) {
-      const loading = $("#pdf-loading");
-      if (loading) { loading.textContent = "预览加载失败，请稍后重试"; loading.classList.remove("hidden"); }
+      loading.textContent = "预览加载失败，请稍后重试";
+      loading.classList.remove("hidden");
       toast("预览打开失败", false);
     }
   }
 
-  async function renderPdfPage() {
-    if (!pdfDoc || pdfRendering) return;
-    pdfRendering = true;
+  /* 按容器宽度算每页显示尺寸；zoom 只改显示倍数，不重新下载文件 */
+  async function relayoutPdf() {
+    if (!pdfDoc || !pdfPages.length) return;
+    const stage = $("#pdf-stage");
+    const availW = Math.max(320, (stage ? stage.clientWidth : 900) - 48);
+    const first = pdfPages[0];
+    const p1 = await pdfDoc.getPage(1);
+    const vp1 = p1.getViewport({ scale: 1 });
+    pdfBaseScale = availW / vp1.width;       /* 满宽时的倍数 */
+
+    pdfPages.forEach((p) => {
+      const w = vp1.width * pdfBaseScale * pdfScale;
+      const h = vp1.height * pdfBaseScale * pdfScale;
+      p.wrap.style.width = Math.round(w) + "px";
+      p.wrap.style.height = Math.round(h) + "px";
+      p.rendered = false;                    /* 尺寸变了要重画 */
+      const c = p.canvas;
+      c.width = 0; c.height = 0;
+      c.style.width = "100%";
+      c.style.height = "100%";
+    });
+    $("#pdf-zoom").textContent = Math.round(pdfScale * 100) + "%";
+    /* 重新画当前视野里的页 */
+    pdfPages.forEach((p, i) => { if (nearViewport(p.wrap)) renderPdfAt(i); });
+  }
+
+  function nearViewport(el) {
+    const stage = $("#pdf-stage");
+    if (!stage || !el) return false;
+    const sr = stage.getBoundingClientRect(), er = el.getBoundingClientRect();
+    return er.bottom > sr.top - 600 && er.top < sr.bottom + 600;
+  }
+
+  async function renderPdfAt(idx) {
+    const p = pdfPages[idx];
+    if (!p || p.rendered || !pdfDoc) return;
+    p.rendered = true;
     try {
-      const page = await pdfDoc.getPage(pdfPage);
-      const vp1 = page.getViewport({ scale: 1 });
-      const base = Math.min(1.4, 900 / vp1.width);
-      const vp = page.getViewport({ scale: pdfScale * base });
-      const canvas = $("#pdf-canvas");
-      canvas.width = vp.width;
-      canvas.height = vp.height;
-      canvas.style.display = "block";
-      const ctx = canvas.getContext("2d");
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      $("#pdf-page").textContent = pdfPage + " / " + pdfDoc.numPages;
-      $("#pdf-zoom").textContent = Math.round(pdfScale * 100) + "%";
-      const prev = $("#pdf-prev"), next = $("#pdf-next");
-      if (prev) prev.disabled = pdfPage <= 1;
-      if (next) next.disabled = pdfPage >= pdfDoc.numPages;
-    } finally {
-      pdfRendering = false;
+      const page = await pdfDoc.getPage(idx + 1);
+      const vp = page.getViewport({ scale: pdfBaseScale * pdfScale * (window.devicePixelRatio > 1 ? 1.5 : 1) });
+      const cv = p.canvas;
+      cv.width = Math.round(vp.width);
+      cv.height = Math.round(vp.height);
+      const ctx = cv.getContext("2d");
+      const task = page.render({ canvasContext: ctx, viewport: vp });
+      p.task = task;
+      await task.promise;
+      p.task = null;
+    } catch (e) {
+      p.rendered = false;                    /* 失败允许下次滚动重试 */
     }
   }
 
-  function goPage(d) {
-    if (!pdfDoc) return;
-    const n = pdfPage + d;
-    if (n < 1 || n > pdfDoc.numPages) return;
-    pdfPage = n;
-    renderPdfPage();
+  /* 滚到哪页画哪页 */
+  function observePdf() {
+    if (pdfObserver) pdfObserver.disconnect();
+    const stage = $("#pdf-stage");
+    pdfObserver = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        const i = Number(en.target.dataset.page) - 1;
+        renderPdfAt(i);
+        pdfPage = i + 1;
+        if (pdfDoc) $("#pdf-page").textContent = pdfPage + " / " + pdfDoc.numPages;
+      });
+    }, { root: stage, rootMargin: "300px 0px" });
+    pdfPages.forEach((p) => pdfObserver.observe(p.wrap));
   }
 
   function setPdfZoom(z) {
     if (!pdfDoc) return;
-    pdfScale = Math.min(3, Math.max(0.5, z));
-    renderPdfPage();
+    pdfScale = Math.min(3, Math.max(0.4, z));
+    relayoutPdf();
   }
 
-  function closePdf() {
+  /* 全屏：让弹窗铺满整屏，Esc 退出时把尺寸算回去 */
+  function togglePdfFull() {
+    const box = document.querySelector(".pdf-modal-box");
+    if (!box) return;
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    if (box.requestFullscreen) box.requestFullscreen();
+  }
+
+  function closePdf(keepCache) {
     $("#pdf-modal").classList.add("hidden");
-    if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} }
+    if (pdfObserver) { pdfObserver.disconnect(); pdfObserver = null; }
+    if (pdfLoadTask) { try { pdfLoadTask.destroy(); } catch (e) {} pdfLoadTask = null; }
+    pdfPages.forEach((p) => { if (p.task) { try { p.task.cancel(); } catch (e) {} } });
+    pdfPages = [];
+    const pages = $("#pdf-pages");
+    if (pages) pages.innerHTML = "";
     pdfDoc = null;
-    const canvas = $("#pdf-canvas");
-    if (canvas) canvas.style.display = "none";
+    if (!keepCache) pdfCache.clear();
   }
 })();

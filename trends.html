@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 趋势专区</title>
-<link rel="stylesheet" href="css/style.css?v=20261030E">
+<link rel="stylesheet" href="css/style.css?v=20261030G">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body class="front">
@@ -191,30 +191,30 @@
       <div class="pdf-modal-head">
         <span id="pdf-title">预览</span>
         <div class="pdf-modal-tools">
-          <button id="pdf-prev" class="btn-ghost" type="button">‹ 上一页</button>
           <span id="pdf-page" class="pdf-pageno">1 / 1</span>
-          <button id="pdf-next" class="btn-ghost" type="button">下一页 ›</button>
           <span class="pdf-sep">|</span>
-          <button id="pdf-zoom-out" class="btn-ghost" type="button">−</button>
+          <button id="pdf-zoom-out" class="btn-ghost" type="button" title="缩小">−</button>
           <span id="pdf-zoom" class="pdf-pageno">100%</span>
-          <button id="pdf-zoom-in" class="btn-ghost" type="button">＋</button>
+          <button id="pdf-zoom-in" class="btn-ghost" type="button" title="放大">＋</button>
+          <button id="pdf-fit" class="btn-ghost" type="button" title="按窗口宽度显示">适宽</button>
+          <button id="pdf-full" class="btn-ghost" type="button" title="全屏查看（Esc 退出）">全屏</button>
           <button id="pdf-close" class="btn-ghost">关闭</button>
         </div>
       </div>
       <div class="pdf-stage" id="pdf-stage">
-        <canvas id="pdf-canvas" class="pdf-canvas" width="800" height="1100" style="display:none;"></canvas>
+        <div class="pdf-pages" id="pdf-pages"></div>
         <p id="pdf-loading" class="pdf-loading">正在加载预览…</p>
       </div>
-      <div class="pdf-tip">· 仅凭角色的在线预览许可查看本文件，禁止下载、打印与传播 ·</div>
+      <div class="pdf-tip">· 滚动阅读 · 仅凭角色的在线预览许可查看本文件，禁止下载、打印与传播 ·</div>
     </div>
   </div>
 
-  <script src="vendor/pdf.min.js?v=20261030E"></script>
-  <script src="vendor/supabase.js?v=20261030E"></script>
-  <script src="js/config.js?v=20261030E"></script>
-  <script src="js/supabase.js?v=20261030E"></script>
-  <script src="js/track-menu.js?v=20261030E"></script>
-  <script src="js/common.js?v=20261030E"></script>
-  <script src="js/trends.js?v=20261030E"></script>
+  <script src="vendor/pdf.min.js?v=20261030G"></script>
+  <script src="vendor/supabase.js?v=20261030G"></script>
+  <script src="js/config.js?v=20261030G"></script>
+  <script src="js/supabase.js?v=20261030G"></script>
+  <script src="js/track-menu.js?v=20261030G"></script>
+  <script src="js/common.js?v=20261030G"></script>
+  <script src="js/trends.js?v=20261030G"></script>
 </body>
 </html>

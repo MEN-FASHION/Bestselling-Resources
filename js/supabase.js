@@ -1805,8 +1805,12 @@ async removeTrendRecord(id) {
       const s = await client.auth.getSession();
       const uid = s?.data?.session?.user?.id;
       if (!uid) return null;
-      const { data, error } = await client.from("profiles").select("frontend_zones").eq("user_id", uid).maybeSingle();
+      const { data, error } = await client.from("profiles").select("frontend_zones, role").eq("user_id", uid).maybeSingle();
       if (error) return null;
+      // 超级管理员不受用户级白名单约束：始终可见全部专区。
+      // 否则老账号的 frontend_zones 是早年存的数组，里面没有后加的专区（如「趋势动向」），
+      // 超管登录前台就会看不到这些新专区的入口。
+      if (data && String(data.role || "") === "super") return null;
       return (data && Array.isArray(data.frontend_zones)) ? data.frontend_zones : null;
     },
     // 超管：读取某用户前端可见专区白名单（frontend_zones）

@@ -480,15 +480,23 @@
   }
 
   /* ============================================================================
-   * ⑧ 收藏周报 → PDF → 趋势专区（20261030E）
+   * ⑧ 收藏周报 → PDF → 趋势专区（20261030F）
    * ----------------------------------------------------------------------------
-   * 和 ①的长图导出同源：先把同样的内容画成一张长图（复用 exportPng），
-   * 再按「块边界」切成若干 A4 横版页，所以不会把卡片拦腰切断。
+   * 20261030F 是按 A4 横版切成多页，读起来一页一断开，很碎。
+   * 现在改成**一张连续长页**：页宽固定 297mm，页高按内容等比延伸，
+   * 整份报告就是一条不断开的竖长页，滚动阅读。
+   *
+   * 两个必要的处理：
+   *   · PDF 单页高度有上限（规范 14400pt ≈ 5080mm），超过才被迫分页；
+   *   · 长图先在内存里分段转 JPEG 再逐段贴上，避免一次转出超大图片把内存撑爆。
    *
    * 这里只负责产出文件与元信息（标题 / 标签 / 简介），不碰上传 ——
    * 上传和登记放在页面脚本里，导出模块保持无网络依赖。
    * ==========================================================================*/
   var PDF_W_MM = 297, PDF_H_MM = 210;
+  var LONG_W_MM = 297;        /* 长页宽度 = A4 宽 */
+  var LONG_MAX_H_MM = 4800;   /* 单页高度上限，留足余量；超过才分页 */
+  var LONG_CHUNK_PX = 6000;   /* 每段贴图的最大像素高度，控制内存峰值 */
 
   async function loadJsPdf() {
     if (window.jspdf && window.jspdf.jsPDF) return true;
@@ -642,7 +650,7 @@
     return { title: title, tag: tag, category: "", description: desc };
   }
 
-  /* 收藏 → PDF（封面 + 按块分页的内页）。返回 { pdfBlob, coverBlob, meta, pages, count, failed } */
+  /* 收藏 → PDF（一张连续长页）。返回 { pdfBlob, coverBlob, meta, pages, count, failed } */
   async function exportPdfForTrend(items, cats, opts) {
     opts = opts || {};
     var p = plan(items, cats);
@@ -658,21 +666,61 @@
       onProgress: opts.onProgress,
     });
     var now = opts.now || new Date();
-    if (opts.onPage) opts.onPage("正在分页…");
+    if (opts.onPage) opts.onPage("正在拼装长页…");
 
-    var pg = paginate(res.canvas, res.blocks, num(opts.scale) || 2);
     var cover = buildCover(p, now);
+    var src = res.canvas;
+
+    /* 长条贴图先降到 2200px 宽（297mm 上约 190dpi，看清字足够），体积和内存都小很多 */
+    var targetW = 2200;
+    var ratio = Math.min(1, targetW / src.width);
+    var drawW = Math.round(src.width * ratio);
+    var stripH = Math.round(src.height * ratio);
+
+    var mmPerPx = LONG_W_MM / drawW;
+    var totalMm = stripH * mmPerPx;
+    var pageCount = Math.max(1, Math.ceil(totalMm / LONG_MAX_H_MM));
+    var firstH = Math.min(LONG_MAX_H_MM, totalMm);
 
     var jsPDF = window.jspdf.jsPDF;
-    var pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [PDF_W_MM, PDF_H_MM] });
-    pdf.addImage(cover.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PDF_W_MM, PDF_H_MM);
+    /* 第一页就按长页实际高度建，省掉「先建一张 A4 再删掉」的兼容风险 */
+    var pdf = new jsPDF({
+      orientation: firstH >= LONG_W_MM ? "portrait" : "landscape",
+      unit: "mm",
+      format: [LONG_W_MM, firstH],
+    });
 
-    for (var i = 0; i < pg.cuts.length - 1; i++) {
-      if (opts.onPage) opts.onPage("正在排版第 " + (i + 2) + " / " + pg.cuts.length + " 页…");
-      var cv = sliceToCanvas(res.canvas, pg.cuts[i], pg.cuts[i + 1], pg.pw, pg.ph);
-      pdf.addPage([PDF_W_MM, PDF_H_MM], "landscape");
-      pdf.addImage(cv.toDataURL("image/jpeg", 0.86), "JPEG", 0, 0, PDF_W_MM, PDF_H_MM);
-      await new Promise(function (r) { setTimeout(r, 0); });   /* 让出主线程，长报告不卡死 */
+    for (var pg = 0; pg < pageCount; pg++) {
+      var topMm = pg * LONG_MAX_H_MM;
+      var pageHMm = Math.min(LONG_MAX_H_MM, totalMm - topMm);
+      if (pg > 0) pdf.addPage([LONG_W_MM, pageHMm], "portrait");
+
+      var y0 = Math.round(topMm / mmPerPx);
+      var y1 = Math.min(stripH, Math.round((topMm + pageHMm) / mmPerPx));
+      var cur = y0;
+      var guard = 0;
+      while (cur < y1 && guard++ < 200) {
+        var hPx = Math.min(LONG_CHUNK_PX, y1 - cur);
+        var piece = document.createElement("canvas");
+        piece.width = drawW;
+        piece.height = hPx;
+        var pc = piece.getContext("2d");
+        pc.fillStyle = C.bg;
+        pc.fillRect(0, 0, drawW, hPx);
+        pc.drawImage(src, 0, Math.round(cur / ratio), src.width,
+          Math.round(hPx / ratio), 0, 0, drawW, hPx);
+
+        if (opts.onPage) {
+          opts.onPage("正在拼装长页 " + Math.round(((cur - y0) / Math.max(1, y1 - y0)) * 100) + "%");
+        }
+        pdf.addImage(
+          piece.toDataURL("image/jpeg", 0.85), "JPEG",
+          0, (cur - y0) * mmPerPx, LONG_W_MM, hPx * mmPerPx
+        );
+        piece.width = piece.height = 0;    /* 及时释放 */
+        cur += hPx;
+        await new Promise(function (r) { setTimeout(r, 0); });   /* 让出主线程 */
+      }
     }
 
     var coverBlob = await new Promise(function (resolve) {
@@ -684,7 +732,7 @@
       pdfBlob: pdf.output("blob"),
       coverBlob: coverBlob,
       meta: trendMeta(p, now),
-      pages: pg.cuts.length,
+      pages: pageCount,
       count: res.count,
       failed: res.failed,
       canvas: res.canvas,
