@@ -474,6 +474,220 @@
       count: total, failed: failed,
       periods: p.weeks.length, cats: p.totals.cats,
       canvas: cv,
+      blocks: box.blocks,          /* 分页要用块边界，避免把卡片切两半 */
+      scale: scale,
+    };
+  }
+
+  /* ============================================================================
+   * ⑧ 收藏周报 → PDF → 趋势专区（20261030E）
+   * ----------------------------------------------------------------------------
+   * 和 ①的长图导出同源：先把同样的内容画成一张长图（复用 exportPng），
+   * 再按「块边界」切成若干 A4 横版页，所以不会把卡片拦腰切断。
+   *
+   * 这里只负责产出文件与元信息（标题 / 标签 / 简介），不碰上传 ——
+   * 上传和登记放在页面脚本里，导出模块保持无网络依赖。
+   * ==========================================================================*/
+  var PDF_W_MM = 297, PDF_H_MM = 210;
+
+  async function loadJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return true;
+    if (!window.__jsPdfLoading) {
+      window.__jsPdfLoading = new Promise(function (resolve) {
+        var s = document.createElement("script");
+        var v = (function () {
+          try {
+            var t = document.querySelector('script[src*="js/favexport.js"]');
+            var m = t && String(t.getAttribute("src") || "").match(/[?&]v=([^&]+)/);
+            return m ? m[1] : "";
+          } catch (e) { return ""; }
+        })();
+        s.src = "vendor/jspdf.umd.min.js" + (v ? "?v=" + v : "");
+        s.onload = function () { resolve(!!(window.jspdf && window.jspdf.jsPDF)); };
+        s.onerror = function () { resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+    try { await window.__jsPdfLoading; } catch (e) { /* 落到判定 */ }
+    return !!(window.jspdf && window.jspdf.jsPDF);
+  }
+
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* 封面：与长图页头同一套配色，单独成页，同时用作趋势专区的卡片图 */
+  function buildCover(p, now) {
+    var W = 1600, H = Math.round(1600 * PDF_H_MM / PDF_W_MM);
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var c = cv.getContext("2d");
+    var t = p.totals;
+
+    c.fillStyle = C.bg; c.fillRect(0, 0, W, H);
+    c.fillStyle = C.gold; c.fillRect(0, 0, W, 10);
+    c.fillStyle = "rgba(176,137,72,.10)"; c.fillRect(W * 0.66, 0, W * 0.34, H);
+
+    c.fillStyle = C.gold;
+    c.font = "600 24px " + FONT;
+    c.fillText("TREND BANK · 我的收藏", 96, 132);
+
+    c.fillStyle = C.ink;
+    c.font = "700 88px " + FONT;
+    c.fillText("收藏趋势周报", 96, 274);
+
+    var range = (p.weeks || []).map(function (w) { return w.period; })
+      .filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    var rangeTxt = range.slice(0, 5).join("　·　") + (range.length > 5 ? "　等 " + range.length + " 个期次" : "");
+    c.fillStyle = C.ink2;
+    c.font = "400 34px " + FONT;
+    c.fillText(rangeTxt || "全部期次", 96, 342);
+
+    c.fillStyle = C.ink3;
+    c.font = "400 24px " + FONT;
+    c.fillText("导出时间　" + fmtDate(now), 96, 400);
+
+    var stats = [
+      [String(t.items), "张图片"],
+      [String(t.weeks), "个期次"],
+      [String(t.cats), "个类目"],
+      ["上装 " + t.top, "下装 " + t.bottom]
+    ];
+    stats.forEach(function (s, i) {
+      var x = 96 + i * 320;
+      c.fillStyle = C.ink;
+      c.font = "700 52px " + FONT;
+      c.fillText(s[0], x, H - 200);
+      c.fillStyle = C.ink3;
+      c.font = "400 22px " + FONT;
+      c.fillText(s[1], x, H - 162);
+    });
+
+    c.fillStyle = C.ink3;
+    c.font = "400 22px " + FONT;
+    c.fillText("由「我的收藏」导出并发布至趋势专区 · 仅供内部使用 · 请勿外传", 96, H - 68);
+
+    c.fillStyle = "rgba(176,137,72,.16)";
+    c.font = "700 " + Math.round(H * 0.42) + "px " + FONT;
+    c.fillText("TB", W - 470, H - 120);
+
+    return cv;
+  }
+
+  /* 按块边界分页：每页从某个块的开头切，尽量不把一张卡片切两半 */
+  function paginate(canvas, blocks, scale) {
+    var pw = canvas.width;
+    var ph = Math.round(pw * PDF_H_MM / PDF_W_MM);
+    var total = canvas.height;
+    var bounds = (blocks || []).map(function (b) { return Math.round(num(b.y) * scale); })
+      .filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
+
+    var cuts = [0];
+    var y = 0, guard = 0;
+    while (y < total && guard++ < 400) {
+      var target = y + ph;
+      if (target >= total) { cuts.push(total); break; }
+      var best = -1;
+      for (var i = 0; i < bounds.length; i++) {
+        var v = bounds[i];
+        /* 至少占满一页的 1/3 再考虑切，否则会切出一堆很短的页 */
+        if (v > y + ph * 0.34 && v <= target) best = v;
+      }
+      var cut = best > 0 ? best : target;
+      if (cut <= y) cut = target;          /* 防死循环 */
+      cuts.push(cut);
+      y = cut;
+    }
+    if (cuts[cuts.length - 1] < total) cuts.push(total);
+    return { pw: pw, ph: ph, cuts: cuts };
+  }
+
+  function sliceToCanvas(src, y0, y1, pw, ph) {
+    var cv = document.createElement("canvas");
+    cv.width = pw; cv.height = ph;
+    var c = cv.getContext("2d");
+    c.fillStyle = C.bg; c.fillRect(0, 0, pw, ph);
+    var h = Math.min(y1 - y0, ph);
+    if (h > 0) c.drawImage(src, 0, y0, pw, h, 0, 0, pw, h);
+    return cv;
+  }
+
+  /* 元信息：标题 / 标签 / 简介都由收藏内容推导，用户不用填 */
+  function trendMeta(p, now) {
+    var t = p.totals;
+    var range = (p.weeks || []).map(function (w) { return w.period; })
+      .filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+    var title = "收藏趋势周报 " + (range.length ? (range.length > 2 ? range[0] + " 等" : range.join(" ")) + " " : "")
+      + fmtDate(now).slice(0, 10);
+    if (title.length > 60) title = title.slice(0, 60);
+
+    /* 与前台三个页签对齐：多数期次是 W 格式 → 周度；含年月 → 月度；否则归到类目 */
+    var wCount = range.filter(function (r) { return /W\d{1,2}/i.test(r); }).length;
+    var mCount = range.filter(function (r) { return /\d{4}[-年]\d{1,2}/.test(r); }).length;
+    var tag = "类目";
+    if (wCount && wCount >= mCount) tag = "周度";
+    else if (mCount) tag = "月度";
+
+    var desc = "共 " + t.items + " 张图片，" + t.weeks + " 个期次、" + t.cats + " 个类目"
+      + "（上装 " + t.top + " / 下装 " + t.bottom + "）。"
+      + "由「我的收藏」导出并发布，生成于 " + fmtDate(now) + "。";
+
+    /* 收藏通常跨类目，写死某一个类目会让前台按类目筛错位，所以留空 */
+    return { title: title, tag: tag, category: "", description: desc };
+  }
+
+  /* 收藏 → PDF（封面 + 按块分页的内页）。返回 { pdfBlob, coverBlob, meta, pages, count, failed } */
+  async function exportPdfForTrend(items, cats, opts) {
+    opts = opts || {};
+    var p = plan(items, cats);
+    if (!p.totals.items) throw new Error("没有收藏内容，先把图拖进收藏再导出。");
+
+    var okPdf = await loadJsPdf();
+    if (!okPdf) throw new Error("PDF 组件加载失败，请刷新页面重试。");
+
+    /* 长图与 ①同一套画法，保证「导出图」和「发布到专区的报告」看起来是一回事 */
+    var res = await exportPng(items, cats, {
+      scale: num(opts.scale) || 2,
+      now: opts.now,
+      onProgress: opts.onProgress,
+    });
+    var now = opts.now || new Date();
+    if (opts.onPage) opts.onPage("正在分页…");
+
+    var pg = paginate(res.canvas, res.blocks, num(opts.scale) || 2);
+    var cover = buildCover(p, now);
+
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [PDF_W_MM, PDF_H_MM] });
+    pdf.addImage(cover.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PDF_W_MM, PDF_H_MM);
+
+    for (var i = 0; i < pg.cuts.length - 1; i++) {
+      if (opts.onPage) opts.onPage("正在排版第 " + (i + 2) + " / " + pg.cuts.length + " 页…");
+      var cv = sliceToCanvas(res.canvas, pg.cuts[i], pg.cuts[i + 1], pg.pw, pg.ph);
+      pdf.addPage([PDF_W_MM, PDF_H_MM], "landscape");
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.86), "JPEG", 0, 0, PDF_W_MM, PDF_H_MM);
+      await new Promise(function (r) { setTimeout(r, 0); });   /* 让出主线程，长报告不卡死 */
+    }
+
+    var coverBlob = await new Promise(function (resolve) {
+      if (cover.toBlob) cover.toBlob(resolve, "image/png");
+      else resolve(null);
+    });
+
+    return {
+      pdfBlob: pdf.output("blob"),
+      coverBlob: coverBlob,
+      meta: trendMeta(p, now),
+      pages: pg.cuts.length,
+      count: res.count,
+      failed: res.failed,
+      canvas: res.canvas,
     };
   }
 
@@ -712,6 +926,10 @@
   NS.htmlName = htmlName;
   NS.layout = layout;
   NS.exportPng = exportPng;
+  NS.exportPdfForTrend = exportPdfForTrend;   /* 收藏 → PDF + 元信息，供页面脚本上传趋势专区 */
+  NS.loadJsPdf = loadJsPdf;
+  NS.trendMeta = trendMeta;
+  NS.paginate = paginate;
   NS.download = download;
   NS.fileName = fileName;
   NS.cancel = function () { CANCEL.v = true; };

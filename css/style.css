@@ -3836,6 +3836,10 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 .fv-btn:disabled { opacity: .45; cursor: default; }
 .fv-btn.is-on { border-color: var(--gold); background: var(--gold); color: #fff; }
 .fv-btn-on { border: 1px solid var(--gold); background: var(--gold); color: #fff; }
+/* 发布到趋势专区：写数据的操作，用实心金色和其它导出按钮区分开 */
+.fv-btn-gold { border: 1px solid var(--gold); background: var(--gold); color: #fff; font-weight: 600; }
+.fv-btn-gold:hover { border-color: var(--gold2); background: var(--gold2); color: #fff; }
+.fv-btn-gold:disabled { opacity: .55; }
 .fv-cats { display: flex; flex-direction: column; gap: 2px; }
 .fv-catrow {
   position: relative; display: flex; align-items: center; gap: 8px; width: 100%;
@@ -3869,7 +3873,7 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
 }
 .fv-bar-l { font-size: 13px; color: var(--sub); }
 .fv-bar-l b { color: var(--txt); }
-.fv-bar-r { display: flex; gap: 8px; }
+.fv-bar-r { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .fv-body { display: flex; flex-direction: column; gap: 16px; }
 
 /* ---- 周 ---- */

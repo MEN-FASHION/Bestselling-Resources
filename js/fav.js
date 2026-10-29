@@ -441,6 +441,8 @@
     if (ex && ex.getAttribute("data-busy") !== "1") ex.disabled = !ST.items.length;
     var exh = $("#fv-export-html");
     if (exh && exh.getAttribute("data-busy") !== "1") exh.disabled = !ST.items.length;
+    var exp = $("#fv-export-pdf");
+    if (exp && exp.getAttribute("data-busy") !== "1") exp.disabled = !ST.items.length;
   }
 
   /* ---------------- 地址栏记忆：刷新后停在同一分类 / 同一二分类 / 平铺展开状态 ---------------- */
@@ -605,6 +607,75 @@
       })
       .catch(function (err) {
         reset((err && err.message) ? err.message : "导出失败，请重试", 3400);
+      });
+  }
+
+  /* 发布到「趋势专区」：生成 PDF 报告 + 封面，自动带齐标题/标签/简介后上传并登记。
+     与上面两个导出不同，这一步会写数据，所以要在这里做完整的前置检查与失败提示。 */
+  function doExportPdfTrend() {
+    var btn = $("#fv-export-pdf");
+    if (!btn || btn.getAttribute("data-busy") === "1") return;
+    var label = "发布到趋势专区（PDF）";
+    function back(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, ms || 2800);
+      btn.removeAttribute("data-busy");
+    }
+    if (!window.FavExport || !FavExport.exportPdfForTrend) { back("导出组件未加载，请刷新页面", 3200); return; }
+    if (!ST.items.length) { back("还没有收藏，先把图拖进来", 2600); return; }
+    var SBx = window.SB;
+    if (!SBx || !SBx.uploadTrendFile || !SBx.addTrendRecord) { back("上传组件未加载，请刷新页面", 3200); return; }
+
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+    btn.textContent = "正在排版…";
+
+    var onProg = function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; };
+    var onPage = function (m) { btn.textContent = m; };
+
+    FavExport.exportPdfForTrend(ST.items, ST.cats, { scale: 2, onProgress: onProg, onPage: onPage })
+      .then(function (res) {
+        var m = res.meta;
+        var fname = m.title.replace(/[\\/:*?"<>|\s]+/g, "-") + ".pdf";
+        var pdfFile = new File([res.pdfBlob], fname, { type: "application/pdf" });
+        var coverFile = res.coverBlob
+          ? new File([res.coverBlob], "cover.png", { type: "image/png" })
+          : null;
+
+        btn.textContent = "正在上传…";
+        var onUp = function (p) { btn.textContent = "正在上传… " + p + "%"; };
+        var up = SBx.uploadTrendFileXHR
+          ? SBx.uploadTrendFileXHR(pdfFile, coverFile, onUp)
+          : SBx.uploadTrendFile(pdfFile, coverFile);
+
+        return up.then(function (u) {
+          btn.textContent = "正在登记…";
+          return SBx.addTrendRecord({
+            title: m.title,
+            tag: m.tag,
+            path: u.path,
+            category: m.category,
+            file_type: "pdf",
+            cover: u.cover || "",
+            description: m.description
+          }).then(function () {
+            btn.textContent = "已发布：" + m.title;
+            btn.disabled = false;
+            setTimeout(function () { btn.textContent = label; }, 4200);
+            btn.removeAttribute("data-busy");
+            toast("已发布到趋势专区：" + res.count + " 张 · " + res.pages + " 页 · " + m.tag);
+          }, function (err) {
+            /* 文件已经进存储，只是清单没写成 —— 必须讲清楚，避免重复上传 */
+            back("文件已上传，登记失败，请到后台手动补录", 5200);
+            try { console.warn(err); } catch (e) { }
+          });
+        }, function (err) {
+          var msg = (err && /未授权|权限|专区/.test(err.message || "")) ? "没有趋势专区权限，请联系超管开通" : "上传失败，请重试";
+          back(msg, 4200);
+        });
+      })
+      .catch(function (err) {
+        back((err && err.message) ? err.message : "生成失败，请重试", 3600);
       });
   }
 
@@ -809,6 +880,8 @@
     if (eb) eb.onclick = doExport;
     var eh = $("#fv-export-html");
     if (eh) eh.onclick = doExportHtml;
+    var ep = $("#fv-export-pdf");
+    if (ep) ep.onclick = doExportPdfTrend;
 
     /* 新建分类 */
     var nb = $("#fv-new"), nbox = $("#fv-newbox"), nin = $("#fv-newname");
