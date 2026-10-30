@@ -2553,7 +2553,7 @@ async removeTrendRecord(id) {
       const PAGE = 1000, MAX = 20000;
       const out = [];
       for (let from = 0; from < MAX; from += PAGE) {
-        let q = client.from("movement_items").select("id,image_url,path,category,batch_id,created_at,title")
+        let q = client.from("movement_items").select("id,image_url,path,category,batch_id,created_at,title,season_year,season")
           .order("id", { ascending: false }).range(from, from + PAGE - 1);
         if (category) q = q.eq("category", category);
         const { data, error } = await q;
@@ -2565,9 +2565,13 @@ async removeTrendRecord(id) {
       return out;
     },
     /* 批量上传：逐个传 R2 拿 path，再一次性写入 movement_items。
-       失败不中断其余图片，返回每一张的结果，界面据此提示。 */
-    async uploadMovementImages(files, category, onProgress) {
+       失败不中断其余图片，返回每一张的结果，界面据此提示。
+       opts.seasonYear / opts.season：发布会年度与季节（可选，整批统一带上）。 */
+    async uploadMovementImages(files, category, onProgress, opts) {
       const list = Array.from(files || []);
+      const o = opts || {};
+      const seasonYear = Number(o.seasonYear) > 0 ? Number(o.seasonYear) : 0;
+      const season = String(o.season || "").trim();
       const ok = [], bad = [];
       for (let i = 0; i < list.length; i++) {
         const f = list[i];
@@ -2576,6 +2580,7 @@ async removeTrendRecord(id) {
           const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
           const { error } = await client.from("movement_items").insert({
             image_url: url, path: path, category: category || "", title: (f.name || "").replace(/\.[^.]+$/, ""),
+            season_year: seasonYear, season: season,
           });
           if (error) throw new Error(error.message || "写入失败");
           ok.push({ name: f.name, url: url });
@@ -2585,6 +2590,34 @@ async removeTrendRecord(id) {
         if (typeof onProgress === "function") onProgress(i + 1, list.length);
       }
       return { ok: ok, failed: bad };
+    },
+    /* 补设/修改单张图的发布会年度与季节 */
+    async setMovementSeason(id, seasonYear, season) {
+      const y = Number(seasonYear) > 0 ? Number(seasonYear) : 0;
+      const s = String(season || "").trim();
+      const { error } = await client.from("movement_items")
+        .update({ season_year: y, season: s }).eq("id", id);
+      if (error) throw new Error(error.message || "保存发布会信息失败");
+    },
+    /* 前台标签可见性：{ 维度键: false } 表示前台不展示该维度。
+       配置表尚未建（补丁没跑）时返回空对象，前台按"全部展示"处理，不报错。 */
+    async getMovementTagVisibility() {
+      try {
+        const { data, error } = await client.from("movement_settings")
+          .select("tag_visibility").eq("id", 1).maybeSingle();
+        if (error || !data || !data.tag_visibility || typeof data.tag_visibility !== "object") return {};
+        const out = {};
+        Object.keys(data.tag_visibility).forEach((k) => { out[k] = data.tag_visibility[k] !== false; });
+        return out;
+      } catch (e) { return {}; }
+    },
+    async setMovementTagVisibility(map) {
+      const clean = {};
+      Object.keys(map || {}).forEach((k) => { clean[k] = map[k] !== false; });
+      const { error } = await client.from("movement_settings")
+        .upsert({ id: 1, tag_visibility: clean, updated_at: new Date().toISOString() }, { onConflict: "id" });
+      if (error) throw new Error(error.message || "保存可见性失败");
+      return clean;
     },
     async deleteMovementItem(id) {
       const { error } = await client.from("movement_items").delete().eq("id", id);

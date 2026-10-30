@@ -6212,3 +6212,52 @@ html, body{
   .mv-modal-left { max-height: 42vh; }
   .mv-modal-left img { max-height: 42vh; }
 }
+
+/* ============================================================
+   趋势动向 · 发布会年度/季节 + 前台标签可见性（20261030J）
+   ============================================================ */
+
+/* 上传栏的年度/季节窄一点，别把「选择图片」挤走 */
+.mv-field select { min-width: 96px; }
+
+/* 缩略图左上角的年度季节徽标 */
+.mv-season-badge {
+  position: absolute; left: 6px; top: 6px; z-index: 2;
+  padding: 2px 7px; border-radius: 999px;
+  font-size: 11px; line-height: 1.5; white-space: nowrap;
+  color: #fff; background: rgba(17, 24, 39, .72);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.mv-card-img, .gthumb { position: relative; }
+
+/* 前台侧栏的年度/季节筛选 */
+.mv-filters {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 0 10px 10px;
+}
+.mv-filters .input { width: 100%; font-size: 12px; padding: 5px 8px; }
+
+/* 大图面板顶部：年度/季节下拉 */
+.mv-tag-season { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mv-tag-season .input { font-size: 12px; padding: 4px 8px; min-width: 84px; }
+
+/* 前台可见性弹窗 */
+.mv-vis-modal { width: min(560px, 94vw); max-height: 86vh; display: flex; flex-direction: column; }
+.mv-vis-list { padding: 8px 18px; overflow: auto; flex: 1 1 auto; }
+.mv-vis-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.mv-vis-row:hover { background: #f7f9fc; border-color: #e6ebf2; }
+.mv-vis-name { flex: 1 1 auto; font-size: 13px; color: #1f2937; }
+.mv-vis-state { flex: none; font-size: 12px; color: #16a34a; }
+.mv-vis-row.is-off .mv-vis-name { color: #9aa4b2; }
+.mv-vis-row.is-off .mv-vis-state { color: #9aa4b2; }
+.mv-vis-row input { width: 16px; height: 16px; flex: none; cursor: pointer; }
+
+@media (max-width: 680px) {
+  .mv-tag-season { width: 100%; margin-left: 0; }
+  .mv-tag-season .input { flex: 1 1 0; min-width: 0; }
+}

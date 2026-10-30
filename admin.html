@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261030I">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261030I">
+<link rel="stylesheet" href="css/style.css?v=20261030J">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261030J">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -1329,6 +1329,14 @@
             <span>上传类目</span>
             <select id="mv-upload-cat" class="input"></select>
           </label>
+          <label class="mv-field">
+            <span>发布会年度</span>
+            <select id="mv-upload-year" class="input"></select>
+          </label>
+          <label class="mv-field">
+            <span>季节</span>
+            <select id="mv-upload-season" class="input"></select>
+          </label>
           <button id="mv-pick-btn" class="btn-primary" type="button">选择图片（可多选）</button>
           <button id="mv-upload-btn" class="btn-primary" type="button" disabled>上传（0）</button>
           <button id="mv-clear-btn" class="btn-ghost" type="button">清空待传</button>
@@ -1343,7 +1351,10 @@
       <div class="mv-toolbar">
         <span id="mv-count" class="hint-inline">加载中…</span>
         <select id="mv-filter-cat" class="input"><option value="">全部类目</option></select>
+        <select id="mv-filter-year" class="input"><option value="">全部年度</option></select>
+        <select id="mv-filter-season" class="input"><option value="">全部季节</option></select>
         <button id="mv-refresh" class="btn-ghost" type="button">刷新</button>
+        <button id="mv-vis-btn" class="btn-ghost" type="button">前台可见标签</button>
         <button id="mv-export-btn" class="btn-ghost" type="button">导出打标表</button>
         <button id="mv-import-btn" class="btn-ghost" type="button">导入打标表</button>
         <input type="file" id="mv-import-file" accept=".xlsx,.xls" hidden>
@@ -1368,6 +1379,10 @@
         <div class="mv-tag-head">
           <h3>趋势动向 · 打标</h3>
           <span id="mv-tag-title" class="hint-inline"></span>
+          <span class="mv-tag-season">
+            <select id="mv-tag-year" class="input"></select>
+            <select id="mv-tag-season" class="input"></select>
+          </span>
         </div>
         <div class="mv-tag-body">
           <div class="mv-tag-img"><img id="mv-tag-img" alt=""></div>
@@ -1377,6 +1392,23 @@
           <button id="mv-tag-save" class="btn-primary" type="button">保存</button>
           <button id="mv-tag-del" class="btn-danger" type="button">删除这张图</button>
           <button id="mv-tag-close" class="btn-ghost" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 趋势动向 · 前台标签可见性：逐维度开关，只影响前台展示 -->
+    <div id="mv-vis-modal" class="modal-mask hidden">
+      <div class="modal mv-vis-modal">
+        <div class="mv-tag-head">
+          <h3>前台可见标签</h3>
+          <span class="hint-inline">关掉后，该维度只留在后台，前台大图里不显示</span>
+        </div>
+        <div id="mv-vis-list" class="mv-vis-list"></div>
+        <div class="mtag-actions">
+          <button id="mv-vis-save" class="btn-primary" type="button">保存</button>
+          <button id="mv-vis-all" class="btn-ghost" type="button">全部展示</button>
+          <button id="mv-vis-close" class="btn-ghost" type="button">关闭</button>
+          <span id="mv-vis-msg" class="hint-inline"></span>
         </div>
       </div>
     </div>
@@ -1570,39 +1602,39 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261030I"></script>
-  <script src="vendor/quill.js?v=20261030I"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261030I"></script>
-  <script src="vendor/jszip.min.js?v=20261030I"></script>
-  <script src="vendor/qrcode.min.js?v=20261030I"></script>
-  <script src="js/config.js?v=20261030I"></script>
-  <script src="js/supabase.js?v=20261030I"></script>
-  <script src="js/track-menu.js?v=20261030I"></script>
+  <script src="vendor/supabase.js?v=20261030J"></script>
+  <script src="vendor/quill.js?v=20261030J"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261030J"></script>
+  <script src="vendor/jszip.min.js?v=20261030J"></script>
+  <script src="vendor/qrcode.min.js?v=20261030J"></script>
+  <script src="js/config.js?v=20261030J"></script>
+  <script src="js/supabase.js?v=20261030J"></script>
+  <script src="js/track-menu.js?v=20261030J"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261030I"></script>
-  <script src="js/admin.js?v=20261030I"></script>
-  <script src="js/admin-images.js?v=20261030I"></script>
-  <script src="js/rank-enums.js?v=20261030I"></script>
-  <script src="js/imageexport.js?v=20261030I"></script>
-  <script src="js/admin-imageimport.js?v=20261030I"></script>
-  <script src="js/admin-movement.js?v=20261030I"></script>
-  <script src="js/admin-smart.js?v=20261030I"></script>
-  <script src="js/admin-trend.js?v=20261030I"></script>
-  <script src="js/admin-notice.js?v=20261030I"></script>
-  <script src="js/marketing-data.js?v=20261030I"></script>
-  <script src="js/admin-festival.js?v=20261030I"></script>
-  <script src="js/admin-tasks.js?v=20261030I"></script>
-  <script src="js/admin-bestseller.js?v=20261030I"></script>
-  <script src="js/admin-perm.js?v=20261030I"></script>
-  <script src="js/admin-pool.js?v=20261030I"></script>
-  <script src="js/rankexport.js?v=20261030I"></script>
-  <script src="js/admin-rankimport.js?v=20261030I"></script>
-  <script src="js/admin-rank.js?v=20261030I"></script>
-  <script src="js/plus-sb.js?v=20261030I"></script>
-  <script src="js/plus-match.js?v=20261030I"></script>
-  <script src="js/admin-plus.js?v=20261030I"></script>
-  <script src="js/admin-insight.js?v=20261030I"></script>
-  <script src="js/admin-backup.js?v=20261030I"></script>
+  <script src="js/admin-dialog.js?v=20261030J"></script>
+  <script src="js/admin.js?v=20261030J"></script>
+  <script src="js/admin-images.js?v=20261030J"></script>
+  <script src="js/rank-enums.js?v=20261030J"></script>
+  <script src="js/imageexport.js?v=20261030J"></script>
+  <script src="js/admin-imageimport.js?v=20261030J"></script>
+  <script src="js/admin-movement.js?v=20261030J"></script>
+  <script src="js/admin-smart.js?v=20261030J"></script>
+  <script src="js/admin-trend.js?v=20261030J"></script>
+  <script src="js/admin-notice.js?v=20261030J"></script>
+  <script src="js/marketing-data.js?v=20261030J"></script>
+  <script src="js/admin-festival.js?v=20261030J"></script>
+  <script src="js/admin-tasks.js?v=20261030J"></script>
+  <script src="js/admin-bestseller.js?v=20261030J"></script>
+  <script src="js/admin-perm.js?v=20261030J"></script>
+  <script src="js/admin-pool.js?v=20261030J"></script>
+  <script src="js/rankexport.js?v=20261030J"></script>
+  <script src="js/admin-rankimport.js?v=20261030J"></script>
+  <script src="js/admin-rank.js?v=20261030J"></script>
+  <script src="js/plus-sb.js?v=20261030J"></script>
+  <script src="js/plus-match.js?v=20261030J"></script>
+  <script src="js/admin-plus.js?v=20261030J"></script>
+  <script src="js/admin-insight.js?v=20261030J"></script>
+  <script src="js/admin-backup.js?v=20261030J"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

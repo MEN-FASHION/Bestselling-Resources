@@ -22,9 +22,24 @@
     tagMap: {},         // url -> 打标记录
     pending: [],        // 待上传文件
     curCat: "",         // 当前类目筛选
+    curYear: "",        // 当前年度筛选（空 = 不限）
+    curSeason: "",      // 当前季节筛选（空 = 不限）
     curId: null,        // 打标面板当前图片 id
+    vis: {},            // 前台标签可见性：{ 维度键: false } 表示前台不展示
     ready: false,
   };
+
+  /* 发布会季节：固定四选一，与后台标签枚举同口径 */
+  var SEASONS = ["春", "夏", "秋", "冬"];
+  var SEASON_ALL = ["", "春", "夏", "秋", "冬"];
+
+  /* 年度区间：当前年份前后各留几年，够用且不用手输 */
+  function yearOptions() {
+    var now = new Date().getFullYear();
+    var out = [];
+    for (var y = now + 1; y >= now - 6; y--) out.push(y);
+    return out;
+  }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -103,21 +118,101 @@
       try { state.tagMap = await SB.listMovementTags(urls); } catch (e) { state.tagMap = {}; }
     }
     state.ready = true;
+    fillSeasonSelects();
     renderMenu();
     renderGrid();
     renderCount();
     say("");
   }
 
+  /* 同时应用类目、年度、季节三个筛选；三者都为空即全部 */
+  function filteredItems() {
+    return state.items.filter(function (r) {
+      if (state.curCat && (r.category || "未分类") !== state.curCat) return false;
+      if (state.curYear && String(Number(r.season_year) || 0) !== String(state.curYear)) return false;
+      if (state.curSeason && String(r.season || "") !== state.curSeason) return false;
+      return true;
+    });
+  }
+
+  function seasonLabel(r) {
+    var y = Number(r.season_year) || 0;
+    var s = String(r.season || "").trim();
+    if (!y && !s) return "";
+    if (y && s) return y + " " + s;
+    return y ? (y + " 年") : s;
+  }
+
+  /* 年度 / 季节下拉：上传、筛选、打标面板三处共用同一份选项 */
+  function fillSeasonSelects() {
+    var years = yearOptions();
+    /* 上传（带「不设」） */
+    var uy = document.getElementById("mv-upload-year");
+    if (uy) {
+      var keepU = uy.value;
+      uy.innerHTML = "";
+      uy.add(new Option("不指定", "0"));
+      years.forEach(function (y) { uy.add(new Option(y + " 年", String(y))); });
+      uy.value = keepU || "0";
+      if (!uy.value) uy.value = "0";
+    }
+    var us = document.getElementById("mv-upload-season");
+    if (us) {
+      var keepS = us.value;
+      us.innerHTML = "";
+      us.add(new Option("不指定", ""));
+      SEASONS.forEach(function (s) { us.add(new Option(s, s)); });
+      us.value = keepS || "";
+    }
+    /* 筛选（带「全部」） */
+    var fy = document.getElementById("mv-filter-year");
+    if (fy) {
+      var curF = state.curYear;
+      fy.innerHTML = "";
+      fy.add(new Option("全部年度", ""));
+      years.forEach(function (y) { fy.add(new Option(y + " 年", String(y))); });
+      /* 库里可能有更早的年度，补进选项，避免筛不到 */
+      var extra = {};
+      state.items.forEach(function (r) { if (Number(r.season_year) > 0) extra[Number(r.season_year)] = 1; });
+      Object.keys(extra).map(Number).sort(function (a, b) { return b - a; }).forEach(function (y) {
+        if (years.indexOf(y) < 0) fy.add(new Option(y + " 年", String(y)));
+      });
+      fy.value = curF;
+      if (!fy.value && curF) fy.value = curF;
+    }
+    var fs = document.getElementById("mv-filter-season");
+    if (fs) {
+      var curFS = state.curSeason;
+      fs.innerHTML = "";
+      fs.add(new Option("全部季节", ""));
+      SEASONS.forEach(function (s) { fs.add(new Option(s, s)); });
+      fs.value = curFS;
+    }
+    /* 打标面板 */
+    var ty = document.getElementById("mv-tag-year");
+    if (ty) {
+      ty.innerHTML = "";
+      ty.add(new Option("不指定", "0"));
+      years.forEach(function (y) { ty.add(new Option(y + " 年", String(y))); });
+    }
+    var ts = document.getElementById("mv-tag-season");
+    if (ts) {
+      ts.innerHTML = "";
+      ts.add(new Option("不指定", ""));
+      SEASONS.forEach(function (s) { ts.add(new Option(s, s)); });
+    }
+  }
+
   function renderCount() {
     var el = document.getElementById("mv-count");
     if (!el) return;
-    var n = state.items.length;
-    var done = state.items.filter(function (r) {
+    var list = filteredItems();
+    var done = list.filter(function (r) {
       var t = state.tagMap[r.image_url] || {};
       return DIMS.some(function (d) { return (t[d.key] || []).length; });
     }).length;
-    el.textContent = n + " 张，已打标 " + done + " 张";
+    var tail = (state.curYear || state.curSeason) ? "（筛选后）" : "";
+    el.textContent = list.length + " 张，已打标 " + done + " 张" + tail;
   }
 
   function renderMenu() {
@@ -150,18 +245,25 @@
     var empty = document.getElementById("mv-empty");
     if (!box) return;
     box.innerHTML = "";
-    if (!state.items.length) {
-      if (empty) empty.classList.remove("hidden");
+    var list = filteredItems();
+    if (!list.length) {
+      if (empty) {
+        empty.classList.remove("hidden");
+        empty.textContent = state.items.length ? "当前筛选下没有图片" : "暂无图片";
+      }
       return;
     }
     if (empty) empty.classList.add("hidden");
-    state.items.forEach(function (r) {
+    list.forEach(function (r) {
       var t = state.tagMap[r.image_url] || {};
       var filled = DIMS.filter(function (d) { return (t[d.key] || []).length; }).length;
+      var sea = seasonLabel(r);
       var card = document.createElement("div");
       card.className = "gcard";
       card.innerHTML =
-        '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt=""></div>' +
+        '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
+        (sea ? '<span class="mv-season-badge">' + esc(sea) + "</span>" : "") +
+        "</div>" +
         '<div class="gmeta">' +
         '<div class="gname">' + esc((r.title || "").slice(0, 40) || "—") + "</div>" +
         '<div class="gsub">' + esc(r.category || "未分类") +
@@ -249,11 +351,16 @@
     if (btn) btn.disabled = true;
     if (prog) prog.classList.remove("hidden");
     var files = state.pending.slice();
+    /* 发布会年度/季节：整批统一带上，上传时指定一次，省得逐张补 */
+    var yEl = document.getElementById("mv-upload-year");
+    var sEl = document.getElementById("mv-upload-season");
+    var seasonYear = yEl ? Number(yEl.value) || 0 : 0;
+    var season = sEl ? String(sEl.value || "") : "";
     try {
       var res = await SB.uploadMovementImages(files, cat, function (done, total) {
         if (bar) bar.style.width = Math.round(done / total * 100) + "%";
         say("上传中 " + done + "/" + total);
-      });
+      }, { seasonYear: seasonYear, season: season });
       state.pending = [];
       renderPending();
       say("已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));
@@ -279,9 +386,36 @@
     if (img) img.src = item.image_url;
     var tt = document.getElementById("mv-tag-title");
     if (tt) tt.textContent = (item.title || item.category || "") + " · " + (item.image_url || "").split("/").pop();
+    /* 发布会年度 / 季节：下拉直接回填当前值，改动即保存 */
+    var ty = document.getElementById("mv-tag-year");
+    if (ty) ty.value = String(Number(item.season_year) || 0);
+    var ts = document.getElementById("mv-tag-season");
+    if (ts) ts.value = String(item.season || "");
     renderDims(item);
     var m = document.getElementById("mv-tag-modal");
     if (m) m.classList.remove("hidden");
+  }
+
+  /* 在大图面板里改年度/季节：改完立刻落库，不依赖「保存」按钮 */
+  async function saveSeasonQuick() {
+    var item = curItem();
+    var SB = SBx();
+    if (!item || !SB) return;
+    var ty = document.getElementById("mv-tag-year");
+    var ts = document.getElementById("mv-tag-season");
+    var y = ty ? Number(ty.value) || 0 : 0;
+    var s = ts ? String(ts.value || "") : "";
+    try {
+      await SB.setMovementSeason(item.id, y, s);
+      item.season_year = y;
+      item.season = s;
+      renderGrid();
+      renderCount();
+      fillSeasonSelects();
+      toast("已保存：" + (seasonLabel(item) || "未指定"), true);
+    } catch (e) {
+      toast("保存失败：" + ((e && e.message) || "未知错误"), false);
+    }
   }
   function closeTag() {
     var m = document.getElementById("mv-tag-modal");
@@ -502,6 +636,71 @@
     };
   }
 
+  /* ---------- 前台标签可见性 ---------- */
+  /* 只控制前台大图里显不显示某个维度，后台打标与导入导出完全不受影响 */
+  async function loadVis() {
+    var SB = SBx();
+    if (!SB) return;
+    try { state.vis = (await SB.getMovementTagVisibility()) || {}; }
+    catch (e) { state.vis = {}; }
+  }
+  function isVis(key) { return state.vis[key] !== false; }
+
+  function renderVisList() {
+    var box = document.getElementById("mv-vis-list");
+    if (!box) return;
+    box.innerHTML = "";
+    DIMS.forEach(function (d) {
+      var on = isVis(d.key);
+      var row = document.createElement("label");
+      row.className = "mv-vis-row" + (on ? "" : " is-off");
+      row.innerHTML =
+        '<span class="mv-vis-name">' + esc(d.label) + "</span>" +
+        '<input type="checkbox" data-key="' + esc(d.key) + '"' + (on ? " checked" : "") + ">" +
+        '<span class="mv-vis-state">' + (on ? "前台可见" : "仅后台") + "</span>";
+      var cb = row.querySelector("input");
+      cb.onchange = function () {
+        state.vis[d.key] = cb.checked;
+        row.className = "mv-vis-row" + (cb.checked ? "" : " is-off");
+        var st = row.querySelector(".mv-vis-state");
+        if (st) st.textContent = cb.checked ? "前台可见" : "仅后台";
+      };
+      box.appendChild(row);
+    });
+  }
+
+  async function openVis() {
+    await loadVis();
+    renderVisList();
+    var msg = document.getElementById("mv-vis-msg");
+    if (msg) msg.textContent = "";
+    var m = document.getElementById("mv-vis-modal");
+    if (m) m.classList.remove("hidden");
+  }
+  function closeVis() {
+    var m = document.getElementById("mv-vis-modal");
+    if (m) m.classList.add("hidden");
+  }
+  async function saveVis() {
+    var SB = SBx();
+    if (!SB) return;
+    var map = {};
+    DIMS.forEach(function (d) { map[d.key] = isVis(d.key); });
+    var msg = document.getElementById("mv-vis-msg");
+    try {
+      state.vis = await SB.setMovementTagVisibility(map);
+      if (msg) msg.textContent = "已保存 " + new Date().toLocaleTimeString();
+      toast("前台可见性已保存", true);
+    } catch (e) {
+      if (msg) msg.textContent = "保存失败";
+      toast("保存失败：" + ((e && e.message) || "未知错误"), false);
+    }
+  }
+  function showAllVis() {
+    DIMS.forEach(function (d) { state.vis[d.key] = true; });
+    renderVisList();
+  }
+
   /* ---------- 初始化 ---------- */
   function fillCatSelects() {
     var opts = (window.CONFIG && window.CONFIG.CATEGORY_OPTIONS) || [];
@@ -521,10 +720,30 @@
   function init() {
     if (!document.getElementById("movement-card")) return;
     fillCatSelects();
+    fillSeasonSelects();
     bindUpload();
     bindImport();
     var ref = document.getElementById("mv-refresh");
     if (ref) ref.onclick = loadAll;
+    /* 年度 / 季节筛选 */
+    var fy = document.getElementById("mv-filter-year");
+    if (fy) fy.onchange = function () { state.curYear = fy.value || ""; renderGrid(); renderCount(); };
+    var fs = document.getElementById("mv-filter-season");
+    if (fs) fs.onchange = function () { state.curSeason = fs.value || ""; renderGrid(); renderCount(); };
+    /* 大图面板里改发布会信息：改完即存 */
+    var ty = document.getElementById("mv-tag-year");
+    if (ty) ty.onchange = saveSeasonQuick;
+    var ts = document.getElementById("mv-tag-season");
+    if (ts) ts.onchange = saveSeasonQuick;
+    /* 前台标签可见性 */
+    var vb = document.getElementById("mv-vis-btn");
+    if (vb) vb.onclick = openVis;
+    var vs = document.getElementById("mv-vis-save");
+    if (vs) vs.onclick = saveVis;
+    var va = document.getElementById("mv-vis-all");
+    if (va) va.onclick = showAllVis;
+    var vc = document.getElementById("mv-vis-close");
+    if (vc) vc.onclick = closeVis;
     var ex = document.getElementById("mv-export-btn");
     if (ex) ex.onclick = doExport;
     var sv = document.getElementById("mv-tag-save");
