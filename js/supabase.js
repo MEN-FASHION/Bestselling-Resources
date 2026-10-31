@@ -2633,6 +2633,172 @@ async removeTrendRecord(id) {
     async listMovementTags(urls) {
       return this.listRankTagRows(urls);
     },
+
+    /* ============================================================
+     * 渠道雷达 · 渠道对比（20261031A）
+     * ------------------------------------------------------------
+     * 与「趋势上升榜」同构，但对比维度是「渠道（平台）」而不是周次：
+     *   渠道字典 → channel_sites（后台增删改排序，前台按它出列）
+     *   图片本体 → channel_items（类目 + 渠道 + 周次）
+     *   打标数据 → rank_image_tags（与榜单、趋势动向共用同一张表）
+     * ============================================================ */
+    async listChannelSites(onlyActive) {
+      let q = client.from("channel_sites").select("id,name,sort_order,active")
+        .order("sort_order", { ascending: true }).order("name", { ascending: true });
+      if (onlyActive) q = q.eq("active", true);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message || "读取渠道失败（补丁是否已执行？）");
+      return data || [];
+    },
+    async addChannelSite(name) {
+      const n = String(name || "").trim();
+      if (!n) throw new Error("渠道名称不能为空");
+      /* 新渠道排在最后：取现有最大排序 +10，避免插到最前面打乱运营顺序 */
+      let maxSort = 0;
+      try {
+        const list = await this.listChannelSites();
+        list.forEach((r) => { if (Number(r.sort_order) > maxSort) maxSort = Number(r.sort_order); });
+      } catch (e) { maxSort = 0; }
+      const { error } = await client.from("channel_sites").insert({ name: n, sort_order: maxSort + 10 });
+      if (error) throw new Error(/duplicate|unique/i.test(error.message || "") ? "这个渠道已经存在" : (error.message || "新增失败"));
+      return n;
+    },
+    /* 改名要连带把图片上的渠道名一起改，否则那一列会凭空消失变成"未分渠道" */
+    async renameChannelSite(id, oldName, newName) {
+      const n = String(newName || "").trim();
+      if (!n) throw new Error("渠道名称不能为空");
+      const { error } = await client.from("channel_sites").update({ name: n }).eq("id", id);
+      if (error) throw new Error(/duplicate|unique/i.test(error.message || "") ? "这个渠道名称已存在" : (error.message || "改名失败"));
+      const old = String(oldName || "").trim();
+      if (old && old !== n) {
+        await client.from("channel_items").update({ channel: n }).eq("channel", old);
+      }
+      return n;
+    },
+    /* 删渠道只删字典，不删图片：图片还在，归到"未分渠道"可以再改回来 */
+    async deleteChannelSite(id) {
+      const { error } = await client.from("channel_sites").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+    async reorderChannelSite(id, sortOrder) {
+      const { error } = await client.from("channel_sites")
+        .update({ sort_order: Number(sortOrder) || 0 }).eq("id", id);
+      if (error) throw new Error(error.message || "排序保存失败");
+    },
+    async setChannelSiteActive(id, active) {
+      const { error } = await client.from("channel_sites").update({ active: !!active }).eq("id", id);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+    /* 图片清单：三个筛选都可选；分页读，最多 2 万张（与趋势动向同量级） */
+    async listChannelItems(filter) {
+      const f = filter || {};
+      const PAGE = 1000, MAX = 20000;
+      const out = [];
+      for (let from = 0; from < MAX; from += PAGE) {
+        let q = client.from("channel_items")
+          .select("id,image_url,path,category,channel,week_label,week_sort,batch_id,created_at,title")
+          .order("week_sort", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (f.category) q = q.eq("category", f.category);
+        if (f.channel) q = q.eq("channel", f.channel);
+        if (f.weekLabel) q = q.eq("week_label", f.weekLabel);
+        const { data, error } = await q;
+        if (error) throw new Error(error.message || "读取渠道图片失败（补丁是否已执行？）");
+        const rows = data || [];
+        rows.forEach((r) => out.push(r));
+        if (rows.length < PAGE) break;
+      }
+      return out;
+    },
+    /* 批量上传：逐张传 R2 拿 path，再写入 channel_items。
+       渠道 / 类目 / 周次 为一整批统一坐标（运营就是按这个粒度上传的）。 */
+    /* 批量上传渠道雷达图片
+       每一项可以是裸 File（此时用 opts 里的公共坐标），也可以是
+       {file, category, channel, weekLabel, weekSort} —— 一批图里各张的类目/渠道/周次
+       可以各不相同（一次从多个类目、多个渠道、多个周次混着传）。 */
+    async uploadChannelImages(items, opts, onProgress) {
+      const o = opts || {};
+      const dCat = String(o.category || "").trim();
+      const dChn = String(o.channel || "").trim();
+      const dLab = String(o.weekLabel || "").trim();
+      const dSort = Number(o.weekSort) || 0;
+      const list = Array.from(items || []).map((it) => {
+        const f = (it && it.file) ? it.file : it;
+        return {
+          file: f,
+          category: String((it && it.category != null ? it.category : dCat) || "").trim(),
+          channel: String((it && it.channel != null ? it.channel : dChn) || "").trim(),
+          weekLabel: String((it && it.weekLabel != null ? it.weekLabel : dLab) || "").trim(),
+          weekSort: Number((it && it.weekSort != null ? it.weekSort : dSort)) || 0,
+        };
+      });
+      const batchId = "ch-" + Date.now().toString(36);
+      const ok = [], bad = [];
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i];
+        const f = it.file;
+        try {
+          if (!it.category) throw new Error("缺少类目");
+          if (!it.channel) throw new Error("缺少渠道");
+          if (!it.weekLabel) throw new Error("缺少周次");
+          const path = await this.uploadImage(f, it.category || "渠道雷达");
+          const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
+          const { error } = await client.from("channel_items").insert({
+            image_url: url, path: path, category: it.category, channel: it.channel,
+            week_label: it.weekLabel, week_sort: it.weekSort,
+            title: (f.name || "").replace(/\.[^.]+$/, ""), batch_id: batchId,
+          });
+          if (error) throw new Error(error.message || "写入失败");
+          ok.push({ name: f.name, url: url, category: it.category, channel: it.channel, weekLabel: it.weekLabel });
+        } catch (e) {
+          bad.push({ name: f.name, reason: String((e && e.message) || e) });
+        }
+        if (typeof onProgress === "function") onProgress(i + 1, list.length);
+      }
+      return { ok: ok, failed: bad, batchId: batchId };
+    },
+    /* 单张改渠道 / 周次（传错了不用删了重传） */
+    async setChannelItemMeta(id, patch) {
+      const o = {};
+      if (patch && patch.channel !== undefined) o.channel = String(patch.channel || "").trim();
+      if (patch && patch.weekLabel !== undefined) o.week_label = String(patch.weekLabel || "").trim();
+      if (patch && patch.weekSort !== undefined) o.week_sort = Number(patch.weekSort) || 0;
+      if (!Object.keys(o).length) return;
+      const { error } = await client.from("channel_items").update(o).eq("id", id);
+      if (error) throw new Error(error.message || "保存失败");
+    },
+    async deleteChannelItem(id) {
+      const { error } = await client.from("channel_items").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+    async saveChannelTags(url, patch) {
+      const u = String(url || "").trim();
+      if (!u) throw new Error("缺少图片地址");
+      return this._upsertTagsByUrl([{ url: u, patch: patch || {} }]);
+    },
+    async listChannelTags(urls) {
+      return this.listRankTagRows(urls);
+    },
+    async getChannelTagVisibility() {
+      try {
+        const { data, error } = await client.from("channel_settings")
+          .select("tag_visibility").eq("id", 1).maybeSingle();
+        if (error || !data || !data.tag_visibility || typeof data.tag_visibility !== "object") return {};
+        const out = {};
+        Object.keys(data.tag_visibility).forEach((k) => { out[k] = data.tag_visibility[k] !== false; });
+        return out;
+      } catch (e) { return {}; }
+    },
+    async setChannelTagVisibility(map) {
+      const clean = {};
+      Object.keys(map || {}).forEach((k) => { clean[k] = map[k] !== false; });
+      const { error } = await client.from("channel_settings")
+        .upsert({ id: 1, tag_visibility: clean, updated_at: new Date().toISOString() }, { onConflict: "id" });
+      if (error) throw new Error(error.message || "保存可见性失败");
+      return clean;
+    },
+
     /* 探测打标表的可选维度列是否存在。
        用途：节日/文化/心理这些列是分批补丁加的，某个补丁没执行时，
        读取会静默降级、页面只是"少一栏"，用户完全看不出原因。

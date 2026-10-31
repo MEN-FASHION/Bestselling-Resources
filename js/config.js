@@ -124,6 +124,7 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
   { key: "fav",           label: "我的收藏",     href: "fav.html" },
   { key: "movement",      label: "趋势动向",     href: "movement.html" },
+  { key: "channel",       label: "渠道雷达",     href: "channel.html" },
   { key: "notice",        label: "公告",        href: "" }
 ];
 

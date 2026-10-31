@@ -1,0 +1,169 @@
+/* ============================================================
+ * channel.css —— 渠道雷达 · 渠道对比（前台 + 后台面板）
+ * 与全站 style.css 的暖白/暖棕基调一致，只补这一个专区需要的零件。
+ * 单独一份而不是继续往 36 万行的 style.css 里塞，方便以后单独改。
+ * ============================================================ */
+
+/* ---------- 1. 顶部筛选条 ---------- */
+.ch-filter {
+  position: relative;
+  margin: 0 0 10px;
+  padding: 12px 14px 10px;
+  background:
+    radial-gradient(680px 160px at 12% -40%, rgba(139,115,85,.075), transparent 70%),
+    radial-gradient(520px 140px at 92% 130%, rgba(139,115,85,.05), transparent 70%),
+    var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+/* 细横纹底：远看是纸纹，近看才发觉，用作"雷达扫描区"的暗示 */
+.ch-filter::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(0deg, rgba(139,115,85,.045) 0 1px, transparent 1px 7px);
+  opacity: .5; pointer-events: none; border-radius: 12px;
+}
+.ch-filter > * { position: relative; z-index: 1; }
+
+.ch-fg { display: flex; align-items: flex-start; gap: 10px; }
+.ch-fg + .ch-fg { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(139,115,85,.16); }
+.ch-fg-name {
+  flex: 0 0 auto; min-width: 40px; padding-top: 5px;
+  font-size: 11.5px; letter-spacing: 2px; color: var(--sub); text-transform: uppercase;
+}
+.ch-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ch-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+  background: #fff; color: var(--txt); font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: border-color .16s, background .16s, color .16s, transform .12s;
+}
+.ch-chip:hover { border-color: var(--gold2); transform: translateY(-1px); }
+.ch-chip .ch-chip-n { font-size: 10.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.ch-chip.is-on {
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  border-color: transparent; color: #fff; font-weight: 600;
+}
+.ch-chip.is-on .ch-chip-n { color: rgba(255,255,255,.8); }
+.ch-chip.is-empty { opacity: .45; }
+.ch-chip.is-empty.is-on { opacity: .8; }
+
+.ch-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.ch-mini {
+  padding: 4px 10px; border: 1px dashed var(--line); border-radius: 999px;
+  background: transparent; color: var(--sub); font: inherit; font-size: 11.5px; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.ch-mini:hover { color: var(--gold); border-color: var(--gold2); }
+.ch-select { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
+
+/* ---------- 2. 对比池（列 = 渠道） ---------- */
+#ch-view .rk-body { display: block; height: auto; min-height: 0; }
+#ch-view .rk-pool-head { position: static; }
+.ch-pool .rk-pool-name > span:first-child { display: inline-flex; align-items: center; gap: 7px; }
+.ch-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  box-shadow: 0 0 0 3px rgba(139,115,85,.12);
+}
+.ch-cover { color: var(--gold); }
+
+/* 卡片上的周次角标：与榜单的 .rk-badge 同一套定位，只换配色 */
+.ch-wk {
+  position: absolute; left: 6px; bottom: 6px; z-index: 2;
+  padding: 1px 6px; border-radius: 5px;
+  font-size: 10px; line-height: 1.5; letter-spacing: .2px;
+  color: #fff; background: rgba(44,38,30,.62);
+  backdrop-filter: blur(2px);
+  font-variant-numeric: tabular-nums;
+}
+.ch-card-empty {
+  grid-column: 1 / -1; padding: 18px 8px; text-align: center;
+  font-size: 11.5px; color: var(--sub); border: 1px dashed var(--line); border-radius: 10px;
+}
+
+/* ---------- 3. 后台：渠道字典管理 ---------- */
+.ch-admin-block {
+  margin: 0 0 14px; padding: 13px 14px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+}
+.ch-admin-block > h3 {
+  margin: 0 0 9px; font-size: 13.5px; font-weight: 600; letter-spacing: .5px;
+}
+.ch-admin-block > h3 small { font-weight: 400; color: var(--sub); letter-spacing: 0; margin-left: 6px; }
+
+.ch-add-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.ch-add-row .input { height: 32px; max-width: 220px; }
+
+.ch-sites { display: flex; flex-wrap: wrap; gap: 7px; }
+.ch-site {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 6px 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+  background: #fff; font-size: 12.5px;
+}
+.ch-site.is-off { opacity: .5; }
+.ch-site-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-site-n { font-size: 10.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.ch-site-btn {
+  width: 20px; height: 20px; line-height: 18px; text-align: center;
+  border: none; background: transparent; color: var(--sub); border-radius: 50%;
+  font-size: 12px; cursor: pointer; transition: background .15s, color .15s;
+}
+.ch-site-btn:hover { background: var(--shade); color: var(--gold); }
+.ch-site-btn.is-danger:hover { background: rgba(194,94,90,.12); color: var(--danger); }
+
+/* ---------- 4. 后台：上传区 ---------- */
+.ch-up-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.ch-up-field { display: flex; flex-direction: column; gap: 4px; }
+.ch-up-field > span { font-size: 11.5px; color: var(--sub); letter-spacing: .4px; }
+.ch-up-field .input, .ch-up-field select { height: 32px; min-width: 118px; }
+.ch-up-field .input.ch-week-num { width: 88px; }
+
+/* ---------- 5. 响应式 ---------- */
+@media (max-width: 720px) {
+  .ch-filter { padding: 10px 11px 8px; }
+  .ch-fg { flex-direction: column; gap: 4px; }
+  .ch-fg-name { padding-top: 0; }
+  .ch-tools { margin-left: 0; }
+  #ch-view .rk-pools { flex-direction: column; }
+  #ch-view .rk-pool { width: 100%; flex: 0 0 auto; }
+}
+
+/* ---------- 6. 类目菜单计数 ---------- */
+.ch-cat-n {
+  margin-left: 6px; font-size: 10.5px; color: var(--sub);
+  font-variant-numeric: tabular-nums; font-weight: 400;
+}
+.cat-menu-item.active .ch-cat-n { color: inherit; opacity: .75; }
+
+/* ---------- 7. 后台拖拽高亮改暖色（站点主色是暖棕，蓝色会跳出来） ---------- */
+#channel-card .mv-drop.is-over {
+  border-color: var(--gold); background: #faf6ee; color: var(--gold);
+}
+/* 后台工具栏下拉：与趋势动向同一高度，避免两行按钮高低不齐 */
+#channel-card .mv-toolbar .input { height: 30px; }
+
+/* ---------- 8. 待传列表：每张图一行，各自带类目 / 渠道 / 周次 ---------- */
+#channel-card .ch-pend-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 6px; background: var(--card, #fff);
+  border: 1px solid var(--line, #e6e2da);
+}
+#channel-card .ch-pend-row + .ch-pend-row { margin-top: 4px; }
+#channel-card .ch-pend-name {
+  flex: 1 1 auto; min-width: 90px; max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px;
+}
+#channel-card .ch-pend-sel { flex: 0 0 104px; height: 26px; font-size: 12px; }
+#channel-card .ch-pend-week { flex: 0 0 92px; height: 26px; font-size: 12px; }
+#channel-card .mv-pend-x { flex: 0 0 auto; }
+
+/* 窄屏：换行，文件名独占一行，三个控件平分 */
+@media (max-width: 720px) {
+  #channel-card .ch-pend-row { flex-wrap: wrap; }
+  #channel-card .ch-pend-name { flex: 1 1 100%; max-width: none; }
+  #channel-card .ch-pend-sel { flex: 1 1 calc(50% - 6px); }
+  #channel-card .ch-pend-week { flex: 1 1 calc(50% - 6px); }
+}

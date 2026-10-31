@@ -42,6 +42,7 @@ const PANEL_ZONE = {
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "movement-card": "movement", // 趋势动向：独立专区，按「后台可管理专区」授权管控
+  "channel-card": "channel",   // 渠道雷达：独立专区，按「后台可管理专区」授权管控
   "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
@@ -76,7 +77,8 @@ const CAT_VIS_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
-  { key: "plus", label: "大码专区" }
+  { key: "plus", label: "大码专区" },
+  { key: "channel", label: "渠道雷达" }
 ];
 
 // 当前生效的专区定义（内置 7 个 + 超管在「专区管理」里新增的），
@@ -230,6 +232,10 @@ function switchPanel(target) {
     /* 趋势动向：首次进入才拉数据，避免进后台就多发一次请求 */
     if (target === "movement-card" && window.MovementAdmin && typeof window.MovementAdmin.reload === "function") {
       window.MovementAdmin.reload();
+    }
+    /* 渠道雷达：进入面板时刷新渠道字典与图片（只读缓存，代价很小） */
+    if (target === "channel-card" && window.ChannelAdmin && typeof window.ChannelAdmin.reload === "function") {
+      window.ChannelAdmin.reload();
     }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }

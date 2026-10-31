@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
 <link rel="stylesheet" href="css/style.css?v=20261030J">
+<link rel="stylesheet" href="css/channel.css?v=20261031A">
 <link rel="stylesheet" href="vendor/quill.snow.css?v=20261030J">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
@@ -115,6 +116,7 @@
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
         <a class="nav-item" data-target="movement-card">趋势动向</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
+        <a class="nav-item" data-target="channel-card">渠道雷达</a>
         <a class="nav-item" data-target="plus-card">大码专区</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
           <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
@@ -1413,6 +1415,116 @@
       </div>
     </div>
 
+    <!-- ================= 渠道雷达 · 渠道对比（20261031A 新增） =================
+         结构与「趋势上升榜 / 趋势动向」一致：图片本体与打标数据分开存。
+           渠道字典 → channel_sites（后台增删改排序，前台按它并排出列）
+           图片本体 → channel_items（类目 + 渠道 + 周次 三个坐标）
+           打标数据 → rank_image_tags（按图片地址唯一，与榜单、趋势动向共用同一套维度）
+         前台对比池的"列"= 渠道，"周次"改为顶部筛选；枚举、导出、导入全部沿用榜单那套。 -->
+    <div class="panel-card hidden" id="channel-card">
+      <h2>渠道雷达 <span class="hint-inline">（渠道自定义 · 按类目/周次传图 · 打标导入导出 · 打包下载）</span></h2>
+
+      <!-- ① 渠道字典 -->
+      <div class="ch-admin-block">
+        <h3>① 渠道管理 <small>前台按这里的顺序并排出列；改名会同步改掉已有图片上的渠道名</small></h3>
+        <div class="ch-add-row">
+          <input id="ch-new-name" class="input" placeholder="新增渠道，如 SHEIN / TEMU / 独立站" maxlength="24">
+          <button id="ch-add-btn" class="btn-primary" type="button">添加渠道</button>
+          <button id="ch-site-refresh" class="btn-ghost" type="button">刷新</button>
+          <span id="ch-site-msg" class="hint-inline"></span>
+        </div>
+        <div id="ch-sites" class="ch-sites"></div>
+      </div>
+
+      <!-- ② 按「类目 + 渠道 + 周次」整批传图 -->
+      <div class="ch-admin-block">
+        <h3>② 上传图片 <small>顶部是「加入待传列表时的默认值」；每张图的类目、渠道、周次都能单独改，一批里可以混着不同类目</small></h3>
+        <div class="ch-up-row">
+          <label class="ch-up-field"><span>默认类目</span><select id="ch-up-cat" class="input"></select></label>
+          <label class="ch-up-field"><span>默认渠道</span><select id="ch-up-channel" class="input"></select></label>
+          <label class="ch-up-field"><span>年</span><input id="ch-up-year" class="input ch-week-num" type="number" min="2000" max="2100" step="1"></label>
+          <label class="ch-up-field"><span>周</span><input id="ch-up-week" class="input ch-week-num" type="number" min="1" max="53" step="1"></label>
+          <button id="ch-pick-btn" class="btn-primary" type="button">选择图片（可多选）</button>
+          <button id="ch-apply-all" class="btn-ghost" type="button">把默认值套用到全部</button>
+          <button id="ch-upload-btn" class="btn-primary" type="button" disabled>上传（0）</button>
+          <button id="ch-clear-btn" class="btn-ghost" type="button">清空待传</button>
+          <span id="ch-upload-tip" class="hint-inline"></span>
+          <span id="ch-week-preview" class="hint-inline"></span>
+        </div>
+        <div id="ch-drop" class="mv-drop">把图片拖到这里，或点「选择图片」</div>
+        <div id="ch-pending" class="mv-pending"></div>
+        <div id="ch-progress" class="progress hidden"><div id="ch-progress-bar" class="progress-bar"></div></div>
+        <input type="file" id="ch-file" accept="image/*" multiple hidden>
+      </div>
+
+      <!-- ③ 工具栏：筛选 / 打标 / 下载 / 导入 -->
+      <div class="mv-toolbar">
+        <span id="ch-count" class="hint-inline">加载中…</span>
+        <select id="ch-filter-cat" class="input"><option value="">全部类目</option></select>
+        <select id="ch-filter-channel" class="input"><option value="">全部渠道</option></select>
+        <select id="ch-filter-week" class="input"><option value="">全部周次</option></select>
+        <button id="ch-refresh" class="btn-ghost" type="button">刷新</button>
+        <button id="ch-vis-btn" class="btn-ghost" type="button">前台可见标签</button>
+        <button id="ch-export-btn" class="btn-ghost" type="button">导出打标表</button>
+        <button id="ch-images-btn" class="btn-ghost" type="button">打包下载图片</button>
+        <button id="ch-import-btn" class="btn-ghost" type="button">导入打标表</button>
+        <input type="file" id="ch-import-file" accept=".xlsx,.xls" hidden>
+        <span id="ch-msg" class="hint-inline"></span>
+      </div>
+
+      <div class="manage-layout gallery-layout">
+        <aside class="sidebar">
+          <div class="side-head">图片类目</div>
+          <nav id="ch-menu" class="cat-menu"></nav>
+        </aside>
+        <main class="grid-wrap">
+          <p id="ch-empty" class="empty-tip hidden">暂无图片</p>
+          <div id="ch-grid" class="grid"></div>
+        </main>
+      </div>
+    </div>
+
+    <!-- 渠道雷达 · 大图打标面板（点击图片打开，按维度分组，与趋势动向一致） -->
+    <div id="ch-tag-modal" class="modal-mask hidden">
+      <div class="modal mv-tag-modal">
+        <div class="mv-tag-head">
+          <h3>渠道雷达 · 打标</h3>
+          <span id="ch-tag-title" class="hint-inline"></span>
+          <span class="mv-tag-season">
+            <select id="ch-tag-channel" class="input"></select>
+            <input id="ch-tag-year" class="input ch-week-num" type="number" min="2000" max="2100" step="1">
+            <input id="ch-tag-week" class="input ch-week-num" type="number" min="1" max="53" step="1">
+          </span>
+        </div>
+        <div class="mv-tag-body">
+          <div class="mv-tag-img"><img id="ch-tag-img" alt=""></div>
+          <div class="mv-tag-dims" id="ch-tag-dims"></div>
+        </div>
+        <div class="mtag-actions">
+          <button id="ch-tag-save" class="btn-primary" type="button">保存</button>
+          <button id="ch-tag-del" class="btn-danger" type="button">删除这张图</button>
+          <button id="ch-tag-close" class="btn-ghost" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 渠道雷达 · 前台标签可见性 -->
+    <div id="ch-vis-modal" class="modal-mask hidden">
+      <div class="modal mv-vis-modal">
+        <div class="mv-tag-head">
+          <h3>前台可见标签</h3>
+          <span class="hint-inline">关掉后，该维度只留在后台，前台大图里不显示</span>
+        </div>
+        <div id="ch-vis-list" class="mv-vis-list"></div>
+        <div class="mtag-actions">
+          <button id="ch-vis-save" class="btn-primary" type="button">保存</button>
+          <button id="ch-vis-all" class="btn-ghost" type="button">全部展示</button>
+          <button id="ch-vis-close" class="btn-ghost" type="button">关闭</button>
+          <span id="ch-vis-msg" class="hint-inline"></span>
+        </div>
+      </div>
+    </div>
+
       <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
       
     </main>
@@ -1618,6 +1730,7 @@
   <script src="js/imageexport.js?v=20261030J"></script>
   <script src="js/admin-imageimport.js?v=20261030J"></script>
   <script src="js/admin-movement.js?v=20261030J"></script>
+  <script src="js/admin-channel.js?v=20261031A"></script>
   <script src="js/admin-smart.js?v=20261030J"></script>
   <script src="js/admin-trend.js?v=20261030J"></script>
   <script src="js/admin-notice.js?v=20261030J"></script>

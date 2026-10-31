@@ -10,7 +10,7 @@
 let permUsers = [];
 
 // 用户级可见专区的可选项（与全局「前台访问设置」的专区集合一致）
-// 可勾选的专区（内置 7 个 + 超管在「专区管理」新增的）；随 ZONE_DEFS 动态同步
+// 可勾选的专区（内置若干 + 超管在「专区管理」新增的）；随 ZONE_DEFS 动态同步
 let PERM_ZONES = [
   { key: "marketing", label: "营销日历" },
   { key: "visual", label: "视觉专区" },
@@ -22,6 +22,7 @@ let PERM_ZONES = [
   { key: "rank", label: "趋势上升榜" },
   { key: "plus", label: "大码专区" },
   { key: "movement", label: "趋势动向" },
+  { key: "channel", label: "渠道雷达" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
@@ -497,7 +498,7 @@ function updatePermEditCatCount() {
       await SB.setUserManageZones(uid, manageZones);
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
-      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement"];
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "channel"];
       for (const z of ALL_CAT_ZONES) {
         await SB.setUserPermissions(uid, z, cats);
       }
