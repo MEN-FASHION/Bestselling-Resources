@@ -1282,8 +1282,13 @@
     return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind };
   }
 
-  /* ---------------- 类目体征（仅类目对比用） ----------------
-     关键口径：**类目之间只比「构成」，不比张数**。
+  /* ---------------- 体征（三种对比模式通用） ----------------
+     原来这块叫「类目体征」，只服务「类目对比」。现在纵向时间 / 横向国家也要看构成，
+     所以改成「按当前并排的那一列各算一套指标」：
+       横向 · 类目对比  → 每个类目一组（同一周 · 同一站点）
+       横向 · 国家对比  → 每个国家一组（同一类目 · 同一周）
+       纵向 · 时间对比  → 每一周一组（同一类目 · 同一国家）
+     口径不变：**只比构成，不比张数**。
      张数取决于你这一期上传了多少图（上传量），不是热度；拿它横比会把"上传得多"误读成"卖得好"。
      所以所有横条都是百分比：三档标签占比 / 拍摄方式占比 / 元素标签出现率。 */
   /* 打标字段可能是数组，也可能是「模拍」这样的单个字符串（单值维度），统一成数组再统计 */
@@ -1298,14 +1303,58 @@
     return [];
   }
 
-  function vitalsOf(items, onlyPeriod) {
-    var cats = activeCats();
-    return cats.map(function (cat) {
+  /* 当前模式下的「对比列」→ 每组一把待统计的图。
+     与 buildPools 的列口径保持一致：列有哪几个，体征卡就有哪几张。 */
+  function vitalsGroups() {
+    var items = (CACHE && CACHE.items) || [];
+    var periods = activePeriods();
+    var pLast = periods[periods.length - 1] || "";
+    var sites = poolSites();
+
+    if (MODE === "c") {
       /* 只统计「当前这一列对应的那一期」：CACHE 里还带着用于算位次的上一周基线，
          若把它算进来，就会出现「体征卡显示 200 张，图片列却是空的」这种自相矛盾。 */
-      var mine = (items || []).filter(function (it) {
-        return (it.category || "") === cat && (!onlyPeriod || (it.period_label || "") === onlyPeriod);
+      return activeCats().map(function (cat) {
+        return {
+          key: cat, label: cat,
+          empty: "该类目这一周没有上榜数据，下面的图片列会是空的 —— 换一周，或在上面取消勾选它。",
+          items: items.filter(function (it) {
+            return (it.category || "") === cat && (!pLast || (it.period_label || "") === pLast);
+          })
+        };
       });
+    }
+
+    if (MODE === "h") {
+      /* 选了地区 → 多国已经并成一列，没有第二个国家可比，比较块不出 */
+      if (activeGroup()) return [];
+      return sites.map(function (s) {
+        return {
+          key: s, label: s,
+          empty: "这个国家这一周在这个类目下没有上榜数据。",
+          items: items.filter(function (it) {
+            return it.site === s && (!pLast || (it.period_label || "") === pLast);
+          })
+        };
+      });
+    }
+
+    /* 纵向 · 时间对比：每一周一组（同一类目 · 同一国家） */
+    var siteV = sites[0] || "";
+    return periods.map(function (p) {
+      return {
+        key: p, label: p,
+        empty: "这一周这个国家 / 类目没有上榜数据。",
+        items: items.filter(function (it) {
+          return (!siteV || it.site === siteV) && (it.period_label || "") === p;
+        })
+      };
+    });
+  }
+
+  function vitalsOfGroups(G) {
+    return (G || []).map(function (g) {
+      var mine = g.items || [];
       var n = mine.length;
       var opp = 0, hot = 0, srg = 0;
       mine.forEach(function (it) {
@@ -1360,22 +1409,32 @@
           .sort(function (a, b) { return b[1] - a[1]; }).slice(0, lim);
       };
       return {
-        cat: cat, n: n,
+        cat: g.label, key: g.key, empty: g.empty, n: n,
         oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
         craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
         hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0, tagged: sTot
       };
-    });   /* 本周没上传的类目也保留卡片：写「本周无数据」，不要静默消失 */
+    });   /* 没上传的那一列也保留卡片：写「无数据」，不要静默消失 */
   }
 
-  /* 差异洞察：从体征里挑出「差距最大」的几条，直接给结论，不罗列数据 */
-  function insightsOf(V) {
+  /* 每种对比模式的文案口径（差异洞察里要说清"比的是什么"） */
+  function vitalsDim() {
+    if (MODE === "h") return { noun: "国家", head: "这几个国家，差别在哪", same: "同一周内" };
+    if (MODE === "v") return { noun: "周次", head: "这几周，差别在哪", same: "从上一周到这一周" };
+    return { noun: "类目", head: "这一周，这几个类目差别在哪", same: "同一周内" };
+  }
+
+  /* 差异洞察：从体征里挑出「差距最大」的几条，直接给结论，不罗列数据。
+     dim 决定文案里说"类目"还是"国家"还是"周次"，口径跟着当前对比模式走。 */
+  function insightsOf(V, dim) {
     var out = [];
-    V = (V || []).filter(function (c) { return c.n > 0; });   /* 本周没上传的类目不参与「差别在哪」的结论 */
+    dim = dim || vitalsDim();
+    var noun = dim.noun;
+    V = (V || []).filter(function (c) { return c.n > 0; });   /* 没数据的那一列不参与「差别在哪」的结论 */
     if (V.length < 2) return out;
-    /* ① 拍摄方式落差：某类目某种拍法明显高于其余类目均值（≥10 个百分点才值得说） */
+    /* ① 拍摄方式落差：某一列某种拍法明显高于其余列均值（≥10 个百分点才值得说） */
     var withShoot = V.filter(function (c) { return c.shoot.length; });
     if (withShoot.length >= 2) {
       var keys = {};
@@ -1393,10 +1452,10 @@
         if (!best || gap > best.gap) best = { k: k, cat: mx.cat, v: mx.v, avg: avg, gap: gap };
       });
       if (best && best.gap >= 10) {
-        out.push("「" + best.cat + "」的" + best.k + "占 " + best.v + "%，比其余类目均值（" + best.avg + "%）高 " + best.gap + " 个百分点，呈现方式上更吃这一种。");
+        out.push("「" + best.cat + "」的" + best.k + "占 " + best.v + "%，比其余" + noun + "均值（" + best.avg + "%）高 " + best.gap + " 个百分点，呈现方式上更吃这一种。");
       }
     }
-    /* ② 三档标签落差：最能解释"为什么这个类目这周更热" */
+    /* ② 三档标签落差：最能解释"为什么这一列更热" */
     var defs = [["srgP", "周度激增"], ["hotP", "趋势爆款"], ["oppP", "潜力机会"]];
     var bestT = null;
     defs.forEach(function (d) {
@@ -1407,8 +1466,8 @@
       if (!bestT || gap > bestT.gap) bestT = { key: d[0], name: d[1], hi: mx, lo: mn, gap: gap };
     });
     if (bestT && bestT.gap >= 4) {
-      out.push("「" + bestT.hi.cat + "」的" + bestT.name + "占比 " + bestT.hi[bestT.key] + "%，是这几个类目里最高的；"
-        + "「" + bestT.lo.cat + "」只有 " + bestT.lo[bestT.key] + "% —— 同一周内，爆发款密度相差 " + bestT.gap + " 个百分点。");
+      out.push("「" + bestT.hi.cat + "」的" + bestT.name + "占比 " + bestT.hi[bestT.key] + "%，是这几个" + noun + "里最高的；"
+        + "「" + bestT.lo.cat + "」只有 " + bestT.lo[bestT.key] + "% —— " + dim.same + "，爆发款密度相差 " + bestT.gap + " 个百分点。");
     }
     /* ③ 首位元素独有性：只有它把这个元素排第一，辨识度就在这儿 */
     var withElem = V.filter(function (c) { return c.elems.length; });
@@ -1421,23 +1480,24 @@
           return x.elems.some(function (e) { return e[0] === top1; });
         });
         if (!inOthers) {
-          out.push("「" + c.cat + "」的首位元素是「" + top1 + "」（" + c.elems[0][1] + "%），其余类目都没把它排第一，辨识度主要来自这个细节。");
+          out.push("「" + c.cat + "」的首位元素是「" + top1 + "」（" + c.elems[0][1] + "%），其余" + noun + "都没把它排第一，辨识度主要来自这个细节。");
         }
       });
     }
     return out.slice(0, 3);
   }
 
-  function vitalsHtml(V) {
+  function vitalsHtml(V, dim) {
     if (!V.length) return "";
+    dim = dim || vitalsDim();
     var h = '<div class="rk-vitals">';
     V.forEach(function (c) {
       h += '<div class="rk-vit">'
         + '<div class="rk-vit-h"><span class="rk-vit-name">' + esc(c.cat) + '</span>'
         + (c.n
           ? '<span class="rk-vit-n"><b>' + c.n + '</b> 张上榜</span></div>'
-          : '<span class="rk-vit-n rk-vit-none">本周无上传</span></div>'
-            + '<div class="rk-vit-empty">该类目这一周没有上榜数据，下面的图片列会是空的 —— 换一周，或在上面取消勾选它。</div>')
+          : '<span class="rk-vit-n rk-vit-none">无数据</span></div>'
+            + '<div class="rk-vit-empty">' + esc(c.empty || "这一列没有上榜数据。") + '</div>')
         + '<div class="rk-vit-stack" title="三档标签占比（占比之和可能不足 100%：没打上标签的图不计入）">'
         + '<i class="v-opp" style="width:' + c.oppP + '%"></i>'
         + '<i class="v-hot" style="width:' + c.hotP + '%"></i>'
@@ -1472,9 +1532,9 @@
       h += '</div>';
     });
     h += '</div>';
-    var ins = insightsOf(V);
+    var ins = insightsOf(V, dim);
     if (ins.length) {
-      h += '<div class="rk-insight"><div class="rk-insight-h">这一周，这几个类目差别在哪</div><ul>'
+      h += '<div class="rk-insight"><div class="rk-insight-h">' + esc(dim.head) + '</div><ul>'
         + ins.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul></div>';
     }
     return h;
@@ -1642,13 +1702,12 @@
     var all = CACHE.items.filter(hitTags);
     if (!all.length) { box.innerHTML = '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>'; return; }
 
-    /* 类目对比：先出「体征卡」（只比构成、不比张数），再出图片列 */
+    /* 三种对比模式都先出「体征卡」（只比构成、不比张数），再出图片列：
+       类目对比比类目、国家对比比国家、时间对比比周次。
+       以前这里锁死在 MODE === "c"，所以切到另外两种模式就整块消失。 */
     var vit = "";
-    if (MODE === "c") {
-      var pVIT = periods[periods.length - 1] || "";
-      var VIT = vitalsOf(CACHE.items, pVIT);
-      vit = vitalsHtml(VIT);
-    }
+    var VG = vitalsGroups();
+    if (VG.length) vit = vitalsHtml(vitalsOfGroups(VG), vitalsDim());
     /* 打标数据与展示模式无关：以前只在「类目对比」里调用 ensureTags，
        结果普通的时间对比模式下标签压根没去取，卡片浮层自然永远不出。 */
     ensureTags(CACHE.items);
@@ -2865,6 +2924,30 @@
     if (f.matches(":focus-within") && !f.classList.contains("is-open")) {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     }
+  }
+
+  /* 离屏测试钩子：只有显式打开 window.__RANK_TEST__ 才挂出去，线上完全不生效 */
+  if (typeof window !== "undefined" && window.__RANK_TEST__) {
+    window.__RANK_T = {
+      set: function (o) {
+        o = o || {};
+        if (o.mode !== undefined) MODE = o.mode;
+        if (o.cat !== undefined) CAT = o.cat;
+        if (o.cats) SEL_CATS = o.cats.slice();
+        if (o.sites) SEL_SITES = o.sites.slice();
+        if (o.periods) SEL_PERIODS = o.periods.slice();
+        if (o.group !== undefined) SEL_GROUP = o.group;
+        if (o.cache) CACHE = o.cache;
+        if (o.tags) TAG_INDEX = o.tags;
+        if (o.facets) FACETS = o.facets;
+        if (o.groups) GROUPS = o.groups;
+      },
+      vitalsGroups: vitalsGroups,
+      vitalsOfGroups: vitalsOfGroups,
+      vitalsDim: vitalsDim,
+      vitalsHtml: vitalsHtml,
+      insightsOf: insightsOf
+    };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
