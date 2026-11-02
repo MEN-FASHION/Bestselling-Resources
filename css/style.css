@@ -6448,19 +6448,79 @@ html, body{
 .rk-ch-tail b.up{color:#a9705f}
 .rk-ch-foot{margin:7px 0 0;font-size:10.8px;line-height:1.7;color:#a8a196;
   padding-top:7px;border-top:1px dashed #f0eade}
-/* ---- 20261102T：图表悬停放大（居中放大、移开即回） ---- */
-.rk-ch{position:relative;z-index:1;transform-origin:50% 50%;
-  transition:transform .22s cubic-bezier(.2,.7,.3,1),box-shadow .22s ease,border-color .22s ease}
-.rk-ch:hover{transform:scale(1.045);z-index:9;
-  box-shadow:0 18px 38px -14px rgba(60,48,34,.34),0 2px 6px -2px rgba(60,48,34,.12);
-  border-color:#ded7c9}
-.rk-ch-grid{position:relative}
-/* 放大时相邻图不要被后画的元素压住 */
-.rk-ch-grid .rk-ch:hover{z-index:12}
-/* 网格四角放大时允许溢出到留白处，不裁切 */
-.rk-ch-grid{overflow:visible}
-@media (prefers-reduced-motion:reduce){.rk-ch,.rk-ch:hover{transition:none;transform:none}}
-@media print{.rk-ch,.rk-ch:hover{transform:none !important;box-shadow:none !important}}
+/* ---- 20261102W：图表悬停 → 全屏放大（真正铺满窗口，字与标注都放大） ---- */
+/* 悬停只给"可放大"的提示 */
+.rk-ch{cursor:zoom-in;transition:border-color .16s ease,box-shadow .16s ease}
+.rk-ch:hover{border-color:#d9cfba;box-shadow:0 6px 16px -12px rgba(60,48,34,.3)}
+.rk-ch-grid{position:relative;overflow:visible}
+
+/* 遮罩：铺满整个视口、盖住页面所有内容 */
+.rk-zoom-ov{position:fixed;left:0;top:0;right:0;bottom:0;width:100vw;height:100vh;height:100dvh;
+  z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(26,21,15,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  animation:rkZoomFade .14s ease both;cursor:zoom-out}
+@keyframes rkZoomFade{from{opacity:0}to{opacity:1}}
+
+/* 放大卡：几乎占满窗口，字号整体提到正文的 1.5~1.7 倍 */
+.rk-zoom-card{width:calc(100vw - 32px);max-width:none;
+  height:calc(100vh - 32px);height:calc(100dvh - 32px);max-height:none;
+  overflow:auto;margin:0;--lb:210px;
+  padding:26px 32px 22px;border-radius:14px;border:1px solid #e2d8c3;
+  background:#fffdf9;box-shadow:0 40px 120px -30px rgba(20,14,6,.6);
+  animation:rkZoomIn .18s cubic-bezier(.2,.8,.3,1) both;cursor:default;
+  overscroll-behavior:contain}
+@keyframes rkZoomIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+
+.rk-zoom-card .rk-ch-hd{margin-bottom:18px;gap:10px 22px;padding-right:90px}
+.rk-zoom-card .rk-ch-title{font-size:23px;letter-spacing:.4px}
+.rk-zoom-card .rk-ch-legend{gap:8px 20px}
+.rk-zoom-card .rk-ch-lg{font-size:16px;gap:8px}
+.rk-zoom-card .rk-ch-lg em{width:12px;height:12px}
+.rk-zoom-card .rk-ch-axis{font-size:15px;margin:0 calc(96px + 12px) 6px calc(var(--lb) + 12px)}
+.rk-zoom-card .rk-ch-r{grid-template-columns:var(--lb) 1fr 96px;gap:16px;padding:14px 0}
+.rk-zoom-card .rk-ch-rl{font-size:19px;line-height:1.45}
+.rk-zoom-card .rk-ch-rl em{font-size:14.5px;margin-top:4px}
+.rk-zoom-card .rk-ch-t{height:52px}
+.rk-zoom-card .rk-ch-d{width:20px;height:20px;margin:-10px 0 0 -10px;border-width:3px}
+.rk-zoom-card .rk-ch-d u{font-size:16px;top:-30px;padding:3px 6px}
+.rk-zoom-card .rk-ch-d.alt u{top:auto;bottom:-30px}
+.rk-zoom-card .rk-ch-tail{font-size:19px}
+.rk-zoom-card .rk-ch-foot{font-size:15.5px;line-height:1.8;margin-top:16px;padding-top:14px}
+.rk-zoom-card .rk-ch-conn{height:4px;margin-top:-2px}
+
+/* 关闭提示与开关 */
+.rk-zoom-x{position:absolute;right:26px;top:22px;width:38px;height:38px;border:1px solid #e2d8c3;
+  border-radius:50%;background:#fff;color:#6b6357;font-size:19px;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+.rk-zoom-x:hover{background:#f7f2e8;color:#3f3a31}
+.rk-zoom-tip{position:absolute;left:0;right:0;bottom:6px;text-align:center;
+  font-size:12.5px;color:#cfc4ae;letter-spacing:.4px;pointer-events:none}
+
+@media (prefers-reduced-motion:reduce){
+  .rk-zoom-ov,.rk-zoom-card{animation:none}
+  .rk-ch{transition:none}
+}
+@media print{.rk-zoom-ov{display:none !important}}
+@media (max-width:900px){
+  .rk-zoom-ov{padding:8px}
+  .rk-zoom-card{width:calc(100vw - 16px);height:calc(100dvh - 16px);--lb:112px;padding:18px 14px 14px}
+  .rk-zoom-card .rk-ch-hd{padding-right:64px}
+  .rk-zoom-card .rk-ch-title{font-size:17px}
+  .rk-zoom-card .rk-ch-rl{font-size:14.5px}
+  .rk-zoom-card .rk-ch-rl em{font-size:12px}
+  .rk-zoom-card .rk-ch-r{grid-template-columns:var(--lb) 1fr 62px;gap:10px;padding:10px 0}
+  .rk-zoom-card .rk-ch-axis{font-size:12px;margin:0 calc(62px + 10px) 5px calc(var(--lb) + 10px)}
+  .rk-zoom-card .rk-ch-t{height:36px}
+  .rk-zoom-card .rk-ch-d{width:15px;height:15px;margin:-7.5px 0 0 -7.5px}
+  .rk-zoom-card .rk-ch-d u{font-size:12.5px;top:-22px}
+  .rk-zoom-card .rk-ch-d.alt u{bottom:-22px}
+  .rk-zoom-card .rk-ch-lg{font-size:13px}
+  .rk-zoom-card .rk-ch-foot{font-size:13px}
+  .rk-zoom-x{right:14px;top:14px;width:32px;height:32px;font-size:16px}
+  .rk-zoom-tip{display:none}
+}
+/* 放大时锁住页面滚动 */
+body.rk-zoom-lock{overflow:hidden}
 
 /* ---- 视觉背景小节 ---- */
 .rk-bg-block{margin:2px 0 6px}

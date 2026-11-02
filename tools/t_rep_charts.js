@@ -211,13 +211,35 @@ const say = (h9.match(/<p class="rk-bg-say">([\s\S]*?)<\/p>/) || [])[1] || "";
 ok("解读是推荐语气，不是命令", /可优先考虑/.test(say) && !/必须|一定要|别/.test(say),
   (say.match(/必须|一定要|别/g) || []).join(","));
 
-/* CSS：悬停放大 */
-ok("图表悬停放大已定义", /\.rk-ch:hover\{transform:scale\(/.test(CSS));
-ok("以中心为原点缩放", /\.rk-ch\{[^}]*transform-origin:50% 50%/.test(CSS));
-ok("悬停时抬高层级避免被压住", /\.rk-ch:hover\{[^}]*z-index:9/.test(CSS));
-ok("有过渡动画", /\.rk-ch\{[^}]*transition:transform/.test(CSS));
-ok("尊重减少动态偏好时不放大", /prefers-reduced-motion[\s\S]{0,160}transform:none/.test(CSS));
-ok("打印时取消放大", /@media print\{[\s\S]{0,200}\.rk-ch:hover\{transform:none/.test(CSS));
+/* CSS + JS：悬停全屏放大（20261102W） */
+ok("遮罩铺满整个视口", /\.rk-zoom-ov\{[^}]*position:fixed[^}]*width:100vw[^}]*height:100vh/.test(CSS));
+ok("遮罩层级压过页面所有内容", /\.rk-zoom-ov\{[^}]*z-index:2147483000/.test(CSS));
+ok("放大卡几乎占满窗口", /\.rk-zoom-card\{[^}]*width:calc\(100vw - 32px\)/.test(CSS) && /\.rk-zoom-card\{[^}]*height:calc\(100vh - 32px\)/.test(CSS));
+ok("卡内可滚动看长图", /\.rk-zoom-card\{[^}]*overflow:auto/.test(CSS));
+ok("标题放大到 23px", /\.rk-zoom-card \.rk-ch-title\{font-size:23px/.test(CSS));
+ok("行标签放大到 19px", /\.rk-zoom-card \.rk-ch-rl\{font-size:19px/.test(CSS));
+ok("百分比标注放大到 16px", /\.rk-zoom-card \.rk-ch-d u\{font-size:16px/.test(CSS));
+ok("行内附注放大到 14.5px", /\.rk-zoom-card \.rk-ch-rl em\{font-size:14.5px/.test(CSS));
+ok("图例与刻度同步放大", /\.rk-zoom-card \.rk-ch-lg\{font-size:16px/.test(CSS) && /\.rk-zoom-card \.rk-ch-axis\{font-size:15px/.test(CSS));
+ok("行高与点位放大（52px / 20px）", /\.rk-zoom-card \.rk-ch-t\{height:52px/.test(CSS) && /\.rk-zoom-card \.rk-ch-d\{width:20px/.test(CSS));
+ok("放大时锁住背景滚动", /body\.rk-zoom-lock\{overflow:hidden/.test(CSS));
+ok("打印时隐藏", /@media print\{\.rk-zoom-ov\{display:none/.test(CSS));
+ok("窄屏有另一套字号", /@media \(max-width:900px\)[\s\S]{0,200}\.rk-zoom-card/.test(CSS));
+
+ok("克隆图表而不搬动原节点", /card = ch\.cloneNode\(true\)/.test(RANK_SRC));
+ok("克隆件挂上放大卡类名", /card\.className = "rk-ch rk-zoom-card"/.test(RANK_SRC));
+ok("悬停即打开", /document\.addEventListener\("mouseover"/.test(RANK_SRC) && /repZoomOpen\(ch\)/.test(RANK_SRC));
+ok("有悬停意图延迟", /停住 150ms/.test(RANK_SRC) && /\}, 150\);/.test(RANK_SRC));
+ok("移开即收回", /document\.addEventListener\("mouseout"/.test(RANK_SRC) && /setTimeout\(repZoomClose, 160\)/.test(RANK_SRC));
+ok("有右上角关闭按钮", /rk-zoom-x/.test(RANK_SRC));
+ok("支持 Esc 关闭", /e\.key === "Escape"/.test(RANK_SRC));
+ok("点遮罩空白关闭", /e\.target === ov/.test(RANK_SRC));
+ok("放大层内部不再套一层", /t\.closest\("\.rk-zoom-ov"\)\) return/.test(RANK_SRC));
+ok("进入放大卡不算离开", /ZOOM_OV\.contains\(to\)/.test(RANK_SRC));
+ok("卡内滚动不会误关", /ZOOM_OV\.contains\(e\.target\)\) return/.test(RANK_SRC));
+ok("打开时锁滚动、关闭时解锁", /classList\.add\("rk-zoom-lock"\)/.test(RANK_SRC) && /classList\.remove\("rk-zoom-lock"\)/.test(RANK_SRC));
+ok("改窗口尺寸/切页会收起", /addEventListener\("resize", repZoomClose\)/.test(RANK_SRC) && /visibilitychange/.test(RANK_SRC));
+ok("绑定只做一次且在初始化里被调用", /bindRepZoom\.__b/.test(RANK_SRC) && /bindRepZoom\(\);/.test(RANK_SRC));
 
 console.log("\n结果：通过 " + pass + "，失败 " + fail);
 process.exit(fail ? 1 : 0);

@@ -1422,9 +1422,16 @@
         });
         /* 20261027T 补：二次工艺 / 文化背景 / 消费心理 也要进体征卡，
            否则后台打了标，统计块里依然看不到，和"没生效"一样。 */
-        var cfSet = {}, nCf = 0;
-        tagArr(t.craft_tags).forEach(function (v) { if (cfSet[v] === undefined) { cfSet[v] = 1; cfCnt[v] = (cfCnt[v] || 0) + 1; nCf++; } });
-        if (nCf) cfTot++;
+        /* 20261102V：「无工艺」不进工艺统计。
+           它不是一个做法，写进推荐等于建议"别做工艺"，对商家没有意义。
+           分母（cfTot）仍然算上这些图，所以刺绣 30% 还是 30%，不会被抬高。 */
+        var cfSet = {}, nCf = 0, cfAny = 0;
+        tagArr(t.craft_tags).forEach(function (v) {
+          if (v !== null && v !== undefined && String(v) !== "") cfAny = 1;   /* 有标签就算进分母 */
+          if (skill_none(v)) return;
+          if (cfSet[v] === undefined) { cfSet[v] = 1; cfCnt[v] = (cfCnt[v] || 0) + 1; nCf++; }
+        });
+        if (cfAny) cfTot++;
         var cuSet = {}, nCu = 0;
         tagArr(t.culture_tags).forEach(function (v) { if (cuSet[v] === undefined) { cuSet[v] = 1; cuCnt[v] = (cuCnt[v] || 0) + 1; nCu++; } });
         if (nCu) cuTot++;
@@ -1969,7 +1976,7 @@
     var cf = (c.craft || [])[0], sd = (c.struct || [])[0], ft = (c.fit || [])[0], fb = (c.fabric || [])[0];
     /* 20261102L：画像句改成商家口径 —— 先说"能改的四件事"（工艺 / 结构件 / 版型 / 面料），
        视觉怎么拍放最后一句补，印花不作为画像主线。 */
-    if (cf) seg.push(/无工艺/.test(cf[0]) ? ("多数没有二次工艺（" + cf[1] + "%）") : ("工艺主打「" + cf[0] + "」（" + cf[1] + "%）"));
+    if (cf) seg.push("工艺主打「" + cf[0] + "」（" + cf[1] + "%）");
     if (sd) seg.push("结构件集中在「" + sd[0] + "」（" + sd[1] + "%）");
     if (ft) seg.push("版型以「" + ft[0] + "」为主（" + ft[1] + "%）");
     if (fb) seg.push("面料多为「" + fb[0] + "」（" + fb[1] + "%）");
@@ -2054,13 +2061,17 @@
      只换图案、不换质感，撞款概率最高。商家要的是能拉开差异的工艺，
      所以推荐时把刺绣、洗水、压褶、绗缝、毛边、铆钉这类排在前面，
      图案类只在没有非图案候选时降级提一句，并说明它不解决质感问题。 */
+  /* 「无工艺 / 无二次工艺 / 无」这类占位值不是做法，统计与推荐里一律不出现 */
+  function skill_none(v) { return /^\s*无/.test(String(v || "")) || /无工艺/.test(String(v || "")); }
+
   function craftIsPrint(v) {
     return /印花|喷绘|拔印|局部印|烫图|热转印|烫印|烫金|烫银|烫钻|水钻|镭射|夜光|反光印|植绒印/.test(String(v || ""));
   }
   /* 挑工艺：非图案类优先，图案类只留一个作补充 */
   function pickCraft(list) {
     var arr = (list || []).slice();
-    var other = arr.filter(function (x) { return !craftIsPrint(x[0]) && !/无工艺/.test(x[0]); });
+    arr = arr.filter(function (x) { return !skill_none(x[0]); });
+    var other = arr.filter(function (x) { return !craftIsPrint(x[0]); });
     var pr = arr.filter(function (x) { return craftIsPrint(x[0]); });
     return {
       other: other, print: pr,
@@ -2084,6 +2095,12 @@
           + (prtOne ? "；印花 / 烫画类也有 " + esc(prtOne[0]) + "（" + prtOne[1] + "%），但那只是把图案贴到布上、不增加质感差异" : "")
           + "。若要找加价点，可优先考虑刺绣、洗水、压褶这类能看出工艺感的；前提是工厂能做、且不额外增加合规成本"
           + "（占比只说明它在上榜图里常见，不是非加不可）。");
+      } else if (ck.other.length) {
+        /* 占比不高但确有工艺：照样推荐，只是把"参考"讲清楚，不夸大成主做法 */
+        out.push(nm + "的二次工艺里，质感类出现最多的是 " + pctTxt(ck.other[0])
+          + listTxt(ck.other, ck.other[0][0], 2)
+          + "，占比不高，只作方向参考。若想在这一维做出差异，可优先从这类能看出工艺感的方向试"
+          + "（前提是工厂能做、且不额外增加合规成本）。");
       } else if (ck.onlyPrint && ck.print[0][1] >= 25) {
         out.push(nm + "的二次工艺在上榜图里以图案类为主（" + pctTxt(ck.print[0])
           + "），这类工艺只换图案、不带来质感差异，撞款风险也高。若想拉开差异，可考虑往刺绣 / 压褶 / 洗水 / 毛边这些方向试"
@@ -2136,7 +2153,7 @@
     return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议<span class="rk-rep-h4-sub">'
       + '以下是基于占比的取舍参考，不是硬性要求；括号内为该值在本列的占比与张数，占比只代表"上榜图里常见"，不等于应当照做</span></h4>'
       + '<ul class="rk-rep-act">'
-      + out.slice(0, 8).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
+      + out.slice(0, 14).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
   }
 
   /* ④-2 趋势动向：新上榜 & 上升最多，各自在打什么
@@ -2163,6 +2180,8 @@
     }
     /* 白底不参与抬头统计：它是通用底，变多不代表趋势 */
     if (col === "visual_tags") arr = arr.filter(function (v) { return !isWhiteBg(v); });
+    /* 「无工艺」同理：它不是一个做法，抬头说明不了任何趋势 */
+    if (col === "craft_tags") arr = arr.filter(function (v) { return !skill_none(v); });
     return arr;
   }
   /* 一个子集在某一维度的分布：分母只用「该维度有打标」的图 */
@@ -2409,6 +2428,8 @@
         if (!g[1] || !g[1].length) return;
         /* 视觉分组剔除白底：报告里不展示，避免被当成"可以照做的做法" */
         if (g[0] === "视觉") g = [g[0], g[1].filter(function (e) { return !isWhiteBg(e[0]); })];
+        /* 二次工艺同理：「无工艺」不作为做法展示 */
+        if (g[0] === "二次工艺") g = [g[0], g[1].filter(function (e) { return !skill_none(e[0]); })];
         if (!g[1].length) return;
         h += '<div class="rk-vit-sub">' + g[0] + '</div><div class="rk-vit-tags">'
           + g[1].map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
@@ -2923,6 +2944,100 @@
     }
   }
 
+  /* 20261102W：图表悬停 → 全屏放大。
+     之前只是把卡片放大一点，字依旧小。现在把这张图铺到整个窗口上：
+     遮罩盖住页面全部内容、锁住背景滚动，卡内字号 19px / 标注 16px，
+     任何一行标签与百分比都能读清。移出窗口、按 Esc、点遮罩右侧空白都会收回。 */
+  var ZOOM_OV = null, ZOOM_SRC = null, ZOOM_T = null;
+  function repZoomClose() {
+    if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
+    if (ZOOM_OV && ZOOM_OV.parentNode) ZOOM_OV.parentNode.removeChild(ZOOM_OV);
+    ZOOM_OV = null; ZOOM_SRC = null;
+    if (document.body) document.body.classList.remove("rk-zoom-lock");
+  }
+  function repZoomOpen(ch) {
+    if (ZOOM_OV && ZOOM_OV.parentNode) ZOOM_OV.parentNode.removeChild(ZOOM_OV);
+    var ov = document.createElement("div");
+    ov.className = "rk-zoom-ov";
+
+    /* 克隆一份：原图留在原位，收回后页面不重排 */
+    var card = ch.cloneNode(true);
+    card.className = "rk-ch rk-zoom-card";
+
+    /* 右上角关闭按钮（鼠标离开也能关，这个给不习惯"移开即关"的人） */
+    var x = document.createElement("button");
+    x.type = "button";
+    x.className = "rk-zoom-x";
+    x.setAttribute("aria-label", "关闭放大");
+    x.textContent = "×";
+    x.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); repZoomClose(); });
+    card.appendChild(x);
+
+    var tip = document.createElement("div");
+    tip.className = "rk-zoom-tip";
+    tip.textContent = "移出窗口 / 按 Esc 关闭";
+    ov.appendChild(tip);
+    ov.appendChild(card);
+
+    ov.addEventListener("mouseenter", function () {
+      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
+    });
+    ov.addEventListener("mouseleave", function () {
+      if (ZOOM_T) clearTimeout(ZOOM_T);
+      ZOOM_T = setTimeout(repZoomClose, 160);
+    });
+    /* 点遮罩空白处直接关 */
+    ov.addEventListener("click", function (e) {
+      if (e.target === ov || e.target === tip) repZoomClose();
+    });
+
+    (document.body || document.documentElement).appendChild(ov);
+    if (document.body) document.body.classList.add("rk-zoom-lock");
+    ZOOM_OV = ov;
+  }
+  function bindRepZoom() {
+    if (bindRepZoom.__b) return;
+    bindRepZoom.__b = true;
+    /* 悬停意图：鼠标扫过时不要一张张弹，停住 150ms 才弹 */
+    document.addEventListener("mouseover", function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest(".rk-zoom-ov")) return;         /* 放大层内部不再套一层 */
+      var ch = t.closest(".rk-ch");
+      if (!ch) return;
+      if (ch === ZOOM_SRC) return;
+      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
+      ZOOM_SRC = ch;
+      ZOOM_T = setTimeout(function () {
+        ZOOM_T = null;
+        if (ZOOM_SRC === ch) repZoomOpen(ch);
+      }, 150);
+    });
+    document.addEventListener("mouseout", function (e) {
+      if (!ZOOM_SRC) return;
+      var to = e.relatedTarget;
+      /* 在原图内部移动、或移进了放大卡，都不算离开 */
+      if (to && (ZOOM_SRC.contains(to) || (ZOOM_OV && ZOOM_OV.contains(to)))) return;
+      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
+      if (!ZOOM_OV) { ZOOM_SRC = null; return; }
+      ZOOM_T = setTimeout(repZoomClose, 160);
+    });
+    /* Esc 关闭 */
+    document.addEventListener("keydown", function (e) {
+      if ((e.key === "Escape" || e.key === "Esc" || e.keyCode === 27) && ZOOM_OV) repZoomClose();
+    });
+    /* 滚动、改窗口大小、切走页面时收掉，避免浮在半空不动。
+       卡内滚动是允许的（图可能比一屏高），所以只对卡外的滚动生效。 */
+    window.addEventListener("scroll", function (e) {
+      if (ZOOM_OV && e && e.target && ZOOM_OV.contains(e.target)) return;
+      if (ZOOM_OV) repZoomClose();
+    }, true);
+    window.addEventListener("resize", repZoomClose);
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) repZoomClose();
+    });
+  }
+
   function bindFav() {
     var box = $("#rk-body");
     /* 20261102K：报告详情折叠。详情块是每次重绘都换新的 DOM，
@@ -2940,6 +3055,7 @@
         syncRepDetail(box);
       }, true);
     }
+    bindRepZoom();
     if (box && !box.__favBound) {
       box.__favBound = true;
       /* 捕获阶段拦截：卡片自身有「点击开灯箱」，星标与勾选必须先被我们吃掉 */
