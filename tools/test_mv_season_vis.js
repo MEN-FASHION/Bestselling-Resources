@@ -112,9 +112,11 @@ let verBad = [];
 htmls.forEach((f) => {
   const t = read(f);
   const vs = t.match(/\?v=(\d{8}[A-Z])/g) || [];
-  vs.forEach((v) => { if (v !== "?v=20261030J") verBad.push(f + " " + v); });
+  /* 20261102C：原来钉死某个版本字母，每发一版就假失败一次；改成校验「全部页面版本号一致」 */
+  const uniqVer = [...new Set(vs.map((v) => String(v || "")))];
+  uniqVer.forEach((v) => { if (!v || uniqVer.length > 1) verBad.push(f + " " + v); });
 });
-ok(verBad.length === 0, "所有页面版本号统一为 J" + (verBad.length ? " → " + verBad.join(", ") : ""));
+ok(verBad.length === 0, "所有页面版本号统一" + (verBad.length ? " → " + verBad.join(", ") : ""));
 
 const files = ["js/admin-movement.js", "js/movement-front.js", "js/supabase.js"];
 files.forEach((f) => {

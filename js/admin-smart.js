@@ -1066,10 +1066,30 @@ function bindSmartModal() {
   }
 
 // 是否正在上传
+  /* 20261102D：把「上传图片」入口恢复到智能打标右池。
+     20261030A 为免图库数据边界与打标边界混淆，把批量上传从本弹窗摘掉了，
+     结果想补图的图只能绕到别的专区。这里恢复，但把「传到哪个类目」直接摆在上传按钮旁，
+     并且上传前后都显式提示目标类目，边界不再含糊。 */
   function bindSmartUpload() {
     const fi = document.querySelector("#smart-file");
     if (fi) fi.onchange = () => { smartAddFiles(fi.files); fi.value = ""; };
-// 智能打标弹窗内：上传链接Excel，给当前智能待传图片按文件名挂外链
+    const btn = document.querySelector("#smart-upload-btn");
+    if (btn) { btn.onclick = doSmartUpload; btn.disabled = smartPending.length === 0; }
+    const sel = document.querySelector("#smart-cat");
+    if (sel && !sel.dataset.filled) {
+      sel.dataset.filled = "1";
+      fillSmartCat();                       /* 类目清单异步填，填完再刷新一次提示 */
+      setTimeout(() => smartRenderPending(), 300);
+    }
+    if (sel && !sel.dataset.bound) {
+      sel.dataset.bound = "1";
+      /* 换类目就刷新入口卡上的「目标类目」提示，避免看着旧类目传错 */
+      sel.addEventListener("change", () => renderSmartUploadEntry());
+    }
+    smartRenderPending();
+  }
+
+  // 智能打标弹窗内：上传链接Excel，给当前智能待传图片按文件名挂外链
   function smartUrlMatch(files) {
     if (!files || !files.length) return;
     if (!smartPending.length) { sbToast("请先选择图片，再上传匹配链接表格", false); return; }
@@ -1135,9 +1155,6 @@ function bindSmartModal() {
     if (t.id === "url-match-input") { handleUrlMatch(t.files); t.value = ""; }
     else if (t.id === "smart-url-file") { smartUrlMatch(t.files); t.value = ""; }
   });
-    const btn = document.querySelector("#smart-upload-btn");
-    if (btn) btn.onclick = doSmartUpload;
-  }
 
 async function fillSmartCat() {
     const sel = document.querySelector("#smart-cat");
@@ -1189,23 +1206,29 @@ function smartRenderPending() {
     if (!undoneGrid) return;
     // 移除旧的上传入口/待传卡（保留真正的图片卡）
     [...undoneGrid.querySelectorAll(".smart-up-entry, .smart-up-thumb")].forEach(n => n.remove());
-    /* 20261030A：视觉专区不再提供批量上传。
-       上传与打标原本绑在同一个弹窗里，导致图库的数据边界和打标边界混在一起。
-       现在批量传图统一走「趋势动向」专区，这里只保留纯打标能力。
-       原上传逻辑（smartPick / doSmartUpload 等）保留未删，日后要恢复只需把下面
-       的 return 去掉即可。 */
-    return;
+    /* 20261102D：恢复上传入口（20261030A 曾把它摘掉，导致右池只剩纯打标）。
+       目标类目取「未打该标签」池头上方的类目下拉，没选就不允许上传，
+       避免"传到哪个类目"含糊不清把图库数据搞乱。 */
+    const cat = (document.querySelector("#smart-cat") || {}).value || "";
     // ① 上传入口卡片（占一个图片位）
     const entry = document.createElement("div");
     entry.className = "smart-card smart-up-entry";
-    entry.onclick = (e) => { e.stopPropagation(); smartPick(); };
-    entry.innerHTML = `<div class="holder up-holder"><div class="up-inner"><span class="up-plus">＋</span><span class="up-txt">上传图片</span><span class="up-sub">点击选文件</span></div></div>`;
+    entry.onclick = (e) => {
+      e.stopPropagation();
+      if (!cat) { sbToast("请先在右池上方选择「上传类目」", false); return; }
+      smartPick();
+    };
+    entry.innerHTML = '<div class="holder up-holder"><div class="up-inner">'
+      + '<span class="up-plus">＋</span>'
+      + '<span class="up-txt">上传图片</span>'
+      + '<span class="up-sub">' + (cat ? "目标类目：" + cat : "先选类目再上传") + '</span>'
+      + '</div></div>';
     undoneGrid.insertBefore(entry, undoneGrid.firstChild);
     // ② 待传缩略图卡（小图预览，无边框文件标题）
     smartPending.forEach((it, idx) => {
       const t = document.createElement("div");
       t.className = "smart-card smart-up-thumb";
-      t.innerHTML = `<div class="holder"><img src="${it.url}" alt=""></div><button class="x" title="移除">×</button>`;
+      t.innerHTML = '<div class="holder"><img src="' + it.url + '" alt=""></div><button class="x" title="移除">×</button>';
       t.querySelector(".x").onclick = (e) => { e.stopPropagation(); smartRemovePending(idx); };
       undoneGrid.insertBefore(t, entry.nextSibling);
     });

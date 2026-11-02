@@ -495,8 +495,12 @@
    * ==========================================================================*/
   var PDF_W_MM = 297, PDF_H_MM = 210;
   var LONG_W_MM = 297;        /* 长页宽度 = A4 宽 */
-  var LONG_MAX_H_MM = 4800;   /* 单页高度上限，留足余量；超过才分页 */
-  var LONG_CHUNK_PX = 6000;   /* 每段贴图的最大像素高度，控制内存峰值 */
+  /* 20261102C：单页高度从 4800mm 降到 1600mm。
+     4800mm 时一页宽高比约 1:16，前台按满宽渲染出来是一张 1100×18000 的 canvas
+     （约 2000 万像素、80MB），光是画这一页就要卡好几秒，两张一起就是 160MB。
+     1600mm 后同样内容分页多、但每页只有 1100×5600，画起来快，滚动也不掉帧。 */
+  var LONG_MAX_H_MM = 1600;
+  var LONG_CHUNK_PX = 4000;   /* 每段贴图的最大像素高度，控制内存峰值 */
 
   async function loadJsPdf() {
     if (window.jspdf && window.jspdf.jsPDF) return true;
@@ -650,6 +654,33 @@
     return { title: title, tag: tag, category: "", description: desc };
   }
 
+  /* 长页分页点：只在一张卡片的上边缘之外切，宁可留白也不把卡片/标题切两半。
+     返回的是「贴图条（strip）上的像素断点」，从 0 到 stripH。 */
+  function planLongPages(blocks, blockScale, ratio, stripH, mmPerPx, maxMm) {
+    var maxPx = maxMm / mmPerPx;
+    var bounds = (blocks || [])
+      .map(function (b) { return Math.round(Number(b.y || 0) * blockScale * ratio); })
+      .filter(function (v) { return v > 4; })
+      .sort(function (a, b) { return a - b; });
+    var cuts = [0], y = 0, guard = 0;
+    while (y < stripH - 1 && guard++ < 600) {
+      var target = y + maxPx;
+      if (target >= stripH) { cuts.push(stripH); break; }
+      var best = -1;
+      for (var i = 0; i < bounds.length; i++) {
+        var v = bounds[i];
+        /* 至少占满半页再考虑切，否则会切出一堆很短的页 */
+        if (v > y + maxPx * 0.45 && v <= target) best = v;
+      }
+      var cut = best > 0 ? best : Math.round(target);
+      if (cut <= y) cut = Math.round(target);
+      cuts.push(cut);
+      y = cut;
+    }
+    if (cuts[cuts.length - 1] < stripH) cuts.push(stripH);
+    return cuts;
+  }
+
   /* 收藏 → PDF（一张连续长页）。返回 { pdfBlob, coverBlob, meta, pages, count, failed } */
   async function exportPdfForTrend(items, cats, opts) {
     opts = opts || {};
@@ -671,40 +702,42 @@
     var cover = buildCover(p, now);
     var src = res.canvas;
 
-    /* 长条贴图先降到 2200px 宽（297mm 上约 190dpi，看清字足够），体积和内存都小很多 */
-    var targetW = 2200;
+    /* 20261102C：贴图宽度从 2200 降到 1600、JPEG 质量 0.85 → 0.72。
+       1600px 在 297mm 上约 137dpi，正文与标签仍然清晰；
+       实测同样内容整份 PDF 体积降约一半，前台下载+解析的时间同步减半。 */
+    var targetW = 1600;
     var ratio = Math.min(1, targetW / src.width);
     var drawW = Math.round(src.width * ratio);
     var stripH = Math.round(src.height * ratio);
 
     var mmPerPx = LONG_W_MM / drawW;
     var totalMm = stripH * mmPerPx;
-    var pageCount = Math.max(1, Math.ceil(totalMm / LONG_MAX_H_MM));
-    var firstH = Math.min(LONG_MAX_H_MM, totalMm);
+    /* 断点按块边界算：不再按固定高度硬切，避免把一行卡片切成两半（那条黑缝就是这么来的） */
+    var cuts = planLongPages(res.blocks, res.scale || 1, ratio, stripH, mmPerPx, LONG_MAX_H_MM);
+    var pageCount = Math.max(1, cuts.length - 1);
 
     var jsPDF = window.jspdf.jsPDF;
-    /* 第一页就按长页实际高度建，省掉「先建一张 A4 再删掉」的兼容风险 */
     var pdf = new jsPDF({
-      orientation: firstH >= LONG_W_MM ? "portrait" : "landscape",
+      orientation: "portrait",
       unit: "mm",
-      format: [LONG_W_MM, firstH],
+      format: [LONG_W_MM, Math.max(1, (cuts[1] - cuts[0]) * mmPerPx)],
     });
 
     for (var pg = 0; pg < pageCount; pg++) {
-      var topMm = pg * LONG_MAX_H_MM;
-      var pageHMm = Math.min(LONG_MAX_H_MM, totalMm - topMm);
+      var y0 = cuts[pg], y1 = cuts[pg + 1];
+      var pageHMm = Math.max(1, (y1 - y0) * mmPerPx);
       if (pg > 0) pdf.addPage([LONG_W_MM, pageHMm], "portrait");
 
-      var y0 = Math.round(topMm / mmPerPx);
-      var y1 = Math.min(stripH, Math.round((topMm + pageHMm) / mmPerPx));
       var cur = y0;
       var guard = 0;
-      while (cur < y1 && guard++ < 200) {
+      while (cur < y1 && guard++ < 400) {
         var hPx = Math.min(LONG_CHUNK_PX, y1 - cur);
         var piece = document.createElement("canvas");
         piece.width = drawW;
         piece.height = hPx;
         var pc = piece.getContext("2d");
+        /* 页面底部留白用报告底色，而不是黑/白 —— 前台把页间距设成 0，
+           这样页尾留白与下一页的底色一致，滚动时看不出接缝 */
         pc.fillStyle = C.bg;
         pc.fillRect(0, 0, drawW, hPx);
         pc.drawImage(src, 0, Math.round(cur / ratio), src.width,
@@ -714,7 +747,7 @@
           opts.onPage("正在拼装长页 " + Math.round(((cur - y0) / Math.max(1, y1 - y0)) * 100) + "%");
         }
         pdf.addImage(
-          piece.toDataURL("image/jpeg", 0.85), "JPEG",
+          piece.toDataURL("image/jpeg", 0.72), "JPEG",
           0, (cur - y0) * mmPerPx, LONG_W_MM, hPx * mmPerPx
         );
         piece.width = piece.height = 0;    /* 及时释放 */
@@ -978,9 +1011,10 @@
   NS.loadJsPdf = loadJsPdf;
   NS.trendMeta = trendMeta;
   NS.paginate = paginate;
+  NS.planLongPages = planLongPages;   /* 长页分页点：按块边界切（20261102C） */
   NS.download = download;
   NS.fileName = fileName;
   NS.cancel = function () { CANCEL.v = true; };
-  NS._const = { LW: LW, PAD: PAD, GAP: GAP, COLS: COLS, TITLE_H: TITLE_H, HEAD_H: HEAD_H, FOOT_H: FOOT_H };
+  NS._const = { LW: LW, PAD: PAD, GAP: GAP, COLS: COLS, TITLE_H: TITLE_H, HEAD_H: HEAD_H, FOOT_H: FOOT_H, LONG_MAX_H_MM: LONG_MAX_H_MM };
   window.FavExport = NS;
 })();

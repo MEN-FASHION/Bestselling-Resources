@@ -862,9 +862,8 @@
       if (!doc) {
         /* 先要一个带签名的地址，再取二进制 */
         const url = await SB.trendPreviewUrl(t.path);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("load");
-        const buf = await res.arrayBuffer();
+        const buf = await fetchPdfWithProgress(url, loading);
+        loading.textContent = "正在解析文档…";
         pdfLoadTask = window.pdfjsLib.getDocument({ data: buf });
         doc = await pdfLoadTask.promise;
         pdfLoadTask = null;
@@ -915,6 +914,35 @@
     }
   }
 
+  /* 下载 PDF 二进制：边下边报进度。
+     一份长页周报动辄十几 MB，以前 fetch 整个吞下去、页面只显示「正在加载预览…」，
+     看起来就像卡死了；现在至少能看到百分比和已下多少 MB。 */
+  async function fetchPdfWithProgress(url, loading) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("load");
+    const total = Number(res.headers.get("content-length") || 0);
+    if (!res.body || !res.body.getReader) return await res.arrayBuffer();
+    const reader = res.body.getReader();
+    const chunks = [];
+    let got = 0;
+    for (;;) {
+      const step = await reader.read();
+      if (step.done) break;
+      chunks.push(step.value);
+      got += step.value.length;
+      if (loading && !loading.classList.contains("hidden")) {
+        const mb = (got / 1048576).toFixed(1);
+        loading.textContent = total
+          ? "正在下载 " + Math.min(99, Math.round((got / total) * 100)) + "%（" + mb + " / " + (total / 1048576).toFixed(1) + " MB）"
+          : "正在下载 " + mb + " MB";
+      }
+    }
+    const out = new Uint8Array(got);
+    let off = 0;
+    chunks.forEach((c) => { out.set(c, off); off += c.length; });
+    return out.buffer;
+  }
+
   /* 按容器宽度算每页显示尺寸；zoom 只改显示倍数，不重新下载文件 */
   async function relayoutPdf() {
     if (!pdfDoc || !pdfPages.length) return;
@@ -948,13 +976,26 @@
     return er.bottom > sr.top - 600 && er.top < sr.bottom + 600;
   }
 
+  /* 单页渲染的像素上限：
+     老版周报是「一张页高 4800mm」的超长页，宽高比约 1:16，
+     按满宽 + 1.5 倍像素比画出来是 1100×18000 = 2000 万像素（约 80MB）一张 canvas，
+     画一张就好几秒，两张开屏直接上百 MB —— 这就是「打开要等很久」的主因。
+     这里给高度封顶，超了就按比例降分辨率，画布面积可控，滚动也不再掉帧。 */
+  const PDF_MAX_PX_H = 6000;
+  const PDF_MAX_PX_W = 2400;
+
   async function renderPdfAt(idx) {
     const p = pdfPages[idx];
     if (!p || p.rendered || !pdfDoc) return;
     p.rendered = true;
     try {
       const page = await pdfDoc.getPage(idx + 1);
-      const vp = page.getViewport({ scale: pdfBaseScale * pdfScale * (window.devicePixelRatio > 1 ? 1.5 : 1) });
+      const base = page.getViewport({ scale: 1 });
+      let s = pdfBaseScale * pdfScale * (window.devicePixelRatio > 1 ? 1.5 : 1);
+      /* 高度封顶：超长页降分辨率，宁可略糊也不要把主线程压死 */
+      if (base.height * s > PDF_MAX_PX_H) s = PDF_MAX_PX_H / base.height;
+      if (base.width * s > PDF_MAX_PX_W) s = Math.min(s, PDF_MAX_PX_W / base.width);
+      const vp = page.getViewport({ scale: s });
       const cv = p.canvas;
       cv.width = Math.round(vp.width);
       cv.height = Math.round(vp.height);

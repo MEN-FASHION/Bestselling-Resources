@@ -954,9 +954,12 @@ select.input {
 .pdf-pageno { font-size: 13px; color: var(--sub); min-width: 56px; text-align: center; }
 .pdf-sep { color: var(--line); }
 .pdf-stage { flex: 1; overflow: auto; background: #26262b; padding: 24px; position: relative; }
-/* 连续滚动：所有页纵向排列，页与页之间留一条缝，读长报告不用一直点翻页 */
-.pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 18px; }
-.pdf-page-wrap { position: relative; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.55); border-radius: 2px; overflow: hidden; flex: none; }
+/* 连续滚动：所有页纵向首尾相接。
+   20261102C：原来页间留 18px 缝 + 每页一圈 10px 投影，在深色底上就是一条黑色横线，
+   而且正好压在上一页最后一行卡片的下沿，看起来像内容被压住了。
+   现在页间距 0、去掉纵向投影，长页之间底色一致，滚动时看不出接缝。 */
+.pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.pdf-page-wrap { position: relative; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.08); border-radius: 0; overflow: hidden; flex: none; }
 .pdf-page-wrap::after { content: attr(data-page); position: absolute; right: 8px; bottom: 6px; font-size: 11px; color: rgba(0,0,0,.28); pointer-events: none; }
 .pdf-page-canvas { display: block; width: 100%; height: 100%; }
 .pdf-canvas { max-width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,.55); background: #fff; }
@@ -1535,6 +1538,14 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 /* ================= 智能打标内上传（入口卡=右池首位，按钮/进度常驻右池头部） ================= */
 #smart-pool-undone .smart-pool-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #smart-pool-undone .smart-pool-head .sp-count { margin-right: 8px; }
+/* 20261102D：池头右侧的上传控件组（类目下拉 + 上传按钮）与新进度条 */
+.smart-up-ctl { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.smart-cat-sel { min-width: 110px; max-width: 150px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card, #fff); color: var(--txt); font-size: 12px; }
+#smart-upload-btn { height: 30px; padding: 0 14px; font-size: 12px; white-space: nowrap; }
+#smart-upload-btn:disabled { opacity: .4; cursor: not-allowed; }
+.smart-progress { height: 6px; background: rgba(0,0,0,.06); border-bottom: 1px solid var(--line); overflow: hidden; }
+.smart-progress .progress-bar { height: 100%; width: 0; background: var(--gold); transition: width .3s ease; }
+.smart-progress.hidden { display: none; }
 .su-spacer { flex: 1 1 auto; }
 .su-cat { min-width: 110px; max-width: 150px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--txt); font-size: 12px; }
 .sm-upload { height: 30px; padding: 0 14px; font-size: 12px; white-space: nowrap; }

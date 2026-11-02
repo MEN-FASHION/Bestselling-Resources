@@ -48,7 +48,7 @@ ok("长页宽度常量 = A4 宽 297mm", LONG_W_MM === 297, LONG_W_MM);
 ok("单页高度上限已定义且 <= PDF 规范 5080mm", LONG_MAX_H_MM > 0 && LONG_MAX_H_MM <= 5080, LONG_MAX_H_MM);
 ok("分段贴图上限已定义（防一次性超大图）", LONG_CHUNK_PX > 0 && LONG_CHUNK_PX <= 8000, LONG_CHUNK_PX);
 
-/* 复算实现里的尺寸推导，验证「同样的内容在各种长度下都只出 1 页（除超限）」 */
+/* 复算实现里的尺寸推导（20261102C：贴图宽度 1600px、页高上限 1600mm、按块边界分页） */
 function planLong(srcW, srcH, targetW) {
   const ratio = Math.min(1, targetW / srcW);
   const drawW = Math.round(srcW * ratio);
@@ -63,19 +63,20 @@ function planLong(srcW, srcH, targetW) {
 const cases = [
   { name: "小内容（3200x1200）", w: 3200, h: 1200, want: 1 },
   { name: "一般报告（3200x9000）", w: 3200, h: 9000, want: 1 },
-  { name: "长报告（3200x30000）", w: 3200, h: 30000, want: 1 },
+  /* 1600mm 上限下 30000px 原图会分成 2 页，这是刻意的：单页越长，前台越画不动 */
+  { name: "长报告（3200x30000）", w: 3200, h: 30000, want: 2 },
 ];
 cases.forEach((c) => {
-  const r = planLong(c.w, c.h, 2200);
-  ok(c.name + " → 单页，不切断", r.pageCount === c.want, r.pageCount + " 页 / " + Math.round(r.totalMm) + "mm");
+  const r = planLong(c.w, c.h, 1600);
+  ok(c.name + " → " + c.want + " 页", r.pageCount === c.want, r.pageCount + " 页 / " + Math.round(r.totalMm) + "mm");
   ok(c.name + " → 页宽换算后恒为 297mm", Math.abs(r.mmPerPx * r.drawW - LONG_W_MM) < 0.01, r.mmPerPx * r.drawW);
+  ok(c.name + " → 每页高度不超上限", r.totalMm / r.pageCount <= LONG_MAX_H_MM + 1, Math.round(r.totalMm / r.pageCount));
 });
 
-/* 超过单页上限时必须分页，且总高度不丢
- * 阈值换算：totalMm = 缩放后高度 × 297/2200，要超过 4800mm 需要原始高度约 5.2 万像素 */
-const huge = planLong(3200, 60000, 2200);
-ok("超长内容按上限分页（不是无脑一页）", huge.pageCount === 2, huge.pageCount + " 页 / " + Math.round(huge.totalMm) + "mm");
-ok("分页只发生在超过上限时", huge.totalMm > LONG_MAX_H_MM && huge.totalMm <= LONG_MAX_H_MM * 2, Math.round(huge.totalMm));
+/* 超过单页上限时必须分页，且总高度不丢 */
+const huge = planLong(3200, 60000, 1600);
+ok("超长内容按上限分页（不是无脑一页）", huge.pageCount > 1, huge.pageCount + " 页 / " + Math.round(huge.totalMm) + "mm");
+ok("分页后总高度守恒", Math.abs(huge.totalMm - huge.stripH * huge.mmPerPx) < 1, Math.round(huge.totalMm));
 
 /* 用真实 jsPDF 走一遍：建长页 → 分段贴图 → 仍然只有 1 页 */
 const p = planLong(3200, 15000, 2200);
