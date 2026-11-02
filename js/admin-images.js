@@ -1117,11 +1117,14 @@ async function refreshTagConsumers() {
 
 // ================= 数据看板（各类标签统计） =================
   function bindDashboard() {
-    $("#dash-refresh").onclick = () => loadDashboard();
+    /* 20261102F：导出打标表 / 导入打标表 已从数据看板移除（需求），不再绑定。
+       20261102G：顶部操作区（类目筛选、刷新数据）同步移除，此处不再找这些元素。
+       元素缺失时直接跳过，避免空指针把整段初始化打断。
+       两个导入导出绑定函数仍完整保留在文件里，日后要恢复只需放回页面元素并重新调用。 */
+    const rf = document.getElementById("dash-refresh");
+    if (rf) rf.onclick = () => loadDashboard();
     const sel = document.getElementById("dash-cat-filter");
     if (sel) sel.onchange = () => loadDashboard();
-    bindDashExport();
-    bindDashImport();
   }
 
   /* 导入打标表：解析 → 校验 → 写回。先「先校验」可只做匹配与取值检查，不写库。 */
@@ -1209,6 +1212,9 @@ async function refreshTagConsumers() {
 
   /* 按类目导出（图片清单）：数据源 = 看板已拉到的全站图片，不再额外查库 */
   let _dashImgs = [];
+  /* 20261102G：顶部类目下拉已移除，改由「类目分布表」点行切换；
+     空串 = 全站。再次点击同一行取消筛选。 */
+  let _dashCat = "";
   function bindDashExport() {
     const btn = document.getElementById("dash-export-btn");
     if (!btn) return;
@@ -1267,6 +1273,7 @@ async function refreshTagConsumers() {
   }
 
 function buildDashCatFilter(imgs) {
+    /* 20261102G：类目下拉已从看板移除，元素不存在时直接跳过（保留函数便于恢复）。 */
     const sel = document.getElementById("dash-cat-filter");
     if (!sel) return;
     const CATS = window.CAT_SEARCH;
@@ -1293,7 +1300,7 @@ async function loadDashboard() {
       : SB.listImages(null);
     try {
       [imgs, defs] = await Promise.all([imgsP, SB.listTagDefs()]);
-    } catch (e) { meta.textContent = "统计失败，请点击刷新重试"; return; }
+    } catch (e) { meta.textContent = "统计失败，请稍后重试或刷新页面"; return; }
     /* 20261030A：打标数据已独立到标签表，images 里只剩图片本体。
        看板/导出/覆盖率统计都基于 imgs，这里按图片地址把标签合并进来，
        保证「看到的就是打过的」。读不到不影响页面，只是标签显示为空。 */
@@ -1317,23 +1324,18 @@ async function loadDashboard() {
     const box = document.getElementById("dash-cat-ov");
     if (!box || !window.ImageExport) return;
     ImageExport.renderOverview(box, imgs, function (cat) {
-      const sel = document.getElementById("dash-cat-filter");
-      if (sel) {
-        if (![...sel.options].some(o => o.value === cat)) { const op = document.createElement("option"); op.value = cat; op.textContent = cat; sel.appendChild(op); }
-        sel.value = cat;
-      }
-      const ecat = document.getElementById("dash-exp-cat");
-      if (ecat) { ecat.value = cat; const sp = document.getElementById("dash-exp-split"); if (sp) { sp.checked = false; sp.disabled = !!cat; } }
+      /* 点同一行 = 取消筛选，回到全站 */
+      _dashCat = (_dashCat && _dashCat === cat) ? "" : String(cat || "");
       loadDashboard();
     });
   }
-    buildDashExportCat(_dashImgs);
+    /* 20261102F：导出面板已移除，不再构建导出用的类目下拉 */
     renderDashCatOverview(_dashImgs);
-    const sel = document.getElementById("dash-cat-filter");
-    const cat = sel && sel.value ? sel.value : "";
+    const cat = _dashCat || "";
     if (cat) imgs = imgs.filter(i => i.category === cat);
-    const catLabel = cat || "全部类目";
-    meta.textContent = "类目「" + catLabel + "」共 " + imgs.length + " 张图片 · 更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    meta.textContent = (cat ? "类目「" + cat + "」共 " + imgs.length + " 张图片" : "全站共 " + imgs.length + " 张图片") +
+      " · 更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false }) +
+      (cat ? " · 再次点击该类目行可取消筛选" : "");
 
     // 总览卡
     const cats = new Set(imgs.map(i => i.category));
