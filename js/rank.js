@@ -1387,12 +1387,17 @@
       var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
       var stCnt = {}, stTot = 0, vCnt = {}, vTot = 0, fCnt = {}, fTot = 0;
       var cfCnt = {}, cfTot = 0, cuCnt = {}, cuTot = 0, psCnt = {}, psTot = 0;
+      /* 20261102L：结构部件 / 面料进统计。这两个维度是商家真正能改的东西
+         （拉链、口袋、荷叶边怎么加，面料选什么），过去只在画廊标签里能看到，
+         报告里没参与对照，等于白打。 */
+      var sdCnt = {}, sdTot = 0, fbCnt = {}, fbTot = 0;
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
         if (tagArr(t.style_tags).length || tagArr(t.visual_tags).length || tagArr(t.shoot_tags).length
           || tagArr(t.element_tags).length || tagArr(t.craft_tags).length || tagArr(t.fit_tags).length
-          || tagArr(t.culture_tags).length || tagArr(t.psych_tags).length) tagAny++;
+          || tagArr(t.culture_tags).length || tagArr(t.psych_tags).length
+          || tagArr(t.struct_tags).length || tagArr(t.fabric_tags).length) tagAny++;
         /* 同一张图同一个维度里若出现重复值，只算一次（否则占比会超过 100%） */
         var sSet = {}, nS = 0;
         tagArr(t.shoot_tags).forEach(function (v) { if (sSet[v] === undefined) { sSet[v] = 1; sCnt[v] = (sCnt[v] || 0) + 1; nS++; } });
@@ -1424,6 +1429,15 @@
         var psSet = {}, nPs = 0;
         tagArr(t.psych_tags).forEach(function (v) { if (psSet[v] === undefined) { psSet[v] = 1; psCnt[v] = (psCnt[v] || 0) + 1; nPs++; } });
         if (nPs) psTot++;
+        /* 结构部件：值形如「拉链」「荷叶边」，直接按值统计 */
+        var sdSet = {}, nSd = 0;
+        tagArr(t.struct_tags).forEach(function (v) { if (sdSet[v] === undefined) { sdSet[v] = 1; sdCnt[v] = (sdCnt[v] || 0) + 1; nSd++; } });
+        if (nSd) sdTot++;
+        /* 面料：值可能是「纯棉（100%棉）」这类带括注的写法，按原样统计；
+           同一张图若有多个候选，各算一次（分母是本维度已打标的图数） */
+        var fbSet = {}, nFb = 0;
+        tagArr(t.fabric_tags).forEach(function (v) { if (fbSet[v] === undefined) { fbSet[v] = 1; fbCnt[v] = (fbCnt[v] || 0) + 1; nFb++; } });
+        if (nFb) fbTot++;
         if (nF) fTot++;
       });
       var tops = function (obj, tot, lim) {
@@ -1437,7 +1451,9 @@
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
         craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
-        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0, tagged: sTot, tagAny: tagAny
+        struct: tops(sdCnt, sdTot, 3), fabric: tops(fbCnt, fbTot, 3),
+        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0 || sdTot > 0 || fbTot > 0,
+        tagged: sTot, tagAny: tagAny
       };
     });   /* 没上传的那一列也保留卡片：写「无数据」，不要静默消失 */
   }
@@ -1521,8 +1537,14 @@
        ④ 逐列画像 + 可执行建议 + 数据说明（样本不足要提示）
      数据层不动：全部复用 vitalsOfGroups 已算好的占比。
      ============================================================ */
-  var REP_DIMS = [["风格", "style"], ["文化背景", "culture"], ["消费心理", "psych"],
-    ["视觉", "visual"], ["二次工艺", "craft"], ["版型", "fit"], ["拍摄方式", "shoot"], ["元素", "elems"]];
+  /* 20261102L：报告口径改为「面向商家」。
+     商家能立刻改的只有四件事：加什么工艺、加什么结构件、版型怎么修、用什皮料/面料。
+     所以对照表与结论只在这四个维度里挑重点，风格 / 视觉 / 拍摄方式退为参考项；
+     图案与印花（元素 / 图案类型）不再进对照表，也不再出现在建议里 ——
+     印花是设计端一次性决定的事，商家照着抄只会撞款。 */
+  var REP_MERCH = [["二次工艺", "craft"], ["结构部件", "struct"], ["版型", "fit"], ["面料", "fabric"]];
+  /* 对照表展示顺序：商家四维在前，参考项在后 */
+  var REP_DIMS = REP_MERCH.concat([["风格", "style"], ["视觉", "visual"], ["拍摄方式", "shoot"]]);
 
   /* 某维度在「其余列」的最高占比，用来给某一格算落差 */
   function repOthersMax(V, self, key) {
@@ -1563,7 +1585,8 @@
     var ts = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate())
       + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
     return '<div class="rk-rep-head">'
-      + '<div class="rk-rep-title">趋势构成分析报告<span class="rk-rep-sub">' + esc(dim.head) + '</span></div>'
+      + '<div class="rk-rep-title">趋势构成分析报告<span class="rk-rep-sub">' + esc(dim.head)
+      + ' · 商家视角（工艺 / 结构部件 / 版型 / 面料）</span></div>'
       + '<div class="rk-rep-meta">'
       + '<span>' + esc(repScopeText(dim)) + '</span>'
       + '<span>分组 <b>' + esc(V.map(function (c) { return c.cat; }).join(" / ")) + '</b></span>'
@@ -1598,7 +1621,7 @@
 
     /* 结论 2：最有辨识度的维度——找出跨列落差最大的「同一维度顶级标签」 */
     var sig = null;
-    REP_DIMS.forEach(function (d) {
+    REP_MERCH.concat([["风格", "style"], ["视觉", "visual"]]).forEach(function (d) {
       var names = {};
       live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
       Object.keys(names).forEach(function (nm) {
@@ -1614,13 +1637,13 @@
     if (sig && sig.gap >= 8) {
       items.push("差异最集中在<b>" + sig.dimName + "</b>：「" + esc(sig.name) + "」在「" + esc(sig.cat)
         + "」占 " + sig.v + "%，其余" + dim.noun + "平均只有 " + sig.avg + "%（高出 " + sig.gap
-        + " 个百分点）——这是该列最可复用的一条视觉公式。");
+        + " 个百分点）——这是该列最可复用的一条做法，直接对着改就行。");
     }
 
     /* 结论 3：各列独有标签（只有它出现），说明是对手的空白区 */
     var solo = [];
     live.forEach(function (c) {
-      REP_DIMS.forEach(function (d) {
+      REP_MERCH.forEach(function (d) {
         if (solo.length >= 2) return;
         var t = (c[d[1]] || [])[0];
         if (!t || t[1] < 12) return;
@@ -1649,11 +1672,17 @@
   function repProfile(c, V) {
     if (!c.n) return "";
     var seg = [];
-    var st = (c.style || [])[0], vs = (c.visual || [])[0], sh = (c.shoot || [])[0], cf = (c.craft || [])[0];
-    if (st) seg.push("风格以「" + st[0] + "」为主（" + st[1] + "%）");
-    if (vs) seg.push("画面偏「" + vs[0] + "」（" + vs[1] + "%）");
-    if (sh) seg.push("呈现多为「" + sh[0] + "」（" + sh[1] + "%）");
-    if (cf && !/无工艺/.test(cf[0])) seg.push("工艺集中在「" + cf[0] + "」（" + cf[1] + "%）");
+    var cf = (c.craft || [])[0], sd = (c.struct || [])[0], ft = (c.fit || [])[0], fb = (c.fabric || [])[0];
+    /* 20261102L：画像句改成商家口径 —— 先说"能改的四件事"（工艺 / 结构件 / 版型 / 面料），
+       视觉怎么拍放最后一句补，印花不作为画像主线。 */
+    if (cf) seg.push(/无工艺/.test(cf[0]) ? ("多数没有二次工艺（" + cf[1] + "%）") : ("工艺主打「" + cf[0] + "」（" + cf[1] + "%）"));
+    if (sd) seg.push("结构件集中在「" + sd[0] + "」（" + sd[1] + "%）");
+    if (ft) seg.push("版型以「" + ft[0] + "」为主（" + ft[1] + "%）");
+    if (fb) seg.push("面料多为「" + fb[0] + "」（" + fb[1] + "%）");
+    var vs = (c.visual || [])[0], sh = (c.shoot || [])[0];
+    if (vs && sh) seg.push("画面偏「" + vs[0] + "」、多为" + sh[0]);
+    else if (vs) seg.push("画面偏「" + vs[0] + "」");
+    else if (sh) seg.push("呈现多为" + sh[0]);
     if (!seg.length) return "";
     var tail = "";
     if (c.srgP >= 10) tail = "爆发密度偏高，值得优先跟。";
@@ -1693,40 +1722,61 @@
       + rows + "</tbody></table></div></section>";
   }
 
-  /* ④ 可执行建议：只按数据触发，宁缺毋滥 */
+  /* ④ 可执行建议：只按数据触发，宁缺毋滥。
+     20261102L：全部换成商家能直接落地的动作（工艺 / 结构部件 / 版型 / 面料），
+     并把「用某个印花元素做区分」整条删掉 —— 印花是设计端一次性的决定，
+     商家照抄只会撞款，不该出现在采购侧的建议里。 */
   function repActionHtml(V, dim) {
     var live = V.filter(function (c) { return c.n > 0; });
     if (!live.length) return "";
     var out = [];
     live.forEach(function (c) {
-      /* 拍摄方式：某一列某种拍法明显更高 → 主图风格照抄 */
-      var sh = (c.shoot || [])[0];
-      if (sh && sh[1] >= 30 && repOthersMax(V, c, "shoot") + 8 <= sh[1]) {
-        out.push("「" + esc(c.cat) + "」主图建议走<b>" + esc(sh[0]) + "</b>（" + sh[1] + "% 占比，明显高于其余" + dim.noun + "），换拍法要重新验证。");
-      }
-      /* 视觉首位：纯白底 / 留白 / 3D → 直接说主图底色与构图 */
-      var vs = (c.visual || [])[0];
-      if (vs && vs[1] >= 30 && /纯白底|留白|3D/.test(vs[0])) {
-        out.push("「" + esc(c.cat) + "」画面以<b>" + esc(vs[0]) + "</b>为主（" + vs[1] + "%），主图底色与构图按这个来更稳。");
-      }
-      /* 工艺首位：可用于差异化的工艺 */
+      /* 二次工艺：可做加价点，最高优先 */
       var cf = (c.craft || [])[0];
       if (cf && cf[1] >= 25 && !/无工艺/.test(cf[0])) {
-        out.push("「" + esc(c.cat) + "」的工艺信号是<b>" + esc(cf[0]) + "</b>（" + cf[1] + "%），可作为加价点，但要先确认工厂能做、且不增加合规成本。");
+        out.push("「" + esc(c.cat) + "」的二次工艺信号是<b>" + esc(cf[0]) + "</b>（" + cf[1]
+          + "%），可直接作为加价点；先确认工厂能做、且不增加合规成本。");
       }
-      /* 元素首位独有 → 差异化标识 */
-      var el = (c.elems || [])[0];
-      if (el && el[1] >= 20) {
-        var shared = live.some(function (x) { return x !== c && repTagPct(x, "elems", el[0]) >= 10; });
-        if (!shared) out.push("「" + esc(c.cat) + "」可用<b>" + esc(el[0]) + "</b>做区分标识（" + el[1] + "% 且其余" + dim.noun + "都没有形成规模），适合做系列识别点。");
+      /* 结构部件：改一处就能落地 */
+      var sd = (c.struct || [])[0];
+      if (sd && sd[1] >= 20) {
+        var sdHi = repOthersMax(V, c, "struct");
+        out.push("「" + esc(c.cat) + "」的<b>" + esc(sd[0]) + "</b>出现率 " + sd[1] + "%"
+          + (sdHi >= 0 ? "（其余" + dim.noun + "最高仅 " + sdHi + "%）" : "")
+          + "，加这一个结构件成本最低、见效最快。");
       }
-      /* 潜力机会高但爆款低 → 说明有量没有爆点 */
+      /* 版型：直接对应制版与样衣 */
+      var ft = (c.fit || [])[0];
+      if (ft && ft[1] >= 30) {
+        out.push("「" + esc(c.cat) + "」版型集中在<b>" + esc(ft[0]) + "</b>（" + ft[1]
+          + "%），打版直接按这个方向出样，别在版型上做实验。");
+      }
+      /* 面料：说清候选与占比，提醒口头叫法不等于成分 */
+      var fb = (c.fabric || [])[0];
+      if (fb && fb[1] >= 20) {
+        out.push("「" + esc(c.cat) + "」面料首选<b>" + esc(fb[0]) + "</b>（" + fb[1]
+          + "%）。下单前对照成分标核实，口头叫法与真实成分不一致会被平台判标签不符。");
+      }
+      /* 拍摄方式：只有显著高于其余列才提，且明确是"展示"不是"改款" */
+      var sh = (c.shoot || [])[0];
+      if (sh && sh[1] >= 30 && repOthersMax(V, c, "shoot") + 8 <= sh[1]) {
+        out.push("「" + esc(c.cat) + "」主图建议走<b>" + esc(sh[0]) + "</b>（" + sh[1]
+          + "%，明显高于其余" + dim.noun + "），这是展示方式，不涉及改款。");
+      }
+      /* 主图视觉：低优先级，只在商家四维都没给出动作时补一句（纯展示，不改款） */
+      var vs = (c.visual || [])[0];
+      if (vs && vs[1] >= 40 && /纯白底|留白|3D/.test(vs[0]) && out.length < 3) {
+        out.push("「" + esc(c.cat) + "」主图底色与构图以<b>" + esc(vs[0]) + "</b>为主（" + vs[1]
+          + "%），沿用即可，不必重新拍片。");
+      }
+      /* 潜力机会高但爆款低 → 用商家手段补差异化 */
       if (c.oppP >= 50 && c.hotP <= 10) {
-        out.push("「" + esc(c.cat) + "」潜力机会 " + c.oppP + "% 而趋势爆款只有 " + c.hotP + "%，属于<b>有量无爆</b>：优先补元素与工艺的差异化，而不是加大上新量。");
+        out.push("「" + esc(c.cat) + "」潜力机会 " + c.oppP + "% 而趋势爆款只有 " + c.hotP
+          + "%，属于<b>有量无爆</b>：优先补结构件与工艺的差异化，而不是加大上新量。");
       }
     });
     if (!out.length) return "";
-    return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议</h4><ul class="rk-rep-act">'
+    return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议<span class="rk-rep-h4-sub">按工艺 → 结构部件 → 版型 → 面料排序，均为商家可直接落地的改动</span></h4><ul class="rk-rep-act">'
       + out.slice(0, 5).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
   }
 
@@ -1798,8 +1848,10 @@
             + '<span><em class="v-srg"></em>周度激增 ' + c.srgP + '%</span>'
             + '</div>'
           : '');
-      [["风格", c.style], ["文化背景", c.culture], ["消费心理", c.psych],
-       ["视觉", c.visual], ["二次工艺", c.craft], ["版型", c.fit]].forEach(function (g) {
+      /* 20261102L：画像卡也按商家顺序排 —— 工艺 / 结构部件 / 版型 / 面料在前，
+         风格 / 视觉 / 文化 / 心理作为背景信息在后。 */
+      [["二次工艺", c.craft], ["结构部件", c.struct], ["版型", c.fit], ["面料", c.fabric],
+       ["风格", c.style], ["视觉", c.visual], ["文化背景", c.culture], ["消费心理", c.psych]].forEach(function (g) {
         if (!g[1] || !g[1].length) return;
         h += '<div class="rk-vit-sub">' + g[0] + '</div><div class="rk-vit-tags">'
           + g[1].map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
@@ -1813,11 +1865,9 @@
             + '<span class="b-v">' + s[1] + '%</span></div>';
         });
       }
-      if (c.elems.length) {
-        h += '<div class="rk-vit-sub">元素标签 TOP3</div><div class="rk-vit-tags">'
-          + c.elems.map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
-          + '</div>';
-      }
+      /* 20261102L：画像卡里不再展示「元素标签 TOP3」。
+         印花是设计端一次性的决定，商家照抄只会撞款；报告口径改为商家视角后，
+         这一块整体撤掉（原始标签仍可在大图标签面板里逐张查看，数据没丢）。 */
       h += '</div>';
     });
     h += '</div>';

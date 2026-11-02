@@ -103,7 +103,8 @@ ok("③ 对照表覆盖风格/视觉/拍摄方式", ["风格", "视觉", "拍摄
 
 ok("④ 逐列画像标题存在", html.indexOf("逐列画像") >= 0);
 ok("④ 每列都有画像句", (html.match(/rk-vit-prof/g) || []).length >= 2);
-ok("④ 画像句讲风格与呈现", html.indexOf("风格以「户外机能」为主") >= 0);
+ok("④ 画像句以工艺开头（商家口径）", html.indexOf("工艺主打「") >= 0 || html.indexOf("多数没有二次工艺") >= 0);
+ok("④ 画像句不再以风格为主线", html.indexOf("风格以「") < 0);
 
 ok("⑤ 可执行建议存在", html.indexOf('class="rk-rep-act"') >= 0);
 ok("⑤ 建议里点到主图拍法", html.indexOf("主图建议走<b>") >= 0 || html.indexOf("主图建议走") >= 0);

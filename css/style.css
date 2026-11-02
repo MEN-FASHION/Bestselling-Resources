@@ -6368,3 +6368,6 @@ html, body{
   .rk-rep-open{font-size:12.5px;padding:7px 13px}
   .rk-rep-open-sub{display:none}
 }
+
+/* 20261102L：报告改为商家视角后的补充样式 */
+.rk-rep-h4-sub{font-size:11.5px;font-weight:500;color:#9a9384;letter-spacing:0;margin-left:8px}
