@@ -89,8 +89,8 @@ ok("① 样本量写明总数", html.indexOf("样本 <b>8</b> 张上榜图") >= 
 ok("① 有打标覆盖率", /打标覆盖 <b>\d+%<\/b>/.test(html));
 ok("① 有生成时间", /生成于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(html));
 
-ok("② 有一、二、三、四、五 五个编号段",
-  ["<em>一</em>", "<em>二</em>", "<em>三</em>", "<em>四</em>", "<em>五</em>"].every(s => html.indexOf(s) >= 0));
+ok("② 有一~六 六个编号段",
+  ["<em>一</em>", "<em>二</em>", "<em>三</em>", "<em>四</em>", "<em>五</em>", "<em>六</em>"].every(s => html.indexOf(s) >= 0));
 ok("② 核心结论带编号列表", html.indexOf("核心结论") >= 0 && html.indexOf("rk-rep-sum") >= 0);
 ok("② 结论里出现具体类目名", html.indexOf("外套夹克") >= 0 || html.indexOf("POLO") >= 0);
 ok("② 结论带百分点数字", /高 \d+ 个百分点|个百分点/.test(html));
@@ -107,7 +107,9 @@ ok("④ 画像句以工艺开头（商家口径）", html.indexOf("工艺主打�
 ok("④ 画像句不再以风格为主线", html.indexOf("风格以「") < 0);
 
 ok("⑤ 可执行建议存在", html.indexOf('class="rk-rep-act"') >= 0);
-ok("⑤ 建议里点到主图拍法", html.indexOf("主图建议走<b>") >= 0 || html.indexOf("主图建议走") >= 0);
+ok("⑤ 建议里点到主图拍法（写成可选）", html.indexOf("主图可优先沿用这个拍法") >= 0);
+ok("⑤ 建议带样本张数（占比+张数）", /（\d+%，\d+ 张）/.test(html));
+ok("⑤ 建议给出次选并列", html.indexOf("次选") >= 0 || html.indexOf("同列还有") >= 0);
 ok("⑤ 有量无爆的判定被给出", html.indexOf("有量无爆") >= 0 || html.indexOf("有量但缺爆点") >= 0);
 
 ok("⑥ 数据说明存在", html.indexOf("rk-rep-qual") >= 0);

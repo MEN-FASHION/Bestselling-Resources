@@ -83,13 +83,15 @@ ok("对照表仍保留风格/视觉作参考", html.indexOf("<th>风格</th>") >
 
 /* ---------------- 3. 建议：按商家顺序，无印花 ---------------- */
 console.log("\n[3] 可执行建议");
-ok("有工艺建议", html.indexOf("的二次工艺信号是") >= 0);
-ok("有结构部件建议", html.indexOf("出现率 100%") >= 0 && html.indexOf("加这一个结构件成本最低") >= 0);
-ok("有版型建议", html.indexOf("版型集中在") >= 0 && html.indexOf("打版直接按这个方向出样") >= 0);
-ok("有面料建议", html.indexOf("面料首选") >= 0 && html.indexOf("口头叫法") >= 0);
-ok("工艺建议在结构件之前", html.indexOf("二次工艺信号是") < html.indexOf("加这一个结构件"));
-ok("结构件建议在版型之前", html.indexOf("加这一个结构件") < html.indexOf("版型集中在"));
-ok("版型建议在面料之前", html.indexOf("版型集中在") < html.indexOf("面料首选"));
+ok("有工艺建议（带占比与张数）", html.indexOf("的二次工艺里出现最多的是") >= 0 && /（\d+%，\d+ 张）/.test(html));
+ok("有结构部件建议", html.indexOf("的结构部件里") >= 0 && html.indexOf("出现最多") >= 0
+  && html.indexOf("成本也低") >= 0);
+ok("有版型建议", html.indexOf("的版型以") >= 0 && html.indexOf("打版时可优先沿用这套值") >= 0);
+ok("有面料建议", html.indexOf("的面料候选里") >= 0 && html.indexOf("口头叫法") >= 0);
+const actSec = html.slice(html.indexOf('class="rk-rep-act"'));
+ok("工艺建议在结构件之前", actSec.indexOf("的二次工艺里") < actSec.indexOf("的结构部件里"));
+ok("结构件建议在版型之前", actSec.indexOf("的结构部件里") < actSec.indexOf("的版型以"));
+ok("版型建议在面料之前", actSec.indexOf("的版型以") < actSec.indexOf("的面料候选里"));
 ok("建议里不出现印花/元素推荐", html.indexOf("做区分标识") < 0 && html.indexOf("系列识别点") < 0);
 ok("建议里不出现「骷髅」（即使它是最独有的元素）", html.indexOf("骷髅") < 0, "印花不该被推荐");
 

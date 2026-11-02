@@ -1440,9 +1440,11 @@
         if (nFb) fbTot++;
         if (nF) fTot++;
       });
+      /* 20261102N：返回 [值, 占比, 张数]。第三个是「有多少张图带这个值」，
+         建议里要写「3 张 / 12%」，只有百分比读者无法判断样本厚薄。 */
       var tops = function (obj, tot, lim) {
         if (!tot) return [];
-        return Object.keys(obj).map(function (k) { return [k, Math.round(obj[k] / tot * 100)]; })
+        return Object.keys(obj).map(function (k) { return [k, Math.round(obj[k] / tot * 100), obj[k]]; })
           .sort(function (a, b) { return b[1] - a[1]; }).slice(0, lim);
       };
       return {
@@ -1725,59 +1727,255 @@
   /* ④ 可执行建议：只按数据触发，宁缺毋滥。
      20261102L：全部换成商家能直接落地的动作（工艺 / 结构部件 / 版型 / 面料），
      并把「用某个印花元素做区分」整条删掉 —— 印花是设计端一次性的决定，
-     商家照抄只会撞款，不该出现在采购侧的建议里。 */
+     商家照抄只会撞款，不该出现在采购侧的建议里。
+     20261102N：每条补上「几张 / 多少占比」与「次选是什么」。
+     20261102O：语气从"命令"改回"推荐"。
+       这些结论是从一批上榜图的构成里推出来的取舍，不是板上钉钉的做法 ——
+       所以不再写「直接」「必须」「别」「不要」，改用「可优先考虑 / 值得试 / 前提是」，
+       并且每条都带上它成立的条件与代价。占比本身也不是绝对口径：
+       36% 只能说"出现最多"，不能说"就该这么做"。 */
+  function pctTxt(t) {
+    if (!t) return "";
+    return "<b>" + esc(t[0]) + "</b>（" + t[1] + "%，" + (t[2] || 0) + " 张）";
+  }
+  function listTxt(arr, skip, lim) {
+    var out = (arr || []).filter(function (x) { return x[0] !== skip; }).slice(0, lim || 2)
+      .map(function (x) { return esc(x[0]) + " " + x[1] + "%"; });
+    return out.length ? "（同列还有 " + out.join(" / ") + "）" : "";
+  }
+  /* 「其余列最高多少」只在真的低于本列时才写出来；
+     否则会出现「出现率 65%（其余最高仅 75%）」这种自相矛盾的句子。 */
+  function othersTxt(V, c, key, p) {
+    var mx = repOthersMax(V, c, key);
+    if (mx < 0) return "";
+    if (mx < p) return "，其余" + "列最高 " + mx + "%";
+    if (mx > p) return "，其余列有的到 " + mx + "%";
+    return "，与其余列基本持平";
+  }
+
   function repActionHtml(V, dim) {
     var live = V.filter(function (c) { return c.n > 0; });
     if (!live.length) return "";
     var out = [];
     live.forEach(function (c) {
-      /* 二次工艺：可做加价点，最高优先 */
+      var nm = "「" + esc(c.cat) + "」";
+      /* 二次工艺：出现最多 ≠ 必须加；写成"可考虑"，并说明代价 */
       var cf = (c.craft || [])[0];
       if (cf && cf[1] >= 25 && !/无工艺/.test(cf[0])) {
-        out.push("「" + esc(c.cat) + "」的二次工艺信号是<b>" + esc(cf[0]) + "</b>（" + cf[1]
-          + "%），可直接作为加价点；先确认工厂能做、且不增加合规成本。");
+        out.push(nm + "的二次工艺里出现最多的是 " + pctTxt(cf)
+          + listTxt(c.craft, cf[0], 2)
+          + "。若要找加价点，可优先考虑这一个；前提是工厂能做、且不额外增加合规成本"
+          + "（占比只说明它在上榜图里常见，不代表必须加）。");
       }
-      /* 结构部件：改一处就能落地 */
+      /* 结构部件：改动小、不牵动版型，性价比通常最高 */
       var sd = (c.struct || [])[0];
       if (sd && sd[1] >= 20) {
-        var sdHi = repOthersMax(V, c, "struct");
-        out.push("「" + esc(c.cat) + "」的<b>" + esc(sd[0]) + "</b>出现率 " + sd[1] + "%"
-          + (sdHi >= 0 ? "（其余" + dim.noun + "最高仅 " + sdHi + "%）" : "")
-          + "，加这一个结构件成本最低、见效最快。");
+        out.push(nm + "的结构部件里 " + pctTxt(sd) + " 出现最多"
+          + othersTxt(V, c, "struct", sd[1])
+          + listTxt(c.struct, sd[0], 2)
+          + "。若只想动一处，这类改动通常不牵动版型、成本也低，可优先试一到两个。");
       }
-      /* 版型：直接对应制版与样衣 */
+      /* 版型：给取舍建议，明确不是硬性要求 */
       var ft = (c.fit || [])[0];
       if (ft && ft[1] >= 30) {
-        out.push("「" + esc(c.cat) + "」版型集中在<b>" + esc(ft[0]) + "</b>（" + ft[1]
-          + "%），打版直接按这个方向出样，别在版型上做实验。");
+        out.push(nm + "的版型以 " + pctTxt(ft) + " 为主"
+          + listTxt(c.fit, ft[0], 3)
+          + "。打版时可优先沿用这套值，把试错成本留给面料与工艺 —— 这是取舍建议，不是硬性要求。");
       }
-      /* 面料：说清候选与占比，提醒口头叫法不等于成分 */
+      /* 面料：候选 + 成分标注风险 */
       var fb = (c.fabric || [])[0];
       if (fb && fb[1] >= 20) {
-        out.push("「" + esc(c.cat) + "」面料首选<b>" + esc(fb[0]) + "</b>（" + fb[1]
-          + "%）。下单前对照成分标核实，口头叫法与真实成分不一致会被平台判标签不符。");
+        out.push(nm + "的面料候选里 " + pctTxt(fb) + " 最多"
+          + listTxt(c.fabric, fb[0], 2)
+          + "。下单前建议对照成分标核实：口头叫法与真实成分不一致，更容易被判标签不符。");
       }
-      /* 拍摄方式：只有显著高于其余列才提，且明确是"展示"不是"改款" */
+      /* 视觉：不涉及改款，明确说清 */
+      var vs = (c.visual || [])[0];
+      if (vs && vs[1] >= 35) {
+        out.push(nm + "的主图视觉以 " + pctTxt(vs) + " 居多"
+          + listTxt(c.visual, vs[0], 2)
+          + "。这是展示方式、不涉及改款，沿用现有拍法就行，不必为此重拍。");
+      }
+      /* 拍摄方式：明显高于其余列才提，且写成可选 */
       var sh = (c.shoot || [])[0];
       if (sh && sh[1] >= 30 && repOthersMax(V, c, "shoot") + 8 <= sh[1]) {
-        out.push("「" + esc(c.cat) + "」主图建议走<b>" + esc(sh[0]) + "</b>（" + sh[1]
-          + "%，明显高于其余" + dim.noun + "），这是展示方式，不涉及改款。");
-      }
-      /* 主图视觉：低优先级，只在商家四维都没给出动作时补一句（纯展示，不改款） */
-      var vs = (c.visual || [])[0];
-      if (vs && vs[1] >= 40 && /纯白底|留白|3D/.test(vs[0]) && out.length < 3) {
-        out.push("「" + esc(c.cat) + "」主图底色与构图以<b>" + esc(vs[0]) + "</b>为主（" + vs[1]
-          + "%），沿用即可，不必重新拍片。");
+        out.push(nm + "的拍摄方式以 " + pctTxt(sh) + " 居多，比其余" + dim.noun
+          + "明显集中，主图可优先沿用这个拍法。");
       }
       /* 潜力机会高但爆款低 → 用商家手段补差异化 */
       if (c.oppP >= 50 && c.hotP <= 10) {
-        out.push("「" + esc(c.cat) + "」潜力机会 " + c.oppP + "% 而趋势爆款只有 " + c.hotP
-          + "%，属于<b>有量无爆</b>：优先补结构件与工艺的差异化，而不是加大上新量。");
+        out.push(nm + "潜力机会 " + c.oppP + "% 而趋势爆款只有 " + c.hotP
+          + "%（" + c.n + " 张里爆款约 " + Math.round(c.n * c.hotP / 100) + " 张），偏<b>有量无爆</b>："
+          + "相比继续加大上新量，更值得先补结构件与工艺上的差异。");
       }
     });
     if (!out.length) return "";
-    return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议<span class="rk-rep-h4-sub">按工艺 → 结构部件 → 版型 → 面料排序，均为商家可直接落地的改动</span></h4><ul class="rk-rep-act">'
-      + out.slice(0, 5).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
+    return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议<span class="rk-rep-h4-sub">'
+      + '以下是基于占比的取舍参考，不是硬性要求；括号内为该值在本列的占比与张数，占比只代表"上榜图里常见"，不等于应当照做</span></h4>'
+      + '<ul class="rk-rep-act">'
+      + out.slice(0, 8).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
+  }
+
+  /* ④-2 趋势动向：新上榜 & 上升最多，各自在打什么
+     ------------------------------------------------------------
+     20261102N：这是「从画像到动向」的一步。画像回答"这一列是什么样"，
+     动向回答"正在变的是什么"。做法是把每列切成两个子集再各自统计：
+       · 上升最多 = 本期被标为「周度激增」的图（环比涨、绝对值也涨）
+       · 新上榜   = 上一期不在榜、本期才进榜的图（同分类同站点对比）
+     再拿子集的构成与该列整体构成比：某个值在子集里高出整体一大截，
+     说明新增长的那部分正在往这个值上集中 —— 这就是一条新动向。
+     列举维度按商家关心的顺序：版型 / 图案元素 / 视觉 / 结构部件 / 二次工艺 / 面料。
+     这里只做<b>描述</b>（哪个值在抬头），建议仍由第④节给，印花不写成"照抄"动作。
+     ============================================================ */
+  var TREND_DIMS = [["版型", "fit", "fit_tags"], ["图案元素", "elems", "element_tags"],
+    ["视觉", "visual", "visual_tags"], ["结构部件", "struct", "struct_tags"],
+    ["二次工艺", "craft", "craft_tags"], ["面料", "fabric", "fabric_tags"]];
+
+  function trendValsOf(it, col) {
+    var t = TAG_INDEX[it.image_url];
+    if (!t) return [];
+    var arr = tagArr(t[col]).map(function (v) { return String(v); });
+    if (col === "fit_tags") {
+      arr = arr.map(function (v) { return v.indexOf("·") >= 0 ? v.split("·")[1] : v; }).filter(Boolean);
+    }
+    return arr;
+  }
+  /* 一个子集在某一维度的分布：分母只用「该维度有打标」的图 */
+  function trendAgg(list, col) {
+    var cnt = {}, tot = 0;
+    (list || []).forEach(function (it) {
+      var vs = trendValsOf(it, col);
+      if (!vs.length) return;
+      tot++;
+      var seen = {};
+      vs.forEach(function (v) { if (seen[v]) return; seen[v] = 1; cnt[v] = (cnt[v] || 0) + 1; });
+    });
+    return { tot: tot, cnt: cnt };
+  }
+  /* 抬头值：子集占比 ≥25%、至少 3 张、且比本列整体高 ≥15 个百分点 */
+  function trendLifts(sub, base) {
+    if (!sub.tot || sub.tot < 5) return [];
+    var out = [];
+    Object.keys(sub.cnt).forEach(function (k) {
+      var n = sub.cnt[k];
+      if (n < 3) return;
+      var p = Math.round(n / sub.tot * 100);
+      if (p < 25) return;
+      var bp = base.tot ? Math.round((base.cnt[k] || 0) / base.tot * 100) : 0;
+      var lift = p - bp;
+      if (lift < 15) return;
+      out.push({ v: k, n: n, p: p, bp: bp, lift: lift });
+    });
+    return out.sort(function (a, b) { return b.lift - a.lift; }).slice(0, 3);
+  }
+
+  function repTrendHtml(V, dim) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (!live.length) return "";
+    var groups = vitalsGroups();
+    var byKey = {};
+    groups.forEach(function (g) { byKey[g.key] = g; });
+
+    /* 期次序列：判定「新上榜」要与上一期比 */
+    var all = (CACHE && CACHE.items) || [];
+    var per = {};
+    all.forEach(function (it) { var p = it.period_label || ""; if (p) per[p] = 1; });
+    var plist = Object.keys(per).sort();
+    var prevOf = function (p) {
+      var i = plist.indexOf(p);
+      return i > 0 ? plist[i - 1] : "";
+    };
+
+    var blocks = [], notes = [];
+    live.slice(0, 4).forEach(function (c) {
+      var g = byKey[c.key];
+      var items = (g && g.items) || [];
+      if (!items.length) return;
+      var p = String(items[0].period_label || "");
+      var prev = prevOf(p);
+
+      /* 上升最多：周度激增优先；没有环比数据时退回「环比涨幅前 20%」 */
+      var upList = items.filter(function (it) { return it._surge; });
+      var upTag = "周度激增";
+      if (!upList.length) {
+        var pos = items.filter(function (it) { return it.ratio != null && it.ratio > 0; })
+          .sort(function (a, b) { return b.ratio - a.ratio; });
+        upList = pos.slice(0, Math.max(1, Math.round(pos.length * 0.2)));
+        upTag = "环比涨幅前 20%";
+      }
+
+      /* 新上榜：上一期同分类同站点没有这张图 */
+      var newList = [], newNote = "";
+      if (!prev) {
+        newNote = "首期，无上一周可比";
+      } else {
+        var prevSet = {};
+        all.forEach(function (it) {
+          if ((it.period_label || "") !== prev) return;
+          if ((it.category || "") !== (items[0].category || "")) return;
+          if ((it.site || "") !== (items[0].site || "")) return;
+          prevSet[it.image_url] = 1;
+        });
+        if (!Object.keys(prevSet).length) newNote = "上一期（" + prev + "）无数据，无法判新上榜";
+        else newList = items.filter(function (it) { return !prevSet[it.image_url]; });
+      }
+
+      var rows = "";
+      TREND_DIMS.forEach(function (d) {
+        var base = trendAgg(items, d[2]);
+        var lu = trendLifts(trendAgg(upList, d[2]), base);
+        var ln = trendLifts(trendAgg(newList, d[2]), base);
+        if (!lu.length && !ln.length) return;
+        var cell = function (arr, tot) {
+          if (!tot) return '<td class="na">—</td>';
+          if (tot < 5) return '<td class="na">样本 ' + tot + ' 张，太少</td>';
+          if (!arr.length) return '<td class="na">无明显抬头</td>';
+          return "<td>" + arr.map(function (x) {
+            return esc(x.v) + ' <b class="up">+' + x.lift + '</b>'
+              + '<span class="rk-trend-n">' + x.p + '%（本列 ' + x.bp + '%，' + x.n + ' 张）</span>';
+          }).join("<br>") + "</td>";
+        };
+        rows += "<tr><th>" + d[0] + "</th>"
+          + cell(lu, trendAgg(upList, d[2]).tot)
+          + cell(ln, trendAgg(newList, d[2]).tot) + "</tr>";
+      });
+
+      /* 最值得说的两条：跨维度挑 lift 最大的 */
+      var best = [];
+      TREND_DIMS.forEach(function (d) {
+        var base = trendAgg(items, d[2]);
+        var lu = trendLifts(trendAgg(upList, d[2]), base);
+        var ln = trendLifts(trendAgg(newList, d[2]), base);
+        if (lu[0]) best.push({ d: d[0], x: lu[0], which: "上升最多", total: trendAgg(upList, d[2]).tot });
+        if (ln[0]) best.push({ d: d[0], x: ln[0], which: "新上榜", total: trendAgg(newList, d[2]).tot });
+      });
+      best.sort(function (a, b) { return b.x.lift - a.x.lift; });
+      best.slice(0, 2).forEach(function (b) {
+        notes.push("「" + c.cat + "」的" + b.which + "那批里，<b>" + b.d + "</b>冒出了「" + b.x.v + "」："
+          + b.total + " 张中 " + b.x.n + " 张（" + b.x.p + "%），本列整体只有 " + b.x.bp
+          + "%，高出 " + b.x.lift + " 个百分点。");
+      });
+
+      blocks.push('<div class="rk-trend-blk">'
+        + '<div class="rk-trend-h">' + esc(c.cat) + '<span class="rk-trend-meta">' + esc(p)
+        + ' · 上升最多 ' + upList.length + ' 张（' + upTag + '）'
+        + (prev ? ' · 新上榜 ' + newList.length + ' 张（较 ' + esc(prev) + '）' : ' · ' + esc(newNote))
+        + '</span></div>'
+        + (rows
+          ? '<div class="rk-rep-tbl-wrap"><table class="rk-rep-tbl rk-trend-tbl"><thead><tr><th>维度</th>'
+            + '<th>上升最多那批</th><th>新上榜那批</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+          : '<div class="rk-trend-none">这两批里没有出现明显抬头的值（要求：占比 ≥25%、至少 3 张、比本列整体高 ≥15 个百分点）。</div>')
+        + '</div>');
+    });
+
+    if (!blocks.length) return "";
+    return '<section class="rk-rep-sec rk-rep-trend"><h4><em>五</em>趋势动向<span class="rk-rep-h4-sub">'
+      + '上升最多 = 本期周度激增；新上榜 = 较上一期才进榜。百分比为该值在这批里的占比，括号内是本列整体占比</span></h4>'
+      + (notes.length ? '<ol class="rk-trend-notes">' + notes.map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ol>" : "")
+      + blocks.join("")
+      + '<p class="rk-rep-note">这一节只描述「哪个值在抬头」，不构成照抄建议：印花类值出现，说明它在新增榜单里变多，'
+      + '不代表适合跟进 —— 印花是设计端一次性的决定，跟做容易撞款。</p>'
+      + '</section>';
   }
 
   /* ⑤ 数据说明：口径与限制，避免被误读 */
@@ -1794,7 +1992,7 @@
       '覆盖：本次样本 ' + sum + ' 张，其中 <b>' + cov + '%</b> 带打标数据；覆盖不足时结论以方向为主。' 
     ];
     if (minN < 30 && minN < 1e9) rows.push('最小样本列仅 <b>' + minN + ' 张</b>，占比波动较大，建议累积 2–3 周再看趋势。');
-    return '<section class="rk-rep-sec rk-rep-qual"><h4><em>五</em>数据说明</h4><ul>'
+    return '<section class="rk-rep-sec rk-rep-qual"><h4><em>六</em>数据说明</h4><ul>'
       + rows.map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
   }
 
@@ -1879,7 +2077,7 @@
     }
     h += '</section>';
     h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>'
-      + repActionHtml(V, dim) + repQualityHtml(V, dim) + '</div>';
+      + repActionHtml(V, dim) + repTrendHtml(V, dim) + repQualityHtml(V, dim) + '</div>';
     return h;
   }
 
