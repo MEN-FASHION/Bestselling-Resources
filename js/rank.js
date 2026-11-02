@@ -3020,27 +3020,27 @@
     }
   }
 
-  /* 20261102W：图表悬停 → 全屏放大。
-     之前只是把卡片放大一点，字依旧小。现在把这张图铺到整个窗口上：
-     遮罩盖住页面全部内容、锁住背景滚动，卡内字号 19px / 标注 16px，
-     任何一行标签与百分比都能读清。移出窗口、按 Esc、点遮罩右侧空白都会收回。 */
-  var ZOOM_OV = null, ZOOM_SRC = null, ZOOM_T = null;
+  /* 20261102Y：图表「点击」放大，弹窗不再占满全屏。
+     -----------------------------------------------------------------
+     之前的悬停全屏有两个问题：
+       ① 鼠标扫过就弹，看图过程中容易被反复打断；
+       ② 放大卡铺满整屏并锁了背景滚动，想接着看下一张图得先关掉。
+     现在改成：点一下才放大；弹窗控制在 980×72vh 以内、居中浮起，
+     背景页面仍可正常滚动（滚轮不会再用不了），看完点窗口外或按 Esc 收起。 */
+  var ZOOM_OV = null, ZOOM_SRC = null;
   function repZoomClose() {
-    if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
     if (ZOOM_OV && ZOOM_OV.parentNode) ZOOM_OV.parentNode.removeChild(ZOOM_OV);
     ZOOM_OV = null; ZOOM_SRC = null;
-    if (document.body) document.body.classList.remove("rk-zoom-lock");
   }
   function repZoomOpen(ch) {
     if (ZOOM_OV && ZOOM_OV.parentNode) ZOOM_OV.parentNode.removeChild(ZOOM_OV);
     var ov = document.createElement("div");
     ov.className = "rk-zoom-ov";
 
-    /* 克隆一份：原图留在原位，收回后页面不重排 */
+    /* 克隆一份：原图留在原位，关闭后页面不重排 */
     var card = ch.cloneNode(true);
     card.className = "rk-ch rk-zoom-card";
 
-    /* 右上角关闭按钮（鼠标离开也能关，这个给不习惯"移开即关"的人） */
     var x = document.createElement("button");
     x.type = "button";
     x.className = "rk-zoom-x";
@@ -3051,63 +3051,44 @@
 
     var tip = document.createElement("div");
     tip.className = "rk-zoom-tip";
-    tip.textContent = "移出窗口 / 按 Esc 关闭";
-    ov.appendChild(tip);
+    tip.textContent = "点窗口外或按 Esc 收起 · 页面仍可继续滚动";
     ov.appendChild(card);
+    ov.appendChild(tip);
 
-    ov.addEventListener("mouseenter", function () {
-      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
-    });
-    ov.addEventListener("mouseleave", function () {
-      if (ZOOM_T) clearTimeout(ZOOM_T);
-      ZOOM_T = setTimeout(repZoomClose, 160);
-    });
-    /* 点遮罩空白处直接关 */
+    /* 点遮罩空白处关闭（卡内点击不会关，方便选中/滚动卡内内容） */
     ov.addEventListener("click", function (e) {
-      if (e.target === ov || e.target === tip) repZoomClose();
+      if (e.target === ov) repZoomClose();
     });
 
     (document.body || document.documentElement).appendChild(ov);
-    if (document.body) document.body.classList.add("rk-zoom-lock");
+    ZOOM_SRC = ch;
     ZOOM_OV = ov;
   }
   function bindRepZoom() {
     if (bindRepZoom.__b) return;
     bindRepZoom.__b = true;
-    /* 悬停意图：鼠标扫过时不要一张张弹，停住 150ms 才弹 */
-    document.addEventListener("mouseover", function (e) {
+
+    /* 点击才放大：不再用 mouseover，鼠标扫过不会再弹 */
+    document.addEventListener("click", function (e) {
       var t = e.target;
       if (!t || !t.closest) return;
-      if (t.closest(".rk-zoom-ov")) return;         /* 放大层内部不再套一层 */
+      if (t.closest(".rk-zoom-ov")) return;          /* 放大层内部不再套一层 */
+      if (t.closest(".rk-zoom-x")) return;
       var ch = t.closest(".rk-ch");
       if (!ch) return;
-      if (ch === ZOOM_SRC) return;
-      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
-      ZOOM_SRC = ch;
-      ZOOM_T = setTimeout(function () {
-        ZOOM_T = null;
-        if (ZOOM_SRC === ch) repZoomOpen(ch);
-      }, 150);
+      /* 卡片里如果有可点的行/图例，别被放大抢走 */
+      if (t.closest("a,button,select,input,label")) return;
+      e.preventDefault();
+      repZoomOpen(ch);
     });
-    document.addEventListener("mouseout", function (e) {
-      if (!ZOOM_SRC) return;
-      var to = e.relatedTarget;
-      /* 在原图内部移动、或移进了放大卡，都不算离开 */
-      if (to && (ZOOM_SRC.contains(to) || (ZOOM_OV && ZOOM_OV.contains(to)))) return;
-      if (ZOOM_T) { clearTimeout(ZOOM_T); ZOOM_T = null; }
-      if (!ZOOM_OV) { ZOOM_SRC = null; return; }
-      ZOOM_T = setTimeout(repZoomClose, 160);
-    });
+
     /* Esc 关闭 */
     document.addEventListener("keydown", function (e) {
       if ((e.key === "Escape" || e.key === "Esc" || e.keyCode === 27) && ZOOM_OV) repZoomClose();
     });
-    /* 滚动、改窗口大小、切走页面时收掉，避免浮在半空不动。
-       卡内滚动是允许的（图可能比一屏高），所以只对卡外的滚动生效。 */
-    window.addEventListener("scroll", function (e) {
-      if (ZOOM_OV && e && e.target && ZOOM_OV.contains(e.target)) return;
-      if (ZOOM_OV) repZoomClose();
-    }, true);
+
+    /* 只在这两种情况下自动收起：改窗口大小、切走标签页。
+       滚动**不再**关闭——用户就是想边看放大图边往下翻。 */
     window.addEventListener("resize", repZoomClose);
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) repZoomClose();

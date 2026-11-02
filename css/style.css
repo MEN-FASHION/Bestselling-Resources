@@ -6414,7 +6414,7 @@ html, body{
 .rk-kpi-t em{font-style:normal;font-size:11px;color:#9a9384;line-height:1.4}
 
 /* ---- 图表容器 ---- */
-.rk-ch{border:1px solid #ece7dd;border-radius:12px;padding:12px 14px 10px;margin:0 0 12px;
+.rk-ch{position:relative;border:1px solid #ece7dd;border-radius:12px;padding:12px 14px 10px;margin:0 0 12px;
   background:linear-gradient(180deg,#fffdf9,#fff)}
 .rk-ch-hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:7px}
 .rk-ch-title{font-size:12.5px;font-weight:700;color:#4b453b;letter-spacing:.2px}
@@ -6451,50 +6451,60 @@ html, body{
 /* ---- 20261102W：图表悬停 → 全屏放大（真正铺满窗口，字与标注都放大） ---- */
 /* 悬停只给"可放大"的提示 */
 .rk-ch{cursor:zoom-in;transition:border-color .16s ease,box-shadow .16s ease}
+/* 20261102Y：点击放大。悬停时右上角浮出一个小提示，告诉用户这里是可点的 */
+.rk-ch::after{content:"点击放大";position:absolute;right:10px;top:8px;font-size:11px;line-height:1;
+  padding:4px 7px;border-radius:999px;background:#f4eee2;color:#8a8071;border:1px solid #e6dcc8;
+  opacity:0;transition:opacity .15s ease;pointer-events:none}
+.rk-ch:hover::after{opacity:1}
+/* 弹窗里的克隆体不再提示"点击放大" */
+.rk-zoom-card::after{display:none}
 .rk-ch:hover{border-color:#d9cfba;box-shadow:0 6px 16px -12px rgba(60,48,34,.3)}
 .rk-ch-grid{position:relative;overflow:visible}
 
 /* 遮罩：铺满整个视口、盖住页面所有内容 */
+/* 20261102Y：遮罩改成"轻压一层"，不再蒙黑整页 —— 背后的图表仍看得见，
+   滚轮也能继续滚动页面（不锁 body、不拦 scroll）。 */
 .rk-zoom-ov{position:fixed;left:0;top:0;right:0;bottom:0;width:100vw;height:100vh;height:100dvh;
-  z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;
-  background:rgba(26,21,15,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
-  animation:rkZoomFade .14s ease both;cursor:zoom-out}
+  z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(30,24,17,.34);
+  animation:rkZoomFade .14s ease both;cursor:default}
 @keyframes rkZoomFade{from{opacity:0}to{opacity:1}}
 
 /* 放大卡：几乎占满窗口，字号整体提到正文的 1.5~1.7 倍 */
-.rk-zoom-card{width:calc(100vw - 32px);max-width:none;
-  height:calc(100vh - 32px);height:calc(100dvh - 32px);max-height:none;
-  overflow:auto;margin:0;--lb:210px;
-  padding:26px 32px 22px;border-radius:14px;border:1px solid #e2d8c3;
-  background:#fffdf9;box-shadow:0 40px 120px -30px rgba(20,14,6,.6);
+/* 弹窗尺寸：宽最多 980px、高最多 72vh（都留出走路的余地），
+   不再铺满整屏。内容超高时卡内滚动，滚到底会顺滑接力到页面，不会卡住。 */
+.rk-zoom-card{width:min(980px,86vw);max-width:980px;max-height:72vh;
+  height:auto;overflow:auto;margin:0;--lb:168px;
+  padding:24px 28px 20px;border-radius:14px;border:1px solid #e2d8c3;
+  background:#fffdf9;box-shadow:0 30px 80px -24px rgba(20,14,6,.45);
   animation:rkZoomIn .18s cubic-bezier(.2,.8,.3,1) both;cursor:default;
-  overscroll-behavior:contain}
+  overscroll-behavior:auto}
 @keyframes rkZoomIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
 
 .rk-zoom-card .rk-ch-hd{margin-bottom:18px;gap:10px 22px;padding-right:90px}
-.rk-zoom-card .rk-ch-title{font-size:23px;letter-spacing:.4px}
+.rk-zoom-card .rk-ch-title{font-size:20px;letter-spacing:.3px}
 .rk-zoom-card .rk-ch-legend{gap:8px 20px}
-.rk-zoom-card .rk-ch-lg{font-size:16px;gap:8px}
+.rk-zoom-card .rk-ch-lg{font-size:14.5px;gap:7px}
 .rk-zoom-card .rk-ch-lg em{width:12px;height:12px}
-.rk-zoom-card .rk-ch-axis{font-size:15px;margin:0 calc(96px + 12px) 6px calc(var(--lb) + 12px)}
-.rk-zoom-card .rk-ch-r{grid-template-columns:var(--lb) 1fr 96px;gap:16px;padding:14px 0}
-.rk-zoom-card .rk-ch-rl{font-size:19px;line-height:1.45}
-.rk-zoom-card .rk-ch-rl em{font-size:14.5px;margin-top:4px}
-.rk-zoom-card .rk-ch-t{height:52px}
-.rk-zoom-card .rk-ch-d{width:20px;height:20px;margin:-10px 0 0 -10px;border-width:3px}
-.rk-zoom-card .rk-ch-d u{font-size:16px;top:-30px;padding:3px 6px}
-.rk-zoom-card .rk-ch-d.alt u{top:auto;bottom:-30px}
-.rk-zoom-card .rk-ch-tail{font-size:19px}
-.rk-zoom-card .rk-ch-foot{font-size:15.5px;line-height:1.8;margin-top:16px;padding-top:14px}
+.rk-zoom-card .rk-ch-axis{font-size:13px;margin:0 calc(74px + 12px) 6px calc(var(--lb) + 12px)}
+.rk-zoom-card .rk-ch-r{grid-template-columns:var(--lb) 1fr 74px;gap:14px;padding:12px 0}
+.rk-zoom-card .rk-ch-rl{font-size:16.5px;line-height:1.45}
+.rk-zoom-card .rk-ch-rl em{font-size:13px;margin-top:3px}
+.rk-zoom-card .rk-ch-t{height:46px}
+.rk-zoom-card .rk-ch-d{width:17px;height:17px;margin:-8.5px 0 0 -8.5px;border-width:3px}
+.rk-zoom-card .rk-ch-d u{font-size:14px;top:-27px;padding:3px 6px}
+.rk-zoom-card .rk-ch-d.alt u{top:auto;bottom:-27px}
+.rk-zoom-card .rk-ch-tail{font-size:16.5px}
+.rk-zoom-card .rk-ch-foot{font-size:13.5px;line-height:1.75;margin-top:14px;padding-top:12px}
 .rk-zoom-card .rk-ch-conn{height:4px;margin-top:-2px}
 
 /* 关闭提示与开关 */
-.rk-zoom-x{position:absolute;right:26px;top:22px;width:38px;height:38px;border:1px solid #e2d8c3;
+.rk-zoom-x{position:absolute;right:18px;top:16px;width:34px;height:34px;border:1px solid #e2d8c3;
   border-radius:50%;background:#fff;color:#6b6357;font-size:19px;line-height:1;
   display:flex;align-items:center;justify-content:center;cursor:pointer}
 .rk-zoom-x:hover{background:#f7f2e8;color:#3f3a31}
-.rk-zoom-tip{position:absolute;left:0;right:0;bottom:6px;text-align:center;
-  font-size:12.5px;color:#cfc4ae;letter-spacing:.4px;pointer-events:none}
+.rk-zoom-tip{position:absolute;left:0;right:0;bottom:2px;text-align:center;
+  font-size:12.5px;color:#a99e8b;letter-spacing:.4px;pointer-events:none}
 
 @media (prefers-reduced-motion:reduce){
   .rk-zoom-ov,.rk-zoom-card{animation:none}
@@ -6502,8 +6512,8 @@ html, body{
 }
 @media print{.rk-zoom-ov{display:none !important}}
 @media (max-width:900px){
-  .rk-zoom-ov{padding:8px}
-  .rk-zoom-card{width:calc(100vw - 16px);height:calc(100dvh - 16px);--lb:112px;padding:18px 14px 14px}
+  .rk-zoom-ov{padding:10px}
+  .rk-zoom-card{width:calc(100vw - 20px);max-width:none;max-height:78vh;--lb:108px;padding:16px 14px 14px}
   .rk-zoom-card .rk-ch-hd{padding-right:64px}
   .rk-zoom-card .rk-ch-title{font-size:17px}
   .rk-zoom-card .rk-ch-rl{font-size:14.5px}
@@ -6520,7 +6530,6 @@ html, body{
   .rk-zoom-tip{display:none}
 }
 /* 放大时锁住页面滚动 */
-body.rk-zoom-lock{overflow:hidden}
 
 /* ---- 视觉背景小节 ---- */
 .rk-bg-block{margin:2px 0 6px}
