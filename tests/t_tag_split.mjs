@@ -6,8 +6,11 @@ const ok = (n) => { pass++; console.log("  ✓ " + n); };
 const no = (n, d) => { fail++; console.log("  ✗ " + n + (d ? " — " + d : "")); };
 
 // 1. 打标写入不再直接 update images
-const imgUpd = src.match(/from\("images"\)\s*\.update/g) || [];
-if (imgUpd.length <= 2) ok("images 上仅保留类目/单值写入（" + imgUpd.length + " 处）");
+// 20261102E：补全图片地址（update({ url })）属于图片本体维护，不是打标，不计入
+const imgUpdAll = src.match(/from\("images"\)\s*\.update/g) || [];
+const urlBackfill = src.match(/from\("images"\)\s*\.update\(\{\s*url:/g) || [];
+const imgUpd = new Array(Math.max(0, imgUpdAll.length - urlBackfill.length));
+if (imgUpd.length <= 2) ok("images 上仅保留类目/单值写入（" + imgUpd.length + " 处，另 " + urlBackfill.length + " 处为地址补全）");
 else no("仍有 " + imgUpd.length + " 处直接写 images", "打标应走标签表");
 
 // 2. 标签表写入用 upsert onConflict image_url

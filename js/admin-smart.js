@@ -138,6 +138,11 @@ async function loadSmartAll() {
     try { smartToken = await SB.currentToken(); } catch (e) { smartToken = ""; }
     try { smartAll = await SB.listImages(null); }
     catch (e) { sbToast("读取图片失败", false); return; }
+    /* 20261102E：老记录只有 path 没有 url，先静默回填一次（每个会话只跑一次），
+       否则拖图打标会报「这张图没有可用的图片地址」 */
+    try { await SB.backfillImageUrls(); } catch (e) { }
+    // 把标签表里已打的标合并回来，否则左池恒为 0、刚打完的图还留在未打池
+    try { await SB.attachTagsToImages(smartAll); } catch (e) { }
     // 渲染该维度的标签选择条（类目用 categories 表；渠道用固定清单；其余用 tag_defs）
     if (smartDim === "category") {
       try {

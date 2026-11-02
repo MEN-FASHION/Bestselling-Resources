@@ -476,6 +476,63 @@ const SB = (() => {
       return data || {};
     },
     // 返回所有已上传图片名（用于上传时去重校验，避免重复传图）
+    /* 把标签表的真实打标结果合并到图片记录上（20261102E）。
+       20261030A 起打标写到 rank_image_tags，但智能打标的池子仍读 images 上的旧列，
+       于是出现两个怪象：新打的标不显示（左池恒为 0）、刚打完的图还留在「未打」里。
+       这里按图片地址把标签行贴回每条记录，池子与卡片才跟库里一致。 */
+    async attachTagsToImages(imgs) {
+      const list = Array.isArray(imgs) ? imgs : [];
+      if (!list.length) return list;
+      const urlOf = (img) => this._urlOfImageRow(img);
+      const urls = [...new Set(list.map(urlOf).filter(Boolean))];
+      let map = {};
+      try { map = await this.listRankTagRows(urls); } catch (e) { map = {}; }
+      const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags",
+        "skin_tags", "tags", "visual_tags", "craft_tags", "fit_tags", "culture_tags",
+        "psych_tags", "festival_tags", "pattern_tags", "struct_tags", "fabric_tags"];
+      list.forEach((img) => {
+        const u = urlOf(img);
+        if (!u) return;
+        img._tagUrl = u;
+        const row = map[u];
+        if (!row) return;
+        FIELDS.forEach((f) => {
+          const v = row[f];
+          if (Array.isArray(v)) { if (v.length) img[f] = v; }
+          else if (v != null && String(v).trim()) img[f] = v;
+        });
+      });
+      return list;
+    },
+    /* 一次性回填：把历史记录里空的 url 用 path 补齐（20261102E）。
+       这些记录当初只写了文件位置，打标按地址写入时会直接被拦下。 */
+    _backfilled: false,
+    async backfillImageUrls(force) {
+      if (this._backfilled && !force) return 0;
+      this._backfilled = true;
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      if (!base) return 0;
+      let fixed = 0, from = 0;
+      const STEP = 500;
+      for (;;) {
+        const { data, error } = await client.from("images")
+          .select("id,path,url").order("id").range(from, from + STEP - 1);
+        if (error || !data || !data.length) break;
+        const todo = data.filter((r) => String(r.path || "").trim() && !String(r.url || "").trim());
+        for (let i = 0; i < todo.length; i += 50) {
+          const part = todo.slice(i, i + 50);
+          await Promise.all(part.map((r) => {
+            const u = base + "/" + String(r.path).replace(/^\//, "");
+            this._urlOfId[r.id] = u;
+            return client.from("images").update({ url: u }).eq("id", r.id);
+          }));
+          fixed += part.length;
+        }
+        if (data.length < STEP) break;
+        from += STEP;
+      }
+      return fixed;
+    },
     async listImageNames() {
       const { data, error } = await client.from("images").select("name");
       if (error) throw new Error(error.message || "读取失败");
@@ -606,9 +663,14 @@ const SB = (() => {
     async addImageRecord({ category, name, path, url }) {
       const token = await currentToken();
       const s = await client.auth.getSession();
+      /* 20261102E：没带外链时用 path 拼出可用地址再入库，
+         否则记录里 url 为空，后续打标按地址写入会失败（表现为「无法打标」）。 */
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      const given = (url || "").trim();
+      const derived = given || (base && path ? base + "/" + String(path).replace(/^\//, "") : "");
       const { error } = await client.from("images").insert({
         category, name, path,
-        url: (url || "").trim() || null,
+        url: derived || null,
         uploaded_by: s?.data?.session?.user?.id || null,
       });
       if (error) throw new Error(error.message || "写入失败");
@@ -637,14 +699,43 @@ const SB = (() => {
      * batchUpdateImageTags，本层负责把 id 换成 url 再写标签表。
      * ============================================================ */
     _urlOfId: {},
+    /* 把图片记录还原成「可打标的图片地址」。
+       20261102E：老上传入口（含趋势动向早期版本、历史导入）只写了 path，url 字段是空，
+       而打标要按 image_url 唯一键写入，于是拖图时直接报「这张图没有可用的图片地址」。
+       path 本来就是 R2 里的真实位置，拼上 Worker 前缀就是可用地址，与渠道雷达/趋势动向
+       上传时写的 URL 完全同一口径，不会出现同一张图两行标签。 */
+    _urlOfImageRow(r) {
+      if (!r) return "";
+      const u = String(r.url || "").trim();
+      if (u) return u;
+      const p = String(r.path || "").trim();
+      if (!p) return "";
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      return base ? base + "/" + p.replace(/^\//, "") : p;
+    },
     async _mapIdToUrl(ids) {
       const need = [...new Set((ids || []).filter((x) => x && !this._urlOfId[x]))];
       if (need.length) {
+        const patch = [];      /* url 为空的记录：顺手回填，下次不用再拼 */
         for (let i = 0; i < need.length; i += 100) {
           const part = need.slice(i, i + 100);
-          const { data, error } = await client.from("images").select("id,url").in("id", part);
+          const { data, error } = await client.from("images").select("id,url,path").in("id", part);
           if (error) throw new Error(error.message || "读取图片地址失败");
-          (data || []).forEach((r) => { if (r.url) this._urlOfId[r.id] = r.url; });
+          (data || []).forEach((r) => {
+            const u = this._urlOfImageRow(r);
+            if (u) this._urlOfId[r.id] = u;
+            if (u && !String(r.url || "").trim()) patch.push({ id: r.id, url: u });
+          });
+        }
+        /* 回填失败不影响本次打标（地址已经在内存里了） */
+        if (patch.length) {
+          try {
+            for (let i = 0; i < patch.length; i += 50) {
+              await Promise.all(patch.slice(i, i + 50).map((p) =>
+                client.from("images").update({ url: p.url }).eq("id", p.id)
+              ));
+            }
+          } catch (e) { /* 忽略 */ }
         }
       }
       const out = {};
