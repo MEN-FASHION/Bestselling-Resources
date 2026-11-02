@@ -21,7 +21,10 @@
   /* 表头列 → [存储字段, 枚举键] */
   var MAP = [
     ["风格", "style_tags", "style"],
+    ["图案类型", "pattern_tags", "图案类型"],
     ["图案元素", "element_tags", "element"],
+    ["结构部件", "struct_tags", "结构部件"],
+    ["面料", "fabric_tags", "面料"],
     ["二次工艺", "craft_tags", "craft"],
     ["拍摄方式", "shoot_tags", "shoot"],
     /* 20261027Q 语义维度：各自独立枚举，填错会被判「未识别」而不是静默写入 */
@@ -56,7 +59,7 @@
      但写入循环也只遍历 FIELDS，于是节日那一列解析出来了却从没写进库：
      导入照样报"写入 N 行"，节日永远 0 行，前台一直少一栏。
      拆成两个常量：判定用 FIELDS（8 个必填），写入/清空用 WRITE_FIELDS（9 个含节日）。 */
-  var WRITE_FIELDS = FIELDS.concat(["festival_tags"]);
+  var WRITE_FIELDS = FIELDS.concat(["festival_tags", "pattern_tags", "struct_tags", "fabric_tags"]);
 
   var parsed = null;     // { rows:[{url, tags, provided}], fields:[], bad, unknown, headers, sheet }
   var historyOK = null;  // 历史表是否可用（null=未探测）
@@ -101,6 +104,11 @@
        不该被当成「未识别」丢掉，但导出下拉里不再提供这些老词。 */
     var legacy = (window.RankExport && window.RankExport.VISUAL_LEGACY) || [];
     if (key === "视觉-背景" && legacy.length) return list.concat(legacy);
+    /* v11：图案拆成三列后，v10 的老词按维度的历史值继续放行（不判未识别），
+       但下拉里不再提供；真正要改写到新列的由 normalizeTagSet 负责。 */
+    var AE2 = window.APP_ENUM || {};
+    if (key === "图案元素" && (AE2.legacyElement || []).length) return list.concat(AE2.legacyElement);
+    if (key === "拍摄方式" && (AE2.legacyShoot || []).length) return list.concat(AE2.legacyShoot);
     /* 节日宽松匹配：后台已加载营销日历的节庆库（window.RAW），
        库里存在的节日名一律放行。这样运营在表里手写「泰国守夏节」这类
        库里有的节日不会被判「未识别」，而拼错的名字照样拦得住。 */
@@ -169,7 +177,9 @@
     var out = [];
     (rows || []).forEach(function (rec) {
       var t = rec.tags || {};
-      var els = t.element_tags || [];
+      /* v11：「满印 / 纯色无图案」这类判断落在「图案类型」列，元素列只说明画的是什么。
+         两列合起来看，否则 v11 的表永远判不出大面积印花。 */
+      var els = (t.pattern_tags || []).concat(t.element_tags || []);
       var crs = t.craft_tags || [];
       if (!crs.length) return;
 
@@ -291,6 +301,12 @@
         var allow = enumOf(ekey);
         var list = rec.tags[field] || [];
         vals.forEach(function (v) {
+          /* v11：背景全量改成 室内·/室外· 前缀，老表的旧词先改写到新值再校验，
+             否则整份历史打标表一导回来全判「未识别」。 */
+          if (ekey === "视觉-背景") {
+            var BG = (window.APP_ENUM && window.APP_ENUM.bgAlias) || {};
+            if (BG[v] && BG[v] !== v) v = BG[v];
+          }
           if (allow.length && allow.indexOf(v) < 0) { unknown[v] = (unknown[v] || 0) + 1; return; }
           if (field === "fit_tags") v = ekey.slice(3) + "·" + v;
           if (list.indexOf(v) < 0) list.push(v);
@@ -333,7 +349,10 @@
            原来打好的文化背景/消费心理/节日被静默清空（页面只显示"写入 N 行"，看不出丢数据）。 */
         culture_tags: (c.culture_tags || []).slice(),
         psych_tags: (c.psych_tags || []).slice(),
-        festival_tags: (c.festival_tags || []).slice()
+        festival_tags: (c.festival_tags || []).slice(),
+        pattern_tags: (c.pattern_tags || []).slice(),
+        struct_tags: (c.struct_tags || []).slice(),
+        fabric_tags: (c.fabric_tags || []).slice()
       };
       var changes = [];
       WRITE_FIELDS.forEach(function (f) {

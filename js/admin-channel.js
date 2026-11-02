@@ -45,7 +45,10 @@
   var DIMS = [
     { key: "style_tags", label: "风格", enum: "风格" },
     { key: "visual_tags", label: "视觉", enum: "视觉" },
+    { key: "pattern_tags", label: "图案类型", enum: "图案类型" },
     { key: "element_tags", label: "图案元素", enum: "图案元素" },
+    { key: "struct_tags", label: "结构部件", enum: "结构部件" },
+    { key: "fabric_tags", label: "面料", enum: "面料" },
     { key: "craft_tags", label: "二次工艺", enum: "二次工艺" },
     { key: "shoot_tags", label: "拍摄方式", enum: "拍摄方式" },
     { key: "skin_tags", label: "模特", enum: "模特" },

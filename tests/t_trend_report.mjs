@@ -47,7 +47,9 @@ ok("PDF 走原样上传（不被图片压缩逻辑处理）", /if \(!file \|\| !
 ok("jspdf 已放入 vendor", fs.existsSync("vendor/jspdf.umd.min.js"));
 
 console.log("六、版本一致性");
-ok("rank.html 引入 report.js 且为 20261030D", /js\/report\.js\?v=20261030D/.test(H));
+/* 版本号是缓存戳，每版都会变；这里只要求「引了 report.js 且带版本戳」，
+   别再写死某一天的版本号——写死之后每次发版这条都会假失败。 */
+ok("rank.html 引入 report.js 且带版本戳", /js\/report\.js\?v=\d{8}[A-Z]/.test(H));
 const allHtml = ["admin.html","rank.html","trends.html","index.html","movement.html","plus.html","marketing.html","fav.html"];
 ok("八个页面的资源引用版本号统一", allHtml.every(f => !/\?v=20261030[ABC]/.test(fs.readFileSync(f, "utf8"))));
 

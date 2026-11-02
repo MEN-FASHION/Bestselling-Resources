@@ -2472,7 +2472,9 @@ async removeTrendRecord(id) {
             否则迁移完成前页面会显示成"全空"，看着像丢数据。
          规则：逐字段取"有值的那一边"，新表优先。 */
       const FIELDS = ["category", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags",
-        "tags", "visual_tags", "craft_tags", "fit_tags", "culture_tags", "psych_tags", "festival_tags"];
+        "tags", "visual_tags", "craft_tags", "fit_tags", "culture_tags", "psych_tags", "festival_tags",
+        /* 20261102A 枚举 v11：图案拆分后的三列 */
+        "pattern_tags", "struct_tags", "fabric_tags"];
 
       /* ① 读新表 */
       const fromTagTable = {};
@@ -2810,10 +2812,11 @@ async removeTrendRecord(id) {
           return !error;
         } catch (e) { return false; }
       };
-      const [festival, culture, psych] = await Promise.all([
+      const [festival, culture, psych, pattern, struct, fabric] = await Promise.all([
         probe("festival_tags"), probe("culture_tags"), probe("psych_tags"),
+        probe("pattern_tags"), probe("struct_tags"), probe("fabric_tags"),
       ]);
-      return { festival, culture, psych };
+      return { festival, culture, psych, pattern, struct, fabric };
     },
     /* 打标数据体检：直接问库——每个维度到底有多少行真的有值。
        用途：界面"打了标却看不到"时，先分清是【没打进去】还是【读不出来】。
@@ -2821,6 +2824,7 @@ async removeTrendRecord(id) {
     async statRankTagDims() {
       const dims = [
         ["风格", "style_tags"], ["视觉", "visual_tags"], ["图案元素", "element_tags"],
+        ["图案类型", "pattern_tags"], ["结构部件", "struct_tags"], ["面料", "fabric_tags"],
         ["二次工艺", "craft_tags"], ["拍摄方式", "shoot_tags"], ["版型", "fit_tags"],
         ["文化背景", "culture_tags"], ["消费心理", "psych_tags"], ["节日", "festival_tags"],
       ];
@@ -2861,16 +2865,19 @@ async removeTrendRecord(id) {
          全量列若因为「补丁没跑、列还不存在」而报错，整个查询会失败，
          前台就会一张标签都读不出来（看起来像"完全没打标"）。
          所以按 全量 → 去掉节日 → 只留基础列 逐级退，保证有多少显示多少。 */
-      const C_FULL = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,batch_id,updated_at";
-      const C_NEW2 = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,batch_id,updated_at";
+      /* v11 加了图案类型 / 结构部件 / 面料三列，降级链多一级：
+         全量 → 去 v11 三列 → 去节日 → 只留基础列，补丁没跑也不会整页读不出来。 */
+      const C_FULL = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,pattern_tags,struct_tags,fabric_tags,batch_id,updated_at";
+      const C_NEW2 = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,batch_id,updated_at";
+      const C_NEW1 = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,batch_id,updated_at";
       const C_BASE = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,batch_id,updated_at";
-      const LADDER = [C_FULL, C_NEW2, C_BASE];
+      const LADDER = [C_FULL, C_NEW2, C_NEW1, C_BASE];
       let lv = this.__rankTagLevel;
       /* 降级结果只记 60 秒。原来一旦降级就永久记住（同一页面会话内），
          补丁跑完、列建好了也还是读不到节日，用户只能靠刷新页面撞运气。
          过期后从最高级重试，补丁补上即可自动恢复。 */
       const lvAt = this.__rankTagLevelAt || 0;
-      if (typeof lv !== "number" || lv < 0 || lv > 2) lv = 0;
+      if (typeof lv !== "number" || lv < 0 || lv > LADDER.length - 1) lv = 0;
       if (lv > 0 && Date.now() - lvAt > 60000) lv = 0;
 
       const fetchPart = async (part, cols) => {
@@ -2902,6 +2909,9 @@ async removeTrendRecord(id) {
             if (!r.culture_tags) r.culture_tags = [];
             if (!r.psych_tags) r.psych_tags = [];
             if (!r.festival_tags) r.festival_tags = [];
+            if (!r.pattern_tags) r.pattern_tags = [];
+            if (!r.struct_tags) r.struct_tags = [];
+            if (!r.fabric_tags) r.fabric_tags = [];
             out[r.image_url] = r;
           });
         }
@@ -2930,6 +2940,9 @@ async removeTrendRecord(id) {
           culture_tags: r.culture_tags || [],
           psych_tags: r.psych_tags || [],
           festival_tags: r.festival_tags || [],
+          pattern_tags: r.pattern_tags || [],
+          struct_tags: r.struct_tags || [],
+          fabric_tags: r.fabric_tags || [],
           skin_tags: r.skin_tags || [],
           tags: r.tags || [],
           visual_tags: r.visual_tags || [],
@@ -2955,7 +2968,7 @@ async removeTrendRecord(id) {
       if (!b) return 0;
       /* 20261027R：清空清单必须带上看/文化/心理/节日，否则「回滚本批」之后
          这几列的值会留在库里变成孤儿数据——导出时看不见、前台却在显示。 */
-      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], visual_tags: [], craft_tags: [], fit_tags: [], culture_tags: [], psych_tags: [], festival_tags: [], batch_id: null, updated_at: new Date().toISOString() };
+      const empty = { category: "", style_tags: [], element_tags: [], scene_tags: [], shoot_tags: [], skin_tags: [], visual_tags: [], craft_tags: [], fit_tags: [], culture_tags: [], psych_tags: [], festival_tags: [], pattern_tags: [], struct_tags: [], fabric_tags: [], batch_id: null, updated_at: new Date().toISOString() };
       const { error } = await client.from("rank_image_tags").update(empty).eq("batch_id", b);
       if (error) throw new Error(error.message || "回滚失败");
       return true;
@@ -3108,6 +3121,10 @@ async removeTrendRecord(id) {
           culture_tags: pick("culture_tags"),
           psych_tags: pick("psych_tags"),
           festival_tags: pick("festival_tags"),
+          /* 20261102A 枚举 v11：图案拆分后的三列 */
+          pattern_tags: pick("pattern_tags"),
+          struct_tags: pick("struct_tags"),
+          fabric_tags: pick("fabric_tags"),
         };
       });
       return out;

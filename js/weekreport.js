@@ -120,6 +120,14 @@
       else push(extractCraft(Array.isArray(t.element_tags) ? t.element_tags : []));
       return vals;
     }
+    /* v11 把纹样/肌理从「图案元素」拆到了「图案类型」（格纹、条纹、碎花…）。
+       印花这一维要两列合起来看，否则换版后报告里的图案 TOP 会突然只剩"画的是什么"，
+       条纹格纹全部消失。 */
+    if (dimKey === "element_tags") {
+      push(t.pattern_tags);
+      push(t.element_tags);
+      return vals;
+    }
     if (dimKey === "style_tags") {
       push(t.style_tags);
       push(t.fit_tags);              /* 版型标签形如「领型·圆领」，带前缀更利于阅读 */

@@ -26,7 +26,10 @@
     if (v && v.length) return v.slice();
     v = AE()[k];
     if (v && v.length) return v.slice();
-    if (k === "视觉-背景") return (VE().bg || []).slice();
+    if (k === "视觉-背景") return (VE().bg || []).concat(VE().legacy || []);
+    var AE2 = window.APP_ENUM || {};
+    if (k === "图案元素") return (AE2["图案元素"] || []).concat(AE2.legacyElement || []);
+    if (k === "拍摄方式") return (AE2["拍摄方式"] || []).concat(AE2.legacyShoot || []);
     if (k === "视觉-画面构成") return (VE().frame || []).slice();
     if (k === "视觉-呈现主体") return (VE().subject || []).slice();
     return [];
@@ -40,7 +43,9 @@
   /* 写回 images 的字段清单：合并时要全部带上，少一个就会被清空 */
   var ALL_FIELDS = ["tags", "style_tags", "scene_tags", "visual_tags", "element_tags",
     "craft_tags", "shoot_tags", "skin_tags", "fit_tags",
-    "culture_tags", "psych_tags", "festival_tags"];
+    "culture_tags", "psych_tags", "festival_tags",
+    /* 20261102A 枚举 v11：图案类型 / 结构部件 / 面料 */
+    "pattern_tags", "struct_tags", "fabric_tags"];
 
   var DIMS = ["风格", "视觉", "图案元素", "二次工艺", "拍摄方式", "版型", "文化背景", "消费心理"];
   var DIM_TOTAL = DIMS.length;
@@ -97,11 +102,17 @@
       function grab(key) {
         if (col[key] == null) return [];
         var v = arr(row[col[key]]);
+        /* v11：背景改前缀后，老表里的旧词先改写成新值，避免整表判未识别 */
+        if (key === "视觉-背景") {
+          var BG = (window.APP_ENUM && window.APP_ENUM.bgAlias) || {};
+          v = v.map(function (x) { return BG[x] && BG[x] !== x ? BG[x] : x; });
+        }
         if (v.length) { rec.provided[key] = true; rec.values[key] = v; }
         return v;
       }
       grab("风格"); grab("视觉-背景"); grab("视觉-画面构成"); grab("视觉-呈现主体");
-      grab("图案元素"); grab("二次工艺"); grab("拍摄方式"); grab("模特");
+      grab("图案类型"); grab("图案元素"); grab("结构部件"); grab("面料");
+      grab("二次工艺"); grab("拍摄方式"); grab("模特");
       FIT_LABELS.forEach(grab);
       grab("文化背景"); grab("消费心理"); grab("节日"); grab("渠道");
       if (iStatus >= 0) rec.status = norm(row[iStatus]);
@@ -126,7 +137,10 @@
       bad(dim, miss);
     }
     chk("风格", v["风格"]);
+    chk("图案类型", v["图案类型"]);
     chk("图案元素", v["图案元素"]);
+    chk("结构部件", v["结构部件"]);
+    chk("面料", v["面料"]);
     chk("二次工艺", v["二次工艺"]);
     chk("拍摄方式", v["拍摄方式"]);
     chk("模特", v["模特"]);
@@ -217,7 +231,10 @@
     }
 
     if (p["风格"]) write("style_tags", v["风格"]); else clearIfEmpty("style_tags", true);
+    if (p["图案类型"]) write("pattern_tags", v["图案类型"]); else clearIfEmpty("pattern_tags", true);
     if (p["图案元素"]) write("element_tags", v["图案元素"]); else clearIfEmpty("element_tags", true);
+    if (p["结构部件"]) write("struct_tags", v["结构部件"]); else clearIfEmpty("struct_tags", true);
+    if (p["面料"]) write("fabric_tags", v["面料"]); else clearIfEmpty("fabric_tags", true);
     if (p["二次工艺"]) write("craft_tags", v["二次工艺"]); else clearIfEmpty("craft_tags", true);
     if (p["拍摄方式"]) write("shoot_tags", v["拍摄方式"]); else clearIfEmpty("shoot_tags", true);
     if (p["模特"]) write("skin_tags", v["模特"]); else clearIfEmpty("skin_tags", true);

@@ -49,7 +49,10 @@
   var GROUPS = [
     ["风格", ["style_tags"]],
     ["视觉", ["visual_tags"]],
+    ["图案类型", ["pattern_tags"]],
     ["图案元素", ["element_tags"]],
+    ["结构部件", ["struct_tags"]],
+    ["面料", ["fabric_tags"]],
     ["二次工艺", ["craft_tags"]],
     ["拍摄方式", ["shoot_tags"]],
     ["模特", ["skin_tags"]],
