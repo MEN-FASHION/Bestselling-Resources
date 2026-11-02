@@ -52,6 +52,7 @@
   var TAG_BUSY = false;
   var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
   var LAST_COLS_MODE = "";
+  var REP_OPEN = false;      /* 报告详情是否展开；默认收起，只给逐列画像 */
   var LAST_KEPT = 0;         // 上一次真正画进各列的张数合计（类目对比不含上一周基线）
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
@@ -451,6 +452,24 @@
   }
 
   /* 按「对比列数」重排选择：纵向=最近 N 周（保留当前站点）；横向=前 N 个国家（保留最新一周） */
+  /* 报告详情展开/收起：按钮文案、箭头、aria 与各详情块同步 */
+  function syncRepDetail(box) {
+    box = box || $("#rk-body");
+    if (!box) return;
+    var dets = box.querySelectorAll("[data-rep-detail]");
+    Array.prototype.forEach.call(dets, function (d) {
+      if (REP_OPEN) d.removeAttribute("hidden"); else d.setAttribute("hidden", "");
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rep-toggle]"), function (b) {
+      b.setAttribute("aria-expanded", REP_OPEN ? "true" : "false");
+      b.className = "rk-rep-open" + (REP_OPEN ? " open" : "");
+      var ico = b.querySelector(".rk-rep-open-ico");
+      var txt = b.querySelector(".rk-rep-open-txt");
+      if (ico) ico.textContent = REP_OPEN ? "▾" : "▸";
+      if (txt) txt.textContent = REP_OPEN ? "收起详细报告" : "查看详细报告";
+    });
+  }
+
   function applyCols() {
     var n = Math.max(2, Math.min(COLS_MAX, COLS));
     if (MODE === "v") {
@@ -1547,6 +1566,7 @@
       + '<div class="rk-rep-title">趋势构成分析报告<span class="rk-rep-sub">' + esc(dim.head) + '</span></div>'
       + '<div class="rk-rep-meta">'
       + '<span>' + esc(repScopeText(dim)) + '</span>'
+      + '<span>分组 <b>' + esc(V.map(function (c) { return c.cat; }).join(" / ")) + '</b></span>'
       + '<span>样本 <b>' + sum + '</b> 张上榜图</span>'
       + '<span>打标覆盖 <b>' + cov + '%</b></span>'
       + '<span>生成于 ' + ts + '</span>'
@@ -1733,7 +1753,30 @@
     dim = dim || vitalsDim();
     /* 20261102H：报告层。头 / 结论 / 对照表在前，底部再补建议与数据说明，
        三列体征卡作为「逐列画像」放在中间，仍是原卡片（数据底稿不变）。 */
-    var h = repHeadHtml(V, dim) + repSummaryHtml(V, dim) + repMatrixHtml(V, dim);
+    /* 20261102K：详情默认收起。
+       一进来只给「逐列画像」——它是最直观的一屏，三列并列、一眼看差异。
+       报告头 / 核心结论 / 横向对照 / 可执行建议 / 数据说明全部收进折叠区，
+       由一个显眼的「查看详细报告」入口展开，避免首次进页面就被一大段文字压住。 */
+    var detailTop = repHeadHtml(V, dim);
+    /* 只有一列可比较时，横向对照与核心结论本就无从谈起。
+       以前是静默省略，页面上只剩画像，容易让人以为"切换了却没变化"。
+       现在明确说明原因，并提示怎样让对比成立。 */
+    var _liveCnt = V.filter(function (c) { return c.n > 0; }).length;
+    if (_liveCnt < 2) {
+      detailTop += '<p class="rk-rep-hint">当前只有 ' + _liveCnt + ' 列可比较，横向对照与核心结论暂不生成。'
+        + (MODE === "h" ? "在上方「国家站点」里多选几个国家，" : MODE === "v" ? "在「周次」里多选 2 周以上，" : "在「对比类目」里勾选 2 个以上类目，")
+        + '再看差异。</p>';
+    }
+    detailTop += repSummaryHtml(V, dim) + repMatrixHtml(V, dim);
+
+    var h = '';
+    h += '<div class="rk-rep-toggle-bar">'
+      +   '<button type="button" class="rk-rep-open" data-rep-toggle="1" aria-expanded="false">'
+      +     '<span class="rk-rep-open-ico">▸</span><span class="rk-rep-open-txt">查看详细报告</span>'
+      +   '</button>'
+      +   '<span class="rk-rep-open-sub">展开后可见报告口径、结论、维度对照与数据说明</span>'
+      + '</div>';
+    h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>' + detailTop + '</div>';
     h += '<section class="rk-rep-sec rk-rep-cols"><h4><em>三</em>逐列画像</h4>';
     h += '<div class="rk-vitals">';
     V.forEach(function (c) {
@@ -1785,7 +1828,8 @@
         + ins.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul></div>';
     }
     h += '</section>';
-    h += repActionHtml(V, dim) + repQualityHtml(V, dim);
+    h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>'
+      + repActionHtml(V, dim) + repQualityHtml(V, dim) + '</div>';
     return h;
   }
 
@@ -1903,11 +1947,10 @@
   function lbTagsHtml(url) {
     var t = TAG_INDEX[url] || TAG_INDEX[String(url).split("?")[0].split("#")[0]] || null;
     var groups = lbTagGroups(t);
-    if (!groups.length) {
-      return '<div class="rk-lb-tags"><div class="rk-lb-th">打标信息</div>'
-        + '<div class="rk-lb-tempty">这张图还没有打标。<br>在后台「导出打标表」里补齐后回填，这里就会出现。</div>'
-        + '</div>';
-    }
+    /* 20261102I：未打标不再给提示。以前这里会渲染「这张图还没有打标 / 到后台导出打标表补齐后回填」，
+       既多一块占位，也在引导用户去一个已经不在数据看板的入口。没标签就整块不出现，
+       左侧只留图片信息，面板更干净。 */
+    if (!groups.length) return "";
     var h = '<div class="rk-lb-tags"><div class="rk-lb-th">打标信息</div>';
     groups.forEach(function (g) {
       h += '<div class="rk-lb-tg"><div class="rk-lb-tl">' + esc(g[0]) + '</div><div class="rk-lb-tc">'
@@ -1919,11 +1962,26 @@
   }
 
   /* 打标维度按当前这批图异步取一次；取不到就只显示三档占比，不阻塞主流程 */
+  /* 20261102J：标签取数的去重键原来是「数量 + 首个 URL + 末个 URL」。
+     切换对比方式后如果两个组合的图片数量与首末地址恰好相同（同一类目同一周很常见），
+     就会被判成"取过了"而不重新拉，于是切到新组合后报告里风格/视觉/工艺永远是空的，
+     看着像"切了没反应"。这里改成对整个 URL 集合做稳定指纹（排序后逐字符哈希），
+     集合只要变一个地址，键就变，必定重取。 */
+  function tagFingerprint(urls) {
+    var a = (urls || []).slice().sort();
+    var h = 5381;
+    for (var i = 0; i < a.length; i++) {
+      var s = String(a[i]);
+      for (var j = 0; j < s.length; j++) h = ((h << 5) + h + s.charCodeAt(j)) | 0;
+    }
+    return a.length + "|" + (h >>> 0);
+  }
+
   function ensureTags(items) {
     if (!SBX || !SBX.listImageTags) return;
     var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
     if (!urls.length) return;
-    var key = urls.length + "|" + (urls[0] || "") + "|" + (urls[urls.length - 1] || "");
+    var key = tagFingerprint(urls);
     if (key === TAG_KEY || TAG_BUSY) return;
     TAG_BUSY = true;
     var fin = function () { TAG_BUSY = false; TAG_KEY = key; };
@@ -2008,6 +2066,7 @@
       html += '<div class="rk-more-wrap"><button type="button" class="rk-loadmore" id="rk-loadmore">展开更多（已展示 ' + CAP + ' / 最多 ' + maxLen + '）</button></div>';
     }
     box.innerHTML = html;
+    if (REP_OPEN) syncRepDetail(box);   /* 重绘后保持展开状态 */
 
     var more = $("#rk-loadmore");
     if (more) more.onclick = function () {
@@ -2259,6 +2318,21 @@
 
   function bindFav() {
     var box = $("#rk-body");
+    /* 20261102K：报告详情折叠。详情块是每次重绘都换新的 DOM，
+       用捕获阶段的委托来开关，重绘后不用重新绑定。展开状态记在 REP_OPEN 上，
+       切筛选重绘也保持展开，不会一刷新就收回去。 */
+    if (box && !box.__repBound) {
+      box.__repBound = true;
+      box.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var btn = t.closest("[data-rep-toggle]");
+        if (!btn) return;
+        e.preventDefault(); e.stopPropagation();
+        REP_OPEN = !REP_OPEN;
+        syncRepDetail(box);
+      }, true);
+    }
     if (box && !box.__favBound) {
       box.__favBound = true;
       /* 捕获阶段拦截：卡片自身有「点击开灯箱」，星标与勾选必须先被我们吃掉 */
@@ -3205,7 +3279,10 @@
       vitalsOfGroups: vitalsOfGroups,
       vitalsDim: vitalsDim,
       vitalsHtml: vitalsHtml,
-      insightsOf: insightsOf
+      insightsOf: insightsOf,
+      lbTagsHtml: lbTagsHtml,
+      lbTagGroups: lbTagGroups,
+      tagFingerprint: tagFingerprint
     };
   }
 

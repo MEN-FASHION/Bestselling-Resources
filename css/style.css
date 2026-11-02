@@ -6342,3 +6342,29 @@ html, body{
   .rk-rep-tbl{min-width:460px;font-size:11.8px}
   .rk-rep-sum li,.rk-rep-act li{font-size:12.3px}
 }
+
+/* 20261102J：报告里「只有一列可比较」的说明 */
+.rk-rep-hint{margin:0 0 12px;padding:9px 12px;font-size:12.3px;line-height:1.8;color:#7a6a45;
+  background:#fdf8ea;border:1px solid #f0e4c4;border-radius:9px}
+
+/* ============================================================================
+   20261102K：报告详情默认收起
+   一进页面只给「逐列画像」（最直观的一屏），报告头 / 核心结论 / 横向对照 /
+   可执行建议 / 数据说明全部收进折叠区，由一个显眼的入口展开。
+   ========================================================================== */
+.rk-rep-toggle-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:0 0 14px;padding:11px 13px;border:1px solid #e6dfd0;border-radius:11px;
+  background:linear-gradient(180deg,#fdfbf5,#fff)}
+.rk-rep-open{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  padding:7px 15px;border:1px solid var(--gold);border-radius:999px;background:#fff;
+  color:#7a5f22;font-size:13px;font-weight:700;letter-spacing:.3px;
+  transition:background .15s,color .15s,box-shadow .15s;box-shadow:0 1px 2px rgba(180,150,80,.18)}
+.rk-rep-open:hover{background:var(--gold);color:#fff;box-shadow:0 2px 8px rgba(180,150,80,.3)}
+.rk-rep-open-ico{font-size:11px;line-height:1}
+.rk-rep-open-sub{font-size:11.8px;color:#9a9384;line-height:1.6}
+.rk-rep-detail[hidden]{display:none}
+@media (max-width:720px){
+  .rk-rep-toggle-bar{padding:10px}
+  .rk-rep-open{font-size:12.5px;padding:7px 13px}
+  .rk-rep-open-sub{display:none}
+}
