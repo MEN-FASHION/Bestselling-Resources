@@ -190,5 +190,50 @@ ok("低占比列不再写「其余最高仅」", h9.indexOf("其余列最高仅"
   (h9.match(/其余列[^。]{0,12}/) || [])[0] || "");
 ok("出现「其余列有的到」的正确表述", /其余列有的到|与其余列基本持平|其余列最高/.test(h9));
 
+/* ---------------- 10. 工艺：图案类降权，质感类优先 ---------------- */
+console.log("\n[10] 二次工艺推荐偏向");
+const src2 = fs.readFileSync(path.join(__dirname, "..", "js", "rank.js"), "utf8");
+ok("识别图案复制类工艺", /印花\|喷绘\|拔印/.test(src2) && src2.indexOf("craftIsPrint") >= 0);
+const i3 = [];
+/* A：印花占比最高（40%），刺绣次之（30%）—— 必须推荐刺绣而不是印花 */
+for (let i = 0; i < 10; i++) {
+  i3.push(mk({ image_url: "p" + i, category: "外套夹克",
+    craft_tags: [i < 4 ? "数码印花" : (i < 7 ? "刺绣" : "水洗")] }));
+}
+const tg3 = {};
+i3.forEach(function (it) { tg3[it.image_url] = { craft_tags: it.craft_tags, style_tags: ["简约"] }; });
+T.set({ facets: { sites: ["美国站"], periods: ["2026-W43"], categories: ["外套夹克"] },
+  tags: tg3, groups: [], mode: "c", cat: "外套夹克", cats: ["外套夹克"],
+  sites: ["美国站"], periods: ["2026-W43"], cache: { key: "c10", items: i3 } });
+const h10 = T.vitalsHtml(T.vitalsOfGroups(T.vitalsGroups()), T.vitalsDim());
+const a10 = h10.slice(h10.indexOf("rk-rep-act"), h10.indexOf("rk-rep-trend"));
+ok("工艺建议推荐的是刺绣（质感类），不是占比最高的印花",
+  a10.indexOf("质感类出现最多的是 <b>刺绣") >= 0, a10.slice(0, 120));
+ok("印花被降级为补充说明并点明不增加质感差异",
+  a10.indexOf("数码印花") >= 0 && a10.indexOf("不增加质感差异") >= 0);
+ok("给出其他质感类并列（水洗）", a10.indexOf("水洗") >= 0);
+
+/* B：只有图案类 → 明确说以图案类为主，并给补空白方向 */
+const i4 = [];
+for (let i = 0; i < 8; i++) i4.push(mk({ image_url: "q" + i, category: "POLO", craft_tags: ["数码印花"] }));
+const tg4 = {};
+i4.forEach(function (it) { tg4[it.image_url] = { craft_tags: it.craft_tags, style_tags: ["简约"] }; });
+T.set({ facets: { sites: ["美国站"], periods: ["2026-W43"], categories: ["POLO"] },
+  tags: tg4, groups: [], mode: "c", cat: "POLO", cats: ["POLO"],
+  sites: ["美国站"], periods: ["2026-W43"], cache: { key: "c11", items: i4 } });
+const h11 = T.vitalsHtml(T.vitalsOfGroups(T.vitalsGroups()), T.vitalsDim());
+const a11 = h11.slice(h11.indexOf("rk-rep-act"), h11.indexOf("rk-rep-trend"));
+ok("只有图案类时说明以图案类为主", a11.indexOf("以图案类为主") >= 0, a11.slice(0, 120));
+ok("并给出刺绣/压褶/洗水等补空白方向", /刺绣 \/ 压褶|压褶 \/ 洗水/.test(a11));
+ok("并声明这不是结论", a11.indexOf("不是结论") >= 0);
+
+/* C：图案类 / 质感类的判定本身 */
+[["数码印花", true], ["烫图/热转印", true], ["烫金", true], ["植绒印花", true], ["发泡印花", true],
+ ["刺绣", false], ["立体绣", false], ["水洗", false], ["压褶", false], ["绗缝", false],
+ ["毛边", false], ["铆钉", false], ["打缆/抽褶", false], ["激光切割", false]].forEach(function (p) {
+  const re = /印花|喷绘|拔印|局部印|烫图|热转印|烫印|烫金|烫银|烫钻|水钻|镭射|夜光|反光印|植绒印/;
+  ok("判定「" + p[0] + "」为" + (p[1] ? "图案类" : "质感类"), re.test(p[0]) === p[1]);
+});
+
 console.log("\n结果：通过 " + pass + "，失败 " + fail);
 process.exit(fail ? 1 : 0);

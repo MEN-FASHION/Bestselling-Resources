@@ -1753,19 +1753,45 @@
     return "，与其余列基本持平";
   }
 
+  /* 20261102P：二次工艺里区分「图案复制类」与「质感结构类」。
+     印花、烫画、烫金、烫钻这些本质是把图案贴到布上，跟印花是一回事：
+     只换图案、不换质感，撞款概率最高。商家要的是能拉开差异的工艺，
+     所以推荐时把刺绣、洗水、压褶、绗缝、毛边、铆钉这类排在前面，
+     图案类只在没有非图案候选时降级提一句，并说明它不解决质感问题。 */
+  function craftIsPrint(v) {
+    return /印花|喷绘|拔印|局部印|烫图|热转印|烫印|烫金|烫银|烫钻|水钻|镭射|夜光|反光印|植绒印/.test(String(v || ""));
+  }
+  /* 挑工艺：非图案类优先，图案类只留一个作补充 */
+  function pickCraft(list) {
+    var arr = (list || []).slice();
+    var other = arr.filter(function (x) { return !craftIsPrint(x[0]) && !/无工艺/.test(x[0]); });
+    var pr = arr.filter(function (x) { return craftIsPrint(x[0]); });
+    return {
+      other: other, print: pr,
+      main: other[0] || pr[0] || null,
+      onlyPrint: !other.length && !!pr.length
+    };
+  }
+
   function repActionHtml(V, dim) {
     var live = V.filter(function (c) { return c.n > 0; });
     if (!live.length) return "";
     var out = [];
     live.forEach(function (c) {
       var nm = "「" + esc(c.cat) + "」";
-      /* 二次工艺：出现最多 ≠ 必须加；写成"可考虑"，并说明代价 */
-      var cf = (c.craft || [])[0];
-      if (cf && cf[1] >= 25 && !/无工艺/.test(cf[0])) {
-        out.push(nm + "的二次工艺里出现最多的是 " + pctTxt(cf)
-          + listTxt(c.craft, cf[0], 2)
-          + "。若要找加价点，可优先考虑这一个；前提是工厂能做、且不额外增加合规成本"
-          + "（占比只说明它在上榜图里常见，不代表必须加）。");
+      /* 二次工艺：先挑质感结构类（刺绣 / 洗水 / 压褶 …），图案复制类降级 */
+      var ck = pickCraft(c.craft);
+      if (ck.other.length && ck.other[0][1] >= 20) {
+        var prtOne = ck.print.length && ck.print[0][1] >= 15 ? ck.print[0] : null;
+        out.push(nm + "的二次工艺里，质感类出现最多的是 " + pctTxt(ck.other[0])
+          + listTxt(ck.other, ck.other[0][0], 2)
+          + (prtOne ? "；印花 / 烫画类也有 " + esc(prtOne[0]) + "（" + prtOne[1] + "%），但那只是把图案贴到布上、不增加质感差异" : "")
+          + "。若要找加价点，可优先考虑刺绣、洗水、压褶这类能看出工艺感的；前提是工厂能做、且不额外增加合规成本"
+          + "（占比只说明它在上榜图里常见，不是非加不可）。");
+      } else if (ck.onlyPrint && ck.print[0][1] >= 25) {
+        out.push(nm + "的二次工艺在上榜图里以图案类为主（" + pctTxt(ck.print[0])
+          + "），这类工艺只换图案、不带来质感差异，撞款风险也高。若想拉开差异，可考虑往刺绣 / 压褶 / 洗水 / 毛边这些方向试"
+          + "（本列暂时没有这类工艺的数据支撑，属于补空白的思路，不是结论）。");
       }
       /* 结构部件：改动小、不牵动版型，性价比通常最高 */
       var sd = (c.struct || [])[0];
