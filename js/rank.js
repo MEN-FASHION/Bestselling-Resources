@@ -2504,7 +2504,12 @@
     if (key === "视觉-画面构成") return VE.frame || [];
     if (key === "视觉-呈现主体") return VE.subject || [];
     var E = (window.RankExport && window.RankExport.ENUM) || {};
-    return E[key] || [];
+    if (E[key] && E[key].length) return E[key];
+    /* 20261102X：榜单页并没有加载导出模块，RankExport 是空的，
+       于是「图案类型 / 结构部件 / 面料」取不到词表，分组全都只落回「图案元素」。
+       词表本体在 rank-enums.js 里已经挂到 APP_ENUM，这里直接兜底取它。 */
+    var A = window.APP_ENUM || {};
+    return (A[key] || []).slice();
   }
 
   /* 三个视觉子组的并集（含旧值）：用来判断"这个值到底属不属于视觉" */
@@ -2512,7 +2517,75 @@
     return (enumList("视觉-背景") || []).concat(enumList("视觉-画面构成") || [], enumList("视觉-呈现主体") || []);
   }
 
+  /* 20261102X：三处「看起来没分开」的根因修复（纯前端归一，不动库）
+     ------------------------------------------------------------
+     ① 图案三列：v11 才把「图案」拆成 类型 / 元素 / 结构部件 三列。
+        存量图仍是 v10 的写法——三样东西全挤在「图案元素」一列。
+        所以面板只能显示一个「图案元素」，看不到 图案类型 与 结构部件。
+        这里按词表把三列的值重新分拣一遍：格纹/条纹 归类型，拉链/口袋 归结构件，
+        认不出的留在图案元素。库没迁移也能正确分列显示。
+     ② 视觉背景：v11 给背景全量加了 室内·/室外· 前缀。旧值（家居卧室·床品沙发 等）
+        匹配不上新词表，全被兜进「视觉 · 其他」，看上去就是"背景没分开"。
+        这里先用旧值 → 新值映射改写，再分组。
+     ③ 面料：纯数据问题（列不存在或整列为空），前端无法凭空还原，
+        已单独在结果里说明。 */
+  function lbPatternMap() {
+    var A = window.APP_ENUM || {};
+    return { pat: A["图案类型"] || [], el: A["图案元素"] || [], st: A["结构部件"] || [] };
+  }
+  function lbNormalize(t) {
+    if (!t) return t;
+    var n = {};
+    Object.keys(t).forEach(function (k) { n[k] = t[k]; });
+
+    /* ① 图案三列重分拣 */
+    var P = lbPatternMap();
+    if (P.pat.length || P.st.length) {
+      var src = [
+        ["pattern_tags", t.pattern_tags],
+        ["element_tags", t.element_tags],
+        ["struct_tags", t.struct_tags]
+      ];
+      var out = { pattern_tags: [], element_tags: [], struct_tags: [] };
+      var seen = {};
+      src.forEach(function (pair) {
+        tagArr(pair[1]).forEach(function (v) {
+          var k = String(v).trim();
+          if (!k) return;
+          var to = pair[0];
+          if (P.st.indexOf(k) >= 0) to = "struct_tags";
+          else if (P.pat.indexOf(k) >= 0) to = "pattern_tags";
+          else if (P.el.indexOf(k) >= 0) to = "element_tags";
+          var uid = to + "\u0001" + k;
+          if (seen[uid]) return;
+          seen[uid] = 1;
+          out[to].push(k);
+        });
+      });
+      n.pattern_tags = out.pattern_tags;
+      n.element_tags = out.element_tags;
+      n.struct_tags = out.struct_tags;
+    }
+
+    /* ② 背景旧值 → 新值（带 室内·/室外· 前缀） */
+    var AL = (window.APP_ENUM && window.APP_ENUM.bgAlias) || {};
+    if (Object.keys(AL).length) {
+      var vis = [], seenV = {};
+      tagArr(t.visual_tags).forEach(function (v) {
+        var k = String(v).trim();
+        if (!k) return;
+        var m = AL[k] || k;
+        if (seenV[m]) return;
+        seenV[m] = 1;
+        vis.push(m);
+      });
+      n.visual_tags = vis;
+    }
+    return n;
+  }
+
   function lbTagGroups(t) {
+    t = lbNormalize(t);
     /* 20261027T 修两处「标签被吞」：
        ① 原来用全局 seen 去重，而「摆拍/挂拍/细节特写/买家秀」这几个值
           在「视觉-主体」和「拍摄方式」里都存在。主体先收走，拍摄方式那一组
@@ -2618,7 +2691,10 @@
          只读图库永远取不到后台给榜单打的标。 */
       var _fn = SBX.listImageTagsForReport || SBX.listImageTags;
       _fn.call(SBX, urls).then(function (m) {
-        (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = m[u]; });
+        /* 20261102X：入库前先归一一次（图案三列重分拣、背景旧值改写）。
+           放在索引这一步，面板、体征卡、统计口径就都拿到同一份规整数据，
+           不会出现"面板分开了、图表还没分开"的两套结果。 */
+        (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = lbNormalize(m[u]); });
         fin();
         renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
       }, function () { fin(); });
@@ -3994,7 +4070,11 @@
         if (o.periods) SEL_PERIODS = o.periods.slice();
         if (o.group !== undefined) SEL_GROUP = o.group;
         if (o.cache) CACHE = o.cache;
-        if (o.tags) TAG_INDEX = o.tags;
+        if (o.tags) {
+          var _t = {};
+          Object.keys(o.tags).forEach(function (u) { _t[u] = lbNormalize(o.tags[u]); });
+          TAG_INDEX = _t;
+        }
         if (o.facets) FACETS = o.facets;
         if (o.groups) GROUPS = o.groups;
       },
