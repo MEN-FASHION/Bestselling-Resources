@@ -564,9 +564,12 @@
       /* 逐维统计本批真正写进去的行数：节日这类可选维度，
          用户在表里填了却因为「列不存在」被判"写入成功"，会一直找不到原因。
          这里把每一维写了几行报出来，数不对立刻能看出来。 */
-      var dimOf = { style_tags: "风格", visual_tags: "视觉", element_tags: "图案元素", craft_tags: "二次工艺",
-                    shoot_tags: "拍摄方式", fit_tags: "版型", culture_tags: "文化背景",
-                    psych_tags: "消费心理", festival_tags: "节日" };
+      /* 20261102M：补上 v11 的图案类型 / 结构部件 / 面料。
+         以前这三维写进去了也不报数，看起来像"没写"，是这轮排查最费时间的地方。 */
+      var dimOf = { style_tags: "风格", visual_tags: "视觉", element_tags: "图案元素",
+                    pattern_tags: "图案类型", struct_tags: "结构部件", fabric_tags: "面料",
+                    craft_tags: "二次工艺", shoot_tags: "拍摄方式", fit_tags: "版型",
+                    culture_tags: "文化背景", psych_tags: "消费心理", festival_tags: "节日" };
       var cntDim = {};
       (plan.payload || []).forEach(function (r) {
         Object.keys(dimOf).forEach(function (f) {
@@ -779,9 +782,12 @@
           + '<br><span style="color:#666">缺列时这几维写不进去、也读不出来，页面不会报错，只会「少一栏」。</span><br>';
       }
       h += '库里共 <b>' + r.total + '</b> 行打标记录 · 各维度有值行数：' + parts.join(" · ");
+      h += '<br><span style="color:#666">（以上按整表逐页统计，不是抽样）</span>';
       if (zero.length) {
         h += '<br><span style="color:#b45309">⚠ 这些维度目前一行都没有：<b>' + zero.join("、")
-          + '</b>。如果表里填过，检查导入时是否被判「未识别」，或这列的列名和表头不一致。</span>';
+          + '</b>。如果表里填过，检查三点：①导入结果里这一维写了多少行；'
+          + '②表头是否与导出模板一致（面料认「面料」「面料-外层（候选）」「面料-内里（候选）」三列）；'
+          + '③该列在库里是否存在。</span>';
       }
       if (!missing.length && !zero.length) {
         h += '<br><span style="color:#15803d">✓ 数据齐全，前台应能正常显示。</span>';

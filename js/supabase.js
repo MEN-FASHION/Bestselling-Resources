@@ -385,11 +385,9 @@ const SB = (() => {
     // 数据看板专用：统计全站图片（含其他管理员上传），仅 admin / super_admin 可调用
     // 图片管理列表仍走 listImages（受 RLS 限制，管理员只看到并只能改自己上传的）
     async listDashboardImages() {
-      // 首选专用统计函数（一次取全站）；函数还没建进库里时不能让看板退化成「只有自己上传的」
-      try {
-        const { data, error } = await client.rpc("dashboard_images");
-        if (!error && Array.isArray(data)) return data;
-      } catch (e) { /* 继续兜底 */ }
+      /* 20261102M：原来先调用一个专用统计函数，但那个函数从没建进库里，
+         每次打开数据看板都会打一条 404 到控制台。改成直接走已有的分页读全，
+         少一次必然失败的请求，看板行为不变。 */
       try {
         const all = await this.listAllImagesPaged();
         if (all.length) return all;
@@ -2920,20 +2918,43 @@ async removeTrendRecord(id) {
         ["文化背景", "culture_tags"], ["消费心理", "psych_tags"], ["节日", "festival_tags"],
       ];
       let cols = dims.map((d) => d[1]);
-      let data = null, error = null;
+
+      /* 20261102M：以前这里是一次 .limit(50000) 取全表，但服务端单次返回有行数上限
+         （默认 1000），实际只读到前 1000 行。于是「各维度有值行数」是抽样数字，
+         面料这种「前期没写、后期才补」的维度会显示成 0，还会误报「一行都没有」。
+         现在改成按页循环读到尾，统计才是真实值。 */
+      const PAGE = 1000, MAX_PAGES = 400;
+      const runPage = async (from, to) =>
+        client.from("rank_image_tags").select(cols.join(",")).range(from, to);
+
+      /* 先探一页：若某列不存在，整条查询会失败，退掉那一列再试 */
+      let first = null;
       for (let i = 0; i < 3; i++) {
-        const r = await client.from("rank_image_tags").select(cols.join(",")).limit(50000);
-        data = r.data; error = r.error;
-        if (!error) break;
-        /* 某列不存在时整条查询会失败：退一列重试，并记下缺哪列 */
-        const msg = String(error.message || error.details || "");
+        const r = await runPage(0, PAGE - 1);
+        if (!r.error) { first = r; break; }
+        const msg = String(r.error.message || r.error.details || "");
         const hit = dims.filter((d) => msg.indexOf(d[1]) >= 0).map((d) => d[1]);
-        if (!hit.length) break;
+        if (!hit.length) throw new Error(r.error.message || "读取打标表失败");
         cols = cols.filter((c) => hit.indexOf(c) < 0);
         dims.filter((d) => hit.indexOf(d[1]) >= 0).forEach((d) => { d[2] = "missing"; });
       }
-      if (error) throw new Error(error.message || "读取打标表失败");
-      const rows = data || [];
+      if (!first) throw new Error("读取打标表失败");
+
+      const rows = [];
+      const push = (arr) => { (arr || []).forEach((r) => rows.push(r)); };
+      push(first.data);
+
+      /* 首页满页才继续往后翻；只累计能判定「有值」的列，省内存 */
+      if ((first.data || []).length >= PAGE) {
+        for (let p = 1; p < MAX_PAGES; p++) {
+          const r = await runPage(p * PAGE, p * PAGE + PAGE - 1);
+          if (r.error) break;              /* 中途失败就用手上已有的，不让整个体检崩掉 */
+          const d = r.data || [];
+          push(d);
+          if (d.length < PAGE) break;
+        }
+      }
+
       const stat = {};
       dims.forEach((d) => {
         const col = d[1];
