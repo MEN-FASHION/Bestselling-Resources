@@ -86,7 +86,8 @@ ok("① 报告头存在", html.indexOf('class="rk-rep-head"') >= 0);
 ok("① 标题是「趋势构成分析报告」", html.indexOf("趋势构成分析报告") >= 0);
 ok("① 口径写明对比类目", html.indexOf("对比类目") >= 0);
 ok("① 样本量写明总数", html.indexOf("样本 <b>8</b> 张上榜图") >= 0, "");
-ok("① 有打标覆盖率", /打标覆盖 <b>\d+%<\/b>/.test(html));
+ok("① 有打标覆盖率（KPI 卡 + 圆环）", /打标覆盖<\/b><em>\d+ \/ \d+ 张带标签/.test(html)
+  && /class="rk-kpi-ring"/.test(html) && /<b>\d+%<\/b><\/span>/.test(html));
 ok("① 有生成时间", /生成于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(html));
 
 ok("② 有一~六 六个编号段",
@@ -171,7 +172,8 @@ T.set({ mode: "c", cat: C1, cats: [C1, C2], sites: [S1], periods: [P2], tags: {}
 V = T.vitalsOfGroups(T.vitalsGroups());
 html = T.vitalsHtml(V, T.vitalsDim());
 ok("无打标数据时仍能出报告骨架", html.indexOf("趋势构成分析报告") >= 0);
-ok("无打标数据时覆盖率显示 0%", html.indexOf("打标覆盖 <b>0%</b>") >= 0);
+ok("无打标数据时覆盖率显示 0%", html.indexOf("<b>0%</b></span>") >= 0
+  && /打标覆盖<\/b><em>0 \/ \d+ 张带标签/.test(html));
 ok("无打标数据时不出现空对照表", html.indexOf('class="rk-rep-tbl"') < 0);
 
 console.log("\n结果：通过 " + pass + "，失败 " + fail);

@@ -6386,3 +6386,102 @@ html, body{
   .rk-trend-tbl th,.rk-trend-tbl td{font-size:11.5px}
   .rk-trend-h{gap:4px}
 }
+
+/* ============================================================================
+   20261102Q：报告升级为「图表 + 文字」
+   三类图：爆发密度（三档占比）、维度构成（各列点阵）、趋势落差（整体→该批）。
+   纯 DOM/CSS 绘制，不引图表库；动画只在展开时播放，打印/导出保持终态。
+   ========================================================================== */
+.rk-rep-detail{--lb:120px}
+
+/* ---- 报告头 KPI ---- */
+.rk-rep-kpi{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.rk-kpi{flex:1 1 200px;display:flex;align-items:center;gap:11px;padding:10px 13px;
+  border:1px solid var(--line);border-radius:11px;background:#fff}
+.rk-kpi-ring-card{flex:0 0 auto}
+.rk-kpi-ring{position:relative;width:56px;height:56px;flex:none;display:block}
+.rk-kpi-ring svg{width:56px;height:56px;display:block;overflow:visible}
+.rk-ring-bg{fill:none;stroke:#efeadf;stroke-width:6}
+.rk-ring-v{fill:none;stroke:var(--gold);stroke-width:6;stroke-linecap:round;
+  stroke-dasharray:var(--c);stroke-dashoffset:var(--o)}
+.rk-rep-detail.in .rk-ring-v{animation:rkRing .95s cubic-bezier(.25,.8,.3,1) .08s both}
+@keyframes rkRing{from{stroke-dashoffset:var(--c)}to{stroke-dashoffset:var(--o)}}
+.rk-kpi-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:#5c5346;letter-spacing:-.2px}
+.rk-kpi-n{font-size:22px;font-weight:700;color:var(--txt);line-height:1;letter-spacing:-.6px;min-width:34px}
+.rk-kpi-t{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rk-kpi-t b{font-size:12.5px;color:#3f3a33;font-weight:600}
+.rk-kpi-t em{font-style:normal;font-size:11px;color:#9a9384;line-height:1.4}
+
+/* ---- 图表容器 ---- */
+.rk-ch{border:1px solid #ece7dd;border-radius:12px;padding:12px 14px 10px;margin:0 0 12px;
+  background:linear-gradient(180deg,#fffdf9,#fff)}
+.rk-ch-hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:7px}
+.rk-ch-title{font-size:12.5px;font-weight:700;color:#4b453b;letter-spacing:.2px}
+.rk-ch-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-left:auto}
+.rk-ch-lg{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8a8479;white-space:nowrap}
+.rk-ch-lg em{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.rk-ch-axis{display:flex;justify-content:space-between;
+  margin:0 calc(54px + 9px) 3px calc(var(--lb) + 9px);
+  font-size:9.5px;color:#c3bcae;letter-spacing:.2px}
+.rk-ch-r{display:grid;grid-template-columns:var(--lb) 1fr 54px;align-items:center;gap:9px;padding:6px 0}
+.rk-ch-r + .rk-ch-r{border-top:1px dashed #f4efe6}
+.rk-ch-r:hover{background:#fffdf6}
+.rk-ch-rl{font-size:11.8px;color:#3f3a33;line-height:1.35;overflow-wrap:anywhere}
+.rk-ch-rl em{display:block;font-style:normal;font-size:10px;color:#a8a196;margin-top:2px}
+.rk-ch-t{position:relative;height:30px}
+.rk-ch-gl{position:absolute;top:2px;bottom:2px;width:1px;background:#f1ece2}
+.rk-ch-gl:first-child{background:#e7e0d2}
+.rk-ch-conn{position:absolute;top:50%;height:2px;margin-top:-1px;border-radius:2px;
+  background:linear-gradient(90deg,#e6dcc8,#c9bda3);transform-origin:left center}
+.rk-rep-detail.in .rk-ch-conn{animation:rkConn .7s ease var(--d,0s) both}
+@keyframes rkConn{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.rk-ch-d{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
+  border:2px solid #fff;box-shadow:0 1px 3px rgba(60,50,35,.24);z-index:2}
+.rk-rep-detail.in .rk-ch-d{animation:rkDot .55s cubic-bezier(.2,.9,.3,1.25) var(--d,0s) both}
+@keyframes rkDot{from{opacity:0;transform:scale(.15)}to{opacity:1;transform:scale(1)}}
+.rk-ch-d u{position:absolute;left:50%;top:-17px;transform:translateX(-50%);font-size:9.5px;
+  line-height:1;color:#8a8479;text-decoration:none;white-space:nowrap;pointer-events:none;
+  background:rgba(255,255,255,.86);padding:1px 3px;border-radius:3px}
+.rk-ch-d.alt u{top:auto;bottom:-17px}
+.rk-ch-tail{font-size:11.5px;font-weight:600;color:#8a8479;text-align:right;white-space:nowrap}
+.rk-ch-tail b.up{color:#a9705f}
+.rk-ch-foot{margin:7px 0 0;font-size:10.8px;line-height:1.7;color:#a8a196;
+  padding-top:7px;border-top:1px dashed #f0eade}
+.rk-ch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0 0 12px}
+.rk-ch-grid .rk-ch{margin:0;--lb:84px}
+.rk-ch-grid .rk-ch-axis{margin-right:54px}
+
+/* ---- 对照表：单元格占比底纹条 ---- */
+.rk-cell{display:block;min-width:76px}
+.rk-cell-k{display:block;white-space:nowrap}
+.rk-cell-bar{display:block;height:3px;margin-top:5px;border-radius:2px;background:#f2ece1;overflow:hidden}
+.rk-cell-bar u{display:block;height:100%;width:var(--w);border-radius:2px;
+  background:linear-gradient(90deg,#c9bda3,#9c8b74);transform-origin:left center}
+.rk-rep-detail.in .rk-cell-bar u{animation:rkConn .8s ease both}
+
+@media (max-width:1180px){
+  .rk-ch-grid{grid-template-columns:1fr}
+  .rk-ch-grid .rk-ch{--lb:96px}
+}
+@media (max-width:720px){
+  .rk-rep-detail{--lb:88px}
+  .rk-ch{padding:10px 11px 8px}
+  .rk-ch-r{grid-template-columns:var(--lb) 1fr 42px;gap:7px}
+  .rk-ch-axis{margin:0 calc(42px + 7px) 2px calc(var(--lb) + 7px)}
+  .rk-ch-legend{margin-left:0;width:100%}
+  .rk-ch-d u{font-size:9px}
+  .rk-kpi{flex:1 1 100%}
+  .rk-kpi-n{font-size:19px}
+}
+
+/* 打印 / 导出 PDF：关掉动画，直接落到终态，避免半截图 */
+@media print{
+  .rk-rep-detail .rk-ring-v,.rk-rep-detail .rk-ch-conn,.rk-rep-detail .rk-ch-d,
+  .rk-rep-detail .rk-cell-bar u{animation:none !important}
+  .rk-ch,.rk-kpi{break-inside:avoid}
+}
+@media (prefers-reduced-motion:reduce){
+  .rk-rep-detail.in .rk-ring-v,.rk-rep-detail.in .rk-ch-conn,
+  .rk-rep-detail.in .rk-ch-d,.rk-rep-detail.in .rk-cell-bar u{animation:none !important}
+}

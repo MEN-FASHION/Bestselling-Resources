@@ -459,6 +459,8 @@
     var dets = box.querySelectorAll("[data-rep-detail]");
     Array.prototype.forEach.call(dets, function (d) {
       if (REP_OPEN) d.removeAttribute("hidden"); else d.setAttribute("hidden", "");
+      /* 图表动画用「暂停/播放」控制：展开时才播放，收起后保持终态不重跑 */
+      if (REP_OPEN) d.classList.add("in"); else d.classList.remove("in");
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-rep-toggle]"), function (b) {
       b.setAttribute("aria-expanded", REP_OPEN ? "true" : "false");
@@ -1577,6 +1579,121 @@
     return parts.join("　·　");
   }
 
+  /* ================= 图表层（20261102Q）
+     报告要"看图就懂"，所以在结论与对照之间插入三类动态图表：
+       ① 爆发密度对照：同一列三个点（潜力机会 / 趋势爆款 / 周度激增）
+       ② 维度构成对照：每个商家维度一行一个值，点=各列占比，按列着色
+       ③ 趋势动向落差：本列整体 → 抬头子集，用线连起来看拉升幅度
+     全部纯 DOM/CSS，不引第三方图表库：不增体积、离线可用、导出 PDF 不掉图。
+     动画用「暂停 → 播放」控制，折叠展开时才跑，切筛选重绘时自然重播。 */
+  var REP_COLORS = ["#9c8b74", "#5b7f95", "#7d8f6a", "#a9705f", "#7c6b96", "#8f8a5e", "#6f7f8c"];
+  function repColor(i) { return REP_COLORS[i % REP_COLORS.length]; }
+
+  /* 点阵图：一行一个对象，每个点带百分比；connect=true 时把同行点连成线（落差图） */
+  function repDotChart(o) {
+    o = o || {};
+    var rows = (o.rows || []).filter(function (r) { return r && r.dots && r.dots.length; });
+    if (!rows.length) return "";
+    var grid = [0, 25, 50, 75, 100].map(function (x) {
+      return '<i class="rk-ch-gl" style="left:' + x + '%"></i>';
+    }).join("");
+    var legend = (o.legend || []).map(function (l) {
+      return '<span class="rk-ch-lg"><em style="background:' + l.color + '"></em>' + esc(l.name) + "</span>";
+    }).join("");
+    var body = rows.map(function (r, ri) {
+      var ds = r.dots.slice().sort(function (a, b) { return a.v - b.v; });
+      /* 0% 的点贴在最左边，圆点会压到行标签上，所以把落点收进 1.2%~98.8%，
+         数值本身不动（点旁标签仍显示真实百分比） */
+      var clamp = function (v) { return Math.max(1.2, Math.min(98.8, Number(v) || 0)); };
+      var line = "";
+      if (o.connect && ds.length > 1) {
+        var lo = clamp(ds[0].v), hi = clamp(ds[ds.length - 1].v);
+        line = '<i class="rk-ch-conn" style="left:' + lo + "%;width:" + Math.max(0, hi - lo)
+          + "%;--d:" + (0.06 * ri).toFixed(2) + 's"></i>';
+      }
+      var dots = ds.map(function (d, di) {
+        var v = clamp(d.v);
+        return '<i class="rk-ch-d' + (di % 2 ? " alt" : "") + '" style="left:' + v + "%;background:" + d.color
+          + ";--d:" + (0.06 * ri + 0.05 * di).toFixed(2) + 's" title="'
+          + esc((d.name || "") + " " + d.v + "%") + '"><u>' + Math.round(d.v) + "%</u></i>";
+      }).join("");
+      return '<div class="rk-ch-r"><span class="rk-ch-rl">' + esc(r.label)
+        + (r.note ? '<em>' + esc(r.note) + "</em>" : "") + '</span>'
+        + '<span class="rk-ch-t">' + grid + line + dots + "</span>"
+        + (r.tail ? '<span class="rk-ch-tail">' + r.tail + "</span>" : "") + "</div>";
+    }).join("");
+    return '<div class="rk-ch"><div class="rk-ch-hd"><span class="rk-ch-title">' + esc(o.title || "")
+      + "</span>" + (legend ? '<span class="rk-ch-legend">' + legend + "</span>" : "") + "</div>"
+      + '<div class="rk-ch-axis"><span>0</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>'
+      + '<div class="rk-ch-body">' + body + "</div>"
+      + (o.foot ? '<p class="rk-ch-foot">' + o.foot + "</p>" : "")
+      + "</div>";
+  }
+
+  /* ① 爆发密度图 */
+  function repDensityChart(V) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (live.length < 2) return "";
+    return repDotChart({
+      title: "图 1 · 爆发密度对照",
+      legend: [{ name: "潜力机会", color: "#b8ab94" }, { name: "趋势爆款", color: "#5b7f95" }, { name: "周度激增", color: "#a9705f" }],
+      rows: live.map(function (c) {
+        return {
+          label: c.cat, note: c.n + " 张",
+          dots: [{ v: c.oppP, color: "#b8ab94", name: "潜力机会" },
+                 { v: c.hotP, color: "#5b7f95", name: "趋势爆款" },
+                 { v: c.srgP, color: "#a9705f", name: "周度激增" }]
+        };
+      }),
+      foot: "点越靠右表示该档占比越高。周度激增那一档最靠右的列，新款式更容易跑出爆发款。"
+    });
+  }
+
+  /* ② 商家四维构成对照：每维一张点阵图，点按列着色，直接看同一值在不同列的热度差 */
+  function repDimCharts(V) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (live.length < 2) return "";
+    var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
+    var out = "";
+    REP_MERCH.forEach(function (d) {
+      var names = {};
+      live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
+      var keys = Object.keys(names).map(function (nm) {
+        var mx = 0;
+        live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, d[1], nm)); });
+        return { nm: nm, mx: mx };
+      }).filter(function (k) { return k.mx > 0; })
+        .sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
+      if (!keys.length) return;
+      out += repDotChart({
+        title: "图 · " + d[0],
+        legend: legend,
+        rows: keys.map(function (k) {
+          return {
+            label: k.nm, note: "最高 " + k.mx + "%",
+            dots: live.map(function (c, i) {
+              return { v: repTagPct(c, d[1], k.nm), color: repColor(i), name: c.cat };
+            })
+          };
+        })
+      });
+    });
+    if (!out) return "";
+    return '<div class="rk-ch-grid">' + out + "</div>";
+  }
+
+  /* 覆盖率环：SVG 圆环，展开时描边动画一次 */
+  function repRing(pct) {
+    var C = 2 * Math.PI * 26;
+    var p = Math.max(0, Math.min(100, pct || 0));
+    var off = C * (1 - p / 100);
+    return '<span class="rk-kpi-ring"><svg viewBox="0 0 64 64" aria-hidden="true">'
+      + '<circle class="rk-ring-bg" cx="32" cy="32" r="26"/>'
+      + '<circle class="rk-ring-v" cx="32" cy="32" r="26" transform="rotate(-90 32 32)" style="--c:'
+      + C.toFixed(1) + ";--o:" + off.toFixed(1) + '"/>'
+      + "</svg><b>" + p + "%</b></span>";
+  }
+
   /* ① 报告头：口径 + 样本 + 覆盖率 + 时间 */
   function repHeadHtml(V, dim) {
     var sum = 0, tagged = 0;
@@ -1593,9 +1710,17 @@
       + '<span>' + esc(repScopeText(dim)) + '</span>'
       + '<span>分组 <b>' + esc(V.map(function (c) { return c.cat; }).join(" / ")) + '</b></span>'
       + '<span>样本 <b>' + sum + '</b> 张上榜图</span>'
-      + '<span>打标覆盖 <b>' + cov + '%</b></span>'
       + '<span>生成于 ' + ts + '</span>'
-      + '</div></div>';
+      + '</div>'
+      + '<div class="rk-rep-kpi">'
+      +   '<div class="rk-kpi rk-kpi-ring-card">' + repRing(cov)
+      +     '<span class="rk-kpi-t"><b>打标覆盖</b><em>' + tagged + ' / ' + sum + ' 张带标签</em></span></div>'
+      +   '<div class="rk-kpi"><span class="rk-kpi-n">' + sum + '</span>'
+      +     '<span class="rk-kpi-t"><b>样本张数</b><em>参与本次对比的上榜图</em></span></div>'
+      +   '<div class="rk-kpi"><span class="rk-kpi-n">' + V.filter(function (c) { return c.n > 0; }).length + '</span>'
+      +     '<span class="rk-kpi-t"><b>对比列数</b><em>' + esc(dim.noun) + '维度并列</em></span></div>'
+      + '</div>'
+      + '</div>';
   }
 
   /* ② 核心结论：每条都是"判定 + 依据"，不出现没有数字的形容词 */
@@ -1711,7 +1836,10 @@
           if (gap >= 8) mark = '<i class="up">▲' + gap + '</i>';
           else if (gap <= -8) mark = '<i class="down">▼' + Math.abs(gap) + '</i>';
         }
-        return "<td>" + esc(t[0]) + ' <b>' + t[1] + '%</b>' + mark + "</td>";
+        /* 20261102Q：单元格里补一条占比底纹条，扫一眼就能比大小 */
+        return '<td><span class="rk-cell"><span class="rk-cell-k">' + esc(t[0]) + ' <b>' + t[1]
+          + '%</b>' + mark + '</span><i class="rk-cell-bar"><u style="--w:' + Math.min(100, t[1])
+          + '%"></u></i></span></td>';
       }).join("");
       rows += '<tr><th>' + esc(d[0]) + "</th>" + tds + "</tr>";
     });
@@ -1982,11 +2110,37 @@
           + "%，高出 " + b.x.lift + " 个百分点。");
       });
 
+      /* 20261102Q：抬头幅度用落差图表达 —— 浅点=本列整体，深点=该批，
+         中间的连线就是拉升幅度，比读两列数字快。 */
+      var dbRows = [];
+      TREND_DIMS.forEach(function (d) {
+        var base = trendAgg(items, d[2]);
+        var lu = trendLifts(trendAgg(upList, d[2]), base);
+        var ln = trendLifts(trendAgg(newList, d[2]), base);
+        if (lu[0]) dbRows.push({ lift: lu[0].lift, label: d[0] + " · " + lu[0].v, note: "上升最多",
+          dots: [{ v: lu[0].bp, color: "#cfc7b6", name: "本列整体" }, { v: lu[0].p, color: "#a9705f", name: "该批" }],
+          tail: '<b class="up">+' + lu[0].lift + "</b>" });
+        if (ln[0]) dbRows.push({ lift: ln[0].lift, label: d[0] + " · " + ln[0].v, note: "新上榜",
+          dots: [{ v: ln[0].bp, color: "#cfc7b6", name: "本列整体" }, { v: ln[0].p, color: "#5b7f95", name: "该批" }],
+          tail: '<b class="up">+' + ln[0].lift + "</b>" });
+      });
+      dbRows.sort(function (a, b) { return b.lift - a.lift; });
+      var dbChart = dbRows.length
+        ? repDotChart({
+            title: "抬头幅度（本列整体 → 该批）",
+            connect: true,
+            legend: [{ name: "本列整体", color: "#cfc7b6" }, { name: "上升最多那批", color: "#a9705f" },
+                     { name: "新上榜那批", color: "#5b7f95" }],
+            rows: dbRows.slice(0, 5)
+          })
+        : "";
+
       blocks.push('<div class="rk-trend-blk">'
         + '<div class="rk-trend-h">' + esc(c.cat) + '<span class="rk-trend-meta">' + esc(p)
         + ' · 上升最多 ' + upList.length + ' 张（' + upTag + '）'
         + (prev ? ' · 新上榜 ' + newList.length + ' 张（较 ' + esc(prev) + '）' : ' · ' + esc(newNote))
         + '</span></div>'
+        + dbChart
         + (rows
           ? '<div class="rk-rep-tbl-wrap"><table class="rk-rep-tbl rk-trend-tbl"><thead><tr><th>维度</th>'
             + '<th>上升最多那批</th><th>新上榜那批</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
@@ -2041,7 +2195,10 @@
         + (MODE === "h" ? "在上方「国家站点」里多选几个国家，" : MODE === "v" ? "在「周次」里多选 2 周以上，" : "在「对比类目」里勾选 2 个以上类目，")
         + '再看差异。</p>';
     }
-    detailTop += repSummaryHtml(V, dim) + repMatrixHtml(V, dim);
+    /* 20261102Q：结论后面先给图，再给表 —— 图看趋势，表查细节。
+       只有一列时不画（没有对比对象），图与表同时省略，口径说明已在上面提示。 */
+    detailTop += repSummaryHtml(V, dim) + repDensityChart(V)
+      + repMatrixHtml(V, dim) + repDimCharts(V, dim);
 
     var h = '';
     h += '<div class="rk-rep-toggle-bar">'
