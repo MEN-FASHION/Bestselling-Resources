@@ -155,5 +155,69 @@ ok("尊重减少动态偏好", CSS.indexOf("prefers-reduced-motion") >= 0);
 ok("图表不引第三方库（rank.js 内无 script 注入）",
   RANK_SRC.indexOf("chart.js") < 0 && RANK_SRC.indexOf("echarts") < 0 && RANK_SRC.indexOf("d3.min") < 0);
 
+/* ---------------- 8. 空位补位（20261102S） ---------------- */
+console.log("\n[8] 四格网格空位用视觉补上");
+const strip = (h) => h.replace(/<section class="rk-rep-sec rk-rep-qual">[\s\S]*?<\/section>/, "");
+const items2 = [], tags2 = {};
+function add2(url, cat, tag) { items2.push(mk({ image_url: url, category: cat })); tags2[url] = tag; }
+for (let i = 0; i < 8; i++) {
+  /* 刻意不给面料打标：四维里空一格 */
+  add2("f" + i, C1, {
+    craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], style_tags: ["户外机能"],
+    shoot_tags: ["平铺拍"], visual_tags: [i < 5 ? "室外·街景（城市商业街）" : "纯白底"],
+  });
+  add2("g" + i, C2, {
+    craft_tags: ["水洗"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], style_tags: ["商务通勤"],
+    shoot_tags: ["模特拍"], visual_tags: [i < 3 ? "室内·棚拍（纯色浅灰）" : "纯白底"],
+  });
+}
+T.set({ facets: { sites: [S1], periods: [P2], categories: [C1, C2] }, tags: tags2, groups: [], mode: "c", cat: C1,
+  cats: [C1, C2], sites: [S1], periods: [P2], cache: { key: "chart8", items: items2 } });
+const h8 = T.vitalsHtml(T.vitalsOfGroups(T.vitalsGroups()), T.vitalsDim());
+ok("面料没数据就不画面料图", h8.indexOf("图 · 面料") < 0);
+ok("空位补上视觉图", h8.indexOf("图 · 视觉") >= 0);
+const dimCnt = (h) => (h.match(/图 · (二次工艺|结构部件|版型|面料|视觉|拍摄方式|风格)(?!背景)/g) || []).length;
+ok("补位后仍是四张图，不留空位", dimCnt(h8) === 4, "张数 " + dimCnt(h8));
+ok("补位的视觉图不出现白底", !/rk-ch-rl">纯白底/.test(h8) && !/title="[^"]*纯白底/.test(h8));
+ok("补位不影响商家三维", ["二次工艺", "结构部件", "版型"].every(function (d) { return h8.indexOf("图 · " + d) >= 0; }));
+ok("四维都有数据时不额外补图", dimCnt(html) === 4 && html.indexOf("图 · 视觉（") < 0, "张数 " + dimCnt(html));
+
+/* ---------------- 9. 视觉背景分析（20261102T） ---------------- */
+console.log("\n[9] 视觉背景分析");
+const items3 = [], tags3 = {};
+function add3(url, cat, tag) { items3.push(mk({ image_url: url, category: cat })); tags3[url] = tag; }
+for (let i = 0; i < 8; i++) {
+  add3("v" + i, C1, {
+    craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"],
+    visual_tags: [i < 6 ? "室外·街景（城市商业街）" : "纯白底"],
+  });
+  add3("w" + i, C2, {
+    craft_tags: ["水洗"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], fabric_tags: ["涤纶（100%涤）"],
+    visual_tags: [i < 6 ? "室内·棚拍（纯色浅灰）" : "纯白底"],
+  });
+}
+T.set({ facets: { sites: [S1], periods: [P2], categories: [C1, C2] }, tags: tags3, groups: [], mode: "c", cat: C1,
+  cats: [C1, C2], sites: [S1], periods: [P2], cache: { key: "chart9", items: items3 } });
+const h9 = T.vitalsHtml(T.vitalsOfGroups(T.vitalsGroups()), T.vitalsDim());
+ok("有视觉背景小节", h9.indexOf('class="rk-bg-block"') >= 0 && h9.indexOf("视觉背景</h5>") >= 0);
+ok("有室内/室外结构图", h9.indexOf("图 · 视觉背景（室内 / 室外结构）") >= 0);
+ok("有背景 TOP5 图", h9.indexOf("图 · 视觉背景 TOP5") >= 0);
+ok("室外占比最高 75%（6/8，白底不计入占比）", /室外<em>最高 75%<\/em>/.test(h9) || h9.indexOf("最高 75%") >= 0, "见 note");
+ok("室内出现在结构图里", h9.indexOf("室内</span>") >= 0 || h9.indexOf(">室内<") >= 0);
+ok("全零分组行不画（无中性底行）", h9.indexOf(">中性底·其它<") < 0);
+ok("背景图剔除白底", !/rk-ch-rl">纯白底/.test(h9) && !/title="[^"]*纯白底/.test(h9) && !/图 · 视觉背景 TOP5[\s\S]{0,400}纯白底/.test(h9));
+ok("有背景解读文案", /class="rk-bg-say"/.test(h9) && h9.indexOf("室外场景用得最多") >= 0);
+const say = (h9.match(/<p class="rk-bg-say">([\s\S]*?)<\/p>/) || [])[1] || "";
+ok("解读是推荐语气，不是命令", /可优先考虑/.test(say) && !/必须|一定要|别/.test(say),
+  (say.match(/必须|一定要|别/g) || []).join(","));
+
+/* CSS：悬停放大 */
+ok("图表悬停放大已定义", /\.rk-ch:hover\{transform:scale\(/.test(CSS));
+ok("以中心为原点缩放", /\.rk-ch\{[^}]*transform-origin:50% 50%/.test(CSS));
+ok("悬停时抬高层级避免被压住", /\.rk-ch:hover\{[^}]*z-index:9/.test(CSS));
+ok("有过渡动画", /\.rk-ch\{[^}]*transition:transform/.test(CSS));
+ok("尊重减少动态偏好时不放大", /prefers-reduced-motion[\s\S]{0,160}transform:none/.test(CSS));
+ok("打印时取消放大", /@media print\{[\s\S]{0,200}\.rk-ch:hover\{transform:none/.test(CSS));
+
 console.log("\n结果：通过 " + pass + "，失败 " + fail);
 process.exit(fail ? 1 : 0);

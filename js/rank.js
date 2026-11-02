@@ -1550,12 +1550,25 @@
   /* 对照表展示顺序：商家四维在前，参考项在后 */
   var REP_DIMS = REP_MERCH.concat([["风格", "style"], ["视觉", "visual"], ["拍摄方式", "shoot"]]);
 
+  /* 20261102R：白底不参与推荐。
+     纯白底 / 白背景是平台通用底，几乎每个类目都在用，把它当成"这一列的做法"
+     推荐给商家，照做只是换成通用底，不产生任何差异，还会把真正有辨识度的背景盖掉。
+     所以：结论的「差异最集中 / 独有打法」、可执行建议、画像句、对照表、趋势抬头
+     一律剔除白底值；逐列画像的标签清单也不展示白底，
+     原始标签仍可在逐张看图时查看。 */
+  function isWhiteBg(v) { return /白底|纯白|白背景|白色背景/.test(String(v || "")); }
+  /* 取该维度第一个非白底值；rest 为其余非白底值，供并列列举用 */
+  function repPick(list) {
+    var arr = (list || []).filter(function (e) { return e && !isWhiteBg(e[0]); });
+    return { top: arr[0] || null, rest: arr.slice(1) };
+  }
+
   /* 某维度在「其余列」的最高占比，用来给某一格算落差 */
   function repOthersMax(V, self, key) {
     var mx = -1;
     (V || []).forEach(function (c) {
       if (c === self || !c.n) return;
-      var t = (c[key] || [])[0];
+      var t = key === "visual" ? repPick(c.visual).top : (c[key] || [])[0];
       if (t && t[1] > mx) mx = t[1];
     });
     return mx;
@@ -1654,18 +1667,27 @@
     var live = V.filter(function (c) { return c.n > 0; });
     if (live.length < 2) return "";
     var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
-    var out = "";
-    REP_MERCH.forEach(function (d) {
+
+    /* 20261102S：四格网格里出现空位时用参考维度补上。
+       商家四维里某一维暂时没有数据（例如面料还没打标）时，网格会空出一格，
+       看起来像图表坏了。所以留一组后备维度按顺序补位：视觉 → 拍摄方式 → 风格。
+       视觉补位时剔除白底（通用底，与报告其它位置口径一致）。 */
+    var FALLBACK = [["视觉", "visual"], ["拍摄方式", "shoot"], ["风格", "style"]];
+
+    var one = function (d) {
       var names = {};
       live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
       var keys = Object.keys(names).map(function (nm) {
         var mx = 0;
         live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, d[1], nm)); });
         return { nm: nm, mx: mx };
-      }).filter(function (k) { return k.mx > 0; })
-        .sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
-      if (!keys.length) return;
-      out += repDotChart({
+      }).filter(function (k) {
+        if (!(k.mx > 0)) return false;
+        if (d[1] === "visual" && isWhiteBg(k.nm)) return false;
+        return true;
+      }).sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
+      if (!keys.length) return "";
+      return repDotChart({
         title: "图 · " + d[0],
         legend: legend,
         rows: keys.map(function (k) {
@@ -1677,9 +1699,152 @@
           };
         })
       });
+    };
+
+    var out = "", shown = 0, used = {};
+    REP_MERCH.forEach(function (d) {
+      var h = one(d);
+      if (!h) return;
+      used[d[1]] = 1; out += h; shown++;
+    });
+    FALLBACK.forEach(function (d) {
+      if (shown >= REP_MERCH.length) return;
+      if (used[d[1]]) return;
+      var h = one(d);
+      if (!h) return;
+      out += h; shown++;
     });
     if (!out) return "";
     return '<div class="rk-ch-grid">' + out + "</div>";
+  }
+
+  /* 20261102T：视觉背景单独成节分析。
+     视觉这一维在报告里原本只是"补位参考"，但背景恰恰是商家最容易低成本改、
+     也最容易一眼看出区别的一维（同一件衣服换场景，转化差异很明显）。
+     所以把「视觉-背景」拆成两组图 + 一段解读：
+       图 A：室内 / 室外 / 中性底 的大类构成，看这一列整体调性
+       图 B：具体背景值 TOP5，看具体用了哪些场景
+     白底仍按 20261102R 的口径剔除（通用底，不参与比较与推荐）。 */
+  var REP_BG_GROUP = ["室外", "室内", "中性底·其它"];
+  function repBgGroups(c) {
+    var o = { "室外": 0, "室内": 0, "中性底·其它": 0 };
+    (c.visual || []).forEach(function (e) {
+      var nm = String(e[0] || "");
+      if (isWhiteBg(nm)) return;
+      if (nm.indexOf("室外·") === 0) o["室外"] += (e[1] || 0);
+      else if (nm.indexOf("室内·") === 0) o["室内"] += (e[1] || 0);
+      else o["中性底·其它"] += (e[1] || 0);
+    });
+    return o;
+  }
+
+  function repBgCharts(V) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (!live.length) return "";
+    var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
+    var out = "";
+
+    /* 图 A：室内 / 室外结构 */
+    var hasGroup = live.some(function (c) {
+      var g = repBgGroups(c);
+      return g["室外"] > 0 || g["室内"] > 0 || g["中性底·其它"] > 0;
+    });
+    if (hasGroup) {
+      /* 整组都是 0 的行不画（例如全都给了具体场景，就没人落在"中性底·其它"） */
+      var grows = REP_BG_GROUP.map(function (g) {
+        var mx = 0;
+        live.forEach(function (c) { mx = Math.max(mx, repBgGroups(c)[g]); });
+        return { g: g, mx: Math.round(mx) };
+      }).filter(function (r) { return r.mx > 0; });
+      out += repDotChart({
+        title: "图 · 视觉背景（室内 / 室外结构）",
+        legend: legend,
+        rows: grows.map(function (r) {
+          return {
+            label: r.g, note: "最高 " + r.mx + "%",
+            dots: live.map(function (c, i) {
+              return { v: Math.round(repBgGroups(c)[r.g]), color: repColor(i), name: c.cat };
+            })
+          };
+        }),
+        foot: "占比以该列「已打标视觉背景」的图作分母；纯白底属平台通用底，已从统计中剔除。"
+      });
+    }
+
+    /* 图 B：具体背景值 TOP5 */
+    var names = {};
+    live.forEach(function (c) {
+      (c.visual || []).forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
+    });
+    var keys = Object.keys(names).map(function (nm) {
+      var mx = 0;
+      live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, "visual", nm)); });
+      return { nm: nm, mx: mx };
+    }).filter(function (k) { return k.mx > 0; })
+      .sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
+    if (keys.length) {
+      out += repDotChart({
+        title: "图 · 视觉背景 TOP5",
+        legend: legend,
+        rows: keys.map(function (k) {
+          return {
+            label: k.nm.replace(/^(室内|室外)·/, ""), note: "最高 " + k.mx + "%",
+            dots: live.map(function (c, i) {
+              return { v: repTagPct(c, "visual", k.nm), color: repColor(i), name: c.cat };
+            })
+          };
+        }),
+        foot: "标签前的「室内 / 室外」已省略，完整值见逐列画像。"
+      });
+    }
+    if (!out) return "";
+
+    var txt = repBgText(live);
+    return '<div class="rk-bg-block"><h5>视觉背景</h5>'
+      + (txt ? '<p class="rk-bg-say">' + txt + "</p>" : "")
+      + '<div class="rk-ch-grid">' + out + "</div></div>";
+  }
+
+  /* 视觉背景的解读：只说能改的东西（场景换一换），不下"必须重拍"的结论 */
+  function repBgText(live) {
+    if (live.length < 2) return "";
+    var seg = live.map(function (c) {
+      var g = repBgGroups(c);
+      return { cat: c.cat, out: g["室外"], in: g["室内"], neu: g["中性底·其它"], n: c.n };
+    });
+    var byOut = seg.slice().sort(function (a, b) { return b.out - a.out; });
+    var hi = byOut[0], lo = byOut[byOut.length - 1];
+    var gap = Math.round(hi.out - lo.out);
+    var parts = [];
+    if (hi.out > 0) {
+      parts.push("室外场景用得最多的是「" + esc(hi.cat) + "」（" + Math.round(hi.out) + "%）"
+        + (gap >= 10 ? "，比最低的「" + esc(lo.cat) + "」（" + Math.round(lo.out) + "%）高出 " + gap + " 个百分点" : "")
+        + "。");
+    }
+    var byIn = seg.slice().sort(function (a, b) { return b.in - a.in; });
+    if (byIn[0].in > 0 && byIn[0].in >= byOut[0].out) {
+      parts.push("室内场景为主的是「" + esc(byIn[0].cat) + "」（" + Math.round(byIn[0].in) + "%），这类主图偏棚拍或居家实景。");
+    }
+    /* 具体场景：找跨列最高的那个值 */
+    var names = {};
+    live.forEach(function (c) {
+      (c.visual || []).forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
+    });
+    var best = null;
+    Object.keys(names).forEach(function (nm) {
+      var mx = 0, who = "";
+      live.forEach(function (c) {
+        var v = repTagPct(c, "visual", nm);
+        if (v > mx) { mx = v; who = c.cat; }
+      });
+      if (mx > 0 && (!best || mx > best.p)) best = { nm: nm, p: mx, who: who };
+    });
+    if (best) {
+      parts.push("具体场景里最常见的是「" + esc(best.nm) + "」，在「" + esc(best.who) + "」占到 " + Math.round(best.p) + "%。"
+        + "背景是成本最低的差异点，可优先考虑沿用这一列的取景方式；换场景前建议先确认新场景不增加拍摄与场地成本。");
+    }
+    if (!parts.length) return "";
+    return parts.join("");
   }
 
   /* 覆盖率环：SVG 圆环，展开时描边动画一次 */
@@ -1752,6 +1917,8 @@
       var names = {};
       live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
       Object.keys(names).forEach(function (nm) {
+        /* 白底属通用底，不参与「差异最集中」的评选 */
+        if (d[1] === "visual" && isWhiteBg(nm)) return;
         var vals = live.map(function (c) { return { cat: c.cat, v: repTagPct(c, d[1], nm) }; });
         var mx = vals.slice().sort(function (a, b) { return b.v - a.v; })[0];
         if (!mx || !mx.v) return;
@@ -1806,7 +1973,7 @@
     if (sd) seg.push("结构件集中在「" + sd[0] + "」（" + sd[1] + "%）");
     if (ft) seg.push("版型以「" + ft[0] + "」为主（" + ft[1] + "%）");
     if (fb) seg.push("面料多为「" + fb[0] + "」（" + fb[1] + "%）");
-    var vs = (c.visual || [])[0], sh = (c.shoot || [])[0];
+    var vs = repPick(c.visual).top, sh = (c.shoot || [])[0];
     if (vs && sh) seg.push("画面偏「" + vs[0] + "」、多为" + sh[0]);
     else if (vs) seg.push("画面偏「" + vs[0] + "」");
     else if (sh) seg.push("呈现多为" + sh[0]);
@@ -1827,7 +1994,8 @@
       var any = live.some(function (c) { return (c[d[1]] || []).length; });
       if (!any) return;
       var tds = live.map(function (c) {
-        var t = (c[d[1]] || [])[0];
+        /* 视觉行取非白底值；整列都是白底就留空，不把通用底放进对照表 */
+        var t = d[1] === "visual" ? repPick(c.visual).top : (c[d[1]] || [])[0];
         if (!t) return '<td class="na">—</td>';
         var om = repOthersMax(V, c, d[1]);
         var mark = "";
@@ -1943,11 +2111,12 @@
           + listTxt(c.fabric, fb[0], 2)
           + "。下单前建议对照成分标核实：口头叫法与真实成分不一致，更容易被判标签不符。");
       }
-      /* 视觉：不涉及改款，明确说清 */
-      var vs = (c.visual || [])[0];
+      /* 视觉：不涉及改款，且白底不推荐（通用底，照做没有差异） */
+      var vp = repPick(c.visual), vs = vp.top;
       if (vs && vs[1] >= 35) {
+        var vRest = vp.rest.slice(0, 2).map(function (x) { return esc(x[0]) + " " + x[1] + "%"; });
         out.push(nm + "的主图视觉以 " + pctTxt(vs) + " 居多"
-          + listTxt(c.visual, vs[0], 2)
+          + (vRest.length ? "（同列还有 " + vRest.join(" / ") + "）" : "")
           + "。这是展示方式、不涉及改款，沿用现有拍法就行，不必为此重拍。");
       }
       /* 拍摄方式：明显高于其余列才提，且写成可选 */
@@ -1992,6 +2161,8 @@
     if (col === "fit_tags") {
       arr = arr.map(function (v) { return v.indexOf("·") >= 0 ? v.split("·")[1] : v; }).filter(Boolean);
     }
+    /* 白底不参与抬头统计：它是通用底，变多不代表趋势 */
+    if (col === "visual_tags") arr = arr.filter(function (v) { return !isWhiteBg(v); });
     return arr;
   }
   /* 一个子集在某一维度的分布：分母只用「该维度有打标」的图 */
@@ -2169,7 +2340,9 @@
     var rows = [
       '口径：只比<b>构成</b>（各维度占比），不比张数。张数取决于这一期上了多少图，横比会把「上传得多」误读成「卖得好」。',
       '分母：每个维度只用<b>该维度已打标</b>的图片，未打标的图不计入分母，所以各维度占比之和不一定等于 100%。',
-      '覆盖：本次样本 ' + sum + ' 张，其中 <b>' + cov + '%</b> 带打标数据；覆盖不足时结论以方向为主。' 
+      '覆盖：本次样本 ' + sum + ' 张，其中 <b>' + cov + '%</b> 带打标数据；覆盖不足时结论以方向为主。',
+      /* 20261102R：把白底的处理写进口径，避免把「没推荐白底」当成漏算 */
+      '白底：「纯白底 / 白背景」属平台通用底，<b>不参与</b>差异比较与推荐，报告中也不展示，以免被当成可以照做的做法；原始标签仍可在逐张看图时查看。'
     ];
     if (minN < 30 && minN < 1e9) rows.push('最小样本列仅 <b>' + minN + ' 张</b>，占比波动较大，建议累积 2–3 周再看趋势。');
     return '<section class="rk-rep-sec rk-rep-qual"><h4><em>六</em>数据说明</h4><ul>'
@@ -2198,7 +2371,7 @@
     /* 20261102Q：结论后面先给图，再给表 —— 图看趋势，表查细节。
        只有一列时不画（没有对比对象），图与表同时省略，口径说明已在上面提示。 */
     detailTop += repSummaryHtml(V, dim) + repDensityChart(V)
-      + repMatrixHtml(V, dim) + repDimCharts(V, dim);
+      + repMatrixHtml(V, dim) + repDimCharts(V, dim) + repBgCharts(V);
 
     var h = '';
     h += '<div class="rk-rep-toggle-bar">'
@@ -2234,6 +2407,9 @@
       [["二次工艺", c.craft], ["结构部件", c.struct], ["版型", c.fit], ["面料", c.fabric],
        ["风格", c.style], ["视觉", c.visual], ["文化背景", c.culture], ["消费心理", c.psych]].forEach(function (g) {
         if (!g[1] || !g[1].length) return;
+        /* 视觉分组剔除白底：报告里不展示，避免被当成"可以照做的做法" */
+        if (g[0] === "视觉") g = [g[0], g[1].filter(function (e) { return !isWhiteBg(e[0]); })];
+        if (!g[1].length) return;
         h += '<div class="rk-vit-sub">' + g[0] + '</div><div class="rk-vit-tags">'
           + g[1].map(function (e) { return '<span class="rk-vit-tag">' + esc(e[0]) + ' <b>' + e[1] + '%</b></span>'; }).join("")
           + '</div>';

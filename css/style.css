@@ -6448,6 +6448,27 @@ html, body{
 .rk-ch-tail b.up{color:#a9705f}
 .rk-ch-foot{margin:7px 0 0;font-size:10.8px;line-height:1.7;color:#a8a196;
   padding-top:7px;border-top:1px dashed #f0eade}
+/* ---- 20261102T：图表悬停放大（居中放大、移开即回） ---- */
+.rk-ch{position:relative;z-index:1;transform-origin:50% 50%;
+  transition:transform .22s cubic-bezier(.2,.7,.3,1),box-shadow .22s ease,border-color .22s ease}
+.rk-ch:hover{transform:scale(1.045);z-index:9;
+  box-shadow:0 18px 38px -14px rgba(60,48,34,.34),0 2px 6px -2px rgba(60,48,34,.12);
+  border-color:#ded7c9}
+.rk-ch-grid{position:relative}
+/* 放大时相邻图不要被后画的元素压住 */
+.rk-ch-grid .rk-ch:hover{z-index:12}
+/* 网格四角放大时允许溢出到留白处，不裁切 */
+.rk-ch-grid{overflow:visible}
+@media (prefers-reduced-motion:reduce){.rk-ch,.rk-ch:hover{transition:none;transform:none}}
+@media print{.rk-ch,.rk-ch:hover{transform:none !important;box-shadow:none !important}}
+
+/* ---- 视觉背景小节 ---- */
+.rk-bg-block{margin:2px 0 6px}
+.rk-bg-block h5{margin:16px 0 8px;font-size:13.5px;font-weight:700;color:#3f3a31;
+  display:flex;align-items:center;gap:8px}
+.rk-bg-block h5:before{content:"";width:3px;height:13px;border-radius:2px;background:#b8916a;display:block}
+.rk-bg-say{margin:0 0 10px;font-size:12.5px;line-height:1.85;color:#5b554a}
+.rk-bg-say b{color:#3f3a31}
 .rk-ch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0 0 12px}
 .rk-ch-grid .rk-ch{margin:0;--lb:84px}
 .rk-ch-grid .rk-ch-axis{margin-right:54px}

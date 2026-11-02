@@ -59,7 +59,7 @@ for (let i = 0; i < 10; i++) {
 /* W43 普通图 10 张：全部常规版型，无印花 */
 for (let i = 0; i < 10; i++) {
   items.push(mk({ image_url: "n" + i, fit_tags: ["版型·常规"],
-    visual_tags: ["纯白底"], craft_tags: ["无工艺"], struct_tags: ["口袋"],
+    visual_tags: [i < 8 ? "纯白底" : "留白构图"], craft_tags: ["无工艺"], struct_tags: ["口袋"],
     fabric_tags: ["涤纶（100%涤）"], element_tags: ["纯色"] }));
 }
 /* W43 周度激增 8 张：6 张收腰 + 6 张骷髅 */
@@ -106,6 +106,8 @@ ok("版型建议点出具体值", html.indexOf("的版型以 <b>") >= 0);
 ok("结构部件建议点出具体值", html.indexOf("的结构部件里 <b>") >= 0);
 ok("面料建议点出具体值", html.indexOf("的面料候选里 <b>") >= 0);
 ok("视觉建议点出具体值", html.indexOf("的主图视觉以 <b>") >= 0);
+ok("视觉建议不推荐白底", html.indexOf("的主图视觉以 <b>纯白底") < 0);
+ok("视觉建议列出非白底并列值", /的主图视觉以 <b>留白构图/.test(html));
 ok("给出次选并列", html.indexOf("同列还有") >= 0);
 ok("建议最多 8 条（不无限堆）", (html.split('<li>').length) > 0);
 
