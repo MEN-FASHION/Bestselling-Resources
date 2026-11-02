@@ -22,6 +22,10 @@
   }
   /* 与榜单共用一套：榜单全量枚举优先，其次图库原生，最后视觉三组 */
   function enumOf(k) {
+    /* 20261102B：面料不做枚举过滤——打标表里的面料是候选池，
+       含「羊毛混纺 / 毛呢 / 尼龙 / 帆布 / 各类内里」等 17 个枚举外常用词，
+       硬校验会把整条面料丢掉，前端一栏全空。 */
+    if (k === "面料") return [];
     var v = RANK_ENUM()[k];
     if (v && v.length) return v.slice();
     v = AE()[k];
@@ -53,7 +57,8 @@
   function arr(v) {
     if (Array.isArray(v)) return v.filter(function (x) { return String(x || "").trim(); });
     if (v == null || v === "") return [];
-    return String(v).split(/[,，、|；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    /* 20261102B：加全角竖线 ｜（面料候选池用它将候选项串在一起） */
+    return String(v).split(/[,，、|｜；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
   function norm(v) { return String(v == null ? "" : v).trim(); }
   function uniq(a) { return [...new Set(a)]; }
@@ -99,9 +104,15 @@
       if (!url && !id) continue;
       var rec = { url: url, id: id, provided: {}, values: {}, note: iNote >= 0 ? norm(row[iNote]) : "" };
       /* 只有「有值」的格子才算 provided；空格代表"这次不管"，不是"清空" */
-      function grab(key) {
-        if (col[key] == null) return [];
-        var v = arr(row[col[key]]);
+      /* 20261102B：一个维度可能落在多个表头上（面料 = 面料 / 外层候选 / 内里候选），
+         多候选全写入：按列顺序合并去重。 */
+      function grab(key, aliases) {
+        var names = [key].concat(aliases || []);
+        var v = [];
+        names.forEach(function (n) {
+          if (col[n] == null) return;
+          arr(row[col[n]]).forEach(function (x) { if (v.indexOf(x) < 0) v.push(x); });
+        });
         /* v11：背景改前缀后，老表里的旧词先改写成新值，避免整表判未识别 */
         if (key === "视觉-背景") {
           var BG = (window.APP_ENUM && window.APP_ENUM.bgAlias) || {};
@@ -111,7 +122,8 @@
         return v;
       }
       grab("风格"); grab("视觉-背景"); grab("视觉-画面构成"); grab("视觉-呈现主体");
-      grab("图案类型"); grab("图案元素"); grab("结构部件"); grab("面料");
+      grab("图案类型"); grab("图案元素"); grab("结构部件");
+      grab("面料", ["面料-外层（候选）", "面料-内里（候选）"]);
       grab("二次工艺"); grab("拍摄方式"); grab("模特");
       FIT_LABELS.forEach(grab);
       grab("文化背景"); grab("消费心理"); grab("节日"); grab("渠道");
@@ -132,7 +144,11 @@
     /* 普通维度：逐值比对枚举；手动标签（tag_defs 里的）一律放行 */
     function chk(dim, list) {
       if (!list) return;
-      var allow = enumOf(dim).concat((defs && defs[dim]) || []);
+      var base = enumOf(dim);
+      var manual = (defs && defs[dim]) || [];
+      /* 枚举为空 = 这一维不做校验（面料这种候选池维度），否则会把整列判成未识别 */
+      if (!base.length && !manual.length) return;
+      var allow = base.concat(manual);
       var miss = list.filter(function (x) { return allow.indexOf(x) < 0; });
       bad(dim, miss);
     }
@@ -140,6 +156,7 @@
     chk("图案类型", v["图案类型"]);
     chk("图案元素", v["图案元素"]);
     chk("结构部件", v["结构部件"]);
+    /* 面料：候选池维度，不做枚举校验（enumOf 返回空），原样写入前端照常展示 */
     chk("面料", v["面料"]);
     chk("二次工艺", v["二次工艺"]);
     chk("拍摄方式", v["拍摄方式"]);

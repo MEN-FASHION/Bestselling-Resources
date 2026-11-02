@@ -162,6 +162,7 @@ K 补丁开头会先自证「连的是不是站点那个库」（站点核心表
 | `css/channel.css` | 该专区专用样式（不动 `style.css`） |
 | `tools/patch_20261102A_enum_v11.sql` | 枚举升级补丁：`rank_image_tags` / `images` 增加 `pattern_tags`（图案类型）、`struct_tags`（结构部件）、`fabric_tags`（面料）三列 + GIN 索引；并把库里的旧背景值改写为带 室内·/室外· 前缀的新值、把混在 `element_tags` 里的纹样与结构件分拣到新列 |
 | `tools/test_enums_v11.js` | 枚举一致性回归：维度取值数、三列互不重词、背景前缀规则、分组不漏值、旧值改写表指向合法、`normalizeTagSet` 分拣结果 |
+| `tools/t_fabric_import.js` | 面料候选列导入回归（20261102B）：`面料-外层（候选）` / `面料-内里（候选）` 两列合并进 `fabric_tags`、全角 `｜` 拆词、枚举外面料词不判未识别、其余维度校验未被放宽、前台面料分组不做枚举过滤 |
 | `tools/patch_20261031A_channel.sql` | 建表补丁：`channel_sites`（渠道字典）、`channel_items`（图片）、`channel_settings`（前台标签可见性）；并写入 11 个默认渠道 |
 
 **数据归属**：图片本体在 `channel_items`，打标数据仍写 `rank_image_tags`（与趋势上升榜、趋势动向同一张表、同一套枚举）——导出、导入、前台展示三处不会走样。

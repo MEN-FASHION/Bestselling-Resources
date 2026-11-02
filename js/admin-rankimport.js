@@ -24,7 +24,14 @@
     ["图案类型", "pattern_tags", "图案类型"],
     ["图案元素", "element_tags", "element"],
     ["结构部件", "struct_tags", "结构部件"],
+    /* 20261102B：面料三列都往 fabric_tags 写（多候选全写入）。
+       导出模板给的是单列「面料」，但人工按表打标时常用拆开的三列：
+       外层候选 / 内里候选 / 置信度 / 判定依据。以前只认「面料」，
+       拆开的表整列面料都进不了库，前端「面料」一栏永远空。
+       外层在前、内里在后，同一字段会按顺序累加成一个候选列表。 */
     ["面料", "fabric_tags", "面料"],
+    ["面料-外层（候选）", "fabric_tags", "面料"],
+    ["面料-内里（候选）", "fabric_tags", "面料"],
     ["二次工艺", "craft_tags", "craft"],
     ["拍摄方式", "shoot_tags", "shoot"],
     /* 20261027Q 语义维度：各自独立枚举，填错会被判「未识别」而不是静默写入 */
@@ -78,7 +85,10 @@
   }
 
   function splitArr(v) {
-    return String(v == null ? "" : v).split(/[,，、|；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    /* 20261102B：加全角竖线 ｜ —— 面料候选池就是用它串的
+       （纯棉（100%棉）｜精梳棉（…）｜棉涤（…）），以前只认半角 |，
+       整串被当成一个值，永远落在枚举外。 */
+    return String(v == null ? "" : v).split(/[,，、|｜；;]/).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
   /* 每次调用都重建数组（尤其「节日」要把节庆库 300 多条 concat 一遍），
@@ -91,6 +101,12 @@
     return out;
   }
   function enumOfRaw(key) {
+    /* 20261102B：面料是「看图推测」维度，打标表里填的是候选池，
+       实测有 17 个常用词（羊毛混纺 / 毛呢 / 尼龙 / 帆布 / 各类内里…）
+       不在 57 项面料枚举内。若照旧硬校验，这些候选会被整条判「未识别」不写入，
+       表现就是"表里每张都有面料，前端一栏全空"。
+       所以面料不做枚举过滤：原样写入，前端照常展示。 */
+    if (key === "面料") return [];
     var E = (window.RankExport && window.RankExport.ENUM) || {};
     var list;
     if (E[key]) list = E[key];                       /* 视觉-背景 / 视觉-画面构成 / 视觉-呈现主体 ... */

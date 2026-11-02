@@ -24,8 +24,12 @@ const ok = (name, cond, extra) => {
 /* ---- 1. 判定口径：节日不进 FIELDS（留空不算未打标） ---- */
 ok('FIELDS 不含 festival_tags', M.FIELDS.indexOf('festival_tags') === -1);
 ok('FIELDS 仍是 8 个必填维度', M.FIELDS.length === 8);
+/* 20261102B：v11 起 WRITE_FIELDS = 8 个必填 + 节日 + 图案类型 / 结构部件 / 面料 = 12。
+   原来钉死 9 个是 v10 口径，v11 加三列后一直假失败；改成校验「必填 8 项都在 + 四个扩展项都在」。 */
 ok('WRITE_FIELDS 含 festival_tags', M.WRITE_FIELDS.indexOf('festival_tags') >= 0);
-ok('WRITE_FIELDS = 9 个', M.WRITE_FIELDS.length === 9);
+ok('WRITE_FIELDS 完整（8 必填 + 节日/图案类型/结构部件/面料）',
+  M.FIELDS.every((f) => M.WRITE_FIELDS.indexOf(f) >= 0)
+  && ['festival_tags', 'pattern_tags', 'struct_tags', 'fabric_tags'].every((f) => M.WRITE_FIELDS.indexOf(f) >= 0));
 
 /* ---- 2. 表里有节日、库里为空 → 必须写进去 ---- */
 const rows = [{
