@@ -1364,12 +1364,16 @@
       });
       var pct = function (k, t) { return (t ? Math.round(k / t * 100) : 0); };
       /* 打标维度：分母只用「打过这个维度」的图，避免把"没打标"算成"其它" */
+      var tagAny = 0;   /* 20261102H：至少有一个维度打了标的图数，用于报告里的覆盖率 */
       var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
       var stCnt = {}, stTot = 0, vCnt = {}, vTot = 0, fCnt = {}, fTot = 0;
       var cfCnt = {}, cfTot = 0, cuCnt = {}, cuTot = 0, psCnt = {}, psTot = 0;
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
+        if (tagArr(t.style_tags).length || tagArr(t.visual_tags).length || tagArr(t.shoot_tags).length
+          || tagArr(t.element_tags).length || tagArr(t.craft_tags).length || tagArr(t.fit_tags).length
+          || tagArr(t.culture_tags).length || tagArr(t.psych_tags).length) tagAny++;
         /* 同一张图同一个维度里若出现重复值，只算一次（否则占比会超过 100%） */
         var sSet = {}, nS = 0;
         tagArr(t.shoot_tags).forEach(function (v) { if (sSet[v] === undefined) { sSet[v] = 1; sCnt[v] = (sCnt[v] || 0) + 1; nS++; } });
@@ -1414,7 +1418,7 @@
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
         craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
-        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0, tagged: sTot
+        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0, tagged: sTot, tagAny: tagAny
       };
     });   /* 没上传的那一列也保留卡片：写「无数据」，不要静默消失 */
   }
@@ -1487,10 +1491,251 @@
     return out.slice(0, 3);
   }
 
+  /* ============================================================
+     20261102H：体征区块从「三列数据卡」升级为「一份可直读的报告」
+     ------------------------------------------------------------
+     原来的问题是：只有一堆百分比，读者要自己在脑子里做减法才知道
+     "谁跟谁不一样、差多少、所以该怎么做"。现在按报告结构补四层：
+       ① 报告头：口径（比的是什么）+ 样本量 + 打标覆盖率 + 生成时间
+       ② 核心结论：带编号的判定句，全部由数据算出，不写套话
+       ③ 横向对照：关键维度逐列并排，差值用 ▲/▼ 标出，一眼看出落差
+       ④ 逐列画像 + 可执行建议 + 数据说明（样本不足要提示）
+     数据层不动：全部复用 vitalsOfGroups 已算好的占比。
+     ============================================================ */
+  var REP_DIMS = [["风格", "style"], ["文化背景", "culture"], ["消费心理", "psych"],
+    ["视觉", "visual"], ["二次工艺", "craft"], ["版型", "fit"], ["拍摄方式", "shoot"], ["元素", "elems"]];
+
+  /* 某维度在「其余列」的最高占比，用来给某一格算落差 */
+  function repOthersMax(V, self, key) {
+    var mx = -1;
+    (V || []).forEach(function (c) {
+      if (c === self || !c.n) return;
+      var t = (c[key] || [])[0];
+      if (t && t[1] > mx) mx = t[1];
+    });
+    return mx;
+  }
+
+  /* 某具体标签在某一列的占比（没有则 0） */
+  function repTagPct(col, key, name) {
+    var hit = (col[key] || []).filter(function (e) { return e[0] === name; })[0];
+    return hit ? hit[1] : 0;
+  }
+
+  function repScopeText(dim) {
+    var parts = [];
+    if (MODE === "c") parts.push("对比类目：" + (SEL_CATS && SEL_CATS.length ? SEL_CATS.join(" / ") : CAT));
+    else if (MODE === "h") parts.push("对比国家：" + ((SEL_SITES && SEL_SITES.length) ? SEL_SITES.join(" / ") : "—"));
+    else parts.push("对比周次：" + ((SEL_PERIODS && SEL_PERIODS.length) ? SEL_PERIODS.join(" / ") : "—"));
+    if (MODE !== "c") parts.push("类目：" + (CAT || ALL));
+    if (MODE === "v") parts.push("国家：" + ((SEL_SITES && SEL_SITES[0]) || "—"));
+    var o = onlyLabel();
+    if (o) parts.push(o);
+    return parts.join("　·　");
+  }
+
+  /* ① 报告头：口径 + 样本 + 覆盖率 + 时间 */
+  function repHeadHtml(V, dim) {
+    var sum = 0, tagged = 0;
+    V.forEach(function (c) { sum += c.n || 0; tagged += (c.tagAny || 0); });
+    var cov = sum ? Math.round(tagged / sum * 100) : 0;
+    var now = new Date();
+    var pad = function (x) { return (x < 10 ? "0" : "") + x; };
+    var ts = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate())
+      + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
+    return '<div class="rk-rep-head">'
+      + '<div class="rk-rep-title">趋势构成分析报告<span class="rk-rep-sub">' + esc(dim.head) + '</span></div>'
+      + '<div class="rk-rep-meta">'
+      + '<span>' + esc(repScopeText(dim)) + '</span>'
+      + '<span>样本 <b>' + sum + '</b> 张上榜图</span>'
+      + '<span>打标覆盖 <b>' + cov + '%</b></span>'
+      + '<span>生成于 ' + ts + '</span>'
+      + '</div></div>';
+  }
+
+  /* ② 核心结论：每条都是"判定 + 依据"，不出现没有数字的形容词 */
+  function repSummaryHtml(V, dim) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (live.length < 2) return "";
+    var items = [];
+
+    /* 结论 1：爆发密度最高的一列（周度激增 → 趋势爆款 → 潜力机会 依次兜底） */
+    var dens = null;
+    [["srgP", "周度激增"], ["hotP", "趋势爆款"], ["oppP", "潜力机会"]].forEach(function (d) {
+      if (dens) return;
+      var sorted = live.slice().sort(function (a, b) { return b[d[0]] - a[d[0]]; });
+      var mx = sorted[0], mn = sorted[sorted.length - 1];
+      if (mx && mn && mx[d[0]] > 0 && (mx[d[0]] - mn[d[0]]) >= 3) dens = { key: d[0], name: d[1], hi: mx, lo: mn };
+    });
+    if (dens) {
+      items.push("<b>" + esc(dens.hi.cat) + "</b> 的爆发密度最强：" + dens.name + "占 " + dens.hi[dens.key]
+        + "%，比最低的「" + esc(dens.lo.cat) + "」（" + dens.lo[dens.key] + "%）高 "
+        + (dens.hi[dens.key] - dens.lo[dens.key]) + " 个百分点，新款式更容易在这一列跑出来。");
+    } else {
+      var top = live.slice().sort(function (a, b) { return b.n - a.n; })[0];
+      items.push("各列爆发密度接近，没有单列明显占优；<b>" + esc(top.cat) + "</b> 上榜量最大（" + top.n + " 张），可作为基准盘观察。");
+    }
+
+    /* 结论 2：最有辨识度的维度——找出跨列落差最大的「同一维度顶级标签」 */
+    var sig = null;
+    REP_DIMS.forEach(function (d) {
+      var names = {};
+      live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
+      Object.keys(names).forEach(function (nm) {
+        var vals = live.map(function (c) { return { cat: c.cat, v: repTagPct(c, d[1], nm) }; });
+        var mx = vals.slice().sort(function (a, b) { return b.v - a.v; })[0];
+        if (!mx || !mx.v) return;
+        var rest = vals.filter(function (x) { return x.cat !== mx.cat; });
+        var avg = rest.length ? Math.round(rest.reduce(function (a, b) { return a + b.v; }, 0) / rest.length) : 0;
+        var gap = mx.v - avg;
+        if (!sig || gap > sig.gap) sig = { dimName: d[0], name: nm, cat: mx.cat, v: mx.v, avg: avg, gap: gap };
+      });
+    });
+    if (sig && sig.gap >= 8) {
+      items.push("差异最集中在<b>" + sig.dimName + "</b>：「" + esc(sig.name) + "」在「" + esc(sig.cat)
+        + "」占 " + sig.v + "%，其余" + dim.noun + "平均只有 " + sig.avg + "%（高出 " + sig.gap
+        + " 个百分点）——这是该列最可复用的一条视觉公式。");
+    }
+
+    /* 结论 3：各列独有标签（只有它出现），说明是对手的空白区 */
+    var solo = [];
+    live.forEach(function (c) {
+      REP_DIMS.forEach(function (d) {
+        if (solo.length >= 2) return;
+        var t = (c[d[1]] || [])[0];
+        if (!t || t[1] < 12) return;
+        var othersHave = live.some(function (x) {
+          if (x === c) return false;
+          return (x[d[1]] || []).some(function (e) { return e[0] === t[0]; });
+        });
+        if (!othersHave) solo.push("「" + esc(c.cat) + "」的" + d[0] + "首位是「" + esc(t[0]) + "」（" + t[1] + "%），其余" + dim.noun + "都没进前列，属独有打法。");
+      });
+    });
+    solo.forEach(function (s) { items.push(s); });
+
+    /* 结论 4：样本量提示——小样本的百分比不能当结论用 */
+    var small = live.filter(function (c) { return c.n < 30; });
+    if (small.length) {
+      items.push("注意：" + small.map(function (c) { return esc(c.cat) + "（" + c.n + " 张）"; }).join("、")
+        + " 样本不足 30 张，其百分比波动较大，只作方向参考。");
+    }
+    if (!items.length) return "";
+    return '<section class="rk-rep-sec rk-rep-sum"><h4><em>一</em>核心结论</h4><ol>'
+      + items.slice(0, 5).map(function (t) { return "<li>" + t + "</li>"; }).join("")
+      + "</ol></section>";
+  }
+
+  /* ③-0 逐列画像句：把四个首位维度串成一句可读的话，替代让读者自己拼 */
+  function repProfile(c, V) {
+    if (!c.n) return "";
+    var seg = [];
+    var st = (c.style || [])[0], vs = (c.visual || [])[0], sh = (c.shoot || [])[0], cf = (c.craft || [])[0];
+    if (st) seg.push("风格以「" + st[0] + "」为主（" + st[1] + "%）");
+    if (vs) seg.push("画面偏「" + vs[0] + "」（" + vs[1] + "%）");
+    if (sh) seg.push("呈现多为「" + sh[0] + "」（" + sh[1] + "%）");
+    if (cf && !/无工艺/.test(cf[0])) seg.push("工艺集中在「" + cf[0] + "」（" + cf[1] + "%）");
+    if (!seg.length) return "";
+    var tail = "";
+    if (c.srgP >= 10) tail = "爆发密度偏高，值得优先跟。";
+    else if (c.oppP >= 50 && c.hotP <= 10) tail = "有量但缺爆点，需要差异化。";
+    else if (c.hotP >= 15) tail = "爆款密度在这几列里靠前。";
+    return '<p class="rk-vit-prof">' + esc(seg.join("，")) + "。" + esc(tail) + "</p>";
+  }
+
+  /* ③ 横向对照表：维度 × 各列 TOP1，用 ▲/▼ 标出与其余列的落差 */
+  function repMatrixHtml(V, dim) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (live.length < 2) return "";
+    var rows = "";
+    REP_DIMS.forEach(function (d) {
+      var any = live.some(function (c) { return (c[d[1]] || []).length; });
+      if (!any) return;
+      var tds = live.map(function (c) {
+        var t = (c[d[1]] || [])[0];
+        if (!t) return '<td class="na">—</td>';
+        var om = repOthersMax(V, c, d[1]);
+        var mark = "";
+        if (om >= 0) {
+          var gap = t[1] - om;
+          if (gap >= 8) mark = '<i class="up">▲' + gap + '</i>';
+          else if (gap <= -8) mark = '<i class="down">▼' + Math.abs(gap) + '</i>';
+        }
+        return "<td>" + esc(t[0]) + ' <b>' + t[1] + '%</b>' + mark + "</td>";
+      }).join("");
+      rows += '<tr><th>' + esc(d[0]) + "</th>" + tds + "</tr>";
+    });
+    if (!rows) return "";
+    var head = live.map(function (c) { return "<th>" + esc(c.cat) + '<span class="rk-rep-th-n">' + c.n + " 张</span></th>"; }).join("");
+    return '<section class="rk-rep-sec"><h4><em>二</em>关键维度横向对照</h4>'
+      + '<p class="rk-rep-note">每格为该' + esc(dim.noun) + '的<b>首位标签</b>及其占比；▲/▼ 表示与其余' + esc(dim.noun)
+      + '首位标签相比高/低多少个百分点（≥8 才标注）。</p>'
+      + '<div class="rk-rep-tbl-wrap"><table class="rk-rep-tbl"><thead><tr><th>维度</th>' + head + "</tr></thead><tbody>"
+      + rows + "</tbody></table></div></section>";
+  }
+
+  /* ④ 可执行建议：只按数据触发，宁缺毋滥 */
+  function repActionHtml(V, dim) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (!live.length) return "";
+    var out = [];
+    live.forEach(function (c) {
+      /* 拍摄方式：某一列某种拍法明显更高 → 主图风格照抄 */
+      var sh = (c.shoot || [])[0];
+      if (sh && sh[1] >= 30 && repOthersMax(V, c, "shoot") + 8 <= sh[1]) {
+        out.push("「" + esc(c.cat) + "」主图建议走<b>" + esc(sh[0]) + "</b>（" + sh[1] + "% 占比，明显高于其余" + dim.noun + "），换拍法要重新验证。");
+      }
+      /* 视觉首位：纯白底 / 留白 / 3D → 直接说主图底色与构图 */
+      var vs = (c.visual || [])[0];
+      if (vs && vs[1] >= 30 && /纯白底|留白|3D/.test(vs[0])) {
+        out.push("「" + esc(c.cat) + "」画面以<b>" + esc(vs[0]) + "</b>为主（" + vs[1] + "%），主图底色与构图按这个来更稳。");
+      }
+      /* 工艺首位：可用于差异化的工艺 */
+      var cf = (c.craft || [])[0];
+      if (cf && cf[1] >= 25 && !/无工艺/.test(cf[0])) {
+        out.push("「" + esc(c.cat) + "」的工艺信号是<b>" + esc(cf[0]) + "</b>（" + cf[1] + "%），可作为加价点，但要先确认工厂能做、且不增加合规成本。");
+      }
+      /* 元素首位独有 → 差异化标识 */
+      var el = (c.elems || [])[0];
+      if (el && el[1] >= 20) {
+        var shared = live.some(function (x) { return x !== c && repTagPct(x, "elems", el[0]) >= 10; });
+        if (!shared) out.push("「" + esc(c.cat) + "」可用<b>" + esc(el[0]) + "</b>做区分标识（" + el[1] + "% 且其余" + dim.noun + "都没有形成规模），适合做系列识别点。");
+      }
+      /* 潜力机会高但爆款低 → 说明有量没有爆点 */
+      if (c.oppP >= 50 && c.hotP <= 10) {
+        out.push("「" + esc(c.cat) + "」潜力机会 " + c.oppP + "% 而趋势爆款只有 " + c.hotP + "%，属于<b>有量无爆</b>：优先补元素与工艺的差异化，而不是加大上新量。");
+      }
+    });
+    if (!out.length) return "";
+    return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议</h4><ul class="rk-rep-act">'
+      + out.slice(0, 5).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
+  }
+
+  /* ⑤ 数据说明：口径与限制，避免被误读 */
+  function repQualityHtml(V, dim) {
+    var sum = 0, tagged = 0, minN = 1e9;
+    V.forEach(function (c) {
+      sum += c.n || 0; tagged += (c.tagAny || 0);
+      if (c.n > 0 && c.n < minN) minN = c.n;
+    });
+    var cov = sum ? Math.round(tagged / sum * 100) : 0;
+    var rows = [
+      '口径：只比<b>构成</b>（各维度占比），不比张数。张数取决于这一期上了多少图，横比会把「上传得多」误读成「卖得好」。',
+      '分母：每个维度只用<b>该维度已打标</b>的图片，未打标的图不计入分母，所以各维度占比之和不一定等于 100%。',
+      '覆盖：本次样本 ' + sum + ' 张，其中 <b>' + cov + '%</b> 带打标数据；覆盖不足时结论以方向为主。' 
+    ];
+    if (minN < 30 && minN < 1e9) rows.push('最小样本列仅 <b>' + minN + ' 张</b>，占比波动较大，建议累积 2–3 周再看趋势。');
+    return '<section class="rk-rep-sec rk-rep-qual"><h4><em>五</em>数据说明</h4><ul>'
+      + rows.map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
+  }
+
   function vitalsHtml(V, dim) {
     if (!V.length) return "";
     dim = dim || vitalsDim();
-    var h = '<div class="rk-vitals">';
+    /* 20261102H：报告层。头 / 结论 / 对照表在前，底部再补建议与数据说明，
+       三列体征卡作为「逐列画像」放在中间，仍是原卡片（数据底稿不变）。 */
+    var h = repHeadHtml(V, dim) + repSummaryHtml(V, dim) + repMatrixHtml(V, dim);
+    h += '<section class="rk-rep-sec rk-rep-cols"><h4><em>三</em>逐列画像</h4>';
+    h += '<div class="rk-vitals">';
     V.forEach(function (c) {
       h += '<div class="rk-vit">'
         + '<div class="rk-vit-h"><span class="rk-vit-name">' + esc(c.cat) + '</span>'
@@ -1502,6 +1747,7 @@
         + '<i class="v-opp" style="width:' + c.oppP + '%"></i>'
         + '<i class="v-hot" style="width:' + c.hotP + '%"></i>'
         + '<i class="v-srg" style="width:' + c.srgP + '%"></i></div>'
+        + repProfile(c, V)
         + (c.n
           ? '<div class="rk-vit-legend">'
             + '<span><em class="v-opp"></em>潜力机会 ' + c.oppP + '%</span>'
@@ -1532,11 +1778,14 @@
       h += '</div>';
     });
     h += '</div>';
+    /* 差异洞察紧跟画像，作为「谁跟谁不一样」的短结论（标题沿用原口径文案） */
     var ins = insightsOf(V, dim);
     if (ins.length) {
       h += '<div class="rk-insight"><div class="rk-insight-h">' + esc(dim.head) + '</div><ul>'
         + ins.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul></div>';
     }
+    h += '</section>';
+    h += repActionHtml(V, dim) + repQualityHtml(V, dim);
     return h;
   }
 

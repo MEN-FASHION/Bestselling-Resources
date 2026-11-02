@@ -6273,3 +6273,72 @@ html, body{
   .mv-tag-season { width: 100%; margin-left: 0; }
   .mv-tag-season .input { flex: 1 1 0; min-width: 0; }
 }
+
+/* ============================================================================
+   20261102H：趋势构成分析报告（体征区块升级为报告形态）
+   设计原则：像一份能直接发出去的报告 —— 标题/口径在上，结论带编号，
+   对照表用 ▲/▼ 标落差，逐列画像讲人话，最后给建议与口径限制。
+   ========================================================================== */
+.rk-rep-head{margin:0 0 14px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;
+  background:linear-gradient(180deg,#fbfaf7,#fff)}
+.rk-rep-title{font-size:16px;font-weight:700;color:var(--txt);letter-spacing:.4px;display:flex;
+  align-items:baseline;gap:10px;flex-wrap:wrap}
+.rk-rep-sub{font-size:12.5px;font-weight:500;color:#8a857c;letter-spacing:0}
+.rk-rep-meta{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12px;color:#6f6a61}
+.rk-rep-meta b{color:var(--txt);font-weight:600}
+
+.rk-rep-sec{margin:16px 0}
+.rk-rep-sec h4{margin:0 0 9px;font-size:13px;font-weight:700;color:var(--txt);
+  letter-spacing:.3px;display:flex;align-items:center;gap:7px}
+.rk-rep-sec h4 em{font-style:normal;width:18px;height:18px;border-radius:5px;background:var(--gold);
+  color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.rk-rep-note{margin:-3px 0 9px;font-size:11.5px;color:#8a857c;line-height:1.7}
+.rk-rep-note b{color:#5c5850}
+
+/* 核心结论 */
+.rk-rep-sum ol,.rk-rep-act,.rk-rep-qual ul{margin:0;padding-left:0;list-style:none;counter-reset:rep}
+.rk-rep-sum li{position:relative;padding:9px 12px 9px 34px;margin-bottom:7px;font-size:12.8px;
+  line-height:1.85;color:#47443d;background:#fbfaf7;border:1px solid var(--line);border-radius:9px}
+.rk-rep-sum li::before{counter-increment:rep;content:counter(rep);position:absolute;left:10px;top:9px;
+  width:17px;height:17px;border-radius:50%;background:#efeadf;color:#7a7468;font-size:10.5px;
+  font-weight:700;display:flex;align-items:center;justify-content:center}
+.rk-rep-sum li b{color:var(--txt)}
+
+/* 横向对照表 */
+.rk-rep-tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.rk-rep-tbl{width:100%;border-collapse:collapse;font-size:12.3px;min-width:520px}
+.rk-rep-tbl th,.rk-rep-tbl td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);
+  vertical-align:top;white-space:nowrap}
+.rk-rep-tbl thead th{background:#f7f5f0;font-weight:600;color:#5c5850;font-size:12px}
+.rk-rep-tbl tbody th{font-weight:600;color:#6f6a61;background:#fcfbf8;font-size:12px}
+.rk-rep-tbl tbody tr:last-child th,.rk-rep-tbl tbody tr:last-child td{border-bottom:0}
+.rk-rep-tbl td b{color:var(--txt);font-weight:600;margin-left:2px}
+.rk-rep-tbl td.na{color:#c0bbb0}
+.rk-rep-tbl i.up,.rk-rep-tbl i.down{font-style:normal;font-size:10.5px;margin-left:5px;
+  padding:1px 4px;border-radius:4px;font-weight:600}
+.rk-rep-tbl i.up{color:#2f7a4f;background:#e8f4ec}
+.rk-rep-tbl i.down{color:#9a5a4a;background:#f8ece8}
+.rk-rep-th-n{display:block;font-size:10.5px;color:#a09a90;font-weight:500}
+
+/* 逐列画像 */
+.rk-rep-cols .rk-vitals{margin-top:2px}
+.rk-vit-prof{margin:7px 0 9px;font-size:12px;line-height:1.8;color:#5f5a51;
+  padding-left:9px;border-left:2px solid #e6e0d3}
+
+/* 可执行建议 */
+.rk-rep-act li{position:relative;padding:8px 12px 8px 26px;margin-bottom:6px;font-size:12.6px;
+  line-height:1.85;color:#47443d;background:#fcfbf7;border:1px solid var(--line);border-radius:8px}
+.rk-rep-act li::before{content:"→";position:absolute;left:10px;top:8px;color:var(--gold);font-weight:700}
+
+/* 数据说明 */
+.rk-rep-qual li{position:relative;padding-left:15px;margin-bottom:5px;font-size:12px;line-height:1.8;color:#8a857c}
+.rk-rep-qual li::before{content:"·";position:absolute;left:4px;color:#c0bbb0;font-weight:700}
+.rk-rep-qual li b{color:#5c5850;font-weight:600}
+
+@media (max-width:720px){
+  .rk-rep-head{padding:12px}
+  .rk-rep-title{font-size:14.5px}
+  .rk-rep-meta{gap:6px 12px;font-size:11.5px}
+  .rk-rep-tbl{min-width:460px;font-size:11.8px}
+  .rk-rep-sum li,.rk-rep-act li{font-size:12.3px}
+}
