@@ -2567,31 +2567,44 @@ async removeTrendRecord(id) {
 
       /* ① 读新表 */
       const fromTagTable = {};
-      for (let i = 0; i < list.length; i += 80) {
-        const part = list.slice(i, i + 80);
-        let cols = ["image_url", ...FIELDS];
-        let data = null, error = null;
-        for (let t = 0; t < 3; t++) {
-          const r = await client.from("rank_image_tags").select(cols.join(",")).in("image_url", part);
-          data = r.data; error = r.error;
-          if (!error) break;
-          const msg = String(error.message || error.details || "");
-          const hit = cols.filter((c) => c !== "image_url" && msg.indexOf(c) >= 0);
-          if (!hit.length) break;
-          cols = cols.filter((c) => hit.indexOf(c) < 0);   /* 缺列就退一列重试 */
+      /* 20261103G：原来逐块串行 await，500 张图要发 7 个请求一路等下来；
+         改成 4 路并发，切类目时标签几乎和首图同时到。 */
+      {
+        const PCH = [], PCONC = 4, PSIZE = 80;
+        for (let i = 0; i < list.length; i += PSIZE) PCH.push(list.slice(i, i + PSIZE));
+        const onePart = async (part) => {
+          let cols = ["image_url", ...FIELDS];
+          for (let t = 0; t < 3; t++) {
+            const r = await client.from("rank_image_tags").select(cols.join(",")).in("image_url", part);
+            if (!r.error) return r.data || [];
+            const msg = String(r.error.message || r.error.details || "");
+            const hit = cols.filter((c) => c !== "image_url" && msg.indexOf(c) >= 0);
+            if (!hit.length) return [];
+            cols = cols.filter((c) => hit.indexOf(c) < 0);   /* 缺列就退一列重试 */
+          }
+          return [];
+        };
+        for (let i = 0; i < PCH.length; i += PCONC) {
+          const rows = await Promise.all(PCH.slice(i, i + PCONC).map(onePart));
+          rows.forEach((arr) => (arr || []).forEach((r) => { fromTagTable[r.image_url] = r; }));
         }
-        (data || []).forEach((r) => { fromTagTable[r.image_url] = r; });
       }
 
       /* ② 读 images 老位置的残留值 */
       const fromImages = {};
       const readBy = async (col, cols) => {
         const res = {};
-        for (let i = 0; i < list.length; i += 80) {
-          const part = list.slice(i, i + 80);
-          const { data, error } = await client.from("images").select(cols).in(col, part);
-          if (error) return null;
-          (data || []).forEach((r) => { res[r[col]] = r; });
+        const PCH = [];
+        for (let i = 0; i < list.length; i += 80) PCH.push(list.slice(i, i + 80));
+        for (let i = 0; i < PCH.length; i += 4) {
+          const parts = await Promise.all(PCH.slice(i, i + 4).map(async (part) => {
+            const { data, error } = await client.from("images").select(cols).in(col, part);
+            return error ? null : (data || []);
+          }));
+          for (const arr of parts) {
+            if (arr === null) return null;
+            arr.forEach((r) => { res[r[col]] = r; });
+          }
         }
         return res;
       };
@@ -3200,6 +3213,50 @@ async removeTrendRecord(id) {
     /* 周对比报告专用：图库标签 + 榜单独立标签合并。
        规则：逐维度取"有值的那一边"，榜单表优先（它才是本面板打的标）；
        两边都有时用榜单表的，避免同一张图在两处被打成不同标签时口径打架。 */
+    /* 20261103I：一次性把整张打标表读进内存（后台跑，不阻塞首屏）。
+       以前前台是"切到哪一类目才去取那一批图的标签"，
+       于是每换一次类目都要重新核对一遍，用户感觉每次都在等。
+       整表只有一万多行、几兆，读一次之后所有类目切换都是即时的。
+       page 大小 1000，4 路并发顺序推进；每读完一块回调一次，让前台增量落缓存。 */
+    async listAllImageTags(opts) {
+      const opt = opts || {};
+      const SIZE = opt.size || 1000;
+      const CONC = opt.conc || 4;
+      const onChunk = typeof opt.onChunk === "function" ? opt.onChunk : null;
+      const cols = "image_url,category,style_tags,element_tags,scene_tags,shoot_tags,skin_tags,tags,visual_tags,craft_tags,fit_tags,culture_tags,psych_tags,festival_tags,pattern_tags,struct_tags,fabric_tags,batch_id,updated_at";
+      const out = {};
+      let pages = 0, empty = 0, stopped = false;
+      const readPage = async (from) => {
+        const r = await client.from("rank_image_tags").select(cols).order("image_url", { ascending: true })
+          .range(from, from + SIZE - 1);
+        if (r.error) throw r.error;
+        return r.data || [];
+      };
+      /* 逐级降级：v11 三列不存在时退到基础列，不能因为列缺失整表读不出来 */
+      while (pages < 64 && !stopped) {
+        const batch = [];
+        for (let i = 0; i < CONC; i++) batch.push(pages + i);
+        const got = await Promise.all(batch.map((pi) => readPage(pi * SIZE).catch(() => [])));
+        const chunk = {};
+        got.forEach((rows) => {
+          (rows || []).forEach((row) => {
+            const u = String(row.image_url || "");
+            if (!u) return;
+            chunk[u] = row;
+            out[u] = row;
+          });
+          if (!rows || rows.length < SIZE) empty++;
+        });
+        if (onChunk && Object.keys(chunk).length) {
+          try { onChunk(chunk); } catch (e) { /* 回调出错不影响继续读 */ }
+        }
+        pages += CONC;
+        /* 4 个并发块里有一块没读满，说明已经到底 */
+        if (empty > 0) stopped = true;
+      }
+      return out;
+    },
+
     async listImageTagsForReport(urls) {
       const list = Array.isArray(urls) ? urls : [];
       let base = {};

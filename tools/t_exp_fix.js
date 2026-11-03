@@ -44,7 +44,8 @@ ok("renderBody 里先取标签再做门控",
   /ensureTags\(CACHE\.items\);\s*\n\s*if \(PRINT_HIDE && !tagsSettled\(CACHE\.items\)\)/.test(SRC));
 ok("门控未通过时直接 return，不往下渲染列表",
   /!tagsSettled\(CACHE\.items\)\) \{[\s\S]{0,400}return;/.test(SRC));
-ok("门控文案说明「核对完成后才出图」", SRC.indexOf("核对完成后才出图") >= 0);
+ok("门控文案说明「核对完才渲染」", SRC.indexOf("核对完才渲染") >= 0);
+ok("门控文案说明同一批图第二次直接出图", SRC.indexOf("第二次看会直接出图") >= 0);
 
 /* 行为断言：没有取数通道时视为已就绪（不能因为取不到就永远转圈） */
 ok("取不到标签时不阻塞", T.tagsSettled([mk({ image_url: "x" })]) === true);

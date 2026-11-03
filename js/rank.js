@@ -53,6 +53,61 @@
   var PRINT_HIDE = false;
   var TAG_KEY = "";          // 已加载的索引对应哪一批图，避免重复请求
   var TAG_BUSY = false;
+  /* 20261103G：改为按「这张图核对过了没」记账，不再比整批指纹。
+     以前比指纹有两个坑：① SBX 没有标签接口时 key 永远是空 → 永远判未就绪，
+     页面就一直停在等待提示上；② 两次请求的图集稍有差别就对不上。 */
+  var TAG_SEEN = {};
+  /* 已核对过的标签落本地缓存：第二次看同一批图直接命中，
+     不用再等网络，等待提示也就不会出现。 */
+  var TAG_STORE_KEY = "rk_tag_store_v2", TAG_STORE = null, TAG_STORE_ORDER = [], TAG_STORE_MAX = 6000;
+  /* 20261103I：整表预取状态。
+     以前是"切到哪一类目才去取那一批图的标签"，每换一次类目都要重新核对一遍，
+     用户体感就是"每次切类目都在等"。现在页面打开后后台把整张打标表读一次，
+     之后所有类目 / 周次 / 国家的切换都直接命中内存与本地缓存，不再等网络。 */
+  var TAG_ALL_STATE = 0;     // 0 未开始 1 进行中 2 已完成 3 接口不支持
+  var TAG_ALL_AT = 0;
+  var TAG_GATE_AT = 0;       // 首次因"未核对"而挡住渲染的时间点
+  var TAG_GATE_WAIT = 1500;  // 最多等这么久，超时先出图（后台补完会自动重绘）
+  function tagStoreInit() {
+    if (TAG_STORE) return;
+    TAG_STORE = {};
+    try {
+      var raw = (window.localStorage || {}).getItem(TAG_STORE_KEY);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && o.m && o.o) { TAG_STORE = o.m; TAG_STORE_ORDER = o.o.slice(0); }
+      }
+    } catch (e) { TAG_STORE = {}; TAG_STORE_ORDER = []; }
+  }
+  function tagStoreGet(u) {
+    if (!u) return null;
+    tagStoreInit();
+    var k = tagStoreKey(u);
+    return TAG_STORE[k] || null;
+  }
+  function tagStorePut(u, rec) {
+    if (!u) return;
+    tagStoreInit();
+    var k = tagStoreKey(u);
+    TAG_STORE[k] = rec;
+    var i = TAG_STORE_ORDER.indexOf(k);
+    if (i >= 0) TAG_STORE_ORDER.splice(i, 1);
+    TAG_STORE_ORDER.push(k);
+    while (TAG_STORE_ORDER.length > TAG_STORE_MAX) {
+      var old = TAG_STORE_ORDER.shift();
+      delete TAG_STORE[old];
+    }
+    tagStoreSave();
+  }
+  var _tagSaveAt = 0;
+  function tagStoreSave() {
+    var now = Date.now();
+    if (now - _tagSaveAt < 800) return;      /* 连续渲染时别每次写盘 */
+    _tagSaveAt = now;
+    try {
+      (window.localStorage || {}).setItem(TAG_STORE_KEY, JSON.stringify({ m: TAG_STORE, o: TAG_STORE_ORDER }));
+    } catch (e) { /* 容量满了就算了，不影响功能 */ }
+  }
   var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
   var LAST_COLS_MODE = "";
   var REP_OPEN = false;      /* 报告详情是否展开；默认收起，只给逐列画像 */
@@ -464,7 +519,7 @@
     var key = itemsKey();
     if (CACHE && CACHE.key === key) return CACHE.items;
     var _hit = cacheGet(key);
-    if (_hit) { CACHE = _hit; return _hit.items; }
+    if (_hit) { CACHE = _hit; if (TAG_ALL_STATE === 0) prefetchAllTags(); return _hit.items; }
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : (MODE === "c" ? withBasePeriods(periods) : periods);
@@ -486,6 +541,10 @@
     ITEMS_BY_URL = {};
     items.forEach(function (it) { if (it.image_url) ITEMS_BY_URL[it.image_url] = it; });
     CACHE = cachePut(key, items);
+    /* 20261103I：换了批次就把"最多等多久"重新计时，避免上一批的计时把这一批也一起放行；
+       同时把整表预取拉起来（只会在第一次真正触发，之后直接返回）。 */
+    TAG_GATE_AT = 0;
+    if (TAG_ALL_STATE === 0) prefetchAllTags();
     return items;
   }
 
@@ -2282,8 +2341,34 @@
     };
   }
 
+  /* 20261103H：可执行建议只写最近一周。
+     时间对比下原来每周各给一组（W42 / W43 / W44 三套几乎一样的建议），
+     既长又难用 —— 结论本该只对"现在"负责。
+     现在只取最新一周那一列给建议，其余周次不再罗列（数据仍在上面的对照表里）。 */
+  function repLatestWeekCols(V) {
+    var live = (V || []).filter(function (c) { return c.n > 0; });
+    if (MODE !== "v" || live.length <= 1) return { cols: live, latest: "", dropped: [] };
+    var ps = sortPeriods(live.map(function (c) { return String(c.key || ""); }));
+    var latest = ps[ps.length - 1] || "";
+    var keep = live.filter(function (c) { return String(c.key || "") === latest; });
+    if (!keep.length) {
+      /* 最新一周没有数据就往前退到最近有数据的那一周，不能让建议整段消失 */
+      for (var i = ps.length - 1; i >= 0 && !keep.length; i--) {
+        latest = ps[i];
+        keep = live.filter(function (c) { return String(c.key || "") === latest; });
+      }
+    }
+    return {
+      cols: keep,
+      latest: latest,
+      dropped: live.map(function (c) { return String(c.cat || c.key || ""); })
+        .filter(function (x, i, a) { return x !== latest && a.indexOf(x) === i; })
+    };
+  }
+
   function repActionHtml(V, dim) {
-    var live = V.filter(function (c) { return c.n > 0; });
+    var _pick = repLatestWeekCols(V);
+    var live = _pick.cols;
     if (!live.length) return "";
     var out = [];
     live.forEach(function (c) {
@@ -2355,8 +2440,13 @@
       }
     });
     if (!out.length) return "";
+    var _sub = _pick.latest
+      ? ('只写最近一周（' + esc(_pick.latest) + '）'
+        + (_pick.dropped.length ? '；' + esc(_pick.dropped.join(" / ")) + ' 的建议已省略（结论只对最新一期负责，其余周次的构成仍见上面的对照表）' : '')
+        + '。以下是基于占比的取舍参考，不是硬性要求；括号内为该值在本列的占比与张数，占比只代表"上榜图里常见"，不等于应当照做')
+      : '以下是基于占比的取舍参考，不是硬性要求；括号内为该值在本列的占比与张数，占比只代表"上榜图里常见"，不等于应当照做';
     return '<section class="rk-rep-sec"><h4><em>四</em>可执行建议<span class="rk-rep-h4-sub">'
-      + '以下是基于占比的取舍参考，不是硬性要求；括号内为该值在本列的占比与张数，占比只代表"上榜图里常见"，不等于应当照做</span></h4>'
+      + _sub + '</span></h4>'
       + '<ul class="rk-rep-act">'
       + out.slice(0, 14).map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
   }
@@ -3024,33 +3114,160 @@
      用户看到的就是"先暴露一下、过一会才隐藏"。
      现在改成：开关打开时，标签核对没完成就先不出图，等核对完再一次性渲染。 */
   function tagsSettled(items) {
-    if (!SBX || !SBX.listImageTags) return true;      /* 取不了标签，不阻塞 */
+    if (!SBX || (!SBX.listImageTags && !SBX.listImageTagsForReport)) return true;   /* 取不了标签，不阻塞 */
     var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
     if (!urls.length) return true;
-    return TAG_KEY === tagFingerprint(urls) && !TAG_BUSY;
+    for (var i = 0; i < urls.length; i++) {
+      if (!TAG_SEEN[tagStoreKey(urls[i])]) {
+        /* 20261103I：整表已预取完成，却没记上"核对过" → 说明这些图打标表里没有记录，
+           直接按"没有标签"放行，不能让页面继续等一个永远不会到的结果。 */
+        if (TAG_ALL_STATE === 2) { TAG_SEEN[tagStoreKey(urls[i])] = 1; continue; }
+        /* 网络慢时的逃逸阀：最多等 TAG_GATE_WAIT 毫秒，到点先出图；
+           后台补完标签会再重绘一次，图案款照样会被隐藏，只是不再"先白等一大截"。 */
+        if (!TAG_GATE_AT) TAG_GATE_AT = Date.now();      /* 第一次挡住就开始计时 */
+        if (Date.now() - TAG_GATE_AT > TAG_GATE_WAIT) return true;
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /* 图地址归一：去掉查询串与锚点，本地缓存与索引都按它对齐 */
+  function tagStoreKey(u) {
+    var s = String(u || "");
+    var i = s.indexOf("?");
+    if (i >= 0) s = s.slice(0, i);
+    var j = s.indexOf("#");
+    if (j >= 0) s = s.slice(0, j);
+    return s.trim();
+  }
+
+  /* 20261103I：标签取数改成队列式。
+     以前是"单飞"（TAG_BUSY）：一个请求还在飞的时候，切类目进来的新批次会被直接跳过，
+     而跳过的那批图永远不会被记成"核对过" —— 于是要么卡在等待态，要么被迫再等一次。
+     现在把缺的图推进队列，3 路并发按块取，取到哪块就先渲染哪块。 */
+  var TAG_QUEUE = [], TAG_PEND = {}, TAG_RUN = 0, TAG_RUN_MAX = 3, TAG_BATCH = 220;
+  var _tagRefreshTimer = 0;
+
+  /* 取完一块只重绘一次，避免连续多块来回重排 */
+  function tagScheduleRefresh() {
+    if (_tagRefreshTimer) return;
+    _tagRefreshTimer = setTimeout(function () {
+      _tagRefreshTimer = 0;
+      try { renderBody(); } catch (e) { }
+    }, 160);
+  }
+
+  function tagAbsorb(map) {
+    var got = 0;
+    Object.keys(map || {}).forEach(function (u) {
+      var rec = lbNormalize(map[u]);
+      TAG_INDEX[u] = rec;
+      TAG_INDEX[tagStoreKey(u)] = rec;
+      TAG_SEEN[tagStoreKey(u)] = 1;
+      tagStorePut(u, rec);
+      got++;
+    });
+    return got;
+  }
+
+  function tagQueuePump() {
+    while (TAG_RUN < TAG_RUN_MAX && TAG_QUEUE.length) {
+      (function () {
+        var batch = TAG_QUEUE.splice(0, TAG_BATCH);
+        TAG_RUN++;
+        var done = function () {
+          TAG_RUN--;
+          batch.forEach(function (u) { delete TAG_PEND[tagStoreKey(u)]; });
+          tagStoreSave();
+          tagScheduleRefresh();
+          tagQueuePump();
+        };
+        try {
+          var _fn = SBX.listImageTagsForReport || SBX.listImageTags;
+          var p = _fn.call(SBX, batch);
+          if (!p || typeof p.then !== "function") { done(); return; }
+          p.then(function (m) {
+            tagAbsorb(m);
+            /* 没标签的图也要记"核对过"，否则永远不会就绪 */
+            batch.forEach(function (u) { TAG_SEEN[tagStoreKey(u)] = 1; });
+            done();
+          }, function () {
+            batch.forEach(function (u) { TAG_SEEN[tagStoreKey(u)] = 1; });
+            done();
+          });
+        } catch (e) {
+          batch.forEach(function (u) { TAG_SEEN[tagStoreKey(u)] = 1; });
+          done();
+        }
+      })();
+    }
+  }
+
+  function tagQueuePush(urls) {
+    var added = 0;
+    (urls || []).forEach(function (u) {
+      if (!u) return;
+      var k = tagStoreKey(u);
+      if (TAG_SEEN[k] || TAG_PEND[k]) return;
+      TAG_PEND[k] = 1;
+      TAG_QUEUE.push(u);
+      added++;
+    });
+    return added;
+  }
+
+  /* 整表一次性预取：页面打开后在后台跑一次，之后切类目 / 周次 / 国家都不再等标签。
+     每读完一块就落内存与本地缓存，所以是"边读边能用"，不是等全部读完才好。 */
+  function prefetchAllTags() {
+    if (TAG_ALL_STATE === 1 || TAG_ALL_STATE === 2) return;
+    if (!SBX || typeof SBX.listAllImageTags !== "function") { TAG_ALL_STATE = 3; return; }
+    TAG_ALL_STATE = 1;
+    TAG_ALL_AT = Date.now();
+    var n = 0;
+    try {
+      SBX.listAllImageTags({
+        size: 1000, conc: 4, onChunk: function (chunk) {
+          n += tagAbsorb(chunk);
+          tagStoreSave();
+          if (n >= 800) { n = 0; tagScheduleRefresh(); }
+        }
+      }).then(function () {
+        TAG_ALL_STATE = 2;
+        tagStoreSave();
+        tagScheduleRefresh();
+      }, function () {
+        /* 预取失败不算错：退回按需取，功能照常 */
+        TAG_ALL_STATE = 0;
+      });
+    } catch (e) { TAG_ALL_STATE = 0; }
   }
 
   function ensureTags(items) {
-    if (!SBX || !SBX.listImageTags) return;
+    if (!SBX || (!SBX.listImageTags && !SBX.listImageTagsForReport)) return;
     var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
     if (!urls.length) return;
-    var key = tagFingerprint(urls);
-    if (key === TAG_KEY || TAG_BUSY) return;
-    TAG_BUSY = true;
-    var fin = function () { TAG_BUSY = false; TAG_KEY = key; };
-    try {
-      /* 优先用「图库 + 榜单独立标签」的合并结果：榜单图不在图库表里，
-         只读图库永远取不到后台给榜单打的标。 */
-      var _fn = SBX.listImageTagsForReport || SBX.listImageTags;
-      _fn.call(SBX, urls).then(function (m) {
-        /* 20261102X：入库前先归一一次（图案三列重分拣、背景旧值改写）。
-           放在索引这一步，面板、体征卡、统计口径就都拿到同一份规整数据，
-           不会出现"面板分开了、图表还没分开"的两套结果。 */
-        (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = lbNormalize(m[u]); });
-        fin();
-        renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
-      }, function () { fin(); renderBody(); });
-    } catch (e) { fin(); }
+
+    /* ① 先用本地缓存补齐：看过的那部分立刻算"已核对"，不必等网络 */
+    var miss = [];
+    urls.forEach(function (u) {
+      var k = tagStoreKey(u);
+      if (TAG_SEEN[k]) {
+        if (!TAG_INDEX[u] && TAG_STORE && TAG_STORE[k]) TAG_INDEX[u] = lbNormalize(TAG_STORE[k]);
+        return;
+      }
+      var rec = tagStoreGet(u);
+      if (rec) { TAG_INDEX[u] = lbNormalize(rec); TAG_SEEN[k] = 1; }
+      else miss.push(u);
+    });
+    if (!miss.length) return;            /* 全都在缓存里，不用发请求 */
+
+    /* ② 整表预取还没启动就先拉起来：它是"一次换长期快"的关键 */
+    if (TAG_ALL_STATE === 0) prefetchAllTags();
+
+    /* ③ 缺的推进队列；同时启动逃逸计时，最多等 TAG_GATE_WAIT */
+    if (!TAG_GATE_AT) TAG_GATE_AT = Date.now();
+    if (tagQueuePush(miss)) tagQueuePump();
   }
 
   function renderBody() {
@@ -3074,7 +3291,7 @@
     /* 先把标签取数发出去（并行），再看是否已核对完成 */
     ensureTags(CACHE.items);
     if (PRINT_HIDE && !tagsSettled(CACHE.items)) {
-      box.innerHTML = '<div class="rk-empty rk-wait">正在核对画面里的图案标签，稍候即可（后台已关闭「图案印花款」前台展示，核对完成后才出图，避免图案款先闪一下）。</div>';
+      box.innerHTML = '<div class="rk-empty rk-wait"><span class="rk-spin"></span>正在核对图案标签，稍候出图…（「图案印花款」已关闭展示，核对完才渲染，避免图案款先闪一下；同一批图第二次看会直接出图）</div>';
       return;
     }
 
@@ -4466,7 +4683,20 @@
       cachePut: cachePut,
       setRepOpen: function (v) { REP_OPEN = !!v; },
       setTagState: function (k, busy) { TAG_KEY = k || ""; TAG_BUSY = !!busy; },
+      tagSeen: function (u) { return !!TAG_SEEN[tagStoreKey(u)]; },
+      prefetchAllTags: prefetchAllTags,
+      tagAllState: function () { return TAG_ALL_STATE; },
+      setTagAllState: function (v) { TAG_ALL_STATE = v; },
+      tagGateAt: function () { return TAG_GATE_AT; },
+      tagQueueLen: function () { return TAG_QUEUE.length; },
+      tagAbsorb: tagAbsorb,
+      markTagSeen: function (u) { TAG_SEEN[tagStoreKey(u)] = 1; },
+      tagStoreGet: tagStoreGet,
+      tagStorePut: tagStorePut,
+      tagStoreKey: tagStoreKey,
       repTagPct: repTagPct,
+      repActionHtml: repActionHtml,
+      repLatestWeekCols: repLatestWeekCols,
       elementHasGraphic: elementHasGraphic,
       isPatchLabel: isPatchLabel,
       craftIsPrint: craftIsPrint,
