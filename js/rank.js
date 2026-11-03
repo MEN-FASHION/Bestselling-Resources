@@ -1444,6 +1444,8 @@
     return (G || []).map(function (g) {
       var mine = g.items || [];
       var n = mine.length;
+      /* 这张卡属于哪个类目：类目对比取列名，其它模式取图上的类目，兜底用当前类目 */
+      var _fitCat = (mine[0] && mine[0].category) || (MODE === "c" ? g.key : CAT) || "";
       var opp = 0, hot = 0, srg = 0;
       mine.forEach(function (it) {
         if (it._opp) opp++;
@@ -1483,7 +1485,8 @@
         if (nV) vTot++;
         var fSet = {}, nF = 0;
         tagArr(t.fit_tags).forEach(function (v) {
-          var k = String(v).indexOf("·") >= 0 ? String(v).split("·")[1] : String(v);
+          /* 20261103D：只收本类目自己的部位，模特身上的裤子/裙子不计入 */
+          var k = fitValOfFit(v, _fitCat);
           if (!k || fSet[k] !== undefined) return;
           fSet[k] = 1; fCnt[k] = (fCnt[k] || 0) + 1; nF++;
         });
@@ -2272,7 +2275,7 @@
     if (!t) return [];
     var arr = tagArr(t[col]).map(function (v) { return String(v); });
     if (col === "fit_tags") {
-      arr = arr.map(function (v) { return v.indexOf("·") >= 0 ? v.split("·")[1] : v; }).filter(Boolean);
+      arr = arr.map(function (v) { return fitValOfFit(v, it.category); }).filter(Boolean);
     }
     /* 白底不参与抬头统计：它是通用底，变多不代表趋势 */
     if (col === "visual_tags") arr = arr.filter(function (v) { return !isWhiteBg(v); });
@@ -2457,7 +2460,9 @@
       '分母：每个维度只用<b>该维度已打标</b>的图片，未打标的图不计入分母，所以各维度占比之和不一定等于 100%。',
       '覆盖：本次样本 ' + sum + ' 张，其中 <b>' + cov + '%</b> 带打标数据；覆盖不足时结论以方向为主。',
       /* 20261102R：把白底的处理写进口径，避免把「没推荐白底」当成漏算 */
-      '白底：「纯白底 / 白背景」属平台通用底，<b>不参与</b>差异比较与推荐，报告中也不展示，以免被当成可以照做的做法；原始标签仍可在逐张看图时查看。'
+      '白底：「纯白底 / 白背景」属平台通用底，<b>不参与</b>差异比较与推荐，报告中也不展示，以免被当成可以照做的做法；原始标签仍可在逐张看图时查看。',
+      /* 20261103D：说明版型只统计本类目自己的部位，避免把模特身上的裤子/裙子算进 T恤 */
+      '版型：只统计<b>这类衣服自己的部位</b>——上装看领型 / 袖型 / 袖长 / 衣长 / 松紧度，下装看裤型 / 裤长 / 腰型 / 松紧度；模特身上穿的裤子、裙子不算这件商品的版型，已剔除。原始标签仍在逐张看图时可见。'
     ];
     if (minN < 30 && minN < 1e9) rows.push('最小样本列仅 <b>' + minN + ' 张</b>，占比波动较大，建议累积 2–3 周再看趋势。');
     return '<section class="rk-rep-sec rk-rep-qual"><h4><em>六</em>数据说明</h4><ul>'
@@ -2641,6 +2646,41 @@
     ["二次工艺", "craft_tags", "craft"],
     ["拍摄方式", "shoot_tags", "shoot"]
   ];
+  /* 20261103D：版型只统计「这件衣服自己」的部位。
+     版型维度存的是「部位·取值」（领型·圆领 / 裤长·长裤）。一张 T恤 图里如果模特穿着长裤，
+     打标会把模特下装也打进来，于是 T恤 的报告里冒出「长裤 7%」「短裙 2%」「工装裤 1%」
+     这种跟 T恤 毫无关系的行。这里按类目限定部位：
+       上装 → 领型 / 袖型 / 袖长 / 衣长 / 松紧度
+       下装 → 裤型 / 裤长 / 腰型 / 松紧度
+       全类目（全部 / 大码全类 / 套装 / 连体）→ 不过滤 */
+  var FIT_PARTS_UPPER = ["领型", "袖型", "袖长", "衣长", "松紧度"];
+  var FIT_PARTS_LOWER = ["裤型", "裤长", "腰型", "松紧度"];
+  var CAT_FIT_ALL = /全部|大码全类|套装|连体/;
+  var CAT_FIT_LOWER = /长裤|短裤|工装裤|背带裤|牛仔/;
+  var CAT_FIT_UPPER = /T恤|POLO|衬衫|卫衣|连帽|毛衣|开衫|外套|风衣|大衣|棉服|西装|背心|球衣|功能服|打底|压缩|传统服饰/;
+
+  function fitPartsOfCat(cat) {
+    var c = String(cat || "");
+    if (!c || CAT_FIT_ALL.test(c)) return null;          /* 全类目：不过滤 */
+    if (CAT_FIT_LOWER.test(c)) return FIT_PARTS_LOWER;
+    if (CAT_FIT_UPPER.test(c)) return FIT_PARTS_UPPER;
+    return null;                                          /* 认不出的类目：不过滤，宁可多给 */
+  }
+  /* 去掉部位前缀后的取值；部位不属于这个类目时返回空串（这一条不计入） */
+  /* 版型里真正存在的部位。前缀不是这些（例如老数据的「版型·收腰」）就当成没写部位，
+     原样放行 —— 只有明确是「别的衣服的部位」时才剔除，避免把老数据整列清空。 */
+  var FIT_PARTS_ALL = ["领型", "袖型", "袖长", "衣长", "松紧度", "裤型", "裤长", "裙长", "腰型"];
+  function fitValOfFit(v, cat) {
+    var s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    var cut = s.indexOf("·");
+    var part = cut >= 0 ? s.slice(0, cut) : "";
+    var name = cut >= 0 ? s.slice(cut + 1) : s;
+    var allow = fitPartsOfCat(cat);
+    if (part && allow && FIT_PARTS_ALL.indexOf(part) >= 0 && allow.indexOf(part) < 0) return "";
+    return name;
+  }
+
   var FIT_ORDER = ["领型", "袖型", "袖长", "衣长", "松紧度", "裤型", "裤长", "裙长"];
 
   /* 取某个枚举键的允许值，用来把 visual_tags 里混在一起的值分到三个子组。
@@ -4233,6 +4273,10 @@
       itemIsPrint: itemIsPrint,
       patternIsPrint: patternIsPrint,
       patternTypeIsPattern: patternTypeIsPattern,
+      fitPartsOfCat: fitPartsOfCat,
+      fitValOfFit: fitValOfFit,
+      trendValsOf: trendValsOf,
+      repQualityHtml: repQualityHtml,
       elementHasGraphic: elementHasGraphic,
       isPatchLabel: isPatchLabel,
       craftIsPrint: craftIsPrint,
