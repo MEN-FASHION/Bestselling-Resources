@@ -197,7 +197,31 @@
   }    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
   var SIZE = "m";            // s | m | l
   var CAP = CAP_STEP;
-  var CACHE = null;          // { key, items }
+  var CACHE = null;
+  /* 20261103F：以前 CACHE 只存一个组合，切一次类目就整批重新请求，
+     来回切「卫衣 → 工装裤 → 卫衣」要把同一批数据拉两遍，图也要重新解码。
+     改成按组合键缓存最近 8 组，切回来直接命中，不再等网络。 */
+  var CACHE_MAP = {}, CACHE_ORDER = [], CACHE_MAX = 8;
+  function cacheGet(key) {
+    var c = CACHE_MAP[key];
+    if (!c) return null;
+    /* 命中就提到最新，避免被淘汰 */
+    var i = CACHE_ORDER.indexOf(key);
+    if (i >= 0) CACHE_ORDER.splice(i, 1);
+    CACHE_ORDER.push(key);
+    return c;
+  }
+  function cachePut(key, items) {
+    CACHE_MAP[key] = { key: key, items: items };
+    var i = CACHE_ORDER.indexOf(key);
+    if (i >= 0) CACHE_ORDER.splice(i, 1);
+    CACHE_ORDER.push(key);
+    while (CACHE_ORDER.length > CACHE_MAX) {
+      var old = CACHE_ORDER.shift();
+      delete CACHE_MAP[old];
+    }
+    return CACHE_MAP[key];
+  }          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
 
   /* ---------------- 期次排序 ---------------- */
@@ -422,6 +446,14 @@
     return sortPeriods(SEL_PERIODS);
   }
 
+  /* 当前组合的缓存键（取数与「是否要显示加载中」都用它，避免两处口径不一致） */
+  function itemsKey() {
+    var sites = sitesForQuery();
+    var periods = activePeriods();
+    var cats = MODE === "c" ? activeCats() : [];
+    return [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
+  }
+
   async function fetchItems() {
     var sites = sitesForQuery();
     var periods = activePeriods();
@@ -429,8 +461,10 @@
     var cats = MODE === "c" ? activeCats() : [];
     if (MODE === "c" && !cats.length) return [];
     /* 缓存键必须带上类目数组：否则从「卫衣×毛衣」切到「卫衣×外套」会拿到上一次的图 */
-    var key = [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
+    var key = itemsKey();
     if (CACHE && CACHE.key === key) return CACHE.items;
+    var _hit = cacheGet(key);
+    if (_hit) { CACHE = _hit; return _hit.items; }
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : (MODE === "c" ? withBasePeriods(periods) : periods);
@@ -451,7 +485,7 @@
     flagPools(items);
     ITEMS_BY_URL = {};
     items.forEach(function (it) { if (it.image_url) ITEMS_BY_URL[it.image_url] = it; });
-    CACHE = { key: key, items: items };
+    CACHE = cachePut(key, items);
     return items;
   }
 
@@ -523,6 +557,7 @@
   function syncRepDetail(box) {
     box = box || $("#rk-body");
     if (!box) return;
+    if (REP_OPEN) fillRepDetail(box);
     var dets = box.querySelectorAll("[data-rep-detail]");
     Array.prototype.forEach.call(dets, function (d) {
       if (REP_OPEN) d.removeAttribute("hidden"); else d.setAttribute("hidden", "");
@@ -1049,8 +1084,8 @@
       + ' data-ratio="' + esc(it.ratio == null ? "" : it.ratio) + '" data-rank="' + esc(it.rank_abs == null ? "" : it.rank_abs) + '"'
       + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
-    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' src="' + esc(it.image_url) + '" alt="' + esc(leafOf(it) || "榜单图片") + '"' +
-      (opt.eager ? ' decoding="async"' : '') + '>';
+    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' decoding="async" src="' + esc(it.image_url) + '" alt="' + esc(leafOf(it) || "榜单图片") + '"'
+      + (opt.eager ? ' fetchpriority="high"' : '') + '>';
     if (!opt.eye) {
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
       if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
@@ -1457,6 +1492,11 @@
       var tagAny = 0;   /* 20261102H：至少有一个维度打了标的图数，用于报告里的覆盖率 */
       var sCnt = {}, sTot = 0, eCnt = {}, eTot = 0;
       var stCnt = {}, stTot = 0, vCnt = {}, vTot = 0, fCnt = {}, fTot = 0;
+      /* 20261103E：视觉背景单独统计。
+         导入时视觉三组分流写库：背景 → scene_tags，构图 + 主体 → visual_tags。
+         报告却只读 visual_tags，于是「视觉背景」两张图里一条背景值都没有，
+         全被算成「中性底·其它」——看起来就是"这一列没数据"。 */
+      var bgCnt = {}, bgTot = 0;
       var cfCnt = {}, cfTot = 0, cuCnt = {}, cuTot = 0, psCnt = {}, psTot = 0;
       /* 20261102L：结构部件 / 面料进统计。这两个维度是商家真正能改的东西
          （拉链、口袋、荷叶边怎么加，面料选什么），过去只在画廊标签里能看到，
@@ -1465,7 +1505,7 @@
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
-        if (tagArr(t.style_tags).length || tagArr(t.visual_tags).length || tagArr(t.shoot_tags).length
+        if (tagArr(t.style_tags).length || tagArr(t.visual_tags).length || tagArr(t.scene_tags).length || tagArr(t.shoot_tags).length
           || tagArr(t.element_tags).length || tagArr(t.craft_tags).length || tagArr(t.fit_tags).length
           || tagArr(t.culture_tags).length || tagArr(t.psych_tags).length
           || tagArr(t.struct_tags).length || tagArr(t.fabric_tags).length) tagAny++;
@@ -1483,6 +1523,16 @@
         var vSet = {}, nV = 0;
         tagArr(t.visual_tags).forEach(function (v) { if (vSet[v] === undefined) { vSet[v] = 1; vCnt[v] = (vCnt[v] || 0) + 1; nV++; } });
         if (nV) vTot++;
+        /* 背景：值形如「室内·客厅·电视墙」「室外·街头·墙面栏杆」，直接按值统计。
+           20261103E：老数据的导入把背景和构图 / 主体一起塞进了 visual_tags，
+           scene_tags 是空的。所以 scene_tags 没有值时，从 visual_tags 里按词表
+           把背景值挑出来用，避免升级后背景一栏突然全空。 */
+        var bgSet = {}, nBg = 0;
+        bgValuesOf(t).forEach(function (k) {
+          if (!k || bgSet[k] !== undefined) return;
+          bgSet[k] = 1; bgCnt[k] = (bgCnt[k] || 0) + 1; nBg++;
+        });
+        if (nBg) bgTot++;
         var fSet = {}, nF = 0;
         tagArr(t.fit_tags).forEach(function (v) {
           /* 20261103D：只收本类目自己的部位，模特身上的裤子/裙子不计入 */
@@ -1538,18 +1588,19 @@
         cat: g.label, key: g.key, empty: g.empty, n: n,
         all: {
           style: allOf(stCnt, stTot), visual: allOf(vCnt, vTot), shoot: allOf(sCnt, sTot),
+          bg: allOf(bgCnt, bgTot),
           elems: allOf(eCnt, eTot), craft: allOf(cfCnt, cfTot), struct: allOf(sdCnt, sdTot),
           fabric: allOf(fbCnt, fbTot), fit: allOf(fCnt, fTot),
           culture: allOf(cuCnt, cuTot), psych: allOf(psCnt, psTot)
         },
         oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
-        style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
+        style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3), bg: tops(bgCnt, bgTot, 3),
         craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
         /* 有工艺标签、但全部是图案复制类（已整类剔除）→ 这一列没有可推荐的质感工艺 */
         printOnly: cfTot > 0 && cfRawTot > 0 && !Object.keys(cfCnt).length,
         struct: tops(sdCnt, sdTot, 3), fabric: tops(fbCnt, fbTot, 3),
-        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0 || sdTot > 0 || fbTot > 0,
+        hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0 || sdTot > 0 || fbTot > 0 || bgTot > 0,
         tagged: sTot, tagAny: tagAny
       };
     });   /* 没上传的那一列也保留卡片：写「无数据」，不要静默消失 */
@@ -1641,7 +1692,8 @@
      印花是设计端一次性决定的事，商家照着抄只会撞款。 */
   var REP_MERCH = [["二次工艺", "craft"], ["结构部件", "struct"], ["版型", "fit"], ["面料", "fabric"]];
   /* 对照表展示顺序：商家四维在前，参考项在后 */
-  var REP_DIMS = REP_MERCH.concat([["风格", "style"], ["视觉", "visual"], ["拍摄方式", "shoot"]]);
+  /* 20261103E：视觉背景单独成维（库里在 scene_tags），不再和构图 / 主体挤在一行 */
+  var REP_DIMS = REP_MERCH.concat([["视觉背景", "bg"], ["视觉", "visual"], ["拍摄方式", "shoot"], ["风格", "style"]]);
 
   /* 20261102R：白底不参与推荐。
      纯白底 / 白背景是平台通用底，几乎每个类目都在用，把它当成"这一列的做法"
@@ -1650,6 +1702,35 @@
      一律剔除白底值；逐列画像的标签清单也不展示白底，
      原始标签仍可在逐张看图时查看。 */
   function isWhiteBg(v) { return /白底|纯白|白背景|白色背景/.test(String(v || "")); }
+  /* 背景取值判定：新词表里的 125 个值、旧值别名、室内·/室外· 前缀都算 */
+  function isBgValue(v) {
+    var k = String(v == null ? "" : v).trim();
+    if (!k) return false;
+    if (/^(室内|室外)·/.test(k)) return true;
+    var A = window.APP_ENUM || {};
+    if ((A["视觉-背景"] || []).indexOf(k) >= 0) return true;
+    if (A.bgAlias && A.bgAlias[k]) return true;
+    return false;
+  }
+  /* 一张图的背景取值：优先 scene_tags；没有就从 visual_tags 里按词表挑 */
+  function bgValuesOf(t) {
+    if (!t) return [];
+    var out = [], seen = {};
+    var push = function (v) {
+      var k = String(v == null ? "" : v).trim();
+      if (!k || seen[k]) return;
+      seen[k] = 1; out.push(k);
+    };
+    tagArr(t.scene_tags).forEach(push);
+    if (out.length) return out;
+    tagArr(t.visual_tags).forEach(function (v) { if (isBgValue(v)) push(v); });
+    return out;
+  }
+
+  /* 背景值很长（室内·餐厅门店·卡座吧台），句子里的短引用去掉前缀即可 */
+  function narrowBg(v) {
+    return String(v == null ? "" : v).replace(/^(室内|室外)·/, "");
+  }
   /* 取该维度第一个非白底值；rest 为其余非白底值，供并列列举用 */
   function repPick(list) {
     var arr = (list || []).filter(function (e) { return e && !isWhiteBg(e[0]); });
@@ -1661,7 +1742,9 @@
     var mx = -1;
     (V || []).forEach(function (c) {
       if (c === self || !c.n) return;
-      var t = key === "visual" ? repPick(c.visual).top : (c[key] || [])[0];
+      var t = key === "visual" ? repPick(c.visual).top
+        : key === "bg" ? repPick(c.bg).top
+        : (c[key] || [])[0];
       if (t && t[1] > mx) mx = t[1];
     });
     return mx;
@@ -1674,11 +1757,30 @@
     return (a && a.length) ? a : (col[key] || []);
   }
 
+  /* 20261103F：全量数据表与背景文案会对「每个取值 × 每一列」反复取占比，
+     原来每次都是一遍 filter（取值几百个 × 列若干 ⇒ 几十万次比较），
+     报告因此明显发顿。改成每列每个维度先建一次索引表，之后 O(1) 命中。 */
+  function repPctMap(col, key) {
+    if (!col.__pct) col.__pct = {};
+    if (col.__pct[key]) return col.__pct[key];
+    var m = {};
+    repAll(col, key).forEach(function (e) { if (e && e[0] != null) m[String(e[0])] = e[1]; });
+    col.__pct[key] = m;
+    return m;
+  }
+  function repCntMap(col, key) {
+    if (!col.__cnt) col.__cnt = {};
+    if (col.__cnt[key]) return col.__cnt[key];
+    var m = {};
+    repAll(col, key).forEach(function (e) { if (e && e[0] != null) m[String(e[0])] = e[2] || 0; });
+    col.__cnt[key] = m;
+    return m;
+  }
   /* 某具体标签在某一列的占比（没有则 0）—— 必须查全量表，
      否则排在第 4 位之后的值会被算成 0% */
   function repTagPct(col, key, name) {
-    var hit = repAll(col, key).filter(function (e) { return e[0] === name; })[0];
-    return hit ? hit[1] : 0;
+    var v = repPctMap(col, key)[String(name)];
+    return v == null ? 0 : v;
   }
 
   function repScopeText(dim) {
@@ -1829,7 +1931,7 @@
   var REP_BG_GROUP = ["室外", "室内", "中性底·其它"];
   function repBgGroups(c) {
     var o = { "室外": 0, "室内": 0, "中性底·其它": 0 };
-    (c.visual || []).forEach(function (e) {
+    (c.bg || []).forEach(function (e) {
       var nm = String(e[0] || "");
       if (isWhiteBg(nm)) return;
       if (nm.indexOf("室外·") === 0) o["室外"] += (e[1] || 0);
@@ -1875,11 +1977,11 @@
     /* 图 B：具体背景值（全量，20261102Z 起不再只取前 5） */
     var names = {};
     live.forEach(function (c) {
-      repAll(c, "visual").forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
+      repAll(c, "bg").forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
     });
     var keys = Object.keys(names).map(function (nm) {
       var mx = 0;
-      live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, "visual", nm)); });
+      live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, "bg", nm)); });
       return { nm: nm, mx: mx };
     }).filter(function (k) { return k.mx > 0; })
       .sort(function (a, b) { return b.mx - a.mx; });
@@ -1891,7 +1993,7 @@
           return {
             label: k.nm.replace(/^(室内|室外)·/, ""), note: "最高 " + k.mx + "%",
             dots: live.map(function (c, i) {
-              return { v: repTagPct(c, "visual", k.nm), color: repColor(i), name: c.cat };
+              return { v: repTagPct(c, "bg", k.nm), color: repColor(i), name: c.cat };
             })
           };
         }),
@@ -1929,13 +2031,13 @@
     /* 具体场景：找跨列最高的那个值 */
     var names = {};
     live.forEach(function (c) {
-      (c.visual || []).forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
+      (c.bg || []).forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
     });
     var best = null;
     Object.keys(names).forEach(function (nm) {
       var mx = 0, who = "";
       live.forEach(function (c) {
-        var v = repTagPct(c, "visual", nm);
+        var v = repTagPct(c, "bg", nm);
         if (v > mx) { mx = v; who = c.cat; }
       });
       if (mx > 0 && (!best || mx > best.p)) best = { nm: nm, p: mx, who: who };
@@ -2074,6 +2176,8 @@
     if (sd) seg.push("结构件集中在「" + sd[0] + "」（" + sd[1] + "%）");
     if (ft) seg.push("版型以「" + ft[0] + "」为主（" + ft[1] + "%）");
     if (fb) seg.push("面料多为「" + fb[0] + "」（" + fb[1] + "%）");
+    var vbg = repPick(c.bg).top;
+    if (vbg) seg.push("背景多是「" + narrowBg(vbg[0]) + "」（" + vbg[1] + "%）");
     var vs = repPick(c.visual).top, sh = (c.shoot || [])[0];
     if (vs && sh) seg.push("画面偏「" + vs[0] + "」、多为" + sh[0]);
     else if (vs) seg.push("画面偏「" + vs[0] + "」");
@@ -2096,7 +2200,9 @@
       if (!any) return;
       var tds = live.map(function (c) {
         /* 视觉行取非白底值；整列都是白底就留空，不把通用底放进对照表 */
-        var t = d[1] === "visual" ? repPick(c.visual).top : (c[d[1]] || [])[0];
+        var t = (d[1] === "visual" || d[1] === "bg")
+          ? repPick(d[1] === "bg" ? c.bg : c.visual).top
+          : (c[d[1]] || [])[0];
         if (!t) return '<td class="na">—</td>';
         var om = repOthersMax(V, c, d[1]);
         var mark = "";
@@ -2267,7 +2373,7 @@
      这里只做<b>描述</b>（哪个值在抬头），建议仍由第④节给，印花不写成"照抄"动作。
      ============================================================ */
   var TREND_DIMS = [["版型", "fit", "fit_tags"], ["图案元素", "elems", "element_tags"],
-    ["视觉", "visual", "visual_tags"], ["结构部件", "struct", "struct_tags"],
+    ["视觉背景", "bg", "scene_tags"], ["视觉", "visual", "visual_tags"], ["结构部件", "struct", "struct_tags"],
     ["二次工艺", "craft", "craft_tags"], ["面料", "fabric", "fabric_tags"]];
 
   function trendValsOf(it, col) {
@@ -2278,7 +2384,7 @@
       arr = arr.map(function (v) { return fitValOfFit(v, it.category); }).filter(Boolean);
     }
     /* 白底不参与抬头统计：它是通用底，变多不代表趋势 */
-    if (col === "visual_tags") arr = arr.filter(function (v) { return !isWhiteBg(v); });
+    if (col === "visual_tags" || col === "scene_tags") arr = arr.filter(function (v) { return !isWhiteBg(v); });
     /* 「无工艺」同理：它不是一个做法，抬头说明不了任何趋势 */
     if (col === "craft_tags") arr = arr.filter(function (v) { return !skill_none(v); });
     return arr;
@@ -2487,17 +2593,22 @@
       live.forEach(function (c) {
         repAll(c, d[1]).forEach(function (e) {
           if (!e || !e[0]) return;
-          if (d[1] === "visual" && isWhiteBg(e[0])) return;   /* 白底不展示 */
+          if ((d[1] === "visual" || d[1] === "bg") && isWhiteBg(e[0])) return;   /* 白底不展示 */
           if (d[1] === "craft" && craftIsPrint(e[0])) return; /* 图案复制类不展示 */
           names[e[0]] = 1;
         });
       });
+      /* 索引表建一次，取值几百个也不再有多重循环 */
+      var pMaps = live.map(function (c) { return repPctMap(c, d[1]); });
+      var cMaps = live.map(function (c) { return repCntMap(c, d[1]); });
       var keys = Object.keys(names).map(function (nm) {
         var mx = 0, cnt = 0;
-        live.forEach(function (c) {
-          var hit = repAll(c, d[1]).filter(function (e) { return e[0] === nm; })[0];
-          if (hit) { mx = Math.max(mx, hit[1]); cnt = Math.max(cnt, hit[2] || 0); }
-        });
+        for (var li = 0; li < pMaps.length; li++) {
+          var p = pMaps[li][nm];
+          if (p != null && p > mx) mx = p;
+          var n2 = cMaps[li][nm];
+          if (n2 != null && n2 > cnt) cnt = n2;
+        }
         return { nm: nm, mx: mx, cnt: cnt };
       }).sort(function (a, b) { return b.mx - a.mx; });
       if (!keys.length) return;
@@ -2520,15 +2631,8 @@
       + "</section>";
   }
 
-  function vitalsHtml(V, dim) {
-    if (!V.length) return "";
-    dim = dim || vitalsDim();
-    /* 20261102H：报告层。头 / 结论 / 对照表在前，底部再补建议与数据说明，
-       三列体征卡作为「逐列画像」放在中间，仍是原卡片（数据底稿不变）。 */
-    /* 20261102K：详情默认收起。
-       一进来只给「逐列画像」——它是最直观的一屏，三列并列、一眼看差异。
-       报告头 / 核心结论 / 横向对照 / 可执行建议 / 数据说明全部收进折叠区，
-       由一个显眼的「查看详细报告」入口展开，避免首次进页面就被一大段文字压住。 */
+  /* 报告详情的上半段（头 / 结论 / 对照 / 各图） */
+  function repDetailTopHtml(V, dim) {
     var detailTop = repHeadHtml(V, dim);
     /* 只有一列可比较时，横向对照与核心结论本就无从谈起。
        以前是静默省略，页面上只剩画像，容易让人以为"切换了却没变化"。
@@ -2543,6 +2647,44 @@
        只有一列时不画（没有对比对象），图与表同时省略，口径说明已在上面提示。 */
     detailTop += repSummaryHtml(V, dim) + repDensityChart(V)
       + repMatrixHtml(V, dim) + repDimCharts(V, dim) + repBgCharts(V);
+    return detailTop;
+  }
+  /* 报告详情的下半段（建议 / 趋势 / 数据说明 / 全量数据） */
+  function repDetailBottomHtml(V, dim) {
+    return repActionHtml(V, dim) + repTrendHtml(V, dim) + repQualityHtml(V, dim)
+      + repFullDataHtml(V, dim);
+  }
+
+  /* 20261103F：报告详情默认收起，但以前每次重绘都会把七节内容全部算一遍
+     （全量数据表是「维度 × 取值 × 列」的三重循环，最重的那块）。
+     用户根本没展开也要付这份成本，切类目时就表现为"报告很慢"。
+     现在收起点只放占位，首次展开才生成，之后复用。 */
+  var REP_LAZY = { V: null, dim: null, box: null };
+  function fillRepDetail(box) {
+    if (!box || !REP_LAZY.V) return;
+    var t = box.querySelector('[data-rep-lazy="top"]');
+    if (t && !t.__filled) {
+      t.innerHTML = repDetailTopHtml(REP_LAZY.V, REP_LAZY.dim);
+      t.__filled = 1; t.removeAttribute("data-rep-lazy");
+    }
+    var b = box.querySelector('[data-rep-lazy="bottom"]');
+    if (b && !b.__filled) {
+      b.innerHTML = repDetailBottomHtml(REP_LAZY.V, REP_LAZY.dim);
+      b.__filled = 1; b.removeAttribute("data-rep-lazy");
+    }
+  }
+
+  function vitalsHtml(V, dim, opt) {
+    if (!V.length) return "";
+    opt = opt || {};
+    dim = dim || vitalsDim();
+    /* 20261102H：报告层。头 / 结论 / 对照表在前，底部再补建议与数据说明，
+       三列体征卡作为「逐列画像」放在中间，仍是原卡片（数据底稿不变）。 */
+    /* 20261102K：详情默认收起。
+       一进来只给「逐列画像」——它是最直观的一屏，三列并列、一眼看差异。
+       报告头 / 核心结论 / 横向对照 / 可执行建议 / 数据说明全部收进折叠区，
+       由一个显眼的「查看详细报告」入口展开，避免首次进页面就被一大段文字压住。 */
+    var detailTop = opt.lazyDetail ? "" : repDetailTopHtml(V, dim);
 
     var h = '';
     h += '<div class="rk-rep-toggle-bar">'
@@ -2551,7 +2693,12 @@
       +   '</button>'
       +   '<span class="rk-rep-open-sub">展开后可见报告口径、结论、维度对照与数据说明</span>'
       + '</div>';
-    h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>' + detailTop + '</div>';
+    if (opt.lazyDetail) {
+      REP_LAZY = { V: V, dim: dim, box: null };
+      h += '<div class="rk-rep-detail" data-rep-detail="1" data-rep-lazy="top" hidden></div>';
+    } else {
+      h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>' + detailTop + '</div>';
+    }
     h += '<section class="rk-rep-sec rk-rep-cols"><h4><em>三</em>逐列画像</h4>';
     h += '<div class="rk-vitals">';
     V.forEach(function (c) {
@@ -2576,10 +2723,10 @@
       /* 20261102L：画像卡也按商家顺序排 —— 工艺 / 结构部件 / 版型 / 面料在前，
          风格 / 视觉 / 文化 / 心理作为背景信息在后。 */
       [["二次工艺", c.craft], ["结构部件", c.struct], ["版型", c.fit], ["面料", c.fabric],
-       ["风格", c.style], ["视觉", c.visual], ["文化背景", c.culture], ["消费心理", c.psych]].forEach(function (g) {
+       ["风格", c.style], ["视觉背景", c.bg], ["视觉", c.visual], ["文化背景", c.culture], ["消费心理", c.psych]].forEach(function (g) {
         if (!g[1] || !g[1].length) return;
-        /* 视觉分组剔除白底：报告里不展示，避免被当成"可以照做的做法" */
-        if (g[0] === "视觉") g = [g[0], g[1].filter(function (e) { return !isWhiteBg(e[0]); })];
+        /* 视觉 / 视觉背景剔除白底：报告里不展示，避免被当成"可以照做的做法" */
+        if (g[0] === "视觉" || g[0] === "视觉背景") g = [g[0], g[1].filter(function (e) { return !isWhiteBg(e[0]); })];
         /* 二次工艺同理：「无工艺」不作为做法展示 */
         if (g[0] === "二次工艺") g = [g[0], g[1].filter(function (e) { return !skill_none(e[0]); })];
         if (!g[1].length) return;
@@ -2608,9 +2755,11 @@
         + ins.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul></div>';
     }
     h += '</section>';
-    h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>'
-      + repActionHtml(V, dim) + repTrendHtml(V, dim) + repQualityHtml(V, dim)
-      + repFullDataHtml(V, dim) + '</div>';
+    if (opt.lazyDetail) {
+      h += '<div class="rk-rep-detail" data-rep-detail="1" data-rep-lazy="bottom" hidden></div>';
+    } else {
+      h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>' + repDetailBottomHtml(V, dim) + '</div>';
+    }
     return h;
   }
 
@@ -2808,7 +2957,11 @@
     LB_GROUPS.forEach(function (m) {
       /* 视觉三组认不出来的值不丢（兜到"视觉·其他"），其它维度本来就不校验 */
       var isVisual = m[2] && m[2].indexOf("视觉-") === 0;
-      take(groups, t[m[1]], m[0], m[2], !isVisual);
+      /* 20261103F：视觉三组在库里是分流存的 —— 背景进 scene_tags，构图 / 主体进 visual_tags。
+         面板一直只读 visual_tags，于是「视觉 · 背景」整组永远空着（图上明明有车、有街景）。
+         这里「视觉 · 背景」改读背景字段（scene_tags，老数据从 visual_tags 里挑），其余照旧。 */
+      var src = m[2] === "视觉-背景" ? bgValuesOf(t) : t[m[1]];
+      take(groups, src, m[0], m[2], !isVisual);
     });
 
     /* 版型：库里存成「领型·圆领」这种带前缀的值，按部位拆成多组 */
@@ -2866,6 +3019,17 @@
     return a.length + "|" + (h >>> 0);
   }
 
+  /* 20261103F：开关打开（=隐藏图案款）时，标签还没取回来的那一瞬间，
+     所有图都"看起来没图案"，于是列表先被完整渲染一次，等标签到了再重绘、图案款才消失 ——
+     用户看到的就是"先暴露一下、过一会才隐藏"。
+     现在改成：开关打开时，标签核对没完成就先不出图，等核对完再一次性渲染。 */
+  function tagsSettled(items) {
+    if (!SBX || !SBX.listImageTags) return true;      /* 取不了标签，不阻塞 */
+    var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
+    if (!urls.length) return true;
+    return TAG_KEY === tagFingerprint(urls) && !TAG_BUSY;
+  }
+
   function ensureTags(items) {
     if (!SBX || !SBX.listImageTags) return;
     var urls = (items || []).map(function (it) { return it.image_url; }).filter(Boolean);
@@ -2885,7 +3049,7 @@
         (m && Object.keys(m) || []).forEach(function (u) { TAG_INDEX[u] = lbNormalize(m[u]); });
         fin();
         renderBody();                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */                        /* 覆盖数、打标筛选、体征卡都要跟着刷新 */
-      }, function () { fin(); });
+      }, function () { fin(); renderBody(); });
     } catch (e) { fin(); }
   }
 
@@ -2907,6 +3071,13 @@
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
 
+    /* 先把标签取数发出去（并行），再看是否已核对完成 */
+    ensureTags(CACHE.items);
+    if (PRINT_HIDE && !tagsSettled(CACHE.items)) {
+      box.innerHTML = '<div class="rk-empty rk-wait">正在核对画面里的图案标签，稍候即可（后台已关闭「图案印花款」前台展示，核对完成后才出图，避免图案款先闪一下）。</div>';
+      return;
+    }
+
     var all = CACHE.items.filter(hitTags);
     var _hidPrt = hiddenPrintCount(CACHE.items);
     if (!all.length) {
@@ -2921,10 +3092,9 @@
        以前这里锁死在 MODE === "c"，所以切到另外两种模式就整块消失。 */
     var vit = "";
     var VG = vitalsGroups();
-    if (VG.length) vit = vitalsHtml(vitalsOfGroups(VG), vitalsDim());
-    /* 打标数据与展示模式无关：以前只在「类目对比」里调用 ensureTags，
-       结果普通的时间对比模式下标签压根没去取，卡片浮层自然永远不出。 */
-    ensureTags(CACHE.items);
+    /* 详情默认收起 → 只有用户展开时才生成，切类目不再白算七节 */
+    if (VG.length) vit = vitalsHtml(vitalsOfGroups(VG), vitalsDim(), { lazyDetail: !REP_OPEN });
+    /* 打标数据已在函数开头取过一次（与展示模式无关） */
     var R = buildPools(CAP);
     if (ONLY !== "off" && !R.kept) {
       box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
@@ -3923,7 +4093,10 @@
     var sites = sitesForQuery();
     var periods = activePeriods();
     if (!sites.length || !periods.length) { renderBody(); renderBar(); return; }
-    if (box) box.innerHTML = '<div class="rk-empty">加载中…</div>';
+    /* 命中缓存就别闪「加载中」——闪一下反而更显得卡 */
+    var _k = itemsKey();
+    var _cached = (CACHE && CACHE.key === _k) || !!cacheGet(_k);
+    if (box && !_cached) box.innerHTML = '<div class="rk-empty">加载中…</div>';
     await fetchItems();
     renderBody();
     renderBar();
@@ -4277,6 +4450,23 @@
       fitValOfFit: fitValOfFit,
       trendValsOf: trendValsOf,
       repQualityHtml: repQualityHtml,
+      /* 20261103E：视觉背景（scene_tags）相关的内部函数 */
+      repBgCharts: repBgCharts,
+      repBgGroups: repBgGroups,
+      repBgText: repBgText,
+      repFullDataHtml: repFullDataHtml,
+      repMatrixHtml: repMatrixHtml,
+      repProfile: repProfile,
+      /* 20261103F：标签就绪门控 / 报告懒加载 / 多组合缓存 */
+      tagsSettled: tagsSettled,
+      fillRepDetail: fillRepDetail,
+      repDetailTopHtml: repDetailTopHtml,
+      repDetailBottomHtml: repDetailBottomHtml,
+      cacheGet: cacheGet,
+      cachePut: cachePut,
+      setRepOpen: function (v) { REP_OPEN = !!v; },
+      setTagState: function (k, busy) { TAG_KEY = k || ""; TAG_BUSY = !!busy; },
+      repTagPct: repTagPct,
       elementHasGraphic: elementHasGraphic,
       isPatchLabel: isPatchLabel,
       craftIsPrint: craftIsPrint,

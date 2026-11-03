@@ -2276,6 +2276,13 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
   background: var(--shade); border: 1px solid var(--line); cursor: zoom-in;
   transition: transform .18s, box-shadow .18s, border-color .18s;
 }
+/* 20261103F：一屏可能上百张卡片，屏幕外的卡没必要参与布局与绘制。
+   content-visibility 让浏览器跳过视口外的渲染，切类目时首屏出图明显更快；
+   contain-intrinsic-size 预留占位，滚动条不会跳。 */
+.rk-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 220px 293px;
+}
 .rk-card img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; }
 .rk-card:hover { transform: translateY(-2px); border-color: var(--gold); box-shadow: 0 8px 18px rgba(60,52,42,.14); }
 .rk-badge {

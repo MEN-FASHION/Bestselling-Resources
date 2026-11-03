@@ -164,11 +164,11 @@ for (let i = 0; i < 8; i++) {
   /* 刻意不给面料打标：四维里空一格 */
   add2("f" + i, C1, {
     craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], style_tags: ["户外机能"],
-    shoot_tags: ["平铺拍"], visual_tags: [i < 5 ? "室外·街景（城市商业街）" : "纯白底"],
+    shoot_tags: ["平铺拍"], scene_tags: [i < 5 ? "室外·街景（城市商业街）" : "纯白底"], visual_tags: ["单图满版"],
   });
   add2("g" + i, C2, {
     craft_tags: ["水洗"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], style_tags: ["商务通勤"],
-    shoot_tags: ["模特拍"], visual_tags: [i < 3 ? "室内·棚拍（纯色浅灰）" : "纯白底"],
+    shoot_tags: ["模特拍"], scene_tags: [i < 3 ? "室内·棚拍（纯色浅灰）" : "纯白底"], visual_tags: ["留白构图"],
   });
 }
 T.set({ facets: { sites: [S1], periods: [P2], categories: [C1, C2] }, tags: tags2, groups: [], mode: "c", cat: C1,
@@ -189,11 +189,11 @@ function add3(url, cat, tag) { items3.push(mk({ image_url: url, category: cat })
 for (let i = 0; i < 8; i++) {
   add3("v" + i, C1, {
     craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"],
-    visual_tags: [i < 6 ? "室外·街景（城市商业街）" : "纯白底"],
+    scene_tags: [i < 6 ? "室外·街景（城市商业街）" : "纯白底"], visual_tags: ["单图满版"],
   });
   add3("w" + i, C2, {
     craft_tags: ["水洗"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], fabric_tags: ["涤纶（100%涤）"],
-    visual_tags: [i < 6 ? "室内·棚拍（纯色浅灰）" : "纯白底"],
+    scene_tags: [i < 6 ? "室内·棚拍（纯色浅灰）" : "纯白底"], visual_tags: ["留白构图"],
   });
 }
 T.set({ facets: { sites: [S1], periods: [P2], categories: [C1, C2] }, tags: tags3, groups: [], mode: "c", cat: C1,
