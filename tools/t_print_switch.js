@@ -114,5 +114,57 @@ T.setPrintHide(false);
 const V2 = T.vitalsOfGroups(T.vitalsGroups());
 ok("开关打开后样本数回到 6", V2[0].n === 6, "n=" + V2[0].n);
 
+
+/* ---------------- 6. 20261103C：图案款判定补全 ----------------
+   真实漏判：图案元素写「字母 / 文字标语 / 卡通人物」、图案类型写「几何图案 / 格纹 / 迷彩」
+   的款，一个字都没提"印花"，旧口径全放过，开关关了还留在前台。
+   这里锁住新口径：按「有没有图案」判，同时不把辅料、结构件、纯配色算进来。 */
+console.log("\n[6] 图案款判定补全（20261103C）");
+const items6 = [
+  mk({ image_url: "e1" }),   /* 图案类型空 + 元素「文字标语」= 截图里那种款 */
+  mk({ image_url: "e2" }),   /* 图案类型「几何图案」 */
+  mk({ image_url: "e3" }),   /* 图案类型「格纹」 */
+  mk({ image_url: "e4" }),   /* 图案类型「迷彩」 */
+  mk({ image_url: "e5" }),   /* 图案类型「纯色/无图案」，元素「字母」 */
+  mk({ image_url: "n1" }),   /* 纯色 + 拼色，元素「纯色」→ 不算 */
+  mk({ image_url: "n2" }),   /* 元素里混了结构件「荷叶边」+ 纯色 → 不算 */
+  mk({ image_url: "n3" }),   /* 只有辅料「印花标」→ 不算 */
+];
+const tags6 = {
+  e1: { pattern_tags: [], element_tags: ["文字标语"], craft_tags: ["无工艺"] },
+  e2: { pattern_tags: ["几何图案"], element_tags: ["纯色"], craft_tags: ["无工艺"] },
+  e3: { pattern_tags: ["格纹"], element_tags: ["纯色"], craft_tags: ["无工艺"] },
+  e4: { pattern_tags: ["迷彩"], element_tags: ["纯色"], craft_tags: ["刺绣"] },
+  e5: { pattern_tags: ["纯色/无图案"], element_tags: ["字母"], craft_tags: ["无工艺"] },
+  n1: { pattern_tags: ["纯色/无图案", "拼色"], element_tags: ["纯色"], craft_tags: ["无工艺"] },
+  n2: { pattern_tags: ["纯色/无图案"], element_tags: ["荷叶边"], craft_tags: ["无工艺"] },
+  n3: { pattern_tags: ["纯色/无图案"], element_tags: ["纯色"], craft_tags: ["印花标"] },
+};
+T.set({ facets: { sites: ["美国站"], periods: ["2026-W43"], categories: ["外套夹克"] },
+  tags: tags6, groups: [], mode: "c", cat: "外套夹克", cats: ["外套夹克"],
+  sites: ["美国站"], periods: ["2026-W43"], cache: { key: "print6", items: items6 } });
+
+ok("图案类型空 + 元素「文字标语」→ 算图案款（截图同款）", T.itemIsPrint(items6[0]) === true);
+ok("图案类型「几何图案」→ 算图案款", T.itemIsPrint(items6[1]) === true);
+ok("图案类型「格纹」→ 算图案款", T.itemIsPrint(items6[2]) === true);
+ok("图案类型「迷彩」→ 算图案款", T.itemIsPrint(items6[3]) === true);
+ok("图案类型写纯色但元素写了「字母」→ 算图案款", T.itemIsPrint(items6[4]) === true);
+ok("纯色 + 拼色（只是配色）→ 不算图案款", T.itemIsPrint(items6[5]) === false);
+ok("元素里只有结构件「荷叶边」→ 不算图案款", T.itemIsPrint(items6[6]) === false);
+ok("只有「印花标」辅料 → 不算图案款", T.itemIsPrint(items6[7]) === false);
+ok("纯色/无图案 不算图案", T.patternTypeIsPattern("纯色/无图案") === false);
+ok("拼色 / 撞色 / 双色拼接 / 色块拼接 不算图案",
+  ["拼色", "撞色", "双色拼接", "色块拼接"].every(v => T.patternTypeIsPattern(v) === false));
+ok("格纹 / 竖条纹 / 豹纹 / 大花/花卉 算图案",
+  ["格纹", "竖条纹", "豹纹", "大花/花卉"].every(v => T.patternTypeIsPattern(v) === true));
+
+T.setPrintHide(true);
+ok("关掉开关后 5 个图案款全被挡掉", T.visibleItems().length === 3,
+  T.visibleItems().map(i => i.image_url).join(","));
+ok("拼色纯色款、结构件款、辅料款都还在",
+  ["n1", "n2", "n3"].every(u => T.visibleItems().some(i => i.image_url === u)));
+ok("隐藏数统计为 5", T.hiddenPrintCount(items6) === 5, String(T.hiddenPrintCount(items6)));
+T.setPrintHide(false);
+
 console.log("\n结果：通过 " + pass + "，失败 " + fail);
 process.exit(fail ? 1 : 0);

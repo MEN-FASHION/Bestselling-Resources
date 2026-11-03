@@ -275,16 +275,46 @@
     return /印花|满印|局部印|定位印|数码印|丝印|胶印|喷绘|喷墨|烫画|烫图|热转印|转移印|升华/.test(x);
   }
 
-  /* 一张图是不是「有印花图案」：图案类型 / 图案元素 / 二次工艺 任一处命中即算。
+  /* 20261103C：只认「印花」三个字会大量漏判。
+     实际情况是：字母 / 文字标语 / 卡通人物 这类图案，打标时写在「图案元素」里，不写"印花"；
+     几何图案 / 格纹 / 迷彩 / 大花 写在「图案类型」里，也不写"印花"。
+     这些都是有图案的款，按旧口径全被判成"没印花"，于是开关关了也还留在前台。
+     现在改成按「有没有图案」判：
+       · 图案类型：除了「纯色/无图案」和纯配色类（拼色、撞色、双色拼接、色块拼接），都算有图案
+       · 图案元素：只要有实质内容就算有图案
+       · 明写印花的（满印 / 定位印花 / 热带印花…）仍然优先命中
+       · 结构件（拉链、荷叶边…）不是图案，单独排除 */
+  var NO_PATTERN_VALS = ["纯色/无图案", "纯色", "无图案", "无", "none", "-"];
+  var COLOR_BLOCK_VALS = ["拼色", "撞色", "双色拼接", "色块拼接"];
+  var STRUCT_VALS = ["拉链", "抽绳", "口袋", "工装口袋", "贴袋", "口袋盖", "荷叶边", "蕾丝", "镂空",
+    "绑带", "开衩", "翻边", "双层", "腰带", "金属扣件", "织带", "肩章", "臂章", "反光条", "褶皱"];
+
+  function graphicVal(v) {
+    var x = String(v || "").trim();
+    if (!x || isPatchLabel(x)) return false;
+    if (NO_PATTERN_VALS.indexOf(x) >= 0) return false;
+    if (COLOR_BLOCK_VALS.indexOf(x) >= 0) return false;
+    if (STRUCT_VALS.indexOf(x) >= 0) return false;
+    return true;
+  }
+  /* 图案类型里「有图案」：纯色 / 纯配色 之外的取值 */
+  function patternTypeIsPattern(v) { return graphicVal(v); }
+  /* 图案元素里「有内容」：写了具体图案内容 */
+  function elementHasGraphic(v) { return graphicVal(v); }
+
+  /* 一张图是不是「有图案（印花）款」：
+     图案类型有图案 / 图案元素有内容 / 二次工艺是图案复制类，任一处命中即算。
      标签还没取到的图一律不隐藏 —— 宁可不藏，也不要把没数据的款误伤掉。 */
   function itemIsPrint(it) {
     var u = String((it && it.image_url) || "");
     if (!u) return false;
     var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
     if (!t) return false;
-    return (t.pattern_tags || []).some(patternIsPrint)
-      || (t.element_tags || []).some(patternIsPrint)
-      || (t.craft_tags || []).some(function (v) { return !isPatchLabel(v) && craftIsPrint(v); });
+    var P = tagArr(t.pattern_tags), E = tagArr(t.element_tags), C = tagArr(t.craft_tags);
+    if (P.some(patternIsPrint) || E.some(patternIsPrint)) return true;
+    if (P.some(patternTypeIsPattern)) return true;
+    if (E.some(elementHasGraphic)) return true;
+    return C.some(function (v) { return !isPatchLabel(v) && craftIsPrint(v); });
   }
   function printOk(it) { return !PRINT_HIDE || !itemIsPrint(it); }
 
@@ -2479,7 +2509,7 @@
       + '每个维度的全部取值，不截断。张数 = 该取值在列内出现最多的张数，占比 = 占该列该维度已打标图数的比例</span></h4>'
       + '<div class="rk-rep-scroll"><table class="rk-full-table"><thead>' + thead + "</thead><tbody>"
       + body + '</tbody></table></div>'
-      + (PRINT_HIDE ? '<p class="rk-rep-note">口径：后台已关闭「图案印花款」前台展示，含印花图案的款式（图案类型 / 图案元素 / 图案复制类工艺任一命中）不参与本报告的样本、占比与结论；章仔 / 织唛 / 印花标这类辅料标牌不属于印花图案，仍计入。</p>' : '')
+      + (PRINT_HIDE ? '<p class="rk-rep-note">口径：后台已关闭「图案印花款」前台展示，含图案的款式不参与本报告的样本、占比与结论。判定范围：图案类型不是「纯色/无图案」或纯配色（拼色 / 撞色 / 双色拼接 / 色块拼接）、图案元素写了具体图案内容（字母 / 文字标语 / 卡通人物 / 花朵…）、二次工艺属图案复制类，满足任一即计入；章仔 / 织唛 / 印花标这类辅料标牌与拉链 / 荷叶边这类结构件不属于图案，仍计入。</p>' : '')
       + '<p class="rk-rep-note">口径：纯白底属平台通用底，不展示；印花 / 烫画 / 烫金 / 烫钻这类「图案复制类」二次工艺'
       + '只换图案、不带来质感差异，整类不展示（原始标签仍可在逐张看图时查看）。共 ' + rows + ' 行。</p>'
       + "</section>";
@@ -2841,7 +2871,7 @@
     var _hidPrt = hiddenPrintCount(CACHE.items);
     if (!all.length) {
       box.innerHTML = _hidPrt
-        ? '<div class="rk-empty">当前标签下的 ' + _hidPrt + ' 个款都含印花图案，后台「图案印花款」开关已关闭，因此这里没有图。<br>要看到它们，请到后台把那项开关打开。</div>'
+        ? '<div class="rk-empty">当前标签下的 ' + _hidPrt + ' 个款都是有图案的款，后台「图案印花款」开关已关闭，因此这里没有图。<br>要看到它们，请到后台把那项开关打开。</div>'
         : '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>';
       return;
     }
@@ -2877,7 +2907,7 @@
     }
     if (_hidPrt) {
       html += '<div class="rk-dropnote">后台已关闭「图案印花款」前台展示，本次隐藏 <b>' + _hidPrt
-        + '</b> 个含印花图案的款式（章仔 / 织唛 / 印花标这类辅料不计入）。</div>';
+        + '</b> 个含图案的款式（章仔 / 织唛 / 印花标这类辅料、拉链 / 荷叶边这类结构件不计入）。</div>';
     }
     var cov = coverageOf();
     if (cov.total) {
@@ -4202,6 +4232,8 @@
       /* 20261103A：图案印花款开关相关的内部函数，供离屏测试直接调用 */
       itemIsPrint: itemIsPrint,
       patternIsPrint: patternIsPrint,
+      patternTypeIsPattern: patternTypeIsPattern,
+      elementHasGraphic: elementHasGraphic,
       isPatchLabel: isPatchLabel,
       craftIsPrint: craftIsPrint,
       PRINT_HIDE: function () { return PRINT_HIDE; },
