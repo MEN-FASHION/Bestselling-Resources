@@ -3269,6 +3269,26 @@ async removeTrendRecord(id) {
       return next;
     },
 
+    // ============ 图案印花款 · 前台展示开关（20261103A） ============
+    // 存于 site_settings.frontend_dims.pattern_print_visible：true / 未设置 = 展示；false = 有印花图案的款整款隐藏。
+    // 复用现有配置列，无需改表结构。
+    async getPatternPrintVisible() {
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error || !data || !data.frontend_dims) return true;
+      const v = data.frontend_dims.pattern_print_visible;
+      return v === false ? false : true;
+    },
+    async setPatternPrintVisible(visible) {
+      const { data, error } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      if (error) throw new Error(error.message || "读取配置失败");
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.pattern_print_visible = !!visible;   // 只改这一个键，其余配置原样保留
+      const up = await client
+        .from("site_settings").update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (up.error) throw new Error(up.error.message || "保存开关失败");
+      return !!visible;
+    },
+
     // 前台类目「已删除清单」：内置候选清单（config.js 写死）会把删掉的类目又带回来，
     // 用这份清单把被删的名字压住，才能真正删掉。
     async getCatRemoved() {

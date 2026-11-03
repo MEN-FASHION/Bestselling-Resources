@@ -48,6 +48,9 @@
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
   var SEL_CATS_LEN = 0;      // 上一次的类目个数：切类目时保持列数不突然变
   var TAG_INDEX = {};        // 图片打标索引（url → 打标维度），类目对比用它算拍摄方式 / 元素
+  /* 20261103A：图案印花款前台展示开关（后台可关）。
+     false = 展示（默认）；true = 有印花图案的款整款不展示，榜单 / 统计 / 报告一起变。 */
+  var PRINT_HIDE = false;
   var TAG_KEY = "";          // 已加载的索引对应哪一批图，避免重复请求
   var TAG_BUSY = false;
   var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
@@ -116,7 +119,8 @@
   }
   /* 打标覆盖率：用户不想一张张悬停去数，这里直接给出「本视图共几张、几张有标」 */
   function coverageOf() {
-    var items = (CACHE && CACHE.items) || [];
+    /* 分母跟展示口径一致：印花款开关关闭时，被隐藏的款不计入「共 N 张图」 */
+    var items = ((CACHE && CACHE.items) || []).filter(printOk);
     var total = items.length, has = 0;
     items.forEach(function (it) { if (hasTagData(it)) has++; });
     return { total: total, has: has, pct: total ? Math.round(has / total * 100) : 0 };
@@ -258,12 +262,45 @@
     return items;
   }
 
-  function hitTags(it) {
+  /* ---------- 图案印花款判定（20261103A） ----------
+     先把「章仔 / 织唛 / 印花标」这类辅料牌剔出去：它们的名字里带「印花」，但那是印在标上的字，
+     不是衣服上的印花图案 —— 之前会被误判成印花款一起隐藏。 */
+  var PATCH_LABEL_RE = /章仔|织唛|烫标|印花标|皮标|绣标|刺绣贴|肩章|臂章|商标|吊牌|洗标|尺码标|挂牌|标识牌/;
+  function isPatchLabel(v) { return PATCH_LABEL_RE.test(String(v || "")); }
+
+  /* 图案类型 / 图案元素里的印花类取值（满印、定位印花、局部印花、热带印花…） */
+  function patternIsPrint(v) {
+    var x = String(v || "");
+    if (!x || isPatchLabel(x)) return false;
+    return /印花|满印|局部印|定位印|数码印|丝印|胶印|喷绘|喷墨|烫画|烫图|热转印|转移印|升华/.test(x);
+  }
+
+  /* 一张图是不是「有印花图案」：图案类型 / 图案元素 / 二次工艺 任一处命中即算。
+     标签还没取到的图一律不隐藏 —— 宁可不藏，也不要把没数据的款误伤掉。 */
+  function itemIsPrint(it) {
+    var u = String((it && it.image_url) || "");
+    if (!u) return false;
+    var t = TAG_INDEX[u] || TAG_INDEX[u.split("?")[0].split("#")[0]];
+    if (!t) return false;
+    return (t.pattern_tags || []).some(patternIsPrint)
+      || (t.element_tags || []).some(patternIsPrint)
+      || (t.craft_tags || []).some(function (v) { return !isPatchLabel(v) && craftIsPrint(v); });
+  }
+  function printOk(it) { return !PRINT_HIDE || !itemIsPrint(it); }
+
+  function hitTagsRaw(it) {
     if (!TAGS.length || TAGS.indexOf("all") >= 0) return true;
     if (TAGS.indexOf("surge") >= 0 && it._surge) return true;
     if (TAGS.indexOf("hot") >= 0 && it._hot) return true;
     if (TAGS.indexOf("opportunity") >= 0 && it._opp) return true;
     return false;
+  }
+  /* 榜单 / 统计 / 报告统一走这一个入口：印花款开关在这里生效 */
+  function hitTags(it) { return hitTagsRaw(it) && printOk(it); }
+  /* 被开关挡掉的张数（用于页面上说明「隐藏了几个款」） */
+  function hiddenPrintCount(items) {
+    if (!PRINT_HIDE) return 0;
+    return (items || []).filter(function (it) { return hitTagsRaw(it) && !printOk(it); }).length;
   }
 
   function sortItems(arr) {
@@ -1327,7 +1364,7 @@
   /* 当前模式下的「对比列」→ 每组一把待统计的图。
      与 buildPools 的列口径保持一致：列有哪几个，体征卡就有哪几张。 */
   function vitalsGroups() {
-    var items = (CACHE && CACHE.items) || [];
+    var items = ((CACHE && CACHE.items) || []).filter(printOk);   /* 印花款开关同样管到体征卡与报告 */
     var periods = activePeriods();
     var pLast = periods[periods.length - 1] || "";
     var sites = poolSites();
@@ -1392,7 +1429,7 @@
       /* 20261102L：结构部件 / 面料进统计。这两个维度是商家真正能改的东西
          （拉链、口袋、荷叶边怎么加，面料选什么），过去只在画廊标签里能看到，
          报告里没参与对照，等于白打。 */
-      var sdCnt = {}, sdTot = 0, fbCnt = {}, fbTot = 0;
+      var sdCnt = {}, sdTot = 0, fbCnt = {}, fbTot = 0, cfRawTot = 0;
       mine.forEach(function (it) {
         var t = TAG_INDEX[it.image_url];
         if (!t) return;
@@ -1429,6 +1466,11 @@
         tagArr(t.craft_tags).forEach(function (v) {
           if (v !== null && v !== undefined && String(v) !== "") cfAny = 1;   /* 有标签就算进分母 */
           if (skill_none(v)) return;
+          /* 20261102Z：印花 / 烫画 / 烫金 / 烫钻这类「图案复制类」整类不进统计，
+             报告里不出现它们的数字（不只是不推荐）。分母仍按已打标图数算，
+             所以刺绣 30% 还是 30%，不会被抬高。 */
+          cfRawTot++;                    /* 记下"有工艺标签"，供判定是否为全图案类 */
+          if (craftIsPrint(v)) return;
           if (cfSet[v] === undefined) { cfSet[v] = 1; cfCnt[v] = (cfCnt[v] || 0) + 1; nCf++; }
         });
         if (cfAny) cfTot++;
@@ -1456,12 +1498,23 @@
         return Object.keys(obj).map(function (k) { return [k, Math.round(obj[k] / tot * 100), obj[k]]; })
           .sort(function (a, b) { return b[1] - a[1]; }).slice(0, lim);
       };
+      /* 20261102Z：报告「全量数据」需要不截断的完整取值表，
+         卡片与对照表仍用上面的 top3/top4（省地方），这里单独给一份 all。 */
+      var allOf = function (obj, tot) { return tops(obj, tot, 1e9); };
       return {
         cat: g.label, key: g.key, empty: g.empty, n: n,
+        all: {
+          style: allOf(stCnt, stTot), visual: allOf(vCnt, vTot), shoot: allOf(sCnt, sTot),
+          elems: allOf(eCnt, eTot), craft: allOf(cfCnt, cfTot), struct: allOf(sdCnt, sdTot),
+          fabric: allOf(fbCnt, fbTot), fit: allOf(fCnt, fTot),
+          culture: allOf(cuCnt, cuTot), psych: allOf(psCnt, psTot)
+        },
         oppP: pct(opp, n), hotP: pct(hot, n), srgP: pct(srg, n),
         shoot: tops(sCnt, sTot, 4), elems: tops(eCnt, eTot, 3),
         style: tops(stCnt, stTot, 3), visual: tops(vCnt, vTot, 3), fit: tops(fCnt, fTot, 3),
         craft: tops(cfCnt, cfTot, 3), culture: tops(cuCnt, cuTot, 3), psych: tops(psCnt, psTot, 3),
+        /* 有工艺标签、但全部是图案复制类（已整类剔除）→ 这一列没有可推荐的质感工艺 */
+        printOnly: cfTot > 0 && cfRawTot > 0 && !Object.keys(cfCnt).length,
         struct: tops(sdCnt, sdTot, 3), fabric: tops(fbCnt, fbTot, 3),
         hasTag: sTot > 0 || eTot > 0 || stTot > 0 || cfTot > 0 || cuTot > 0 || psTot > 0 || sdTot > 0 || fbTot > 0,
         tagged: sTot, tagAny: tagAny
@@ -1581,9 +1634,17 @@
     return mx;
   }
 
-  /* 某具体标签在某一列的占比（没有则 0） */
+  /* 20261102Z：取该列的完整取值表（不截断）；老数据没有 all 时退回截断表 */
+  function repAll(col, key) {
+    if (!col) return [];
+    var a = col.all && col.all[key];
+    return (a && a.length) ? a : (col[key] || []);
+  }
+
+  /* 某具体标签在某一列的占比（没有则 0）—— 必须查全量表，
+     否则排在第 4 位之后的值会被算成 0% */
   function repTagPct(col, key, name) {
-    var hit = (col[key] || []).filter(function (e) { return e[0] === name; })[0];
+    var hit = repAll(col, key).filter(function (e) { return e[0] === name; })[0];
     return hit ? hit[1] : 0;
   }
 
@@ -1683,7 +1744,7 @@
 
     var one = function (d) {
       var names = {};
-      live.forEach(function (c) { (c[d[1]] || []).forEach(function (e) { names[e[0]] = 1; }); });
+      live.forEach(function (c) { repAll(c, d[1]).forEach(function (e) { names[e[0]] = 1; }); });
       var keys = Object.keys(names).map(function (nm) {
         var mx = 0;
         live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, d[1], nm)); });
@@ -1692,7 +1753,7 @@
         if (!(k.mx > 0)) return false;
         if (d[1] === "visual" && isWhiteBg(k.nm)) return false;
         return true;
-      }).sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
+      }).sort(function (a, b) { return b.mx - a.mx; });
       if (!keys.length) return "";
       return repDotChart({
         title: "图 · " + d[0],
@@ -1778,20 +1839,20 @@
       });
     }
 
-    /* 图 B：具体背景值 TOP5 */
+    /* 图 B：具体背景值（全量，20261102Z 起不再只取前 5） */
     var names = {};
     live.forEach(function (c) {
-      (c.visual || []).forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
+      repAll(c, "visual").forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
     });
     var keys = Object.keys(names).map(function (nm) {
       var mx = 0;
       live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, "visual", nm)); });
       return { nm: nm, mx: mx };
     }).filter(function (k) { return k.mx > 0; })
-      .sort(function (a, b) { return b.mx - a.mx; }).slice(0, 5);
+      .sort(function (a, b) { return b.mx - a.mx; });
     if (keys.length) {
       out += repDotChart({
-        title: "图 · 视觉背景 TOP5",
+        title: "图 · 视觉背景（全部取值）",
         legend: legend,
         rows: keys.map(function (k) {
           return {
@@ -2065,7 +2126,9 @@
   function skill_none(v) { return /^\s*无/.test(String(v || "")) || /无工艺/.test(String(v || "")); }
 
   function craftIsPrint(v) {
-    return /印花|喷绘|拔印|局部印|烫图|热转印|烫印|烫金|烫银|烫钻|水钻|镭射|夜光|反光印|植绒印/.test(String(v || ""));
+    /* 20261102Z：「图案复制类」判定补全 —— 数码印花 / 烫画 / 丝印 / 胶印 / 升华 等都属同一类，
+       本质是把图案贴到布上，不改变面料质感与手感。 */
+    return /印花|喷绘|喷墨|拔印|局部印|满印|烫图|烫画|热转印|转移印|烫印|烫金|烫银|烫钻|水钻|镭射|夜光|反光印|植绒印|丝印|丝网|胶印|升华|数码印/.test(String(v || ""));
   }
   /* 挑工艺：非图案类优先，图案类只留一个作补充 */
   function pickCraft(list) {
@@ -2089,7 +2152,7 @@
       /* 二次工艺：先挑质感结构类（刺绣 / 洗水 / 压褶 …），图案复制类降级 */
       var ck = pickCraft(c.craft);
       if (ck.other.length && ck.other[0][1] >= 20) {
-        var prtOne = ck.print.length && ck.print[0][1] >= 15 ? ck.print[0] : null;
+        var prtOne = null;   /* 20261102Z：图案复制类已在统计层剔除，不再作为补充说明出现 */
         out.push(nm + "的二次工艺里，质感类出现最多的是 " + pctTxt(ck.other[0])
           + listTxt(ck.other, ck.other[0][0], 2)
           + (prtOne ? "；印花 / 烫画类也有 " + esc(prtOne[0]) + "（" + prtOne[1] + "%），但那只是把图案贴到布上、不增加质感差异" : "")
@@ -2101,9 +2164,12 @@
           + listTxt(ck.other, ck.other[0][0], 2)
           + "，占比不高，只作方向参考。若想在这一维做出差异，可优先从这类能看出工艺感的方向试"
           + "（前提是工厂能做、且不额外增加合规成本）。");
-      } else if (ck.onlyPrint && ck.print[0][1] >= 25) {
-        out.push(nm + "的二次工艺在上榜图里以图案类为主（" + pctTxt(ck.print[0])
-          + "），这类工艺只换图案、不带来质感差异，撞款风险也高。若想拉开差异，可考虑往刺绣 / 压褶 / 洗水 / 毛边这些方向试"
+      }
+      /* 只有图案类工艺的列：这类值已不在报告数据里，就不给工艺建议，
+         改为一句中性的补空白提示，避免读者以为"这一列没有工艺"就是结论。 */
+      else if (c.printOnly || ck.onlyPrint) {
+        out.push(nm + "的二次工艺在上榜图里只有图案复制类（不展示），这类工艺只换图案、不带来质感差异。"
+          + "若想在这一维做区分，可考虑往刺绣 / 压褶 / 洗水 / 毛边这些方向试"
           + "（本列暂时没有这类工艺的数据支撑，属于补空白的思路，不是结论）。");
       }
       /* 结构部件：改动小、不牵动版型，性价比通常最高 */
@@ -2368,6 +2434,57 @@
       + rows.map(function (t) { return "<li>" + t + "</li>"; }).join("") + "</ul></section>";
   }
 
+
+  /* 20261102Z：全量数据明细。
+     图表为了能一眼看懂会挑重点，但核对时经常需要「这一列到底有哪些值、各多少张」。
+     这里把每个维度、每个取值、张数与占比全部摊开，不截断。
+     口径与正文一致：白底不展示、图案复制类工艺不展示、分母是该维度已打标的图数。 */
+  function repFullDataHtml(V, dim) {
+    var live = (V || []).filter(function (c) { return c.n > 0; });
+    if (!live.length) return "";
+    var cols = 4 + live.length;   /* 维度 / 取值 / 张数 / 占比 + 每列占比 */
+    var thead = '<tr><th>维度</th><th>取值</th><th>张数</th><th>占比</th>'
+      + live.map(function (c) { return '<th>' + esc(c.cat) + "</th>"; }).join("") + "</tr>";
+    var body = "", rows = 0;
+    REP_DIMS.forEach(function (d) {
+      /* 该维度在全列出现过的所有取值（并集），按最高占比排序 */
+      var names = {};
+      live.forEach(function (c) {
+        repAll(c, d[1]).forEach(function (e) {
+          if (!e || !e[0]) return;
+          if (d[1] === "visual" && isWhiteBg(e[0])) return;   /* 白底不展示 */
+          if (d[1] === "craft" && craftIsPrint(e[0])) return; /* 图案复制类不展示 */
+          names[e[0]] = 1;
+        });
+      });
+      var keys = Object.keys(names).map(function (nm) {
+        var mx = 0, cnt = 0;
+        live.forEach(function (c) {
+          var hit = repAll(c, d[1]).filter(function (e) { return e[0] === nm; })[0];
+          if (hit) { mx = Math.max(mx, hit[1]); cnt = Math.max(cnt, hit[2] || 0); }
+        });
+        return { nm: nm, mx: mx, cnt: cnt };
+      }).sort(function (a, b) { return b.mx - a.mx; });
+      if (!keys.length) return;
+      keys.forEach(function (k, ki) {
+        rows++;
+        body += '<tr>' + (ki === 0 ? '<th rowspan="' + keys.length + '">' + esc(d[0]) + "</th>" : "")
+          + "<td>" + esc(k.nm) + "</td><td>" + k.cnt + "</td><td>" + k.mx + "%</td>"
+          + live.map(function (c) { return "<td>" + repTagPct(c, d[1], k.nm) + "%</td>"; }).join("")
+          + "</tr>";
+      });
+    });
+    if (!body) return "";
+    return '<section class="rk-rep-sec rk-rep-full"><h4><em>七</em>全量数据<span class="rk-rep-h4-sub">'
+      + '每个维度的全部取值，不截断。张数 = 该取值在列内出现最多的张数，占比 = 占该列该维度已打标图数的比例</span></h4>'
+      + '<div class="rk-rep-scroll"><table class="rk-full-table"><thead>' + thead + "</thead><tbody>"
+      + body + '</tbody></table></div>'
+      + (PRINT_HIDE ? '<p class="rk-rep-note">口径：后台已关闭「图案印花款」前台展示，含印花图案的款式（图案类型 / 图案元素 / 图案复制类工艺任一命中）不参与本报告的样本、占比与结论；章仔 / 织唛 / 印花标这类辅料标牌不属于印花图案，仍计入。</p>' : '')
+      + '<p class="rk-rep-note">口径：纯白底属平台通用底，不展示；印花 / 烫画 / 烫金 / 烫钻这类「图案复制类」二次工艺'
+      + '只换图案、不带来质感差异，整类不展示（原始标签仍可在逐张看图时查看）。共 ' + rows + ' 行。</p>'
+      + "</section>";
+  }
+
   function vitalsHtml(V, dim) {
     if (!V.length) return "";
     dim = dim || vitalsDim();
@@ -2457,7 +2574,8 @@
     }
     h += '</section>';
     h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>'
-      + repActionHtml(V, dim) + repTrendHtml(V, dim) + repQualityHtml(V, dim) + '</div>';
+      + repActionHtml(V, dim) + repTrendHtml(V, dim) + repQualityHtml(V, dim)
+      + repFullDataHtml(V, dim) + '</div>';
     return h;
   }
 
@@ -2720,7 +2838,13 @@
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
 
     var all = CACHE.items.filter(hitTags);
-    if (!all.length) { box.innerHTML = '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>'; return; }
+    var _hidPrt = hiddenPrintCount(CACHE.items);
+    if (!all.length) {
+      box.innerHTML = _hidPrt
+        ? '<div class="rk-empty">当前标签下的 ' + _hidPrt + ' 个款都含印花图案，后台「图案印花款」开关已关闭，因此这里没有图。<br>要看到它们，请到后台把那项开关打开。</div>'
+        : '<div class="rk-empty">当前标签下没有匹配的图片，试试切换「趋势标签」。</div>';
+      return;
+    }
 
     /* 三种对比模式都先出「体征卡」（只比构成、不比张数），再出图片列：
        类目对比比类目、国家对比比国家、时间对比比周次。
@@ -2750,6 +2874,10 @@
           : ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的周列（该周这个国家 / 类目没有上传）'));
       html += '<div class="rk-dropnote">' + _dtxt + '，'
         + '剩余 <b>' + R.cols + '</b> 列已铺满宽度。</div>';
+    }
+    if (_hidPrt) {
+      html += '<div class="rk-dropnote">后台已关闭「图案印花款」前台展示，本次隐藏 <b>' + _hidPrt
+        + '</b> 个含印花图案的款式（章仔 / 织唛 / 印花标这类辅料不计入）。</div>';
     }
     var cov = coverageOf();
     if (cov.total) {
@@ -3822,6 +3950,10 @@
 
     try { FACETS = await SBX.rankFacets(); } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 后台可以控制哪些国家站点 / 周次在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */
+    /* 图案印花款前台展示开关：关掉时含印花图案的款不参与榜单、统计与报告 */
+    try {
+      if (SBX && typeof SBX.getPatternPrintVisible === "function") PRINT_HIDE = (await SBX.getPatternPrintVisible()) === false;
+    } catch (e) { PRINT_HIDE = false; }
     try { HIDDEN = await SBX.getRankHidden(); } catch (e) { HIDDEN = { sites: [], periods: [] }; }
     HIDDEN = { sites: (HIDDEN && HIDDEN.sites) || [], periods: (HIDDEN && HIDDEN.periods) || [] };
     FACETS.sites = FACETS.sites || [];
@@ -4066,7 +4198,17 @@
       insightsOf: insightsOf,
       lbTagsHtml: lbTagsHtml,
       lbTagGroups: lbTagGroups,
-      tagFingerprint: tagFingerprint
+      tagFingerprint: tagFingerprint,
+      /* 20261103A：图案印花款开关相关的内部函数，供离屏测试直接调用 */
+      itemIsPrint: itemIsPrint,
+      patternIsPrint: patternIsPrint,
+      isPatchLabel: isPatchLabel,
+      craftIsPrint: craftIsPrint,
+      PRINT_HIDE: function () { return PRINT_HIDE; },
+      setPrintHide: function (v) { PRINT_HIDE = !!v; },
+      hiddenPrintCount: hiddenPrintCount,
+      coverageOf: coverageOf,
+      visibleItems: function () { return ((CACHE && CACHE.items) || []).filter(function (it) { return hitTagsRaw(it) && printOk(it); }); }
     };
   }
 

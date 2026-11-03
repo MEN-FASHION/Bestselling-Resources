@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261102Y">
-<link rel="stylesheet" href="css/channel.css?v=20261102Y">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261102Y">
+<link rel="stylesheet" href="css/style.css?v=20261103B">
+<link rel="stylesheet" href="css/channel.css?v=20261103B">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261103B">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -243,6 +243,14 @@
           <h3 class="tbs-title">前台展示开关 <span class="hint-inline">（关闭后该维度标签在前台不可见）</span></h3>
           <p class="hint">每个标签维度都可单独控制是否在前台展示；关闭后，前台筛选栏与该维度在图片上的标签均不显示。</p>
           <div id="frontend-dim-switches" class="frontend-dim-switches"></div>
+        </div>
+        <hr class="tag-sub-hr">
+
+        <div class="tag-sub">
+          <h3 class="tbs-title">图案印花款 · 前台展示 <span class="hint-inline">（关闭后含印花图案的款式整个前台都不展示）</span></h3>
+          <p class="hint">识别依据：图案类型里的满印 / 定位印花 / 局部印花，图案元素里的印花类，二次工艺里的印花 / 烫画 / 烫金 / 烫钻等（即「图案复制类」）。关闭后这些款不再出现在榜单、统计与报告里，数据库中的数据不受影响。</p>
+          <p class="hint"><b>章仔、织唛、印花标、烫标、皮标、绣标、肩章、臂章</b>这类辅料 / 标牌不属于印花图案，不会因此被隐藏。</p>
+          <div id="pattern-print-switch" class="frontend-dim-switches"></div>
         </div>
         <hr class="tag-sub-hr">
 
@@ -896,6 +904,12 @@
             <section class="rkadm-sec">
               <h4>期次 / 周度频次 <span class="rkadm-tip">按周次顺序排列 · 点名称改期次 · 点徽章切周度·月度 · ◉/◌ 控制前台是否展示</span></h4>
               <div id="rank-period-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>前台展示 · 图案印花款 <span class="rkadm-tip">关闭后含印花图案的款在前台整款不展示（榜单 / 统计 / 报告一起变）</span></h4>
+              <p class="hint">识别依据：图案类型里的满印 / 定位印花 / 局部印花，图案元素里的印花类，二次工艺里的印花 / 烫画 / 烫金 / 烫钻等。<b>章仔、织唛、印花标、烫标、皮标、绣标、肩章、臂章</b>这类辅料 / 标牌不属于印花图案，不会被隐藏。与「视觉专区 → 标签管理」里的是同一个开关。</p>
+              <div id="rank-pattern-print-switch" class="frontend-dim-switches"></div>
+              <p class="hint" id="rank-pattern-print-note"></p>
             </section>
           </div>
 
@@ -1684,40 +1698,40 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261102Y"></script>
-  <script src="vendor/quill.js?v=20261102Y"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261102Y"></script>
-  <script src="vendor/jszip.min.js?v=20261102Y"></script>
-  <script src="vendor/qrcode.min.js?v=20261102Y"></script>
-  <script src="js/config.js?v=20261102Y"></script>
-  <script src="js/supabase.js?v=20261102Y"></script>
-  <script src="js/track-menu.js?v=20261102Y"></script>
+  <script src="vendor/supabase.js?v=20261103B"></script>
+  <script src="vendor/quill.js?v=20261103B"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261103B"></script>
+  <script src="vendor/jszip.min.js?v=20261103B"></script>
+  <script src="vendor/qrcode.min.js?v=20261103B"></script>
+  <script src="js/config.js?v=20261103B"></script>
+  <script src="js/supabase.js?v=20261103B"></script>
+  <script src="js/track-menu.js?v=20261103B"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261102Y"></script>
-  <script src="js/admin.js?v=20261102Y"></script>
-  <script src="js/admin-images.js?v=20261102Y"></script>
-  <script src="js/rank-enums.js?v=20261102Y"></script>
-  <script src="js/imageexport.js?v=20261102Y"></script>
-  <script src="js/admin-imageimport.js?v=20261102Y"></script>
-  <script src="js/admin-movement.js?v=20261102Y"></script>
-  <script src="js/admin-channel.js?v=20261102Y"></script>
-  <script src="js/admin-smart.js?v=20261102Y"></script>
-  <script src="js/admin-trend.js?v=20261102Y"></script>
-  <script src="js/admin-notice.js?v=20261102Y"></script>
-  <script src="js/marketing-data.js?v=20261102Y"></script>
-  <script src="js/admin-festival.js?v=20261102Y"></script>
-  <script src="js/admin-tasks.js?v=20261102Y"></script>
-  <script src="js/admin-bestseller.js?v=20261102Y"></script>
-  <script src="js/admin-perm.js?v=20261102Y"></script>
-  <script src="js/admin-pool.js?v=20261102Y"></script>
-  <script src="js/rankexport.js?v=20261102Y"></script>
-  <script src="js/admin-rankimport.js?v=20261102Y"></script>
-  <script src="js/admin-rank.js?v=20261102Y"></script>
-  <script src="js/plus-sb.js?v=20261102Y"></script>
-  <script src="js/plus-match.js?v=20261102Y"></script>
-  <script src="js/admin-plus.js?v=20261102Y"></script>
-  <script src="js/admin-insight.js?v=20261102Y"></script>
-  <script src="js/admin-backup.js?v=20261102Y"></script>
+  <script src="js/admin-dialog.js?v=20261103B"></script>
+  <script src="js/admin.js?v=20261103B"></script>
+  <script src="js/admin-images.js?v=20261103B"></script>
+  <script src="js/rank-enums.js?v=20261103B"></script>
+  <script src="js/imageexport.js?v=20261103B"></script>
+  <script src="js/admin-imageimport.js?v=20261103B"></script>
+  <script src="js/admin-movement.js?v=20261103B"></script>
+  <script src="js/admin-channel.js?v=20261103B"></script>
+  <script src="js/admin-smart.js?v=20261103B"></script>
+  <script src="js/admin-trend.js?v=20261103B"></script>
+  <script src="js/admin-notice.js?v=20261103B"></script>
+  <script src="js/marketing-data.js?v=20261103B"></script>
+  <script src="js/admin-festival.js?v=20261103B"></script>
+  <script src="js/admin-tasks.js?v=20261103B"></script>
+  <script src="js/admin-bestseller.js?v=20261103B"></script>
+  <script src="js/admin-perm.js?v=20261103B"></script>
+  <script src="js/admin-pool.js?v=20261103B"></script>
+  <script src="js/rankexport.js?v=20261103B"></script>
+  <script src="js/admin-rankimport.js?v=20261103B"></script>
+  <script src="js/admin-rank.js?v=20261103B"></script>
+  <script src="js/plus-sb.js?v=20261103B"></script>
+  <script src="js/plus-match.js?v=20261103B"></script>
+  <script src="js/admin-plus.js?v=20261103B"></script>
+  <script src="js/admin-insight.js?v=20261103B"></script>
+  <script src="js/admin-backup.js?v=20261103B"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

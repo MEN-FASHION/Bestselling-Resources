@@ -40,13 +40,13 @@ ok("测试钩子已挂出", !!T);
 const mk = (o) => Object.assign({ image_url: "", category: "外套夹克", site: "美国站", period_label: "2026-W43",
   _opp: false, _hot: false, _surge: false }, o);
 
-/* A 列：工艺数码印制 + 结构件拉链 + 版型收腰 + 面料纯棉，且带一个显眼的印花元素
+/* A 列：工艺刺绣 + 结构件拉链 + 版型收腰 + 面料纯棉，且带一个显眼的印花元素
    B 列：无工艺 + 口袋 + 常规版型 + 涤纶
    印花元素只给 A 列，用来验证「即便它最独有，也不该被推荐」 */
 const tags = {
-  a1: { craft_tags: ["数码印制"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
-  a2: { craft_tags: ["数码印制"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
-  a3: { craft_tags: ["数码印制"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
+  a1: { craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
+  a2: { craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
+  a3: { craft_tags: ["刺绣"], struct_tags: ["拉链"], fit_tags: ["版型·收腰"], fabric_tags: ["纯棉（100%棉）"], element_tags: ["骷髅"], style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"] },
   b1: { craft_tags: ["无工艺"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], fabric_tags: ["涤纶（100%涤）"], event_tags: [], style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"] },
   b2: { craft_tags: ["无工艺"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], fabric_tags: ["涤纶（100%涤）"], style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"] },
   b3: { craft_tags: ["无工艺"], struct_tags: ["口袋"], fit_tags: ["版型·常规"], fabric_tags: ["涤纶（100%涤）"], style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"] },
@@ -94,16 +94,20 @@ ok("结构件建议在版型之前", actSec.indexOf("的结构部件里") < actS
 ok("版型建议在面料之前", actSec.indexOf("的版型以") < actSec.indexOf("的面料候选里"));
 ok("建议里不出现印花/元素推荐", html.indexOf("做区分标识") < 0 && html.indexOf("系列识别点") < 0);
 ok("建议里不出现「骷髅」（即使它是最独有的元素）", html.indexOf("骷髅") < 0, "印花不该被推荐");
+/* 20261102Z：图案复制类工艺整类不入报告（不只是不推荐） */
+/* 口径说明段（.rk-rep-note）本身要解释"为什么剔除"，比对时先剔除该段 */
+const noNote = html.replace(/<p class="rk-rep-note">[\s\S]*?<\/p>/g, "");
+ok("报告正文不出现图案复制类工艺字样", !/数码印花|烫画|热转印/.test(noNote));
 
 /* ---------------- 4. 画像句 ---------------- */
 console.log("\n[4] 逐列画像句");
-ok("画像句以工艺开头", html.indexOf("工艺主打「数码印制」") >= 0);
+ok("画像句以工艺开头", html.indexOf("工艺主打「刺绣」") >= 0);
 ok("画像句含结构件", html.indexOf("结构件集中在「拉链」") >= 0);
 ok("画像句含版型", html.indexOf("版型以「收腰」为主") >= 0);
 ok("画像句含面料", html.indexOf("面料多为「纯棉") >= 0);
 ok("画像句不再以风格开头", html.indexOf("风格以「") < 0);
 ok("画像句里工艺排在结构件之前",
-  html.indexOf("工艺主打「数码印制」") < html.indexOf("结构件集中在「拉链」"));
+  html.indexOf("工艺主打「刺绣」") < html.indexOf("结构件集中在「拉链」"));
 
 /* ---------------- 5. 报告头写明视角 ---------------- */
 console.log("\n[5] 报告头");

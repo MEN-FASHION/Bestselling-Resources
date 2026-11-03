@@ -887,7 +887,40 @@ async function clearTags() {
 async function loadFrontendDims() {
     try { dimSwitches = await SB.getFrontendDims(); } catch (e) { dimSwitches = {}; }
     renderFrontendDims();
+    loadPatternPrintSwitch();
   }
+
+/* 20261103A：图案印花款 · 前台展示开关。
+   与上面「维度标签开关」不是一回事：维度开关只隐藏某一个标签的显示，
+   这个开关会把「含印花图案的整款」从榜单 / 统计 / 报告里撤掉。 */
+let patternPrintVisible = true;
+async function loadPatternPrintSwitch() {
+  const box = document.getElementById("pattern-print-switch");
+  if (!box) return;
+  try { patternPrintVisible = await SB.getPatternPrintVisible(); } catch (e) { patternPrintVisible = true; }
+  renderPatternPrintSwitch();
+}
+function renderPatternPrintSwitch() {
+  const box = document.getElementById("pattern-print-switch");
+  if (!box) return;
+  const on = patternPrintVisible !== false;
+  box.innerHTML = "";
+  const row = document.createElement("div");
+  row.className = "fds-row" + (on ? " on" : "");
+  row.innerHTML = `<span class="fds-name">图案印花款</span><span class="fds-switch${on ? " on" : ""}"><i></i></span>`
+    + `<span class="fds-state">${on ? "展示" : "隐藏"}</span>`;
+  row.title = on ? "前台展示含印花图案的款式 · 点击关闭" : "前台已隐藏含印花图案的款式 · 点击恢复";
+  row.onclick = async () => {
+    const next = !(patternPrintVisible !== false);
+    patternPrintVisible = next;
+    renderPatternPrintSwitch();
+    try {
+      await SB.setPatternPrintVisible(next);
+      sbToast(next ? "已开启「图案印花款」前台展示" : "已关闭「图案印花款」前台展示：含印花图案的款不再出现在前台");
+    } catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
+  };
+  box.appendChild(row);
+}
 
 function renderFrontendDims() {
     const box = document.getElementById("frontend-dim-switches");

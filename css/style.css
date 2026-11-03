@@ -6322,6 +6322,19 @@ html, body{
 
 /* 逐列画像 */
 .rk-rep-cols .rk-vitals{margin-top:2px}
+/* 七、全量数据（20261102Z）：每个维度的全部取值摊开，长表在框内滚动 */
+.rk-rep-scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.rk-full-table{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
+.rk-full-table th,.rk-full-table td{padding:6px 10px;text-align:left;border-bottom:1px solid #f2efe8;
+  vertical-align:top;white-space:nowrap}
+.rk-full-table thead th{position:sticky;top:0;z-index:2;background:#f7f5f0;font-weight:600;
+  color:#5c5850;font-size:11.5px;border-bottom:1px solid var(--line)}
+.rk-full-table tbody th{font-weight:600;color:#6f6a61;background:#fcfbf8;font-size:11.5px;
+  border-right:1px solid var(--line)}
+.rk-full-table td:nth-child(3),.rk-full-table td:nth-child(4){color:#7b756a;font-variant-numeric:tabular-nums}
+.rk-full-table td:last-child,.rk-full-table th:last-child{padding-right:12px}
+.rk-full-table tbody tr:hover td{background:#fcfaf5}
+
 .rk-vit-prof{margin:7px 0 9px;font-size:12px;line-height:1.8;color:#5f5a51;
   padding-left:9px;border-left:2px solid #e6e0d3}
 

@@ -201,11 +201,13 @@ T.set({ facets: { sites: [S1], periods: [P2], categories: [C1, C2] }, tags: tags
 const h9 = T.vitalsHtml(T.vitalsOfGroups(T.vitalsGroups()), T.vitalsDim());
 ok("有视觉背景小节", h9.indexOf('class="rk-bg-block"') >= 0 && h9.indexOf("视觉背景</h5>") >= 0);
 ok("有室内/室外结构图", h9.indexOf("图 · 视觉背景（室内 / 室外结构）") >= 0);
-ok("有背景 TOP5 图", h9.indexOf("图 · 视觉背景 TOP5") >= 0);
+ok("有背景图（全部取值）", h9.indexOf("图 · 视觉背景（全部取值）") >= 0);
+ok("背景图不再只取前 5（源码里没有 slice(0, 5) 截断）",
+  !/视觉背景（全部取值）[\s\S]{0,300}slice\(0, 5\)/.test(RANK_SRC));
 ok("室外占比最高 75%（6/8，白底不计入占比）", /室外<em>最高 75%<\/em>/.test(h9) || h9.indexOf("最高 75%") >= 0, "见 note");
 ok("室内出现在结构图里", h9.indexOf("室内</span>") >= 0 || h9.indexOf(">室内<") >= 0);
 ok("全零分组行不画（无中性底行）", h9.indexOf(">中性底·其它<") < 0);
-ok("背景图剔除白底", !/rk-ch-rl">纯白底/.test(h9) && !/title="[^"]*纯白底/.test(h9) && !/图 · 视觉背景 TOP5[\s\S]{0,400}纯白底/.test(h9));
+ok("背景图剔除白底", !/rk-ch-rl">纯白底/.test(h9) && !/title="[^"]*纯白底/.test(h9) && !/图 · 视觉背景（全部取值）[\s\S]{0,400}纯白底/.test(h9));
 ok("有背景解读文案", /class="rk-bg-say"/.test(h9) && h9.indexOf("室外场景用得最多") >= 0);
 const say = (h9.match(/<p class="rk-bg-say">([\s\S]*?)<\/p>/) || [])[1] || "";
 ok("解读是推荐语气，不是命令", /可优先考虑/.test(say) && !/必须|一定要|别/.test(say),

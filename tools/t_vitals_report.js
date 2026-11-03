@@ -47,12 +47,12 @@ const mk = (o) => Object.assign({
 /* 刻意造出「两列差异极大」：A 列全是模拍 + 户外机能，B 列全是 3D + 商务通勤。
    这样报告必须把差异点出来，而不是平均罗列。 */
 const tags = {
-  a1: { style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"], craft_tags: ["数码印制"], element_tags: ["拼接"] },
-  a2: { style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"], craft_tags: ["数码印制"], element_tags: ["字母"] },
+  a1: { style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"], craft_tags: ["刺绣"], element_tags: ["拼接"] },
+  a2: { style_tags: ["户外机能"], visual_tags: ["纯白底"], shoot_tags: ["模拍"], craft_tags: ["刺绣"], element_tags: ["字母"] },
   a3: { style_tags: ["户外机能"], visual_tags: ["留白构图"], shoot_tags: ["模拍"], craft_tags: ["无工艺"], element_tags: ["拼接"] },
   a4: { style_tags: ["机车风"], visual_tags: ["纯白底"], shoot_tags: ["模拍"], craft_tags: ["无工艺"], element_tags: ["品牌LOGO"] },
-  b1: { style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"], craft_tags: ["数码印制"], element_tags: ["文字标"] },
-  b2: { style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"], craft_tags: ["数码印制"], element_tags: ["字母"] },
+  b1: { style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"], craft_tags: ["刺绣"], element_tags: ["文字标"] },
+  b2: { style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"], craft_tags: ["刺绣"], element_tags: ["字母"] },
   b3: { style_tags: ["商务通勤"], visual_tags: ["3D渲染图"], shoot_tags: ["3D"], craft_tags: ["热转印"], element_tags: ["文字标"] },
   b4: { style_tags: ["休闲"], visual_tags: ["单图精修"], shoot_tags: ["平铺拍"], craft_tags: ["无工艺"], element_tags: ["文字标"] },
 };

@@ -139,6 +139,46 @@
       sbToast(i >= 0 ? "已恢复前台展示：" + name : "已在前台隐藏：" + name, true);
     } catch (e) { sbToast((e && e.message) || "保存失败", false); }
   }
+  /* ---------- 图案印花款 · 前台展示开关（20261103B） ----------
+     与「视觉专区 → 标签管理」里的是同一个配置项，任一处改完另一处下次打开就是新值，
+     不会出现两个开关各说各的。 */
+  let rankPrintVisible = true;
+  async function loadRankPrintSwitch() {
+    const box = $("#rank-pattern-print-switch");
+    if (!box) return;
+    try { rankPrintVisible = await SB.getPatternPrintVisible(); } catch (e) { rankPrintVisible = true; }
+    renderRankPrintSwitch();
+  }
+  function renderRankPrintSwitch() {
+    const box = $("#rank-pattern-print-switch");
+    if (!box) return;
+    const on = rankPrintVisible !== false;
+    box.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "fds-row" + (on ? " on" : "");
+    row.innerHTML = '<span class="fds-name">图案印花款</span>'
+      + '<span class="fds-switch' + (on ? " on" : "") + '"><i></i></span>'
+      + '<span class="fds-state">' + (on ? "展示" : "隐藏") + '</span>';
+    row.title = on ? "前台展示含印花图案的款式 · 点击关闭" : "前台已隐藏含印花图案的款式 · 点击恢复";
+    row.onclick = async () => {
+      const next = !(rankPrintVisible !== false);
+      rankPrintVisible = next;
+      renderRankPrintSwitch();
+      try {
+        await SB.setPatternPrintVisible(next);
+        sbToast(next ? "已开启「图案印花款」前台展示" : "已关闭「图案印花款」前台展示：含印花图案的款不再出现在前台", true);
+        rankPreviewRefresh();          /* 预览即前台所见，跟着刷新 */
+      } catch (e) { sbToast((e && e.message) || "保存失败", false); }
+    };
+    box.appendChild(row);
+    const note = $("#rank-pattern-print-note");
+    if (note) {
+      note.innerHTML = on
+        ? "当前：含印花图案的款照常展示。"
+        : '当前：<b>含印花图案的款在前台不展示</b> —— 榜单列表、体征卡、覆盖率与详细报告都不再计入这些款（库里数据不受影响）。';
+    }
+  }
+
   /* 眼睛图标：前台是否展示（点一下切换） */
   function rankEyeBtn(kind, name) {
     const on = !rankHiddenOn(kind, name);
@@ -803,6 +843,7 @@
     rankPeriods = Object.keys(map).map((k) => map[k]).sort((a, b) => admPeriodKey(a.label) - admPeriodKey(b.label));
     renderRankPeriods();
     fillRankPvControls();
+    loadRankPrintSwitch();          /* 图案印花款开关：每次进面板按库里最新值渲染 */
 
     if (!box) return;
     if (!list.length) { box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>'; return; }
@@ -970,7 +1011,7 @@
   /* ---------- 面板进入 ---------- */  /* ---------- 面板进入 ---------- */
   async function enterRankPanel() {
     initRankPeriodPickers();
-    await Promise.all([loadRankHidden(), loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups()]);
+    await Promise.all([loadRankHidden(), loadRankSites(), loadRankCats(), loadRankBatches(), loadRankGroups(), loadRankPrintSwitch()]);
     /* 打标相关（20261027J）：导出范围里的类目下拉 + 批次台账 */
     const ecat = $("#rank-export-cat");
     if (ecat) {

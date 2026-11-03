@@ -68,7 +68,9 @@ const html = T.vitalsHtml(V, T.vitalsDim());
 /* 口径说明里会出现一次「纯白底」用于解释规则本身，不算展示，比对时先剔除该段 */
 /* 口径说明两处：数据说明段、图表脚注。它们是在解释规则本身，不算"把白底当做法展示" */
 const strip = (h) => h.replace(/<section class="rk-rep-sec rk-rep-qual">[\s\S]*?<\/section>/, "")
-  .replace(/<p class="rk-ch-foot">[\s\S]*?<\/p>/g, "");
+  .replace(/<p class="rk-ch-foot">[\s\S]*?<\/p>/g, "")
+  /* 全量数据段末尾的口径说明也是在解释规则本身 */
+  .replace(/<p class="rk-rep-note">[\s\S]*?<\/p>/g, "");
 
 /* ---------------- 1. 推荐 / 结论 ---------------- */
 console.log("[1] 推荐与结论");
@@ -137,6 +139,14 @@ ok("中性底未被误判为白底", h3.indexOf("中性底") >= 0 || true);
 white.forEach(function (w) {
   ok("白底变体「" + w + "」都不出现", strip(h3).indexOf(w) < 0);
 });
+
+/* ---------------- 7. 全量数据（20261102Z） ---------------- */
+console.log("[7] 全量数据");
+ok("有全量数据段", html.indexOf('class="rk-rep-sec rk-rep-full"') >= 0 && html.indexOf("七</em>全量数据") >= 0);
+const full = (html.match(/<section class="rk-rep-sec rk-rep-full">[\s\S]*?<\/section>/) || [])[0] || "";
+const fullTable = full.replace(/<p class="rk-rep-note">[\s\S]*?<\/p>/g, "");   /* 尾注是口径说明 */
+ok("全量表里没有白底行", fullTable.indexOf("纯白底") < 0 && !/<td>白色背景<\/td>/.test(fullTable));
+ok("全量表覆盖全部取值（不只前 3）", (full.match(/<tr>/g) || []).length >= 4);
 
 console.log("\n结果：通过 " + pass + "，失败 " + fail);
 process.exit(fail ? 1 : 0);
