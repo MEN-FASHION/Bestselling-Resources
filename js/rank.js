@@ -267,6 +267,8 @@
   /* 榜单渲染真正要用的列（白名单）。
      导出 / 后台那些页面要 flag_* 等列，仍走全量；这里只给榜单页提速，不动别人的口径。 */
   var REL_COLS = "id,image_url,site,period_label,period_type,category,leaf_category,title,ratio,abs_delta,rank_abs";
+  /* 取数失败原因（null = 正常）。只用来区分「空数据」和「加载失败」，不展示原始报错。 */
+  var LOAD_ERR = null;
   function cacheGet(key) {
     var c = CACHE_MAP[key];
     if (!c) return null;
@@ -617,7 +619,10 @@
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
 
     var items = [];
-    try { items = await SBX.listRankItems(filter); } catch (e) { items = []; }
+    /* 20261104G：取数失败不能静默变成「暂无数据」——那会让人以为数据被删了。
+       这里记下失败，渲染时明确提示"加载失败 + 可刷新重试"。 */
+    try { items = await SBX.listRankItems(filter); LOAD_ERR = null; }
+    catch (e) { items = []; LOAD_ERR = String((e && e.message) || e || "load failed"); }
     items = normItems(items);
     var _g = activeGroup();
     if (_g) items = mergeGroupItems(items, _g);   // 地区模式：多国合并成一列，同名商品只留最强的那个
@@ -3493,6 +3498,11 @@
     if (_gchk && !_gchk.members.length) { box.innerHTML = '<div class="rk-empty">地区「' + esc(_gchk.name) + '」还没有勾选国家。到后台「趋势上升榜 → 地区分组」点 ☑ 把国家勾进去即可。</div>'; return; }
     if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」</div>'; return; }
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
+    if (LOAD_ERR && (!CACHE || !CACHE.items.length)) {
+      box.innerHTML = '<div class="rk-empty">数据加载失败，本次没有取到榜单数据（不是数据被删除）。'
+        + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；若刷新后仍然如此，多半是这一期的数据还没上传完整。</div>';
+      return;
+    }
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
 
     /* 先把标签取数发出去（并行），再看是否已核对完成 */

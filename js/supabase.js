@@ -5,6 +5,8 @@
  * ============================================================ */
 const SB = (() => {
   if (!window.supabase) throw new Error("supabase-js 未加载，请检查 CDN 脚本顺序");
+  /* 20261104G：榜单页的列白名单被服务端拒绝过就置 true，之后退回 select(*) */
+  let COLS_REJECTED = false;
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -2515,6 +2517,8 @@ async removeTrendRecord(id) {
     },
     // 榜单条目查询（前台对比 / 后台核对）
     // filter: { category, sites:[], periods:[], periodType }
+    /* 列白名单是否被服务端拒绝过（拒绝后已退回全量，不会再有整页空白） */
+    colsRejected() { return COLS_REJECTED; },
     async listRankItems(filter) {
       const f = filter || {};
       /* 服务端单次查询会被截断在 1000 行（与这里写多少 limit 无关，是接口层的上限）。
@@ -2524,12 +2528,16 @@ async removeTrendRecord(id) {
          这里改成分页取全量：按 id 升序翻页，取到不满一页为止。 */
       const PAGE = 1000, MAX = 20000;
       const wanted = f.limit || 0;
-      const build = (from, to) => {
+      /* 20261104G：列白名单是"猜"出来的优化。一旦服务端不认其中某一列，
+         整条查询会以 400 整体失败，前台表现就是「一张图都没有」——这比慢严重得多。
+         所以做成可降级：白名单失败立刻退回全量再取一次，并在本次会话内记住。 */
+      const useSlim = () => !!f.cols && !COLS_REJECTED;
+      const build = (from, to, cols) => {
         /* cols：只需要 URL 做比对时不要拉全量字段（每条记录几十个字段，上万行就是几 MB） */
         /* 20261104F：cols 由调用方指定成"渲染真正要用的列"。
            榜单页原来 select("*") 会把每条记录的几十个字段全拉回来，一个类目三周就是好几 MB，
            切类目慢的大头在这里。导出/后台那些页面仍走全量（它们要 flag_* 等列），所以默认保持 *。 */
-        let q = client.from("rank_items").select(f.cols || "*");
+        let q = client.from("rank_items").select(cols || "*");
         if (f.category) q = q.eq("category", f.category);
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
         if (f.periodType) q = q.eq("period_type", f.periodType);
@@ -2540,7 +2548,12 @@ async removeTrendRecord(id) {
       const out = [];
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
-        const { data, error } = await build(from, to);
+        let res = await build(from, to, useSlim() ? f.cols : "*");
+        if (res.error && useSlim()) {
+          COLS_REJECTED = true;                       /* 记住：后续不再试白名单 */
+          res = await build(from, to, "*");
+        }
+        const { data, error } = res;
         if (error) throw new Error(error.message || "读取榜单数据失败");
         const rows = data || [];
         for (const r of rows) out.push(r);
