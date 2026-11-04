@@ -67,7 +67,7 @@
   var TAG_ALL_STATE = 0;     // 0 未开始 1 进行中 2 已完成 3 接口不支持
   var TAG_ALL_AT = 0;
   var TAG_GATE_AT = 0;       // 首次因"未核对"而挡住渲染的时间点
-  var TAG_GATE_WAIT = 1500;  // 最多等这么久，超时先出图（后台补完会自动重绘）
+  var TAG_GATE_WAIT = 700;  // 最多等这么久，超时先出图（后台补完会自动重绘）
   function tagStoreInit() {
     if (TAG_STORE) return;
     TAG_STORE = {};
@@ -260,7 +260,13 @@
   /* 20261103F：以前 CACHE 只存一个组合，切一次类目就整批重新请求，
      来回切「卫衣 → 工装裤 → 卫衣」要把同一批数据拉两遍，图也要重新解码。
      改成按组合键缓存最近 8 组，切回来直接命中，不再等网络。 */
-  var CACHE_MAP = {}, CACHE_ORDER = [], CACHE_MAX = 8;
+  /* 20261104F：缓存从 8 组放宽到 24 组。
+     后台预取会给每个类目各存一组，8 组装不下 12 个类目，切回来又得重新查。 */
+  var CACHE_MAP = {}, CACHE_ORDER = [], CACHE_MAX = 24;
+
+  /* 榜单渲染真正要用的列（白名单）。
+     导出 / 后台那些页面要 flag_* 等列，仍走全量；这里只给榜单页提速，不动别人的口径。 */
+  var REL_COLS = "id,image_url,site,period_label,period_type,category,leaf_category,title,ratio,abs_delta,rank_abs";
   function cacheGet(key) {
     var c = CACHE_MAP[key];
     if (!c) return null;
@@ -509,7 +515,10 @@
   function togglePeriodPick(v) {
     if (MODE !== "v") { SEL_PERIODS = [v]; PERIODS_AUTO = false; return { ok: true }; }
     if (PERIODS_AUTO) {
-      /* 第一次手选：丢掉默认带入的那几周，只留这一次点的 */
+      /* 第一次手选：默认带入的那几周全部丢掉，只留这一次点的。
+         默认带入的周次本来就亮着，若按"再点一次=取消"处理，用户点 43、44
+         会变成取消 43、44，45 反而留着 —— 就是"我明明选了 43、44，
+         报告却多出一列 45"的由来。所以首次点击一律视为重新开始。 */
       SEL_PERIODS = [v]; PERIODS_AUTO = false;
     } else {
       var i = SEL_PERIODS.indexOf(v);
@@ -525,11 +534,67 @@
   }
 
   /* 当前组合的缓存键（取数与「是否要显示加载中」都用它，避免两处口径不一致） */
-  function itemsKey() {
+  function itemsKey(catOverride) {
     var sites = sitesForQuery();
     var periods = activePeriods();
     var cats = MODE === "c" ? activeCats() : [];
-    return [CAT, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
+    var cat = (catOverride === undefined ? CAT : catOverride);
+    return [cat, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
+  }
+
+  /* 报告/类目对比需要的"基线周"：纵向与类目对比都要多取上一周做对比 */
+  function needPeriodsFor(periods) {
+    return (MODE === "v" || MODE === "c") ? withBasePeriods(periods) : periods;
+  }
+
+  /* 条目归一：ratio / abs_delta 必须是数字，否则排序与阈值判断会按字符串比较 */
+  function normItems(rows) {
+    return (rows || []).map(function (it) {
+      it.ratio = (it.ratio == null ? null : Number(it.ratio));
+      it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
+      return it;
+    });
+  }
+
+  /* 20261104F：类目预取。
+     切类目慢的根因不是渲染，是"每切一次就现查一遍库"：
+     请求要走分页（每页 1000 行、串行翻页）、还要拉回几十列，
+     冷类目一次就是几百毫秒到一两秒。
+     首屏画完之后在后台把同级类目按顺序各取一次（并发 1、最多 10 个，不抢首屏带宽），
+     之后切类目直接命中缓存 —— 不发请求、不闪"加载中"、立即出图。 */
+  var CAT_PF_ON = false, CAT_PF_SEEN = {};
+  function prefetchCategories() {
+    if (CAT_PF_ON) return;
+    if (!SBX || typeof SBX.listRankItems !== "function") return;
+    if (MODE === "c") return;        /* 类目对比一次就取多个类目，不用逐个补 */
+    var list = (FACETS.categories || []).filter(function (c) { return c && c !== ALL; });
+    if (list.length < 2) return;
+    CAT_PF_ON = true;
+    var i = 0, took = 0;
+    var next = function () {
+      if (i >= list.length || took >= 10) { CAT_PF_ON = false; return; }
+      var c = list[i++];
+      if (c === CAT) { setTimeout(next, 0); return; }
+      var key = itemsKey(c);
+      if (CAT_PF_SEEN[key] || CACHE_MAP[key] || (CACHE && CACHE.key === key)) { setTimeout(next, 0); return; }
+      CAT_PF_SEEN[key] = 1;
+      var periods = activePeriods();
+      if (!periods.length) { CAT_PF_ON = false; return; }
+      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS };
+      Promise.resolve()
+        .then(function () { return SBX.listRankItems(filter); })
+        .then(function (rows) {
+          var items = normItems(rows);
+          var g = activeGroup();
+          if (g) items = mergeGroupItems(items, g);
+          flagPools(items);
+          cachePut(key, items);
+          took++;
+        })
+        .catch(function () { /* 预取失败无所谓：真切过去时 fetchItems 会正常再取一次 */ })
+        .then(function () { setTimeout(next, 120); });
+    };
+    setTimeout(next, 600);           /* 先让首屏画完，再开始占带宽 */
   }
 
   async function fetchItems() {
@@ -545,19 +610,15 @@
     if (_hit) { CACHE = _hit; if (TAG_ALL_STATE === 0) prefetchAllTags(); return _hit.items; }
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
-    var needPeriods = MODE === "v" ? withBasePeriods(periods) : (MODE === "c" ? withBasePeriods(periods) : periods);
-    var filter = { sites: sites, periods: needPeriods };
+    var needPeriods = needPeriodsFor(periods);
+    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS };
     if (MODE === "c") filter.categories = cats;
     else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
 
     var items = [];
     try { items = await SBX.listRankItems(filter); } catch (e) { items = []; }
-    items = (items || []).map(function (it) {
-      it.ratio = (it.ratio == null ? null : Number(it.ratio));
-      it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
-      return it;
-    });
+    items = normItems(items);
     var _g = activeGroup();
     if (_g) items = mergeGroupItems(items, _g);   // 地区模式：多国合并成一列，同名商品只留最强的那个
     flagPools(items);
@@ -2006,6 +2067,7 @@
        图 B：具体背景值 TOP5，看具体用了哪些场景
      白底仍按 20261102R 的口径剔除（通用底，不参与比较与推荐）。 */
   var REP_BG_GROUP = ["室外", "室内", "中性底·其它"];
+  var BG_TOP = 24;                 /* 具体背景值最多列这么多行，与右侧文化图保持相近高度 */
   function repBgGroups(c) {
     var o = { "室外": 0, "室内": 0, "中性底·其它": 0 };
     (c.bg || []).forEach(function (e) {
@@ -2024,34 +2086,10 @@
     var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
     var out = "";
 
-    /* 图 A：室内 / 室外结构 */
-    var hasGroup = live.some(function (c) {
-      var g = repBgGroups(c);
-      return g["室外"] > 0 || g["室内"] > 0 || g["中性底·其它"] > 0;
-    });
-    if (hasGroup) {
-      /* 整组都是 0 的行不画（例如全都给了具体场景，就没人落在"中性底·其它"） */
-      var grows = REP_BG_GROUP.map(function (g) {
-        var mx = 0;
-        live.forEach(function (c) { mx = Math.max(mx, repBgGroups(c)[g]); });
-        return { g: g, mx: Math.round(mx) };
-      }).filter(function (r) { return r.mx > 0; });
-      out += repDotChart({
-        title: "图 · 视觉背景（室内 / 室外结构）",
-        legend: legend,
-        rows: grows.map(function (r) {
-          return {
-            label: r.g, note: "最高 " + r.mx + "%",
-            dots: live.map(function (c, i) {
-              return { v: Math.round(repBgGroups(c)[r.g]), color: repColor(i), name: c.cat };
-            })
-          };
-        }),
-        foot: "占比以该列「已打标视觉背景」的图作分母；纯白底属平台通用底，已从统计中剔除。"
-      });
-    }
-
-    /* 图 B：具体背景值（全量，20261102Z 起不再只取前 5） */
+    /* 20261104D：只留具体值，不再先画「室内 / 室外」母结构。
+       母结构只有三行，看完仍不知道该搭什么景；商家要的是「街道·沥青路面」
+       这种能照着拍的值，所以直接给具体值。 */
+    /* 具体背景值（全量，20261102Z 起不再只取前 5） */
     var names = {};
     live.forEach(function (c) {
       repAll(c, "bg").forEach(function (e) { if (!isWhiteBg(e[0])) names[e[0]] = 1; });
@@ -2063,18 +2101,22 @@
     }).filter(function (k) { return k.mx > 0; })
       .sort(function (a, b) { return b.mx - a.mx; });
     if (keys.length) {
+      var cutBg = keys.length > BG_TOP;
       out += repDotChart({
-        title: "图 · 视觉背景（全部取值）",
+        title: cutBg ? "图 · 视觉背景（具体取值 · 前 " + BG_TOP + "）" : "图 · 视觉背景（具体取值）",
         legend: legend,
-        rows: keys.map(function (k) {
+        rows: keys.slice(0, BG_TOP).map(function (k) {
           return {
-            label: k.nm.replace(/^(室内|室外)·/, ""), note: "最高 " + k.mx + "%",
+            /* 保留「室内·/室外·」前缀：母结构没了，这个前缀就是判断取景的唯一线索 */
+            label: k.nm, note: "最高 " + k.mx + "%",
             dots: live.map(function (c, i) {
               return { v: repTagPct(c, "bg", k.nm), color: repColor(i), name: c.cat };
             })
           };
         }),
-        foot: "标签前的「室内 / 室外」已省略，完整值见逐列画像。"
+        foot: cutBg
+          ? "共 " + keys.length + " 个具体取值，图上按最高占比列前 " + BG_TOP + " 个，其余见「全量数据」；纯白底属平台通用底，不计入。"
+          : "占比以该列「已打标视觉背景」的图作分母；纯白底属平台通用底，不计入。"
       });
     }
     if (!out) return "";
@@ -2088,23 +2130,7 @@
   /* 视觉背景的解读：只说能改的东西（场景换一换），不下"必须重拍"的结论 */
   function repBgText(live) {
     if (live.length < 2) return "";
-    var seg = live.map(function (c) {
-      var g = repBgGroups(c);
-      return { cat: c.cat, out: g["室外"], in: g["室内"], neu: g["中性底·其它"], n: c.n };
-    });
-    var byOut = seg.slice().sort(function (a, b) { return b.out - a.out; });
-    var hi = byOut[0], lo = byOut[byOut.length - 1];
-    var gap = Math.round(hi.out - lo.out);
     var parts = [];
-    if (hi.out > 0) {
-      parts.push("室外场景用得最多的是「" + esc(hi.cat) + "」（" + Math.round(hi.out) + "%）"
-        + (gap >= 10 ? "，比最低的「" + esc(lo.cat) + "」（" + Math.round(lo.out) + "%）高出 " + gap + " 个百分点" : "")
-        + "。");
-    }
-    var byIn = seg.slice().sort(function (a, b) { return b.in - a.in; });
-    if (byIn[0].in > 0 && byIn[0].in >= byOut[0].out) {
-      parts.push("室内场景为主的是「" + esc(byIn[0].cat) + "」（" + Math.round(byIn[0].in) + "%），这类主图偏棚拍或居家实景。");
-    }
     /* 具体场景：找跨列最高的那个值 */
     var names = {};
     live.forEach(function (c) {
@@ -2158,33 +2184,8 @@
     var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
     var out = "";
 
-    /* 图 ①：母文化结构 —— 先看这一列整体偏哪个文化圈 */
-    var mothers = {};
-    live.forEach(function (c) {
-      var g = repCuGroups(c);
-      Object.keys(g).forEach(function (k) {
-        if (!mothers[k] || g[k] > mothers[k]) mothers[k] = g[k];
-      });
-    });
-    var mkeys = Object.keys(mothers).filter(function (k) { return mothers[k] > 0; })
-      .sort(function (a, b) { return mothers[b] - mothers[a]; });
-    if (mkeys.length) {
-      out += repDotChart({
-        title: "图 · 文化背景（母文化结构）",
-        legend: legend,
-        rows: mkeys.map(function (k) {
-          return {
-            label: k, note: "最高 " + Math.round(mothers[k]) + "%",
-            dots: live.map(function (c, i) {
-              return { v: Math.round(repCuGroups(c)[k] || 0), color: repColor(i), name: c.cat };
-            }),
-          };
-        }),
-        foot: "占比以该列「已打标文化背景」的图作分母，母文化为其下各子文化之和。",
-      });
-    }
-
-    /* 图 ②：具体取值 —— 看出到底落在哪个圈层的哪个细分 */
+    /* 20261104D：只留具体取值，不再先画母文化结构（「美式文化」这种大词
+       落不到选款上，要看的是「美式文化-复古90s街头」这一层）。 */
     var names = {};
     live.forEach(function (c) {
       repAll(c, "culture").forEach(function (e) {
@@ -2201,7 +2202,7 @@
     if (keys.length) {
       var cut = keys.length > CU_TOP;
       out += repDotChart({
-        title: cut ? "图 · 文化背景（全部取值 · 前 " + CU_TOP + "）" : "图 · 文化背景（全部取值）",
+        title: cut ? "图 · 文化背景（具体取值 · 前 " + CU_TOP + "）" : "图 · 文化背景（具体取值）",
         legend: legend,
         rows: keys.slice(0, CU_TOP).map(function (k) {
           return {
@@ -2228,29 +2229,41 @@
   function repCuText(live) {
     if (!live.length) return "";
     var parts = [];
+    /* 20261104D：母文化不画了，解读也直接说具体圈层：
+       每列取占比最高的「具体文化值」（带 "-" 的细分），再看跨列谁最集中。 */
     var seg = live.map(function (c) {
-      var g = repCuGroups(c);
       var top = null;
-      Object.keys(g).forEach(function (k) { if (!top || g[k] > top.p) top = { k: k, p: g[k] }; });
-      return { cat: c.cat, g: g, top: top };
+      repAll(c, "culture").forEach(function (e) {
+        var nm = String((e && e[0]) || "");
+        if (!nm || nm === CU_NEUTRAL) return;
+        var v = Number(e[1]) || 0;
+        if (v > 0 && (!top || v > top.p)) top = { k: nm, p: v };
+      });
+      return { cat: c.cat, top: top };
     }).filter(function (x) { return x.top && x.top.p > 0; });
 
     if (seg.length >= 2) {
       var hi = seg.slice().sort(function (a, b) { return b.top.p - a.top.p; })[0];
       var lo = seg.slice().sort(function (a, b) { return a.top.p - b.top.p; })[0];
-      var gap = hi.top.p - lo.top.p;
-      if (hi.cat !== lo.cat) {
+      var gap = Math.round(hi.top.p - lo.top.p);
+      if (gap <= 0 && seg.length >= 2) {
+        /* 两列集中度打平：别硬说"最高 / 只有"，把前两列并列写出来 */
+        var p1 = seg[0], p2 = seg[1];
+        parts.push("两列文化指向的集中度相当：「" + esc(p1.cat) + "」是<b>" + esc(p1.top.k) + "</b>占 "
+          + Math.round(p1.top.p) + "%，「" + esc(p2.cat) + "」是<b>" + esc(p2.top.k) + "</b>占 "
+          + Math.round(p2.top.p) + "%。");
+      } else if (hi.cat !== lo.cat) {
         parts.push("文化指向最集中在「" + esc(hi.cat) + "」——<b>" + esc(hi.top.k) + "</b>占 "
           + Math.round(hi.top.p) + "%；「" + esc(lo.cat) + "」这一列最集中的 " + esc(lo.top.k)
-          + " 只有 " + Math.round(lo.top.p) + "%，两列相差 " + Math.round(gap) + " 个百分点。");
+          + " 只有 " + Math.round(lo.top.p) + "%，两列相差 " + gap + " 个百分点。");
       } else {
         parts.push("「" + esc(hi.cat) + "」的文化指向最集中，<b>" + esc(hi.top.k) + "</b>占 "
           + Math.round(hi.top.p) + "%。");
       }
     }
 
-    /* 具体子文化：明确到圈层的细分比母类更能指导选款 */
-    var best = null, sameMotherOnly = true;
+    /* 细分到「母-子」层的那个值单独点一句：它比任何母类都更接近选款决策 */
+    var best = null;
     live.forEach(function (c) {
       repAll(c, "culture").forEach(function (e) {
         var nm = String((e && e[0]) || "");
@@ -2260,9 +2273,8 @@
         if (v > 0 && (!best || v > best.p)) { best = { nm: nm, p: v, cat: c.cat }; }
       });
     });
-    if (best) {
-      sameMotherOnly = false;
-      parts.push("落到细分圈层，最常见的是「" + esc(best.nm) + "」，在「" + esc(best.cat) + "」占 "
+    if (best && !(seg[0] && seg[0].top && seg[0].top.k === best.nm)) {
+      parts.push("细分到圈层，最常见的是「" + esc(best.nm) + "」，在「" + esc(best.cat) + "」占 "
         + Math.round(best.p) + "%。");
     }
 
@@ -2278,9 +2290,8 @@
     }
 
     if (!parts.length) return "";
-    parts.push(sameMotherOnly
-      ? "文化背景是推断维度，可当选题线索用；写标题、做主图文案时点明圈层会更容易被认出来。"
-      : "文化背景是推断维度，可当选题线索用；标题里点明圈层更容易被认出来。涉及宗教、神话图腾这类符号时，建议先确认目标市场能不能接受，别为差异化冒犯到人。");
+    parts.push("文化背景是推断维度，可当选题线索用；写标题、做主图文案时点明圈层会更容易被认出来。"
+      + "涉及宗教、神话图腾这类符号时，建议先确认目标市场能不能接受，别为差异化冒犯到人。");
     return parts.join("");
   }
 
@@ -2972,9 +2983,18 @@
     } else {
       h += '<div class="rk-rep-detail" data-rep-detail="1" hidden>' + detailTop + '</div>';
     }
-    h += '<section class="rk-rep-sec rk-rep-cols"><h4><em>三</em>逐列画像</h4>';
-    h += '<div class="rk-vitals">';
-    V.forEach(function (c) {
+    /* 20261104E：逐列画像的列必须和对比池完全一致。
+       对比池（上面那组周次/国家/类目列）遇到某列 0 张会直接不画这一列，
+       画像原来却还留一张「无数据」空卡 —— 于是池子 2 列、画像 3 列，对不上。
+       这里改成同一套取舍：没有上榜数据的列不建卡，另起一行说明哪几列被略过。 */
+    var vLive = V.filter(function (c) { return c.n; });
+    var vDead = V.filter(function (c) { return !c.n; }).map(function (c) { return c.cat; });
+    if (!vLive.length) vLive = V;   /* 全都空：退回原样，至少给个空态，不要整节消失 */
+    h += '<section class="rk-rep-sec rk-rep-cols"><h4><em>三</em>逐列画像'
+      + (vLive.length ? '<span class="rk-rep-cols-n">' + vLive.length + ' 列，与上方对比池一致</span>' : '')
+      + '</h4>';
+    h += '<div class="rk-vitals" data-cols="' + vLive.length + '">';
+    vLive.forEach(function (c) {
       h += '<div class="rk-vit">'
         + '<div class="rk-vit-h"><span class="rk-vit-name">' + esc(c.cat) + '</span>'
         + (c.n
@@ -3020,7 +3040,11 @@
          这一块整体撤掉（原始标签仍可在大图标签面板里逐张查看，数据没丢）。 */
       h += '</div>';
     });
-    h += '</div>';
+    h += '</div>'
+      + (vDead.length
+        ? '<p class="rk-rep-cols-skip">其余 ' + vDead.length + ' 列无数据（' + vDead.map(esc).join("、")
+          + '），对比池里同样不画这些列，画像这里也不单列一张空卡，免得两边列数对不上。</p>'
+        : '');
     /* 差异洞察紧跟画像，作为「谁跟谁不一样」的短结论（标题沿用原口径文案） */
     var ins = insightsOf(V, dim);
     if (ins.length) {
@@ -4500,6 +4524,7 @@
     await fetchItems();
     renderBody();
     renderBar();
+    prefetchCategories();            /* 首屏出来后在后台把其它类目补进来 */
   }
 
   /* ---------------- 登录态（顶部显示 + 退出） ---------------- */
@@ -4878,6 +4903,14 @@
       setTagState: function (k, busy) { TAG_KEY = k || ""; TAG_BUSY = !!busy; },
       tagSeen: function (u) { return !!TAG_SEEN[tagStoreKey(u)]; },
       prefetchAllTags: prefetchAllTags,
+      /* 20261104F：类目预取与列白名单，供离屏测试直接驱动 */
+      prefetchCategories: prefetchCategories,
+      catPfOn: function () { return CAT_PF_ON; },
+      resetCatPf: function () { CAT_PF_ON = false; CAT_PF_SEEN = {}; },
+      itemsKey: itemsKey,
+      itemCacheKeys: function () { return CACHE_ORDER.slice(); },
+      relCols: function () { return REL_COLS; },
+      tagGateWait: function () { return TAG_GATE_WAIT; },
       tagAllState: function () { return TAG_ALL_STATE; },
       setTagAllState: function (v) { TAG_ALL_STATE = v; },
       tagGateAt: function () { return TAG_GATE_AT; },

@@ -6568,9 +6568,13 @@ html, body{
 .rk-bg-say,.rk-cu-say{margin:0 0 10px;font-size:12.5px;line-height:1.85;color:#5b554a}
 .rk-bg-say b,.rk-cu-say b{color:#3f3a31}
 /* 视觉背景 / 文化背景并排两列：左列背景、右列文化；窄屏自动落成一列 */
-.rk-dim-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:2px 0 8px}
-.rk-dim-col{min-width:0}
-.rk-dim-col .rk-ch-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+.rk-dim-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:2px 0 8px;align-items:stretch}
+.rk-dim-col{min-width:0;display:flex;flex-direction:column}
+.rk-dim-col .rk-ch-grid{grid-template-columns:minmax(0,1fr);gap:10px;flex:1;display:flex;flex-direction:column}
+/* 左右两列取景 / 文化高度对齐：卡片拉到同一高度，行距均分，顶边与底边都在同一条线上 */
+.rk-dim-col .rk-ch{flex:1;display:flex;flex-direction:column}
+.rk-dim-col .rk-ch-body{flex:1;justify-content:space-between}
+.rk-dim-col .rk-ch-foot{margin-top:auto}
 .rk-dim-col .rk-ch{--lb:78px}
 .rk-dim-col .rk-ch-axis{margin-right:48px}
 @media (max-width:1180px){.rk-dim-pair{grid-template-columns:minmax(0,1fr)}}
@@ -6611,3 +6615,11 @@ html, body{
   .rk-rep-detail.in .rk-ring-v,.rk-rep-detail.in .rk-ch-conn,
   .rk-rep-detail.in .rk-ch-d,.rk-rep-detail.in .rk-cell-bar u{animation:none !important}
 }
+
+/* 20261104E：逐列画像列数与对比池对齐 —— 节标题右挂列数，被略过的空列单独一行说明 */
+.rk-rep-cols-n{margin-left:8px;font-weight:400;font-size:12px;color:#8a8f99;letter-spacing:0}
+.rk-rep-cols-skip{margin:10px 0 0;padding:8px 12px;border-radius:8px;background:#f6f7f9;
+  border-left:3px solid #d8dbe2;font-size:12px;line-height:1.65;color:#6b7280}
+.rk-vitals{display:flex;gap:14px;align-items:stretch}
+@media (max-width:1180px){.rk-vitals{flex-wrap:wrap}.rk-vitals>.rk-vit{flex:1 1 45%}}
+@media (max-width:720px){.rk-vitals>.rk-vit{flex:1 1 100%}}

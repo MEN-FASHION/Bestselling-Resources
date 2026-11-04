@@ -2526,6 +2526,9 @@ async removeTrendRecord(id) {
       const wanted = f.limit || 0;
       const build = (from, to) => {
         /* cols：只需要 URL 做比对时不要拉全量字段（每条记录几十个字段，上万行就是几 MB） */
+        /* 20261104F：cols 由调用方指定成"渲染真正要用的列"。
+           榜单页原来 select("*") 会把每条记录的几十个字段全拉回来，一个类目三周就是好几 MB，
+           切类目慢的大头在这里。导出/后台那些页面仍走全量（它们要 flag_* 等列），所以默认保持 *。 */
         let q = client.from("rank_items").select(f.cols || "*");
         if (f.category) q = q.eq("category", f.category);
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
