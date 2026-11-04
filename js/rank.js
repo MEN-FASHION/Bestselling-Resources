@@ -114,6 +114,10 @@
   var LAST_KEPT = 0;         // 上一次真正画进各列的张数合计（类目对比不含上一周基线）
   var SEL_SITES = [];        // h：多选；v：仅第一个生效
   var SEL_PERIODS = [];      // h：仅第一个生效；v：多选
+  /* 20261104C：最近 N 周是「系统默认带入」的，不是用户勾的。
+     用户第一次手点周次时以这次选择为准重新开始，否则会出现
+     「我只选了 43、44，报告却多出一列 45」——45 是默认带的，从没被勾过。 */
+  var PERIODS_AUTO = true;
   var CAT_MAX = 4;           // 类目对比最多四个类目（列数 = 勾选的类目数，不再单独选「几列」）
   var COLS = 3;              // 对比列数：纵向=最近几周、横向=前几个国家，可选 2/3/4（默认 3 = 美国近三周对比）
   var COLS_OPTS = [2, 3, 4];
@@ -501,6 +505,25 @@
     return sortPeriods(SEL_PERIODS);
   }
 
+  /* 周次勾选（菜单点击与离屏测试共用一份逻辑，避免两处口径不一致） */
+  function togglePeriodPick(v) {
+    if (MODE !== "v") { SEL_PERIODS = [v]; PERIODS_AUTO = false; return { ok: true }; }
+    if (PERIODS_AUTO) {
+      /* 第一次手选：丢掉默认带入的那几周，只留这一次点的 */
+      SEL_PERIODS = [v]; PERIODS_AUTO = false;
+    } else {
+      var i = SEL_PERIODS.indexOf(v);
+      if (i >= 0) SEL_PERIODS.splice(i, 1);
+      else {
+        if (SEL_PERIODS.length >= COLS_MAX) return { ok: false, msg: "最多同时对比 " + COLS_MAX + " 列，可先取消一个期次" };
+        SEL_PERIODS.push(v);
+      }
+    }
+    SEL_PERIODS = sortPeriods(SEL_PERIODS);
+    COLS = Math.max(2, Math.min(COLS_MAX, SEL_PERIODS.length || 2));
+    return { ok: true };
+  }
+
   /* 当前组合的缓存键（取数与「是否要显示加载中」都用它，避免两处口径不一致） */
   function itemsKey() {
     var sites = sitesForQuery();
@@ -799,7 +822,11 @@
       groupHtml +
       catsGroup +
       '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
-      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "v" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
+      '<div class="tag-group"><span class="tag-group-name">周次 / 期次' + (MODE === "v"
+        ? (PERIODS_AUTO
+            ? "（现为最近 " + SEL_PERIODS.length + " 周，点选即改为你自己选的周次）"
+            : "（可多选，最多 " + COLS_MAX + " 个）")
+        : "（单选，选一个其它自动取消）") + '</span><div class="tag-chips" id="rk-g-periods">' + periodsHtml + '</div></div>' +
       mergedRow + taggedGroup + onlyGroup;
 
     bindPanel();
@@ -891,18 +918,8 @@
     var pBox = $("#rk-g-periods");
     if (pBox) Array.prototype.forEach.call(pBox.querySelectorAll("[data-period]"), function (b) {
       b.onclick = function () {
-        var v = b.getAttribute("data-period");
-        if (MODE !== "v") {
-          SEL_PERIODS = [v];                  /* 横向·国家对比：周次单选，选中即自动取消其它周次 */
-        } else {
-          var i = SEL_PERIODS.indexOf(v);
-          if (i >= 0) SEL_PERIODS.splice(i, 1);
-          else {
-            if (SEL_PERIODS.length >= COLS_MAX) { toast("最多同时对比 " + COLS_MAX + " 列，可先取消一个期次"); return; }
-            SEL_PERIODS.push(v);
-          }
-          COLS = Math.max(2, Math.min(COLS_MAX, SEL_PERIODS.length));   /* 手选后列数跟着走 */
-        }
+        var r = togglePeriodPick(b.getAttribute("data-period"));   /* 横向=单选；纵向=多选，首次手选重置 */
+        if (!r.ok) { toast(r.msg); return; }
         CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
@@ -1846,7 +1863,8 @@
     var parts = [];
     if (MODE === "c") parts.push("对比类目：" + (SEL_CATS && SEL_CATS.length ? SEL_CATS.join(" / ") : CAT));
     else if (MODE === "h") parts.push("对比国家：" + ((SEL_SITES && SEL_SITES.length) ? SEL_SITES.join(" / ") : "—"));
-    else parts.push("对比周次：" + ((SEL_PERIODS && SEL_PERIODS.length) ? SEL_PERIODS.join(" / ") : "—"));
+    else parts.push("对比周次：" + ((SEL_PERIODS && SEL_PERIODS.length) ? sortPeriods(SEL_PERIODS).join(" / ") : "—")
+      + (PERIODS_AUTO ? "（最近 " + SEL_PERIODS.length + " 周 · 系统默认，在菜单里点选即可改）" : "（菜单勾选）"));
     if (MODE !== "c") parts.push("类目：" + (CAT || ALL));
     if (MODE === "v") parts.push("国家：" + ((SEL_SITES && SEL_SITES[0]) || "—"));
     var o = onlyLabel();
@@ -2893,7 +2911,15 @@
     /* 20261102Q：结论后面先给图，再给表 —— 图看趋势，表查细节。
        只有一列时不画（没有对比对象），图与表同时省略，口径说明已在上面提示。 */
     detailTop += repSummaryHtml(V, dim) + repDensityChart(V)
-      + repMatrixHtml(V, dim) + repDimCharts(V, dim) + repCuCharts(V);
+      + repMatrixHtml(V, dim) + repDimCharts(V, dim)
+      /* 视觉背景与文化背景并排两列：背景讲"在哪拍"，文化讲"卖给谁"，
+         放一起看，一眼就能对上"这个取景配哪种圈层"，比上下排更省滚动 */
+      + (function () {
+        var b = repBgCharts(V), c = repCuCharts(V);
+        if (!b || !c) return b + c;   /* 只有一边有数据时不摆空栏 */
+        return '<div class="rk-dim-pair"><div class="rk-dim-col">' + b + "</div>"
+          + '<div class="rk-dim-col">' + c + "</div></div>";
+      })();
     return detailTop;
   }
   /* 报告详情的下半段（建议 / 趋势 / 数据说明 / 全量数据） */
@@ -4616,7 +4642,7 @@
       var _g = _qs.get("group");
       if (_g && GROUPS.some(function (x) { return x.name === _g; })) SEL_GROUP = _g;
       var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
-      if (_pp.length) { SEL_PERIODS = _pp; if (MODE === "h") MODE = "v"; }
+      if (_pp.length) { SEL_PERIODS = _pp; PERIODS_AUTO = false; if (MODE === "h") MODE = "v"; }
       var _cc = (_qs.get("cats") || "").split(",").filter(function (v) { return v.trim(); });
       if (_cc.length) { SEL_CATS = _cc; if (MODE !== "c") { MODE = "c"; _modeFromUrl = true; } }
       /* 链接里已经点名了对比类目，就不能再按「默认列数」重排，否则 4 个类目会被截成 3 个 */
@@ -4830,6 +4856,13 @@
       repCuCharts: repCuCharts,
       repCuGroups: repCuGroups,
       repCuText: repCuText,
+      /* 20261104C：周次勾选（首次手选重置默认带入的周次） */
+      togglePeriodPick: togglePeriodPick,
+      periodsAuto: function () { return PERIODS_AUTO; },
+      setPeriodsAuto: function (v) { PERIODS_AUTO = !!v; },
+      cols: function () { return COLS; },
+      selPeriods: function () { return sortPeriods(SEL_PERIODS); },
+      repScopeText: repScopeText,
       repBgText: repBgText,
       repFullDataHtml: repFullDataHtml,
       repMatrixHtml: repMatrixHtml,
