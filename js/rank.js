@@ -2109,6 +2109,163 @@
     return parts.join("");
   }
 
+  /* 20261104A：详情报告里这一节从「视觉背景」换成「文化背景」。
+     背景回答"在哪拍的"，文化背景回答"这身衣服属于哪个圈层、卖给谁"，
+     后者直接决定标题与卖点怎么写，更值得单独一节。
+     背景没有删：逐列画像、横向对照、全量数据里仍按原样呈现。 */
+  var CU_NEUTRAL = "无特定文化";   /* 中性值，不算文化定位，剔除出分母 */
+  var CU_TOP = 24;                 /* 全部取值图最多列这么多行，再多就看不清 */
+
+  function cuMother(v) {
+    var s = String(v || "");
+    var i = s.indexOf("-");
+    return i > 0 ? s.slice(0, i) : s;
+  }
+
+  /* 母文化占比 = 其下所有子文化之和（「无特定文化」不进分母） */
+  function repCuGroups(c) {
+    var o = {};
+    repAll(c, "culture").forEach(function (e) {
+      var nm = String((e && e[0]) || "");
+      if (!nm || nm === CU_NEUTRAL) return;
+      var k = cuMother(nm);
+      o[k] = (o[k] || 0) + (Number(e[1]) || 0);
+    });
+    return o;
+  }
+
+  function repCuCharts(V) {
+    var live = V.filter(function (c) { return c.n > 0; });
+    if (!live.length) return "";
+    var legend = live.map(function (c, i) { return { name: c.cat, color: repColor(i) }; });
+    var out = "";
+
+    /* 图 ①：母文化结构 —— 先看这一列整体偏哪个文化圈 */
+    var mothers = {};
+    live.forEach(function (c) {
+      var g = repCuGroups(c);
+      Object.keys(g).forEach(function (k) {
+        if (!mothers[k] || g[k] > mothers[k]) mothers[k] = g[k];
+      });
+    });
+    var mkeys = Object.keys(mothers).filter(function (k) { return mothers[k] > 0; })
+      .sort(function (a, b) { return mothers[b] - mothers[a]; });
+    if (mkeys.length) {
+      out += repDotChart({
+        title: "图 · 文化背景（母文化结构）",
+        legend: legend,
+        rows: mkeys.map(function (k) {
+          return {
+            label: k, note: "最高 " + Math.round(mothers[k]) + "%",
+            dots: live.map(function (c, i) {
+              return { v: Math.round(repCuGroups(c)[k] || 0), color: repColor(i), name: c.cat };
+            }),
+          };
+        }),
+        foot: "占比以该列「已打标文化背景」的图作分母，母文化为其下各子文化之和。",
+      });
+    }
+
+    /* 图 ②：具体取值 —— 看出到底落在哪个圈层的哪个细分 */
+    var names = {};
+    live.forEach(function (c) {
+      repAll(c, "culture").forEach(function (e) {
+        var nm = String((e && e[0]) || "");
+        if (nm && nm !== CU_NEUTRAL) names[nm] = 1;
+      });
+    });
+    var keys = Object.keys(names).map(function (nm) {
+      var mx = 0;
+      live.forEach(function (c) { mx = Math.max(mx, repTagPct(c, "culture", nm)); });
+      return { nm: nm, mx: mx };
+    }).filter(function (k) { return k.mx > 0; })
+      .sort(function (a, b) { return b.mx - a.mx; });
+    if (keys.length) {
+      var cut = keys.length > CU_TOP;
+      out += repDotChart({
+        title: cut ? "图 · 文化背景（全部取值 · 前 " + CU_TOP + "）" : "图 · 文化背景（全部取值）",
+        legend: legend,
+        rows: keys.slice(0, CU_TOP).map(function (k) {
+          return {
+            label: k.nm, note: "最高 " + Math.round(k.mx) + "%",
+            dots: live.map(function (c, i) {
+              return { v: Math.round(repTagPct(c, "culture", k.nm)), color: repColor(i), name: c.cat };
+            }),
+          };
+        }),
+        foot: cut
+          ? "共 " + keys.length + " 个取值，图上按最高占比列前 " + CU_TOP + " 个，其余见「全量数据」。"
+          : "「" + CU_NEUTRAL + "」不展示——它表示这张图没有明确文化指向，不属于某个圈层。",
+      });
+    }
+
+    if (!out) return "";
+    var say = repCuText(live);
+    return '<div class="rk-cu-block"><h5>文化背景</h5>'
+      + (say ? '<p class="rk-cu-say">' + say + "</p>" : "")
+      + '<div class="rk-ch-grid">' + out + "</div></div>";
+  }
+
+  /* 文化背景解读：哪个圈层最集中、具体落到哪个细分、多少图没有文化指向 */
+  function repCuText(live) {
+    if (!live.length) return "";
+    var parts = [];
+    var seg = live.map(function (c) {
+      var g = repCuGroups(c);
+      var top = null;
+      Object.keys(g).forEach(function (k) { if (!top || g[k] > top.p) top = { k: k, p: g[k] }; });
+      return { cat: c.cat, g: g, top: top };
+    }).filter(function (x) { return x.top && x.top.p > 0; });
+
+    if (seg.length >= 2) {
+      var hi = seg.slice().sort(function (a, b) { return b.top.p - a.top.p; })[0];
+      var lo = seg.slice().sort(function (a, b) { return a.top.p - b.top.p; })[0];
+      var gap = hi.top.p - lo.top.p;
+      if (hi.cat !== lo.cat) {
+        parts.push("文化指向最集中在「" + esc(hi.cat) + "」——<b>" + esc(hi.top.k) + "</b>占 "
+          + Math.round(hi.top.p) + "%；「" + esc(lo.cat) + "」这一列最集中的 " + esc(lo.top.k)
+          + " 只有 " + Math.round(lo.top.p) + "%，两列相差 " + Math.round(gap) + " 个百分点。");
+      } else {
+        parts.push("「" + esc(hi.cat) + "」的文化指向最集中，<b>" + esc(hi.top.k) + "</b>占 "
+          + Math.round(hi.top.p) + "%。");
+      }
+    }
+
+    /* 具体子文化：明确到圈层的细分比母类更能指导选款 */
+    var best = null, sameMotherOnly = true;
+    live.forEach(function (c) {
+      repAll(c, "culture").forEach(function (e) {
+        var nm = String((e && e[0]) || "");
+        if (!nm || nm === CU_NEUTRAL) return;
+        if (nm.indexOf("-") < 0) return;
+        var v = Number(e[1]) || 0;
+        if (v > 0 && (!best || v > best.p)) { best = { nm: nm, p: v, cat: c.cat }; }
+      });
+    });
+    if (best) {
+      sameMotherOnly = false;
+      parts.push("落到细分圈层，最常见的是「" + esc(best.nm) + "」，在「" + esc(best.cat) + "」占 "
+        + Math.round(best.p) + "%。");
+    }
+
+    /* 没有文化指向的比例：这部分要靠风格与图案区分，别硬套文化标签 */
+    var neu = 0, neuCat = "";
+    live.forEach(function (c) {
+      var v = repTagPct(c, "culture", CU_NEUTRAL);
+      if (v > neu) { neu = v; neuCat = c.cat; }
+    });
+    if (neu >= 30) {
+      parts.push("有 " + Math.round(neu) + "% 的图（「" + esc(neuCat) + "」最多）属于「" + CU_NEUTRAL
+        + "」，这类款不必硬套文化标签，靠风格与图案区分就够。");
+    }
+
+    if (!parts.length) return "";
+    parts.push(sameMotherOnly
+      ? "文化背景是推断维度，可当选题线索用；写标题、做主图文案时点明圈层会更容易被认出来。"
+      : "文化背景是推断维度，可当选题线索用；标题里点明圈层更容易被认出来。涉及宗教、神话图腾这类符号时，建议先确认目标市场能不能接受，别为差异化冒犯到人。");
+    return parts.join("");
+  }
+
   /* 覆盖率环：SVG 圆环，展开时描边动画一次 */
   function repRing(pct) {
     var C = 2 * Math.PI * 26;
@@ -2736,7 +2893,7 @@
     /* 20261102Q：结论后面先给图，再给表 —— 图看趋势，表查细节。
        只有一列时不画（没有对比对象），图与表同时省略，口径说明已在上面提示。 */
     detailTop += repSummaryHtml(V, dim) + repDensityChart(V)
-      + repMatrixHtml(V, dim) + repDimCharts(V, dim) + repBgCharts(V);
+      + repMatrixHtml(V, dim) + repDimCharts(V, dim) + repCuCharts(V);
     return detailTop;
   }
   /* 报告详情的下半段（建议 / 趋势 / 数据说明 / 全量数据） */
@@ -4670,6 +4827,9 @@
       /* 20261103E：视觉背景（scene_tags）相关的内部函数 */
       repBgCharts: repBgCharts,
       repBgGroups: repBgGroups,
+      repCuCharts: repCuCharts,
+      repCuGroups: repCuGroups,
+      repCuText: repCuText,
       repBgText: repBgText,
       repFullDataHtml: repFullDataHtml,
       repMatrixHtml: repMatrixHtml,
