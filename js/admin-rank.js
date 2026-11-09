@@ -1025,6 +1025,21 @@
     if (window.RankExport && window.RankExport.loadCats) {
       try { await window.RankExport.loadCats(); } catch (e) { /* 忽略 */ }
     }
+    /* 「来源」下拉（20261109B）：把「其他渠道传图」传过的渠道名补进来，
+       这样能把某个渠道的图单独导一张打标表填。 */
+    const ech = $("#rank-export-channel");
+    if (ech) {
+      const keepCh = ech.value;
+      let names = [];
+      try { names = await SB.listRankChannelNames(); } catch (e) { names = []; }
+      ech.innerHTML = '<option value="">全部（榜单图 + 所有渠道）</option>'
+        + '<option value="__rank">仅榜单表格导入的图</option>'
+        + names.map((n) => '<option value="ch:' + escAttr(n) + '">仅渠道：' + escHtml(n) + '</option>').join("");
+      if (keepCh) {
+        const has = Array.prototype.some.call(ech.options, (o) => o.value === keepCh);
+        if (has) ech.value = keepCh;
+      }
+    }
     if (window.RankTagBatches) window.RankTagBatches.load();
     if (!rankPv.cat && rankCats.length) rankPv.cat = rankCats[0];
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;

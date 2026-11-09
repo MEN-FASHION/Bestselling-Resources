@@ -20,9 +20,9 @@ let PERM_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
+  { key: "rhythm", label: "上新节奏" },
   { key: "plus", label: "大码专区" },
   { key: "movement", label: "趋势动向" },
-  { key: "channel", label: "渠道雷达" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
@@ -654,6 +654,7 @@ const ZDEF_HREF_PRESETS = [
   { label: "招品回品 (trends.html#recruit)", href: "trends.html#recruit" },
   { label: "BESTSELLER (trends.html#bestseller)", href: "trends.html#bestseller" },
   { label: "趋势上升榜 (rank.html)", href: "rank.html" },
+  { label: "上新节奏 · 月度趋势 (rhythm.html)", href: "rhythm.html" },
   { label: "营销日历 (marketing.html)", href: "marketing.html" },
 ];
 

@@ -4626,7 +4626,13 @@
       return;
     }
 
-    try { FACETS = await SBX.rankFacets(); } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
+    /* 期次按「周度」筛：月度数据（上新节奏专区）与周度共用同一张表，
+       不筛的话周度页的期次里会冒出「2026年10月」这种月份，与页面口径不符。 */
+    try {
+      FACETS = (typeof SBX.rankFacetsByType === "function")
+        ? await SBX.rankFacetsByType("week")
+        : await SBX.rankFacets();
+    } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 后台可以控制哪些国家站点 / 周次在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */
     /* 图案印花款前台展示开关：关掉时含印花图案的款不参与榜单、统计与报告 */
     try {

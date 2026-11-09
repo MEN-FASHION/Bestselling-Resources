@@ -25,7 +25,7 @@
     const isReload = !!nav && nav.type === "reload";
     const file = (location.pathname.split("/").pop() || "index.html").toLowerCase();
     const here = file + location.search + location.hash;
-    const allowed = ["index.html", "rank.html", "plus.html", "trends.html", "marketing.html", "fav.html"];
+    const allowed = ["index.html", "rank.html", "rhythm.html", "plus.html", "trends.html", "marketing.html", "fav.html"];
     if ((file === "index.html" || file === "") && isReload && !location.search && !location.hash) {
       const last = sessionStorage.getItem(KEY);
       if (last && allowed.indexOf(last.split(/[?#]/)[0]) >= 0 && last.split(/[?#]/)[0] !== "index.html") {

@@ -19,6 +19,9 @@
 (function () {
   "use strict";
 
+  /* 周期口径：周度榜用「周」，月度榜（上新节奏）在加载本文件前把 window.RK_PERIOD_NOUN 设为「月」。
+     除了这一个词，报告的结构 / 页序 / 取数全部一致，不做第二套实现。 */
+  var NOUN = (typeof window !== "undefined" && window.RK_PERIOD_NOUN) ? String(window.RK_PERIOD_NOUN) : "周";
   var FONT = "Microsoft YaHei";
   var SPECS = {
     wide: { name: "16:9 宽屏", w: 13.333, h: 7.5 },
@@ -219,7 +222,7 @@
       return { name: c.name, n: c.cards.length, spec: c.spec };
     });
     if (cols.length < 2) {
-      res.reason = cols.length ? "只检测到 1 列：请把对比列数设为 2 列以上（周 vs 周）。" : "当前没有可对比的列，请选择周次后重试。";
+      res.reason = cols.length ? ("只检测到 1 列：请把对比列数设为 2 列以上（" + NOUN + " vs " + NOUN + "）。") : ("当前没有可对比的列，请选择" + NOUN + "次后重试。");
       return res;
     }
     /* 相邻两周对比：取最后两列（界面按时间顺序排列，最后一列＝本期，前一列＝上期） */
@@ -281,10 +284,10 @@
   function verdicts(a) {
     var p = a.pair, out = [];
     if (p.added.length || p.dropped.length) {
-      out.push("两周之间有 " + p.added.length + " 款新上榜、" + p.dropped.length + " 款掉榜，重合 " + p.kept.length
+      out.push("两" + NOUN + "之间有 " + p.added.length + " 款新上榜、" + p.dropped.length + " 款掉榜，重合 " + p.kept.length
         + " 款，榜单留存率 " + p.keepRate + "%。");
     } else {
-      out.push("两周榜单完全一致（各 " + p.curN + " 款），没有新增与掉榜。");
+      out.push("两" + NOUN + "榜单完全一致（各 " + p.curN + " 款），没有新增与掉榜。");
     }
     if (p.curN && p.prevN) {
       var diff = p.curN - p.prevN;
@@ -431,7 +434,7 @@
 
     /* ① 封面 */
     var s = slide(pptx, spec);
-    s.addText("周对比分析报告", { x: 0.9, y: 2.2, w: spec.w - 1.8, h: 0.9, fontSize: 40, bold: true, color: COL.ink, fontFace: FONT });
+    s.addText(NOUN + "对比分析报告", { x: 0.9, y: 2.2, w: spec.w - 1.8, h: 0.9, fontSize: 40, bold: true, color: COL.ink, fontFace: FONT });
     s.addText(p.prev + "  →  " + p.cur, { x: 0.95, y: 3.15, w: spec.w - 1.9, h: 0.5, fontSize: 20, color: COL.brand, fontFace: FONT });
     s.addShape("rect", { x: 0.95, y: 3.8, w: 2.2, h: 0.035, fill: { color: COL.brand }, line: { color: COL.brand } });
     if (scope) s.addText(scope, { x: 0.95, y: 4.0, w: spec.w - 1.9, h: 0.5, fontSize: 12, color: COL.sub, fontFace: FONT });
@@ -457,7 +460,7 @@
 
     /* ③ 核心结论 */
     s = slide(pptx, spec);
-    y = titleBar(s, spec, "核心结论", "由两周数据直接得出的变化，不含任何建议");
+    y = titleBar(s, spec, "核心结论", "由两" + NOUN + "数据直接得出的变化，不含任何建议");
     verdicts(a).forEach(function (t, i) {
       s.addShape("rect", { x: 0.6, y: y + i * 1.05, w: 0.06, h: 0.8, fill: { color: COL.brand }, line: { color: COL.brand } });
       s.addText(t, { x: 0.85, y: y + i * 1.05, w: spec.w - 1.5, h: 0.8, fontSize: 13, color: COL.ink, fontFace: FONT, valign: "middle" });
@@ -465,7 +468,7 @@
 
     /* ④ 两周总览 */
     s = slide(pptx, spec);
-    y = titleBar(s, spec, "两周总览", "数量、重合与流动");
+    y = titleBar(s, spec, "两" + NOUN + "总览", "数量、重合与流动");
     var r1 = [];
     head(r1, ["指标", p.prev, p.cur, "变化"]);
     row(r1, ["榜单款数", p.prevN, p.curN, (p.curN - p.prevN >= 0 ? "+" : "") + (p.curN - p.prevN)]);
@@ -513,7 +516,7 @@
 
     /* ⑨ 类目结构变化 */
     s = slide(pptx, spec);
-    y = titleBar(s, spec, "类目结构变化", "两年周各叶子类目的款数对比");
+    y = titleBar(s, spec, "类目结构变化", "两" + NOUN + "各叶子类目的款数对比");
     if (!p.cats.length) {
       s.addText("未取到类目信息。", { x: 0.6, y: y + 0.3, w: spec.w - 1.2, h: 0.5, fontSize: 13, color: COL.sub, fontFace: FONT });
     } else {
@@ -530,9 +533,9 @@
       s = slide(pptx, spec);
       var sub = "口径：" + dim.hint + "；按变化幅度排序，差异单位＝百分点（pt）";
       if (dim.key === "craft") sub += "　（工艺词从元素标签中抽取，与上一页有重叠属正常）";
-      y = titleBar(s, spec, dim.zh + "：两周分布差异", sub);
+      y = titleBar(s, spec, dim.zh + "：两" + NOUN + "分布差异", sub);
       if (!dim.rows.length) {
-        s.addText("该维度两周都没有打标数据，无法比较（先在后台补齐打标即可出现）。",
+        s.addText("该维度两" + NOUN + "都没有打标数据，无法比较（先在后台补齐打标即可出现）。",
           { x: 0.6, y: y + 0.3, w: spec.w - 1.2, h: 0.6, fontSize: 13, color: COL.sub, fontFace: FONT });
         return;
       }
@@ -583,7 +586,7 @@
   function fileName(a, now) {
     function d2(n) { return (n < 10 ? "0" : "") + n; }
     var stamp = now.getFullYear() + d2(now.getMonth() + 1) + d2(now.getDate());
-    var nm = ("周对比分析_" + (a && a.pair ? a.pair.prev + "-" + a.pair.cur : "")).replace(/[\\/:*?"<>|\s]+/g, "_");
+    var nm = ((NOUN + "对比分析_") + (a && a.pair ? a.pair.prev + "-" + a.pair.cur : "")).replace(/[\\/:*?"<>|\s]+/g, "_");
     return nm + "_" + stamp + ".pptx";
   }
 

@@ -41,8 +41,8 @@ const PANEL_ZONE = {
   "manage-card": "visual",
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
+  "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
   "movement-card": "movement", // 趋势动向：独立专区，按「后台可管理专区」授权管控
-  "channel-card": "channel",   // 渠道雷达：独立专区，按「后台可管理专区」授权管控
   "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
@@ -77,8 +77,7 @@ const CAT_VIS_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
-  { key: "plus", label: "大码专区" },
-  { key: "channel", label: "渠道雷达" }
+  { key: "plus", label: "大码专区" }
 ];
 
 // 当前生效的专区定义（内置 7 个 + 超管在「专区管理」里新增的），
@@ -109,7 +108,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "insight-card") return true;
+    if (target === "rank-card" || target === "rhythm-card" || target === "insight-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -233,10 +232,6 @@ function switchPanel(target) {
     if (target === "movement-card" && window.MovementAdmin && typeof window.MovementAdmin.reload === "function") {
       window.MovementAdmin.reload();
     }
-    /* 渠道雷达：进入面板时刷新渠道字典与图片（只读缓存，代价很小） */
-    if (target === "channel-card" && window.ChannelAdmin && typeof window.ChannelAdmin.reload === "function") {
-      window.ChannelAdmin.reload();
-    }
     if (target === "bestseller-card") { loadBestsellerList(); loadBestsellerCatPicker(); loadBestsellerCatSettings(); }
     if (target === "super-card") { loadPermPanel(); loadNoticeAdminList(); loadAccess(); loadExportPanel(); }
     // 营销日历：节庆库（原生编辑器，直接在本页编辑；旧的素材区块已下线）
@@ -244,6 +239,10 @@ function switchPanel(target) {
       if (window.FEST && typeof FEST.mount === "function") FEST.mount();
     }
     if (target === "rank-card" && typeof enterRankPanel === "function") { enterRankPanel(); }
+    /* 上新节奏（月度）：独立面板、独立脚本；进入时才拉数据 */
+    if (target === "rhythm-card" && window.RhythmAdmin && typeof window.RhythmAdmin.enter === "function") {
+      window.RhythmAdmin.enter();
+    }
     // 用户动向：三个子页各自懒加载（只读，不发写请求）
     if (target === "insight-card" && typeof loadInsight === "function") { loadInsight(); }
     // 版本恢复：列出快照（不自动生成，避免每次进入都占用一次快照名额）

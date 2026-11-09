@@ -702,7 +702,7 @@ const SB = (() => {
     /* 把图片记录还原成「可打标的图片地址」。
        20261102E：老上传入口（含趋势动向早期版本、历史导入）只写了 path，url 字段是空，
        而打标要按 image_url 唯一键写入，于是拖图时直接报「这张图没有可用的图片地址」。
-       path 本来就是 R2 里的真实位置，拼上 Worker 前缀就是可用地址，与渠道雷达/趋势动向
+       path 本来就是 R2 里的真实位置，拼上 Worker 前缀就是可用地址，与趋势动向/榜单
        上传时写的 URL 完全同一口径，不会出现同一张图两行标签。 */
     _urlOfImageRow(r) {
       if (!r) return "";
@@ -1099,7 +1099,12 @@ async removeTrendRecord(id) {
     async getZoneDefs() {
       try {
         const raw = await this._zoneRaw();
-        const saved = Array.isArray(raw.__defs) ? raw.__defs : [];
+        /* 20261109A：「渠道雷达」专区已整体下线（前台页 / 后台面板 / 权限项都删了）。
+           历史保存的 __defs 里可能还留着这个 key，若原样返回，前台导航会出现一个
+           点进去 404 的死链。这里直接过滤掉，不用让用户去「专区管理」里手动删。 */
+        const GONE = { channel: 1 };
+        const saved = (Array.isArray(raw.__defs) ? raw.__defs : [])
+          .filter(d => d && d.key && !GONE[String(d.key)]);
         // 内置专区始终存在：历史保存的 __defs 可能早于某个内置专区（如「趋势上升榜」）上线，
         // 若直接用保存值覆盖，会导致该专区在「专区管理 / 权限勾选 / 前台导航」里整体消失。
         // 因此以「内置清单」为底，用保存值覆盖同 key 的名称与链接，再追加超管新增的专区。
@@ -2197,6 +2202,67 @@ async removeTrendRecord(id) {
       const o = (Array.isArray(data) ? data[0] : data) || {};
       return { sites: o.sites || [], periods: o.periods || [], categories: o.categories || [] };
     },
+    /* 20261104H：按「周度 / 月度」分别取前台筛选清单。
+       周度榜与月度榜（上新节奏）共用 rank_items / rank_batches 两张表，
+       只靠 period_type 区分。若筛选项不分开取，两份数据会互相串台：
+       周度页里冒出「2026年10月」这样的期次，月度页里冒出 W41。
+       期次 → 类型的映射以 rank_batches（每次上传都有一条）为准，
+       读不到批次时才按期次名称的形态兜底判断。 */
+    async rankFacetsByType(periodType) {
+      const all = await this.rankFacets();
+      const out = {
+        sites: (all && all.sites) || [],
+        periods: (all && all.periods) || [],
+        categories: (all && all.categories) || [],
+      };
+      if (!periodType) return out;
+
+      const typeOf = {};          // 期次名 → 周度/月度
+      const cats = {};            // 该类型下出现过的类目
+      const sites = {};           // 该类型下出现过的站点
+      try {
+        for (let page = 0; page < 20; page++) {
+          const { data, error } = await client.from("rank_batches")
+            .select("period_type, period_label, category, site")
+            .order("id", { ascending: true })
+            .range(page * 1000, page * 1000 + 999);
+          if (error) break;
+          const rows = data || [];
+          rows.forEach((b) => {
+            const lb = String((b && b.period_label) || "").trim();
+            const tp = (b && b.period_type) || "week";
+            if (lb && !typeOf[lb]) typeOf[lb] = tp;
+            if (tp !== periodType) return;
+            const c = String((b && b.category) || "").trim();
+            if (c) cats[c] = 1;
+            String((b && b.site) || "").split(",").forEach((s) => {
+              const v = s.trim();
+              if (v) sites[v] = 1;
+            });
+          });
+          if (rows.length < 1000) break;
+        }
+      } catch (e) { /* 取不到批次就全部走名称兜底 */ }
+
+      const guess = (lb) => {
+        const s = String(lb || "");
+        if (/\d{1,2}\s*月/.test(s)) return "month";
+        if (/^20\d{2}[-/.]\d{1,2}$/.test(s)) return "month";
+        return "week";
+      };
+      out.periods = out.periods.filter((lb) => (typeOf[lb] || guess(lb)) === periodType);
+
+      /* 月度是后加的独立专区，类目 / 站点一律以它自己的数据为准；
+         周度沿用原有口径（不缩减），避免历史数据没有批次记录时筛选项凭空变少。 */
+      if (periodType === "month") {
+        const cl = Object.keys(cats);
+        const sl = Object.keys(sites);
+        if (cl.length) out.categories = out.categories.filter((c) => cats[c]);
+        if (sl.length) out.sites = out.sites.filter((s) => sites[s]);
+      }
+      return out;
+    },
+
     // 国家站点清单（后台自定义维护）
     async listRankSites() {
       const { data, error } = await client.from("rank_sites").select("id, name, sort_order").order("sort_order").order("name");
@@ -2515,8 +2581,92 @@ async removeTrendRecord(id) {
         if (error) throw new Error(error.message || "删除失败");
       }
     },
+    /* ============================================================
+     * 上新节奏 · 其他渠道传图（20261109A）
+     * ------------------------------------------------------------
+     * 不新建表：渠道图就和榜单条目放在 rank_items 里，靠 channel 列区分
+     *   channel = ''（空） → 榜单表格导入的图，原有口径完全不变
+     *   channel = 'Pinterest' / 'SHEIN' … → 后台「其他渠道传图」传进来的图
+     * 这批图只有图（没有环比、没有标题销量），site 一律写空，
+     * 所以在「按国家对比」里不会冒出来，只出现在「横向 · 渠道对比」。
+     * ============================================================ */
+    async listRankChannelItems(o) {
+      const f = o || {};
+      let q = client.from("rank_items")
+        .select("id,period_type,period_label,category,channel,image_url,title,created_at")
+        .neq("channel", "");
+      if (f.periodLabel) q = q.eq("period_label", f.periodLabel);
+      if (f.category) q = q.eq("category", f.category);
+      if (f.channel) q = q.eq("channel", f.channel);
+      const { data, error } = await q.order("id", { ascending: false }).limit(f.limit || 400);
+      if (error) throw new Error(error.message || "读取渠道图片失败（channel 列补丁可能未执行）");
+      return data || [];
+    },
+    /* 已用过的渠道清单：给后台「默认渠道」下拉与筛选用（不额外维护字典表） */
+    async listRankChannelNames() {
+      const { data, error } = await client.from("rank_items").select("channel").neq("channel", "").limit(3000);
+      if (error) return [];
+      const m = {};
+      (data || []).forEach((r) => { const v = String(r.channel || "").trim(); if (v) m[v] = 1; });
+      return Object.keys(m).sort();
+    },
+    /* 批量传图：逐张传 R2 → 拿到 path → 拼地址 → 写 rank_items（channel 非空）。
+       单张失败不影响整批，最后统一返回成功 / 失败清单。 */
+    async uploadRankChannelImages(items, opts, onProgress) {
+      const o = opts || {};
+      const list = Array.from(items || []).map((it) => ({
+        file: it.file,
+        channel: String(it.channel || o.channel || "").trim(),
+        category: String(it.category || o.category || "").trim(),
+        periodLabel: String(it.periodLabel || o.periodLabel || "").trim(),
+      }));
+      const ok = [], failed = [];
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i];
+        try {
+          if (!it.file) throw new Error("缺少图片文件");
+          if (!it.channel) throw new Error("缺少渠道");
+          if (!it.category) throw new Error("缺少类目");
+          if (!it.periodLabel) throw new Error("缺少月份");
+          const path = await this.uploadImage(it.file, it.category || "其他渠道");
+          const url = base + "/" + path;
+          const { error } = await client.from("rank_items").insert({
+            period_type: "month",
+            period_label: it.periodLabel,
+            category: it.category,
+            site: "",
+            channel: it.channel,
+            image_url: url,
+            title: String(it.file.name || "").replace(/\.[^.]+$/, ""),
+            ratio: null,
+            abs_delta: null,
+          });
+          if (error) throw new Error(error.message || "写入失败");
+          ok.push({ name: it.file.name, url, channel: it.channel });
+        } catch (e) {
+          failed.push({ name: (it.file && it.file.name) || "", reason: String((e && e.message) || e || "失败") });
+        }
+        if (typeof onProgress === "function") { try { onProgress(i + 1, list.length); } catch (e0) {} }
+      }
+      return { ok, failed };
+    },
+    /* 单张改渠道 / 类目 / 月份（传错不用删了重传） */
+    async updateRankChannelItem(id, patch) {
+      const o = {};
+      if (patch && patch.channel != null) o.channel = String(patch.channel).trim();
+      if (patch && patch.category != null) o.category = String(patch.category).trim();
+      if (patch && patch.period_label != null) o.period_label = String(patch.period_label).trim();
+      const { error } = await client.from("rank_items").update(o).eq("id", id);
+      if (error) throw new Error(error.message || "修改失败");
+    },
+    async deleteRankChannelItem(id) {
+      const { error } = await client.from("rank_items").delete().eq("id", id);
+      if (error) throw new Error(error.message || "删除失败");
+    },
+
     // 榜单条目查询（前台对比 / 后台核对）
-    // filter: { category, sites:[], periods:[], periodType }
+    // filter: { category, sites:[], periods:[], periodType, channelMode }
     /* 列白名单是否被服务端拒绝过（拒绝后已退回全量，不会再有整页空白） */
     colsRejected() { return COLS_REJECTED; },
     async listRankItems(filter) {
@@ -2532,7 +2682,7 @@ async removeTrendRecord(id) {
          整条查询会以 400 整体失败，前台表现就是「一张图都没有」——这比慢严重得多。
          所以做成可降级：白名单失败立刻退回全量再取一次，并在本次会话内记住。 */
       const useSlim = () => !!f.cols && !COLS_REJECTED;
-      const build = (from, to, cols) => {
+      const build = (from, to, cols, chMode) => {
         /* cols：只需要 URL 做比对时不要拉全量字段（每条记录几十个字段，上万行就是几 MB） */
         /* 20261104F：cols 由调用方指定成"渲染真正要用的列"。
            榜单页原来 select("*") 会把每条记录的几十个字段全拉回来，一个类目三周就是好几 MB，
@@ -2543,15 +2693,22 @@ async removeTrendRecord(id) {
         if (f.periodType) q = q.eq("period_type", f.periodType);
         if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
         if (f.sites && f.sites.length) q = q.in("site", f.sites);
+        /* 20261109A：渠道口径。"only" = 只看其他渠道传的图；"exclude" = 只看榜单表格导入的图。
+           这一列是后加的补丁，没执行时查询会整体失败 —— 所以下面遇到错误会自动去掉
+           这个条件重取一次，页面至少还能显示原有榜单数据。 */
+        if (chMode === "only") q = q.neq("channel", "");
+        else if (chMode === "exclude") q = q.eq("channel", "");
         return q.order("id", { ascending: true }).range(from, to);
       };
       const out = [];
+      let chMode = f.channelMode || "";
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
-        let res = await build(from, to, useSlim() ? f.cols : "*");
+        let res = await build(from, to, useSlim() ? f.cols : "*", chMode);
+        if (res.error && chMode) { chMode = ""; res = await build(from, to, useSlim() ? f.cols : "*", chMode); }
         if (res.error && useSlim()) {
           COLS_REJECTED = true;                       /* 记住：后续不再试白名单 */
-          res = await build(from, to, "*");
+          res = await build(from, to, "*", chMode);
         }
         const { data, error } = res;
         if (error) throw new Error(error.message || "读取榜单数据失败");
@@ -2752,171 +2909,6 @@ async removeTrendRecord(id) {
     /* 按地址批量取打标结果 —— 直接复用榜单读取，保证两个专区口径一致 */
     async listMovementTags(urls) {
       return this.listRankTagRows(urls);
-    },
-
-    /* ============================================================
-     * 渠道雷达 · 渠道对比（20261031A）
-     * ------------------------------------------------------------
-     * 与「趋势上升榜」同构，但对比维度是「渠道（平台）」而不是周次：
-     *   渠道字典 → channel_sites（后台增删改排序，前台按它出列）
-     *   图片本体 → channel_items（类目 + 渠道 + 周次）
-     *   打标数据 → rank_image_tags（与榜单、趋势动向共用同一张表）
-     * ============================================================ */
-    async listChannelSites(onlyActive) {
-      let q = client.from("channel_sites").select("id,name,sort_order,active")
-        .order("sort_order", { ascending: true }).order("name", { ascending: true });
-      if (onlyActive) q = q.eq("active", true);
-      const { data, error } = await q;
-      if (error) throw new Error(error.message || "读取渠道失败（补丁是否已执行？）");
-      return data || [];
-    },
-    async addChannelSite(name) {
-      const n = String(name || "").trim();
-      if (!n) throw new Error("渠道名称不能为空");
-      /* 新渠道排在最后：取现有最大排序 +10，避免插到最前面打乱运营顺序 */
-      let maxSort = 0;
-      try {
-        const list = await this.listChannelSites();
-        list.forEach((r) => { if (Number(r.sort_order) > maxSort) maxSort = Number(r.sort_order); });
-      } catch (e) { maxSort = 0; }
-      const { error } = await client.from("channel_sites").insert({ name: n, sort_order: maxSort + 10 });
-      if (error) throw new Error(/duplicate|unique/i.test(error.message || "") ? "这个渠道已经存在" : (error.message || "新增失败"));
-      return n;
-    },
-    /* 改名要连带把图片上的渠道名一起改，否则那一列会凭空消失变成"未分渠道" */
-    async renameChannelSite(id, oldName, newName) {
-      const n = String(newName || "").trim();
-      if (!n) throw new Error("渠道名称不能为空");
-      const { error } = await client.from("channel_sites").update({ name: n }).eq("id", id);
-      if (error) throw new Error(/duplicate|unique/i.test(error.message || "") ? "这个渠道名称已存在" : (error.message || "改名失败"));
-      const old = String(oldName || "").trim();
-      if (old && old !== n) {
-        await client.from("channel_items").update({ channel: n }).eq("channel", old);
-      }
-      return n;
-    },
-    /* 删渠道只删字典，不删图片：图片还在，归到"未分渠道"可以再改回来 */
-    async deleteChannelSite(id) {
-      const { error } = await client.from("channel_sites").delete().eq("id", id);
-      if (error) throw new Error(error.message || "删除失败");
-    },
-    async reorderChannelSite(id, sortOrder) {
-      const { error } = await client.from("channel_sites")
-        .update({ sort_order: Number(sortOrder) || 0 }).eq("id", id);
-      if (error) throw new Error(error.message || "排序保存失败");
-    },
-    async setChannelSiteActive(id, active) {
-      const { error } = await client.from("channel_sites").update({ active: !!active }).eq("id", id);
-      if (error) throw new Error(error.message || "保存失败");
-    },
-    /* 图片清单：三个筛选都可选；分页读，最多 2 万张（与趋势动向同量级） */
-    async listChannelItems(filter) {
-      const f = filter || {};
-      const PAGE = 1000, MAX = 20000;
-      const out = [];
-      for (let from = 0; from < MAX; from += PAGE) {
-        let q = client.from("channel_items")
-          .select("id,image_url,path,category,channel,week_label,week_sort,batch_id,created_at,title")
-          .order("week_sort", { ascending: false })
-          .order("id", { ascending: false })
-          .range(from, from + PAGE - 1);
-        if (f.category) q = q.eq("category", f.category);
-        if (f.channel) q = q.eq("channel", f.channel);
-        if (f.weekLabel) q = q.eq("week_label", f.weekLabel);
-        const { data, error } = await q;
-        if (error) throw new Error(error.message || "读取渠道图片失败（补丁是否已执行？）");
-        const rows = data || [];
-        rows.forEach((r) => out.push(r));
-        if (rows.length < PAGE) break;
-      }
-      return out;
-    },
-    /* 批量上传：逐张传 R2 拿 path，再写入 channel_items。
-       渠道 / 类目 / 周次 为一整批统一坐标（运营就是按这个粒度上传的）。 */
-    /* 批量上传渠道雷达图片
-       每一项可以是裸 File（此时用 opts 里的公共坐标），也可以是
-       {file, category, channel, weekLabel, weekSort} —— 一批图里各张的类目/渠道/周次
-       可以各不相同（一次从多个类目、多个渠道、多个周次混着传）。 */
-    async uploadChannelImages(items, opts, onProgress) {
-      const o = opts || {};
-      const dCat = String(o.category || "").trim();
-      const dChn = String(o.channel || "").trim();
-      const dLab = String(o.weekLabel || "").trim();
-      const dSort = Number(o.weekSort) || 0;
-      const list = Array.from(items || []).map((it) => {
-        const f = (it && it.file) ? it.file : it;
-        return {
-          file: f,
-          category: String((it && it.category != null ? it.category : dCat) || "").trim(),
-          channel: String((it && it.channel != null ? it.channel : dChn) || "").trim(),
-          weekLabel: String((it && it.weekLabel != null ? it.weekLabel : dLab) || "").trim(),
-          weekSort: Number((it && it.weekSort != null ? it.weekSort : dSort)) || 0,
-        };
-      });
-      const batchId = "ch-" + Date.now().toString(36);
-      const ok = [], bad = [];
-      for (let i = 0; i < list.length; i++) {
-        const it = list[i];
-        const f = it.file;
-        try {
-          if (!it.category) throw new Error("缺少类目");
-          if (!it.channel) throw new Error("缺少渠道");
-          if (!it.weekLabel) throw new Error("缺少周次");
-          const path = await this.uploadImage(f, it.category || "渠道雷达");
-          const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
-          const { error } = await client.from("channel_items").insert({
-            image_url: url, path: path, category: it.category, channel: it.channel,
-            week_label: it.weekLabel, week_sort: it.weekSort,
-            title: (f.name || "").replace(/\.[^.]+$/, ""), batch_id: batchId,
-          });
-          if (error) throw new Error(error.message || "写入失败");
-          ok.push({ name: f.name, url: url, category: it.category, channel: it.channel, weekLabel: it.weekLabel });
-        } catch (e) {
-          bad.push({ name: f.name, reason: String((e && e.message) || e) });
-        }
-        if (typeof onProgress === "function") onProgress(i + 1, list.length);
-      }
-      return { ok: ok, failed: bad, batchId: batchId };
-    },
-    /* 单张改渠道 / 周次（传错了不用删了重传） */
-    async setChannelItemMeta(id, patch) {
-      const o = {};
-      if (patch && patch.channel !== undefined) o.channel = String(patch.channel || "").trim();
-      if (patch && patch.weekLabel !== undefined) o.week_label = String(patch.weekLabel || "").trim();
-      if (patch && patch.weekSort !== undefined) o.week_sort = Number(patch.weekSort) || 0;
-      if (!Object.keys(o).length) return;
-      const { error } = await client.from("channel_items").update(o).eq("id", id);
-      if (error) throw new Error(error.message || "保存失败");
-    },
-    async deleteChannelItem(id) {
-      const { error } = await client.from("channel_items").delete().eq("id", id);
-      if (error) throw new Error(error.message || "删除失败");
-    },
-    async saveChannelTags(url, patch) {
-      const u = String(url || "").trim();
-      if (!u) throw new Error("缺少图片地址");
-      return this._upsertTagsByUrl([{ url: u, patch: patch || {} }]);
-    },
-    async listChannelTags(urls) {
-      return this.listRankTagRows(urls);
-    },
-    async getChannelTagVisibility() {
-      try {
-        const { data, error } = await client.from("channel_settings")
-          .select("tag_visibility").eq("id", 1).maybeSingle();
-        if (error || !data || !data.tag_visibility || typeof data.tag_visibility !== "object") return {};
-        const out = {};
-        Object.keys(data.tag_visibility).forEach((k) => { out[k] = data.tag_visibility[k] !== false; });
-        return out;
-      } catch (e) { return {}; }
-    },
-    async setChannelTagVisibility(map) {
-      const clean = {};
-      Object.keys(map || {}).forEach((k) => { clean[k] = map[k] !== false; });
-      const { error } = await client.from("channel_settings")
-        .upsert({ id: 1, tag_visibility: clean, updated_at: new Date().toISOString() }, { onConflict: "id" });
-      if (error) throw new Error(error.message || "保存可见性失败");
-      return clean;
     },
 
     /* 探测打标表的可选维度列是否存在。

@@ -4,9 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261103J">
-<link rel="stylesheet" href="css/channel.css?v=20261103J">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261103J">
+<link rel="stylesheet" href="css/style.css?v=20261109B">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261109B">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -116,7 +115,7 @@
           <a class="nav-item" data-target="bestseller-card">BESTSELLER</a>
         <a class="nav-item" data-target="movement-card">趋势动向</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
-        <a class="nav-item" data-target="channel-card">渠道雷达</a>
+        <a class="nav-item" data-target="rhythm-card">上新节奏</a>
         <a class="nav-item" data-target="plus-card">大码专区</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
           <a class="nav-item" data-target="insight-card" data-super="1">用户动向</a>
@@ -991,6 +990,8 @@
           <p class="hint">
             导出属于管理动作，只在这里提供（前台不再有导出按钮）。一张图一行，标签列带出已打过的标，
             另附「打标状态」列。<b>默认只导未打标的图</b>，所以导过一次、打完再导，不会把打过的又混进来。
+            「其他渠道传图」传上来的那些图（Pinterest / SHEIN…）也在这张表里，用「来源」下拉可以只导某一个渠道，
+            它们没有站点与环比，靠「渠道」列区分。
           </p>
           <div class="rank-grid">
             <label class="rank-field">
@@ -1005,6 +1006,14 @@
             <label class="rank-field">
               <span>类目（可选）</span>
               <select id="rank-export-cat"><option value="">全部类目</option></select>
+            </label>
+            <label class="rank-field">
+              <span>来源（可选：榜单图 / 某个渠道）</span>
+              <select id="rank-export-channel">
+                <option value="">全部（榜单图 + 所有渠道）</option>
+                <option value="__rank">仅榜单表格导入的图</option>
+                <option value="__chonly">仅其他渠道传的图（全部渠道）</option>
+              </select>
             </label>
             <label class="rank-field">
               <span>关键词（可选，匹配图片URL / 类目 / 叶子类目）</span>
@@ -1082,6 +1091,156 @@
           <div id="rank-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
         </section>
       </div>
+
+      <div class="panel-card hidden" id="rhythm-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>上新节奏 · 月度榜单管理工作台</h3>
+            <p class="hint">左边维护<b>国家站点</b>与<b>期次 / 频次</b>，右边就是前台的样子 —— 改完即时可见。名称直接点一下就能改；<b>每行左边的 ◉ / ◌ 决定该站点 / 该月份在前台是否展示</b>（隐藏后前台不再出现，数据保留，随时可恢复）。</p>
+          </div>
+          <div class="rkadm-head-act">
+            <button id="rmadm-refresh" class="btn-ghost" type="button">刷新数据</button>
+            <button id="rmadm-open-front" class="btn-primary" type="button">前台打开</button>
+          </div>
+        </div>
+
+        <div class="rkadm-split">
+          <div class="rkadm-col">
+            <section class="rkadm-sec">
+              <h4>国家站点 <span class="rkadm-tip">点名称即改，↑↓ 排序，◉/◌ 控制前台是否展示</span></h4>
+              <div class="rkadm-add">
+                <input id="rm-site-new" type="text" placeholder="输入站点名，例如：美国">
+                <button id="rm-site-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rm-site-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>地区分组 <span class="rkadm-tip">把多个国家并成一个地区（如「欧洲」），前台可整区对比，也可只挑其中一个国家</span></h4>
+              <div class="rkadm-add">
+                <input id="rm-group-new" type="text" placeholder="输入地区名，例如：欧洲">
+                <button id="rm-group-add" class="btn-primary small" type="button">＋ 新增</button>
+              </div>
+              <div id="rm-group-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>期次 / 月度频次 <span class="rkadm-tip">按月顺序排列 · 点名称改期次 · ◉/◌ 控制前台是否展示 · 本面板只收月度数据</span></h4>
+              <div id="rm-period-list" class="rkadm-list"></div>
+            </section>
+            <section class="rkadm-sec">
+              <h4>前台展示 · 图案印花款 <span class="rkadm-tip">关闭后含印花图案的款在前台整款不展示（榜单 / 统计 / 报告一起变）</span></h4>
+              <p class="hint">识别依据按「有没有图案」判：图案类型不是「纯色/无图案」或纯配色、图案元素写了具体内容（字母 / 文字标语 / 卡通人物 / 花朵…）、二次工艺属印花 / 烫画 / 烫金 / 烫钻这类，任一处命中即算图案款。<b>章仔、织唛、印花标、烫标、皮标、绣标、肩章、臂章</b>这类辅料 / 标牌，以及拉链、荷叶边这类结构件，都不属于图案，不会被隐藏。与「视觉专区 → 标签管理」里的是同一个开关。</p>
+              <div id="rm-pattern-print-switch" class="frontend-dim-switches"></div>
+              <p class="hint" id="rm-pattern-print-note"></p>
+            </section>
+          </div>
+
+          <div class="rkadm-col rkadm-col--main">
+            <section class="rkadm-sec rkadm-sec--pv">
+              <h4>实时预览 · 前台所见
+                <span class="rkadm-sec-act">
+                  <button id="rmadm-pv-reload" class="btn-ghost small" type="button">刷新</button>
+                  <button id="rmadm-pv-full" class="btn-ghost small" type="button">全屏</button>
+                </span>
+              </h4>
+              <div class="rkadm-pv-bar">
+                <label>类目<select id="rmadm-pv-cat"></select></label>
+                <label>国家<select id="rmadm-pv-site"></select></label>
+                <label>期次<select id="rmadm-pv-period"></select></label>
+                <label>对比<select id="rmadm-pv-mode"><option value="h">横向 · 国家对比</option><option value="v">纵向 · 时间对比</option><option value="c">横向 · 类目对比</option></select></label>
+                <label>图幅<select id="rmadm-pv-size"><option value="s">小</option><option value="m" selected>中</option><option value="l">大</option></select></label>
+              </div>
+              <div id="rmadm-pv-hint" class="rkadm-pv-hint"></div>
+              <div class="rkadm-frame"><iframe id="rmadm-pv-frame" title="前台实时预览" src="rhythm.html"></iframe></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>上传榜单表格</h4>
+          <p class="hint">Excel 需含「叶子类目名称 / 销量站点 / 首图url / 环比绝对值 / 环比比例」五列，系统自动打「潜力机会 / 趋势爆款 / 月度激增」标签。环比按<b>本月 vs 上月</b>填。<b>这里只写月度数据</b>，不会碰趋势上升榜（周度）的任何数据。</p>
+          <div class="rank-grid">
+            <label class="rank-field" id="rm-pm-wrap">
+              <span>选月份（本期次，如 2026-10）</span>
+              <input id="rm-period-month" type="month">
+            </label>
+            <input id="rm-period-label" type="hidden" value="">
+            <label class="rank-field">
+              <span>类目</span>
+              <span class="rank-inline">
+                <select id="rm-cat" style="min-width:160px"></select>
+                <button id="rm-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">国家站点（<b>以这里勾选的为准</b>：勾了就整个表都归入你勾的站点，忽略表格里的「销量站点」列——欧盟这类合计表请勾「欧盟」；一个都不勾才按表格列逐行取，可多选）</span>
+            <div id="rm-site-defaults" class="rank-site-defaults"></div>
+          </div>
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">导入方式（<b>以本次上传的表格为准</b>：覆盖 = 先清掉「本期次 · 本类目 · 上面勾选的站点」下的旧数据再整表写入，有效行 200 就写 200 条，<b>不跟以前传的表格查重</b>；追加 = 保留旧数据、只补库里还没有的图）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="rm-mode" value="replace" checked> 覆盖（推荐）</label>
+                <label class="chk"><input type="radio" name="rm-mode" value="append"> 追加</label>
+              </span>
+            </div>
+          </div>
+          <div class="rank-inline">
+            <input id="rm-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rm-import" class="btn-primary" type="button" disabled>导入榜单</button>
+          </div>
+          <div id="rm-file-tip" class="rank-file-tip"></div>
+          <div id="rm-preview" class="rank-preview"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>其他渠道传图 <span class="rkadm-tip">Pinterest / SHEIN / 淘宝… 这些渠道往往只有图，没有环比和销量 —— 传上来就能在「上新节奏」前台切到「横向 · 渠道对比」，和本站榜单并排列着看</span></h4>
+          <p class="hint">
+            一批图共用上面的<b>月份 + 渠道 + 类目</b>；每张传完还能在下面的列表里改渠道 / 类目 / 月份（传错了直接改，不用删了重传）。
+            渠道图<b>只有图</b>：没有环比、没有标题销量，因此不会进「按国家对比 / 按时间对比 / 按类目对比」，
+            也不会被「覆盖导入」清掉。<b>这里只写月度渠道数据，不碰榜单表格导入的任何数据。</b><br>
+            图传完可以先不打标；要打标时点下面「导出这批图的打标表」，导出的表按当前筛选（渠道 / 类目）来，
+            填完回到「趋势上升榜 → ② 打标结果回填」原路导回即可 —— 标签照样按图片地址回写，和榜单图同一套枚举。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field"><span>月份（这些图属于哪个月）</span><input id="rm-ch-month" type="month"></label>
+            <label class="rank-field"><span>渠道</span>
+              <span class="rank-inline">
+                <input id="rm-ch-channel" class="input" list="rm-ch-channel-list" placeholder="如 Pinterest / SHEIN / 淘宝" maxlength="24">
+                <datalist id="rm-ch-channel-list"></datalist>
+              </span>
+            </label>
+            <label class="rank-field"><span>类目</span><select id="rm-ch-cat" style="min-width:160px"></select></label>
+          </div>
+          <div id="rm-ch-drop" class="mv-drop">把渠道图拖到这里，或点「选择图片」</div>
+          <div class="rank-inline">
+            <button id="rm-ch-pick" class="btn-ghost" type="button">选择图片（可多选）</button>
+            <button id="rm-ch-upload" class="btn-primary" type="button" disabled>上传（0）</button>
+            <button id="rm-ch-clear" class="btn-ghost" type="button">清空待传</button>
+            <span id="rm-ch-tip" class="hint-inline"></span>
+          </div>
+          <input type="file" id="rm-ch-file" accept="image/*" multiple hidden>
+          <div id="rm-ch-pending" class="mv-pending"></div>
+          <div id="rm-ch-progress" class="progress hidden"><div id="rm-ch-progress-bar" class="progress-bar"></div></div>
+
+          <div class="rank-inline" style="margin-top:10px">
+            <span id="rm-ch-count" class="hint-inline">—</span>
+            <select id="rm-ch-filter-ch" class="input"><option value="">全部渠道</option></select>
+            <select id="rm-ch-filter-cat" class="input"><option value="">全部类目</option></select>
+            <button id="rm-ch-refresh" class="btn-ghost" type="button">刷新列表</button>
+            <button id="rm-ch-tag-export" class="btn-ghost" type="button">导出这批图的打标表</button>
+            <span id="rm-ch-msg" class="hint-inline"></span>
+          </div>
+          <div id="rm-ch-list" class="grid"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>已上传记录（月度）</h4>
+          <p class="hint">打标表导出与打标回填是与期次无关的通用动作，仍在「趋势上升榜 → 导出打标表 / 打标结果回填」里做，导出的就是全表（含月度数据）。</p>
+          <div id="rm-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
+        </section>
+      </div>
+
 
       <!-- ================= 大码专区 · 数据上传与同款匹配 =================
            与「趋势上升榜」完全独立：大码有自己的期次、自己的类目、自己的上传记录。
@@ -1394,116 +1553,6 @@
       </div>
     </div>
 
-    <!-- ================= 渠道雷达 · 渠道对比（20261031A 新增） =================
-         结构与「趋势上升榜 / 趋势动向」一致：图片本体与打标数据分开存。
-           渠道字典 → channel_sites（后台增删改排序，前台按它并排出列）
-           图片本体 → channel_items（类目 + 渠道 + 周次 三个坐标）
-           打标数据 → rank_image_tags（按图片地址唯一，与榜单、趋势动向共用同一套维度）
-         前台对比池的"列"= 渠道，"周次"改为顶部筛选；枚举、导出、导入全部沿用榜单那套。 -->
-    <div class="panel-card hidden" id="channel-card">
-      <h2>渠道雷达 <span class="hint-inline">（渠道自定义 · 按类目/周次传图 · 打标导入导出 · 打包下载）</span></h2>
-
-      <!-- ① 渠道字典 -->
-      <div class="ch-admin-block">
-        <h3>① 渠道管理 <small>前台按这里的顺序并排出列；改名会同步改掉已有图片上的渠道名</small></h3>
-        <div class="ch-add-row">
-          <input id="ch-new-name" class="input" placeholder="新增渠道，如 SHEIN / TEMU / 独立站" maxlength="24">
-          <button id="ch-add-btn" class="btn-primary" type="button">添加渠道</button>
-          <button id="ch-site-refresh" class="btn-ghost" type="button">刷新</button>
-          <span id="ch-site-msg" class="hint-inline"></span>
-        </div>
-        <div id="ch-sites" class="ch-sites"></div>
-      </div>
-
-      <!-- ② 按「类目 + 渠道 + 周次」整批传图 -->
-      <div class="ch-admin-block">
-        <h3>② 上传图片 <small>顶部是「加入待传列表时的默认值」；每张图的类目、渠道、周次都能单独改，一批里可以混着不同类目</small></h3>
-        <div class="ch-up-row">
-          <label class="ch-up-field"><span>默认类目</span><select id="ch-up-cat" class="input"></select></label>
-          <label class="ch-up-field"><span>默认渠道</span><select id="ch-up-channel" class="input"></select></label>
-          <label class="ch-up-field"><span>年</span><input id="ch-up-year" class="input ch-week-num" type="number" min="2000" max="2100" step="1"></label>
-          <label class="ch-up-field"><span>周</span><input id="ch-up-week" class="input ch-week-num" type="number" min="1" max="53" step="1"></label>
-          <button id="ch-pick-btn" class="btn-primary" type="button">选择图片（可多选）</button>
-          <button id="ch-apply-all" class="btn-ghost" type="button">把默认值套用到全部</button>
-          <button id="ch-upload-btn" class="btn-primary" type="button" disabled>上传（0）</button>
-          <button id="ch-clear-btn" class="btn-ghost" type="button">清空待传</button>
-          <span id="ch-upload-tip" class="hint-inline"></span>
-          <span id="ch-week-preview" class="hint-inline"></span>
-        </div>
-        <div id="ch-drop" class="mv-drop">把图片拖到这里，或点「选择图片」</div>
-        <div id="ch-pending" class="mv-pending"></div>
-        <div id="ch-progress" class="progress hidden"><div id="ch-progress-bar" class="progress-bar"></div></div>
-        <input type="file" id="ch-file" accept="image/*" multiple hidden>
-      </div>
-
-      <!-- ③ 工具栏：筛选 / 打标 / 下载 / 导入 -->
-      <div class="mv-toolbar">
-        <span id="ch-count" class="hint-inline">加载中…</span>
-        <select id="ch-filter-cat" class="input"><option value="">全部类目</option></select>
-        <select id="ch-filter-channel" class="input"><option value="">全部渠道</option></select>
-        <select id="ch-filter-week" class="input"><option value="">全部周次</option></select>
-        <button id="ch-refresh" class="btn-ghost" type="button">刷新</button>
-        <button id="ch-vis-btn" class="btn-ghost" type="button">前台可见标签</button>
-        <button id="ch-export-btn" class="btn-ghost" type="button">导出打标表</button>
-        <button id="ch-images-btn" class="btn-ghost" type="button">打包下载图片</button>
-        <button id="ch-import-btn" class="btn-ghost" type="button">导入打标表</button>
-        <input type="file" id="ch-import-file" accept=".xlsx,.xls" hidden>
-        <span id="ch-msg" class="hint-inline"></span>
-      </div>
-
-      <div class="manage-layout gallery-layout">
-        <aside class="sidebar">
-          <div class="side-head">图片类目</div>
-          <nav id="ch-menu" class="cat-menu"></nav>
-        </aside>
-        <main class="grid-wrap">
-          <p id="ch-empty" class="empty-tip hidden">暂无图片</p>
-          <div id="ch-grid" class="grid"></div>
-        </main>
-      </div>
-    </div>
-
-    <!-- 渠道雷达 · 大图打标面板（点击图片打开，按维度分组，与趋势动向一致） -->
-    <div id="ch-tag-modal" class="modal-mask hidden">
-      <div class="modal mv-tag-modal">
-        <div class="mv-tag-head">
-          <h3>渠道雷达 · 打标</h3>
-          <span id="ch-tag-title" class="hint-inline"></span>
-          <span class="mv-tag-season">
-            <select id="ch-tag-channel" class="input"></select>
-            <input id="ch-tag-year" class="input ch-week-num" type="number" min="2000" max="2100" step="1">
-            <input id="ch-tag-week" class="input ch-week-num" type="number" min="1" max="53" step="1">
-          </span>
-        </div>
-        <div class="mv-tag-body">
-          <div class="mv-tag-img"><img id="ch-tag-img" alt=""></div>
-          <div class="mv-tag-dims" id="ch-tag-dims"></div>
-        </div>
-        <div class="mtag-actions">
-          <button id="ch-tag-save" class="btn-primary" type="button">保存</button>
-          <button id="ch-tag-del" class="btn-danger" type="button">删除这张图</button>
-          <button id="ch-tag-close" class="btn-ghost" type="button">关闭</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 渠道雷达 · 前台标签可见性 -->
-    <div id="ch-vis-modal" class="modal-mask hidden">
-      <div class="modal mv-vis-modal">
-        <div class="mv-tag-head">
-          <h3>前台可见标签</h3>
-          <span class="hint-inline">关掉后，该维度只留在后台，前台大图里不显示</span>
-        </div>
-        <div id="ch-vis-list" class="mv-vis-list"></div>
-        <div class="mtag-actions">
-          <button id="ch-vis-save" class="btn-primary" type="button">保存</button>
-          <button id="ch-vis-all" class="btn-ghost" type="button">全部展示</button>
-          <button id="ch-vis-close" class="btn-ghost" type="button">关闭</button>
-          <span id="ch-vis-msg" class="hint-inline"></span>
-        </div>
-      </div>
-    </div>
-
       <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
       
     </main>
@@ -1698,40 +1747,40 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261103J"></script>
-  <script src="vendor/quill.js?v=20261103J"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261103J"></script>
-  <script src="vendor/jszip.min.js?v=20261103J"></script>
-  <script src="vendor/qrcode.min.js?v=20261103J"></script>
-  <script src="js/config.js?v=20261103J"></script>
-  <script src="js/supabase.js?v=20261103J"></script>
-  <script src="js/track-menu.js?v=20261103J"></script>
+  <script src="vendor/supabase.js?v=20261109B"></script>
+  <script src="vendor/quill.js?v=20261109B"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261109B"></script>
+  <script src="vendor/jszip.min.js?v=20261109B"></script>
+  <script src="vendor/qrcode.min.js?v=20261109B"></script>
+  <script src="js/config.js?v=20261109B"></script>
+  <script src="js/supabase.js?v=20261109B"></script>
+  <script src="js/track-menu.js?v=20261109B"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261103J"></script>
-  <script src="js/admin.js?v=20261103J"></script>
-  <script src="js/admin-images.js?v=20261103J"></script>
-  <script src="js/rank-enums.js?v=20261103J"></script>
-  <script src="js/imageexport.js?v=20261103J"></script>
-  <script src="js/admin-imageimport.js?v=20261103J"></script>
-  <script src="js/admin-movement.js?v=20261103J"></script>
-  <script src="js/admin-channel.js?v=20261103J"></script>
-  <script src="js/admin-smart.js?v=20261103J"></script>
-  <script src="js/admin-trend.js?v=20261103J"></script>
-  <script src="js/admin-notice.js?v=20261103J"></script>
-  <script src="js/marketing-data.js?v=20261103J"></script>
-  <script src="js/admin-festival.js?v=20261103J"></script>
-  <script src="js/admin-tasks.js?v=20261103J"></script>
-  <script src="js/admin-bestseller.js?v=20261103J"></script>
-  <script src="js/admin-perm.js?v=20261103J"></script>
-  <script src="js/admin-pool.js?v=20261103J"></script>
-  <script src="js/rankexport.js?v=20261103J"></script>
-  <script src="js/admin-rankimport.js?v=20261103J"></script>
-  <script src="js/admin-rank.js?v=20261103J"></script>
-  <script src="js/plus-sb.js?v=20261103J"></script>
-  <script src="js/plus-match.js?v=20261103J"></script>
-  <script src="js/admin-plus.js?v=20261103J"></script>
-  <script src="js/admin-insight.js?v=20261103J"></script>
-  <script src="js/admin-backup.js?v=20261103J"></script>
+  <script src="js/admin-dialog.js?v=20261109B"></script>
+  <script src="js/admin.js?v=20261109B"></script>
+  <script src="js/admin-images.js?v=20261109B"></script>
+  <script src="js/rank-enums.js?v=20261109B"></script>
+  <script src="js/imageexport.js?v=20261109B"></script>
+  <script src="js/admin-imageimport.js?v=20261109B"></script>
+  <script src="js/admin-movement.js?v=20261109B"></script>
+  <script src="js/admin-smart.js?v=20261109B"></script>
+  <script src="js/admin-trend.js?v=20261109B"></script>
+  <script src="js/admin-notice.js?v=20261109B"></script>
+  <script src="js/marketing-data.js?v=20261109B"></script>
+  <script src="js/admin-festival.js?v=20261109B"></script>
+  <script src="js/admin-tasks.js?v=20261109B"></script>
+  <script src="js/admin-bestseller.js?v=20261109B"></script>
+  <script src="js/admin-perm.js?v=20261109B"></script>
+  <script src="js/admin-pool.js?v=20261109B"></script>
+  <script src="js/rankexport.js?v=20261109B"></script>
+  <script src="js/admin-rankimport.js?v=20261109B"></script>
+  <script src="js/admin-rank.js?v=20261109B"></script>
+  <script src="js/admin-rhythm.js?v=20261109B"></script>
+  <script src="js/plus-sb.js?v=20261109B"></script>
+  <script src="js/plus-match.js?v=20261109B"></script>
+  <script src="js/admin-plus.js?v=20261109B"></script>
+  <script src="js/admin-insight.js?v=20261109B"></script>
+  <script src="js/admin-backup.js?v=20261109B"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

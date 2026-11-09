@@ -2292,6 +2292,8 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; color: var
 .rk-badge.flag-opportunity { background: rgba(139,115,85,.94); }
 .rk-badge.flag-hot { background: rgba(192,57,43,.94); }
 .rk-badge.flag-surge { background: rgba(191,138,53,.96); }
+/* 渠道对比：其他渠道传进来的图没有环比，角标显示来源平台名（20261109A） */
+.rk-badge.rk-badge-ch { background: rgba(52,73,94,.92); letter-spacing: .02em; }
 .rk-share {
   position: absolute; top: 3px; right: 3px; padding: 1px 5px; border-radius: 5px;
   font-size: 9.5px; line-height: 1.5; color: #fff; background: rgba(20,20,20,.62);
@@ -6623,3 +6625,17 @@ html, body{
 .rk-vitals{display:flex;gap:14px;align-items:stretch}
 @media (max-width:1180px){.rk-vitals{flex-wrap:wrap}.rk-vitals>.rk-vit{flex:1 1 45%}}
 @media (max-width:720px){.rk-vitals>.rk-vit{flex:1 1 100%}}
+
+/* 上新节奏 · 其他渠道传图：已传列表卡片（20261109A） */
+#rm-ch-list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.rm-ch-card { margin: 0; border: 1px solid #e6e8ec; border-radius: 10px; overflow: hidden; background: #fff; }
+.rm-ch-card img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: #f5f6f8; }
+.rm-ch-card figcaption { display: flex; flex-direction: column; gap: 3px; padding: 7px 8px 9px; }
+.rm-ch-card figcaption b { font-size: 12px; color: #2b2f36; font-weight: 600; }
+.rm-ch-card .rm-ch-meta { font-size: 11px; color: #8a8f99; }
+.rm-ch-card .rm-ch-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.rm-ch-card .rm-ch-acts button {
+  font-size: 11px; line-height: 1; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid #dfe2e8; background: #fff; color: #4a4f57; cursor: pointer;
+}
+.rm-ch-card .rm-ch-acts button:hover { border-color: #2f6fed; color: #2f6fed; }
