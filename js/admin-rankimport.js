@@ -751,8 +751,110 @@
     SHOOT_RULE: SHOOT_RULE, CRAFT_BIG_AREA: BIG_AREA_PAT,
     /* 测试入口：传入的 aoa 仍以「表头行」开头（与 parseBook 同语义） */
     __test: { parseRows: function (rows) { return parseRows(rows, null, true); } },
-    probeCols: probeCols
+    probeCols: probeCols,
+    /* 20261109F：给月度面板用的无状态导入入口 */
+    importFile: importFile
   };
+
+  /* ============================================================================
+   * 供「上新节奏（月度）」面板复用的导入入口（20261109F）
+   * ----------------------------------------------------------------------------
+   * 标签是按图片 URL 存的，与期次无关 —— 所以月度图本来就能被周度那个回填入口写入。
+   * 但让人跳到另一个面板去导月度数据不合理，这里把「解析 → 计划 → 写库 → 记账」
+   * 抽成一个不吃界面状态的函数，月度面板直接调它，两边逻辑只有一份。
+   *   opts.periodType = "month" 时只把月度条目视为"能对上"，防止把周度表误当月度导。
+   * 返回 { ok, written, skipped, miss, unknown, missing, dims, msg }，界面文案由调用方决定。
+   * ========================================================================== */
+  async function importFile(file, o) {
+    var opts = o || {};
+    var mode = opts.mode === "overwrite" ? "overwrite" : "fill";
+    var clearEmpty = !!opts.clearEmpty;
+    if (!file) throw new Error("没有选择文件");
+    var buf = await file.arrayBuffer();
+    var res = parseBook(buf);
+
+    /* 能对上的范围：不传 periodType 就是全部（周度面板的原有行为） */
+    var f = { cols: "image_url" };
+    if (opts.periodType) f.periodType = opts.periodType;
+    if (opts.channel) f.channelMode = opts.channel;
+    var detail = await SB.listRankItems(f);
+    var exist = {};
+    (detail || []).forEach(function (r) { exist[String(r.image_url || "").trim()] = 1; });
+
+    var hit = res.rows.filter(function (x) { return exist[x.url]; });
+    var hitUrls = hit.map(function (x) { return x.url; });
+    var tagged = {};
+    try { tagged = await SB.listRankTagRows(hitUrls); } catch (e) { tagged = {}; }
+
+    var parsedRows = hit.filter(function (x) { return exist[x.url]; });
+    var plan = applyPlan(parsedRows, tagged, res.fields, { mode: mode, clearEmpty: clearEmpty });
+    var out = {
+      ok: false, written: 0, skipped: plan.stats.skipped, miss: res.rows.length - hit.length,
+      unknown: res.unknown, missing: [], dims: {}, total: res.rows.length, hit: hit.length,
+      already: 0, msg: "",
+    };
+    out.already = hit.filter(function (x) {
+      var t = tagged[x.url] || {};
+      return FIELDS.some(function (k) { return Array.isArray(t[k]) && t[k].length; });
+    }).length;
+
+    if (!plan.payload.length) {
+      out.ok = true;
+      out.msg = "没有需要写入的改动（" + (mode === "fill" ? "补齐模式下这些图已有标签" : "表里没有可写的值") + "）";
+      return out;
+    }
+
+    var canHistory = await checkHistory();
+    var batch = "tagimport-" + stamp();
+    var payload = plan.payload.map(function (x) {
+      var r = {};
+      Object.keys(x).forEach(function (k) { r[k] = x[k]; });
+      r.batch_id = batch;
+      return r;
+    });
+    var missingDims = await probeMissingCols();
+    var skipCols = missingDims.map(function (d) { return d.col; });
+    out.missing = missingDims.map(function (d) { return d.name; });
+
+    out.written = await SB.saveRankTagRows(payload, skipCols);
+
+    if (canHistory) {
+      try {
+        var hist = plan.history.map(function (h) {
+          return { batch_id: batch, image_url: h.image_url, field: h.field, before_tags: h.before_tags, after_tags: h.after_tags };
+        });
+        await SB.saveRankTagHistory(hist);
+      } catch (e) { /* 历史写失败只影响精确撤回，不阻断本批 */ }
+      try {
+        await SB.saveRankTagBatch({
+          batch_id: batch, file_name: (file && file.name) || "", mode: mode,
+          image_count: res.rows.length, changed_count: plan.stats.changed,
+          field_count: plan.stats.fields, skipped_count: plan.stats.skipped,
+          unmatched_count: out.miss,
+          unknown_tags: (res.unknown || []).map(function (x) { return x.v; }),
+          status: "applied", note: clearEmpty ? "空单元格清空" : "",
+        });
+      } catch (e) { /* 台账失败不影响标签已写入 */ }
+    }
+
+    var dimOf = { style_tags: "风格", visual_tags: "视觉", element_tags: "图案元素",
+                  pattern_tags: "图案类型", struct_tags: "结构部件", fabric_tags: "面料",
+                  craft_tags: "二次工艺", shoot_tags: "拍摄方式", fit_tags: "版型",
+                  culture_tags: "文化背景", psych_tags: "消费心理", festival_tags: "节日" };
+    (plan.payload || []).forEach(function (r) {
+      Object.keys(dimOf).forEach(function (k) {
+        if (skipCols.indexOf(k) >= 0) return;
+        if ((r[k] || []).length) out.dims[dimOf[k]] = (out.dims[dimOf[k]] || 0) + 1;
+      });
+    });
+
+    out.ok = true;
+    out.batch = batch;
+    out.msg = "已写入 " + out.written + " 张图的标签（" + (mode === "overwrite" ? "覆盖" : "补齐") + "模式）"
+      + (out.skipped ? "；跳过已有标签 " + out.skipped + " 处" : "")
+      + (out.miss ? "；对不上、未写入 " + out.miss + " 张" : "");
+    return out;
+  }
 
   /* 数据库列自检：某个补丁没跑时，读取会「静默降级」——
      页面只是少一栏，不报错，用户根本看不出是数据没打还是列不存在。

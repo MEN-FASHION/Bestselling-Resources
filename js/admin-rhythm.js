@@ -1470,6 +1470,67 @@
       sbToast("已按「" + (fch || "全部渠道") + (fcat ? " / " + fcat : "") + "」导出，导完直接填表即可", true);
     };
 
+    /* 月度打标结果回填（20261109F）：走与周度同一套导入逻辑，但只认月度条目。
+       UI 状态留着（选中的文件 + 上次解析结果），避免二次点按钮时让人重选文件。 */
+    const tagImpFile = $("#rm-tag-imp-file");
+    const tagImpBtn = $("#rm-tag-imp-btn");
+    const tagImpTip = $("#rm-tag-imp-tip");
+    const tagImpMode = $("#rm-tag-imp-mode");
+    const tagImpClear = $("#rm-tag-imp-clear-empty");
+    const sayImp = (t, ok) => {
+      if (!tagImpTip) return;
+      tagImpTip.textContent = t || "";
+      tagImpTip.className = "rank-file-tip" + (ok === false ? " bad" : ok === true ? " good" : "");
+    };
+    if (tagImpMode && tagImpClear) {
+      tagImpMode.onchange = () => {
+        tagImpClear.disabled = tagImpMode.value !== "overwrite";
+        if (tagImpClear.disabled) tagImpClear.checked = false;
+      };
+    }
+    if (tagImpFile && tagImpBtn) {
+      tagImpFile.onchange = () => {
+        const f = tagImpFile.files && tagImpFile.files[0];
+        tagImpBtn.disabled = !f;
+        sayImp(f ? ("已选择「" + f.name + "」，点「写入标签」开始") : "");
+      };
+      tagImpBtn.onclick = async () => {
+        const f = tagImpFile.files && tagImpFile.files[0];
+        if (!f) { sayImp("请先选择填好的打标表", false); return; }
+        if (!window.RankTagImport || !window.RankTagImport.importFile) {
+          sayImp("导入模块未加载，请刷新页面再试", false); return;
+        }
+        tagImpBtn.disabled = true;
+        const old = tagImpBtn.textContent;
+        tagImpBtn.textContent = "写入中…";
+        sayImp("正在解析并写入…");
+        try {
+          const r = await window.RankTagImport.importFile(f, {
+            mode: tagImpMode ? tagImpMode.value : "fill",
+            clearEmpty: !!(tagImpClear && tagImpClear.checked),
+            periodType: "month",
+          });
+          const dims = Object.keys(r.dims || {});
+          const dimTxt = dims.length ? " · 各维度写入行数：" + dims.map((k) => k + " " + r.dims[k]).join(" · ") : "";
+          let msg = r.msg + (r.already ? "（其中 " + r.already + " 张本来就有标签）" : "") + dimTxt;
+          if ((r.unknown || []).length) {
+            msg += " ⚠ 枚举外标签 " + r.unknown.length + " 个未写入，例如「" + r.unknown[0].v + "」";
+          }
+          if ((r.missing || []).length) {
+            msg += " ⚠ 数据库缺少维度列：" + r.missing.join("、") + "，这几维未写入（其余已落库）";
+          }
+          sayImp(msg, true);
+          sbToast("已写入 " + (r.written || 0) + " 张图的标签", true);
+          await loadChList();
+          await fillTagExportSelects();
+        } catch (e) {
+          sayImp("写入失败：" + ((e && e.message) || "表格格式不对"), false);
+        }
+        tagImpBtn.textContent = old;
+        tagImpBtn.disabled = false;
+      };
+    }
+
     /* 新增渠道（20261109E）：加完立刻进候选，下次直接选 */
     const chAdd = $("#rm-ch-add");
     if (chAdd) chAdd.onclick = async () => {

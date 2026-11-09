@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261109E">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261109E">
+<link rel="stylesheet" href="css/style.css?v=20261109F">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261109F">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -1227,6 +1227,33 @@
         </section>
 
         <section class="rkadm-sec">
+          <h4>导入月度打标结果 <span class="rkadm-tip">把填好的打标表传回来，只写月度图</span></h4>
+          <p class="hint">
+            把上面「导出月度打标表」拿到的那张表填好后传到这里。<b>按「图片URL」精确匹配</b>：
+            对不上的行不写入、单独计数；枚举外的标签值也不写入。<b>只把月度条目视为可匹配范围</b>，
+            误把周度的表传进来也不会写到月度图上。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>写入模式</span>
+              <select id="rm-tag-imp-mode">
+                <option value="fill" selected>补齐空白（已有值不动，重复导入无副作用）</option>
+                <option value="overwrite">覆盖同名列（改错用：填什么写什么）</option>
+              </select>
+            </label>
+            <label class="rank-field">
+              <span>覆盖模式的附加选项</span>
+              <label class="chk"><input id="rm-tag-imp-clear-empty" type="checkbox" disabled> 空单元格也清空已有标签（删错标用）</label>
+            </label>
+          </div>
+          <div class="rank-inline">
+            <input id="rm-tag-imp-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="rm-tag-imp-btn" class="btn-primary" type="button" disabled>写入标签</button>
+          </div>
+          <div id="rm-tag-imp-tip" class="rank-file-tip"></div>
+        </section>
+
+        <section class="rkadm-sec">
           <h4>批量补渠道 <span class="rkadm-tip">传表时没选渠道 / 渠道名写错，在这里一次性补</span></h4>
           <p class="hint">
             榜单表格导入的图默认没有渠道（算作「本站榜单」那一列）。这里按<b>月份 + 类目</b>整片补上归属，
@@ -1817,40 +1844,40 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261109E"></script>
-  <script src="vendor/quill.js?v=20261109E"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261109E"></script>
-  <script src="vendor/jszip.min.js?v=20261109E"></script>
-  <script src="vendor/qrcode.min.js?v=20261109E"></script>
-  <script src="js/config.js?v=20261109E"></script>
-  <script src="js/supabase.js?v=20261109E"></script>
-  <script src="js/track-menu.js?v=20261109E"></script>
+  <script src="vendor/supabase.js?v=20261109F"></script>
+  <script src="vendor/quill.js?v=20261109F"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261109F"></script>
+  <script src="vendor/jszip.min.js?v=20261109F"></script>
+  <script src="vendor/qrcode.min.js?v=20261109F"></script>
+  <script src="js/config.js?v=20261109F"></script>
+  <script src="js/supabase.js?v=20261109F"></script>
+  <script src="js/track-menu.js?v=20261109F"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261109E"></script>
-  <script src="js/admin.js?v=20261109E"></script>
-  <script src="js/admin-images.js?v=20261109E"></script>
-  <script src="js/rank-enums.js?v=20261109E"></script>
-  <script src="js/imageexport.js?v=20261109E"></script>
-  <script src="js/admin-imageimport.js?v=20261109E"></script>
-  <script src="js/admin-movement.js?v=20261109E"></script>
-  <script src="js/admin-smart.js?v=20261109E"></script>
-  <script src="js/admin-trend.js?v=20261109E"></script>
-  <script src="js/admin-notice.js?v=20261109E"></script>
-  <script src="js/marketing-data.js?v=20261109E"></script>
-  <script src="js/admin-festival.js?v=20261109E"></script>
-  <script src="js/admin-tasks.js?v=20261109E"></script>
-  <script src="js/admin-bestseller.js?v=20261109E"></script>
-  <script src="js/admin-perm.js?v=20261109E"></script>
-  <script src="js/admin-pool.js?v=20261109E"></script>
-  <script src="js/rankexport.js?v=20261109E"></script>
-  <script src="js/admin-rankimport.js?v=20261109E"></script>
-  <script src="js/admin-rank.js?v=20261109E"></script>
-  <script src="js/admin-rhythm.js?v=20261109E"></script>
-  <script src="js/plus-sb.js?v=20261109E"></script>
-  <script src="js/plus-match.js?v=20261109E"></script>
-  <script src="js/admin-plus.js?v=20261109E"></script>
-  <script src="js/admin-insight.js?v=20261109E"></script>
-  <script src="js/admin-backup.js?v=20261109E"></script>
+  <script src="js/admin-dialog.js?v=20261109F"></script>
+  <script src="js/admin.js?v=20261109F"></script>
+  <script src="js/admin-images.js?v=20261109F"></script>
+  <script src="js/rank-enums.js?v=20261109F"></script>
+  <script src="js/imageexport.js?v=20261109F"></script>
+  <script src="js/admin-imageimport.js?v=20261109F"></script>
+  <script src="js/admin-movement.js?v=20261109F"></script>
+  <script src="js/admin-smart.js?v=20261109F"></script>
+  <script src="js/admin-trend.js?v=20261109F"></script>
+  <script src="js/admin-notice.js?v=20261109F"></script>
+  <script src="js/marketing-data.js?v=20261109F"></script>
+  <script src="js/admin-festival.js?v=20261109F"></script>
+  <script src="js/admin-tasks.js?v=20261109F"></script>
+  <script src="js/admin-bestseller.js?v=20261109F"></script>
+  <script src="js/admin-perm.js?v=20261109F"></script>
+  <script src="js/admin-pool.js?v=20261109F"></script>
+  <script src="js/rankexport.js?v=20261109F"></script>
+  <script src="js/admin-rankimport.js?v=20261109F"></script>
+  <script src="js/admin-rank.js?v=20261109F"></script>
+  <script src="js/admin-rhythm.js?v=20261109F"></script>
+  <script src="js/plus-sb.js?v=20261109F"></script>
+  <script src="js/plus-match.js?v=20261109F"></script>
+  <script src="js/admin-plus.js?v=20261109F"></script>
+  <script src="js/admin-insight.js?v=20261109F"></script>
+  <script src="js/admin-backup.js?v=20261109F"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
