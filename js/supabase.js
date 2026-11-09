@@ -2804,7 +2804,14 @@ async removeTrendRecord(id) {
          一旦被截断就会表现为「勾了 4 个类目，下面只有 1 列有图」——
          被截掉的是哪几个类目取决于数据库返回顺序，看起来像是那几个类目没上传。
          这里改成分页取全量：按 id 升序翻页，取到不满一页为止。 */
-      const PAGE = 1000, MAX = 20000;
+      /* 20261109G：上限从 20000 提到 60000。
+         之前 2 万行的天花板会「静默吃掉最新的数据」——按 id 升序翻页，超出的正是最后上传的那批，
+         表现就是：前台能看到新传的期次，导出打标表里却没有那几周（用户传了很多图却导不出来）。
+         现在把天花板抬到远高于当前数据量，并把"是否被截断"记下来，导出时明确提示，不再假装完整。 */
+      const PAGE = 1000;
+      /* 天花板可按调用方放开（f.max）：导出要大而全，就把上限调高；
+         默认 60000 已远高于常规类目 / 期次查询的真实量级。 */
+      const MAX = Math.max(1000, Number(f.max) || 60000);
       const wanted = f.limit || 0;
       /* 20261104G：列白名单是"猜"出来的优化。一旦服务端不认其中某一列，
          整条查询会以 400 整体失败，前台表现就是「一张图都没有」——这比慢严重得多。
@@ -2829,6 +2836,7 @@ async removeTrendRecord(id) {
         return q.order("id", { ascending: true }).range(from, to);
       };
       const out = [];
+      this._rankTruncated = false;
       let chMode = f.channelMode || "";
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
@@ -2845,8 +2853,12 @@ async removeTrendRecord(id) {
         if (rows.length < PAGE) break;                  /* 已取完 */
         if (wanted && out.length >= wanted) break;      /* 调用方只要前 N 条 */
       }
+      /* 取到上限还没取完 = 被截断。不要静默：调用方（导出 / 核对）要能把这件事说出来。 */
+      if (out.length >= MAX) this._rankTruncated = true;
       return wanted ? out.slice(0, wanted) : out;
     },
+    /* 上一次 listRankItems 是否因上限被截断（导出 / 核对时用来说清"数据不全"） */
+    rankItemsTruncated() { return !!this._rankTruncated; },
 
     /* 按图片地址批量取「打标维度」：周对比分析报告要用它们做维度差异统计。
        只取分析需要的几列；表里没有的列不会出现在返回行里（报告会按"未打标"处理）。

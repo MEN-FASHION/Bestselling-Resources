@@ -411,7 +411,7 @@
 
   /* 只算不导：给后台「预计导出 N 张」用 */
   async function preview(opts) {
-    var detail = await SB.listRankItems({});
+    var detail = await SB.listRankItems({ max: 200000 });
     if (opts && opts.periodType) {
       detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === opts.periodType; });
     }
@@ -420,6 +420,8 @@
     var tagMap = {};
     try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
     var pack = buildBook(detail, tagMap, opts);
+    /* 被上限截断时把这件事带出去，别让"预计 N 张"看起来像全量 */
+    pack.stats.truncated = !!(SB.rankItemsTruncated && SB.rankItemsTruncated());
     return pack.stats;
   }
 
@@ -487,7 +489,8 @@
     if (!sel) return;
     try {
       if (!CAT_CACHE || force) {
-        var detail = await SB.listRankItems({});
+        /* 导出必须是全量：这里把单次读取上限再放宽，避免"最新几周被截掉" */
+      var detail = await SB.listRankItems({ max: 200000 });
         var urls = detail.map(function (r) { return r.image_url; });
         var tagMap = {};
         try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
@@ -568,16 +571,21 @@
     }
     try {
       say("正在读取榜单与已打标签…");
-      var detail = await SB.listRankItems({});
+      var detail = await SB.listRankItems({ max: 200000 });
       if (o.periodType) {
         detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === o.periodType; });
       }
       if (!detail.length) { say("还没有可导出的数据", false); return { ok: false, reason: "empty" }; }
+      /* 取数被上限截断时必须说出来："导出的表里少了几周"这种问题，
+         不说的话只能靠人去猜，而且会怀疑数据没传上去。 */
+      var cut = !!(SB.rankItemsTruncated && SB.rankItemsTruncated());
+      var cutWarn = cut ? " ⚠ 库里条目超过单次读取上限，本次只导出了较早的一部分（最新上传的期次可能不在表里），请联系维护者调高上限。" : "";
       var urls = detail.map(function (r) { return r.image_url; });
       var tagMap = {};
       try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
       if (o.split && !o.category) { await exportSplit(btn, o, detail, tagMap, say); return { ok: true }; }
       var pack = buildBook(detail, tagMap, o);
+      pack.truncated = cut;
       if (!pack.images) {
         say("按当前范围没有可导出的图（全部 " + pack.stats.total + " 张：未打标 "
           + pack.stats.todo + " / 部分 " + pack.stats.partial + " / 已打标 " + pack.stats.done + "）", false);
@@ -588,7 +596,7 @@
       download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name);
       say("已导出 " + pack.images + " 张图（" + (SCOPE_NAME[o.scope] || "全部") + "）。榜单共 "
         + pack.stats.total + " 张：未打标 " + pack.stats.todo + " / 部分 " + pack.stats.partial
-        + " / 已打标 " + pack.stats.done, true);
+        + " / 已打标 " + pack.stats.done + cutWarn, !cut);
       if (window.console) console.log("导出完成：" + name + " · " + pack.images + " 张");
       return { ok: true, images: pack.images, stats: pack.stats, filename: name };
     } catch (e) {
@@ -617,7 +625,7 @@
       try {
         var o = optsFromDom();
         if (o.split && !o.category) {
-          var dd = await SB.listRankItems({});
+          var dd = await SB.listRankItems({ max: 200000 });
           var uu = dd.map(function (r) { return r.image_url; });
           var tm = {};
           try { tm = await SB.listRankTagRows(uu); } catch (e) { tm = {}; }
@@ -633,8 +641,9 @@
         var st = await preview(o);
         if (tip) {
           tip.textContent = "榜单共 " + st.total + " 张图：未打标 " + st.todo + " / 部分 " + st.partial
-            + " / 已打标 " + st.done + "；按当前范围将导出 " + st.picked + " 张";
-          tip.className = "rank-file-tip good";
+            + " / 已打标 " + st.done + "；按当前范围将导出 " + st.picked + " 张"
+            + (st.truncated ? "（⚠ 条目数超过单次读取上限，统计的只是较早的一部分，最新期次可能没算进来）" : "");
+          tip.className = "rank-file-tip" + (st.truncated ? "" : " good");
         }
       } catch (e) {
         if (tip) { tip.textContent = "统计失败，请重试"; tip.className = "rank-file-tip bad"; }
