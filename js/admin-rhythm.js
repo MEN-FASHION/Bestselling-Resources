@@ -996,6 +996,7 @@
     /* 其他渠道传图：渠道清单 / 类目下拉 / 已传列表（和榜单数据互不影响） */
     await loadChChannels();
     fillChCatSelects();
+    await fillTagExportSelects();
     await loadChList();
   }
 
@@ -1105,6 +1106,55 @@
       if (keep && names.indexOf(keep) >= 0) fsel.value = keep;
     }
     return names;
+  }
+
+  /* 月度打标表导出区（20261109C）：类目 / 来源两个下拉，进面板时按库里实际有的值铺一遍 */
+  async function fillTagExportSelects() {
+    const cat = $("#rm-tag-cat");
+    if (cat) {
+      const keep = cat.value;
+      cat.innerHTML = '<option value="">全部类目</option>' +
+        (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
+      if (keep && (rankCats || []).indexOf(keep) >= 0) cat.value = keep;
+    }
+    const ch = $("#rm-tag-channel");
+    if (ch) {
+      const keepCh = ch.value;
+      let names = [];
+      try { names = await SB.listRankChannelNames(); } catch (e) { names = []; }
+      ch.innerHTML = '<option value="">全部（榜单图 + 所有渠道）</option>'
+        + '<option value="__rank">仅榜单表格导入的图</option>'
+        + '<option value="__chonly">仅其他渠道传的图</option>'
+        + names.map((n) => '<option value="ch:' + escAttr(n) + '">仅渠道：' + escHtml(n) + '</option>').join("");
+      if (keepCh && Array.prototype.some.call(ch.options, (o) => o.value === keepCh)) ch.value = keepCh;
+    }
+  }
+
+  /* 统一出口：月度面板里的两处导出都走这里，永远只导月度数据 */
+  function runMonthTagExport(btn, o) {
+    const tip = $("#rm-tag-export-tip");
+    if (!window.RankExport || !window.RankExport.all) {
+      sbToast("导出组件未加载，请刷新页面后再试", false);
+      return;
+    }
+    const say = (t) => { if (tip) tip.textContent = t || ""; };
+    say("正在读取月度数据…");
+    const opts = Object.assign({
+      scope: "todo", category: "", keyword: "", channel: "",
+      periodType: "month", title: "上新节奏", tipSelector: "#rm-tag-export-tip",
+    }, o || {});
+    Promise.resolve(window.RankExport.all(btn, opts)).then((r) => {
+      if (r && r.ok) {
+        say("已导出 " + (r.images || 0) + " 张图，文件名「" + (r.filename || "") + "」");
+      } else if (r && r.reason === "nothing" && r.stats) {
+        say("按当前范围没有可导出的图（月度共 " + r.stats.total + " 张：未打标 " + r.stats.todo
+          + " / 部分 " + r.stats.partial + " / 已打标 " + r.stats.done + "）");
+      } else if (r && r.reason === "empty") {
+        say("库里还没有月度图，先上传或传渠道图");
+      } else {
+        say("导出失败，请重试");
+      }
+    }, () => { say("导出失败，请重试"); });
   }
 
   function fillChCatSelects() {
@@ -1291,27 +1341,24 @@
        和榜单图同一套枚举、同一张表、同一个回填入口。这里只是把导出区按当前筛选预设好再点一下。 */
     const te = $("#rm-ch-tag-export");
     if (te) te.onclick = () => {
-      const selCh = $("#rank-export-channel");
-      const selCat = $("#rank-export-cat");
-      const btn = $("#rank-export-btn");
-      if (!selCh || !btn) { sbToast("导出组件未加载，请刷新页面后再试", false); return; }
       const fch = ($("#rm-ch-filter-ch") && $("#rm-ch-filter-ch").value || "").trim();
       const fcat = ($("#rm-ch-filter-cat") && $("#rm-ch-filter-cat").value || "").trim();
-      if (fch) selCh.value = "ch:" + fch;
-      else if (Array.prototype.some.call(selCh.options, (o) => o.value === "__chonly")) selCh.value = "__chonly";
-      if (selCat) {
-        /* 类目下拉的值形如 c:名称 / l:末级叶子，按显示文字挑同名项，挑不到就保持「全部类目」 */
-        let hitV = "";
-        Array.prototype.forEach.call(selCat.options, (o) => {
-          if (hitV) return;
-          const t = String(o.textContent || "").replace(/^共\s*\d+\s*张·?/, "").trim();
-          if (fcat && (t === fcat || t.indexOf(fcat) >= 0)) hitV = o.value;
-        });
-        if (hitV) selCat.value = hitV;
-        else if (fcat) { selCat.value = ""; }
-      }
-      btn.click();
+      /* 渠道区块的导出：把当前筛选带进导出选项，默认「仅未打标 + 仅月度」 */
+      runMonthTagExport(te, {
+        scope: "todo",
+        category: fcat,
+        channel: fch ? ("ch:" + fch) : "__chonly",
+      });
       sbToast("已按「" + (fch || "全部渠道") + (fcat ? " / " + fcat : "") + "」导出，导完直接填表即可", true);
+    };
+
+    /* 月度打标表导出（面板里独立的那个区块） */
+    const mtb = $("#rm-tag-export-btn");
+    if (mtb) mtb.onclick = () => {
+      const scope = ($("#rm-tag-scope") && $("#rm-tag-scope").value || "todo");
+      const cat = ($("#rm-tag-cat") && $("#rm-tag-cat").value || "").trim();
+      const ch = ($("#rm-tag-channel") && $("#rm-tag-channel").value || "").trim();
+      runMonthTagExport(mtb, { scope: scope, category: cat, channel: ch });
     };
     const fch = $("#rm-ch-filter-ch");
     if (fch) fch.onchange = () => loadChList();

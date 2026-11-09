@@ -282,10 +282,15 @@
   }
 
   /* 组装工作簿
-     opts: { scope:'todo'|'partial'|'done'|'all', category:'', keyword:'', channel:'' }
+     opts: { scope:'todo'|'partial'|'done'|'all', category:'', keyword:'', channel:'', periodType:'', title:'' }
      返回 { wb, images, rows, picked:[url], stats:{total, todo, partial, done, picked} } */
   function buildBook(detail, tagMap, opts) {
     var o = opts || {};
+    /* 期次类型过滤（20261109C）：月度面板里导出时只导月度图，别把周度的也带出去。
+       week / month，留空 = 全部（周度面板沿用这个默认，行为不变）。 */
+    if (o.periodType) {
+      detail = (detail || []).filter(function (r) { return ((r && r.period_type) || "week") === o.periodType; });
+    }
     var byUrl = collectImages(detail);
     var stats = { total: byUrl.size, todo: 0, partial: 0, done: 0, picked: 0 };
     var kw = String(o.keyword || "").trim().toLowerCase();
@@ -407,6 +412,9 @@
   /* 只算不导：给后台「预计导出 N 张」用 */
   async function preview(opts) {
     var detail = await SB.listRankItems({});
+    if (opts && opts.periodType) {
+      detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === opts.periodType; });
+    }
     if (!detail.length) return { total: 0, picked: 0, todo: 0, partial: 0, done: 0 };
     var urls = detail.map(function (r) { return r.image_url; });
     var tagMap = {};
@@ -551,7 +559,8 @@
     var o = opts || optsFromDom();
     var old = btn ? btn.textContent : "";
     if (btn) { btn.disabled = true; btn.textContent = "导出中…"; }
-    var tip = document.querySelector("#rank-export-tip");
+    /* 提示可以指到别的容器（月度面板有自己的一块提示位），默认仍是周度面板那个 */
+    var tip = document.querySelector(o.tipSelector || "#rank-export-tip");
     function say(msg, ok) {
       if (!tip) return;
       tip.textContent = msg || "";
@@ -560,26 +569,31 @@
     try {
       say("正在读取榜单与已打标签…");
       var detail = await SB.listRankItems({});
-      if (!detail.length) { say("还没有榜单数据", false); return; }
+      if (o.periodType) {
+        detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === o.periodType; });
+      }
+      if (!detail.length) { say("还没有可导出的数据", false); return { ok: false, reason: "empty" }; }
       var urls = detail.map(function (r) { return r.image_url; });
       var tagMap = {};
       try { tagMap = await SB.listRankTagRows(urls); } catch (e) { tagMap = {}; }
-      if (o.split && !o.category) { await exportSplit(btn, o, detail, tagMap, say); return; }
+      if (o.split && !o.category) { await exportSplit(btn, o, detail, tagMap, say); return { ok: true }; }
       var pack = buildBook(detail, tagMap, o);
       if (!pack.images) {
         say("按当前范围没有可导出的图（全部 " + pack.stats.total + " 张：未打标 "
           + pack.stats.todo + " / 部分 " + pack.stats.partial + " / 已打标 " + pack.stats.done + "）", false);
-        return;
+        return { ok: false, reason: "nothing", stats: pack.stats };
       }
       var buf = XLSX.write(pack.wb, { bookType: "xlsx", type: "array" });
-      var name = "趋势上升榜-打标表-" + (SCOPE_NAME[o.scope] || "全部") + "-" + stamp() + ".xlsx";
+      var name = (o.title || "趋势上升榜") + "-打标表-" + (SCOPE_NAME[o.scope] || "全部") + "-" + stamp() + ".xlsx";
       download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name);
       say("已导出 " + pack.images + " 张图（" + (SCOPE_NAME[o.scope] || "全部") + "）。榜单共 "
         + pack.stats.total + " 张：未打标 " + pack.stats.todo + " / 部分 " + pack.stats.partial
         + " / 已打标 " + pack.stats.done, true);
       if (window.console) console.log("导出完成：" + name + " · " + pack.images + " 张");
+      return { ok: true, images: pack.images, stats: pack.stats, filename: name };
     } catch (e) {
       say("导出失败，请重试", false);
+      return { ok: false, reason: "error" };
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = old || "导出打标表"; }
     }
@@ -590,7 +604,7 @@
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME,
-    catStats: catStats, loadCats: loadCats, hitCat: hitCat,
+    catStats: catStats, loadCats: loadCats, hitCat: hitCat, hitChannel: hitChannel,
     CRAFT_GUIDE: CRAFT_GUIDE, CRAFT_HINT: CRAFT_HINT
   };
 

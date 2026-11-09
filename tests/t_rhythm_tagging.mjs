@@ -31,16 +31,17 @@ ok("「仅渠道图」= 有渠道的那些", /if \(v === "__chonly"\) return chs
 ok("「某个渠道」按名字精确匹配", /if \(v\.indexOf\("ch:"\) === 0\) return !!h\.channels\[v\.slice\(3\)\];/.test(EX));
 ok("导出时真的用上了渠道筛选", /if \(!hitChannel\(h, o\.channel\)\) return;/.test(EX));
 ok("导出选项从页面读渠道", /channel: \(function \(\) \{ var ch = q\("#rank-export-channel"\);/.test(EX));
-ok("buildBook 的 opts 注释带上 channel", /opts: \{ scope:'todo'\|'partial'\|'done'\|'all', category:'', keyword:'', channel:'' \}/.test(EX));
+ok("buildBook 的 opts 注释带上 channel 与 periodType",
+  /opts: \{ scope:'todo'\|'partial'\|'done'\|'all', category:'', keyword:'', channel:'', periodType:'', title:'' \}/.test(EX));
 
 console.log("三、后台入口");
 ok("导出区有「来源」下拉", /id="rank-export-channel"/.test(A));
 ok("下拉含「全部 / 仅榜单 / 仅渠道」三档", /仅榜单表格导入的图/.test(A) && /仅其他渠道传的图（全部渠道）/.test(A));
 ok("进入趋势上升榜面板时自动填渠道名", /names = await SB\.listRankChannelNames\(\)/.test(AJ) && /仅渠道：/.test(AJ));
 ok("「其他渠道传图」里有导出按钮", /id="rm-ch-tag-export"/.test(A));
-ok("导出按钮会按当前渠道筛选设置下拉", /selCh\.value = "ch:" \+ fch;/.test(AR));
-ok("没指定渠道时退回「仅渠道图」", /selCh\.value = "__chonly"/.test(AR));
-ok("类目也会跟着筛选走", /if \(hitV\) selCat\.value = hitV;/.test(AR));
+ok("导出按钮把当前渠道筛选带进导出选项", /channel: fch \? \("ch:" \+ fch\) : "__chonly",/.test(AR));
+ok("导出按钮把当前类目也带上", /category: fcat,/.test(AR));
+ok("导出默认只导未打标的图", /scope: "todo",\s*\n?\s*category: fcat,/.test(AR));
 ok("面板文案说明「可先传图后打标」", /图传完可以先不打标/.test(A));
 
 console.log("四、回填与前台只认图片地址");
@@ -101,6 +102,38 @@ if (lib) {
   const dCh = det[0].indexOf("渠道");
   ok("全量明细里渠道图带着渠道名", det.slice(1).some((r) => r[dCh] === "Pinterest"));
   ok("没有环比时明细里环比列为空（不写 0）", det.slice(1).filter((r) => r[det[0].indexOf("图片URL")] === "u-pin")[0][det[0].indexOf("环比比例%")] === "");
+}
+
+console.log("六、月度面板自带导出入口");
+ok("上新节奏面板有独立的「导出月度打标表」区块", /h4>导出月度打标表/.test(A));
+ok("区块控件齐全（范围 / 类目 / 来源 / 按钮 / 提示）",
+  ["rm-tag-scope", "rm-tag-cat", "rm-tag-channel", "rm-tag-export-btn", "rm-tag-export-tip"].every((i) => A.indexOf('id="' + i + '"') >= 0));
+ok("导出只导月度（periodType=month）", /periodType: "month", title: "上新节奏"/.test(AR));
+ok("导出提示落在月度面板自己的位置", /tipSelector: "#rm-tag-export-tip"/.test(AR) && /o\.tipSelector \|\| "#rank-export-tip"/.test(EX));
+ok("导出结果会回传数量与文件名", /return \{ ok: true, images: pack\.images, stats: pack\.stats, filename: name \};/.test(EX));
+ok("没有可导出的图时说清是哪一类为 0", /按当前范围没有可导出的图（月度共 /.test(AR));
+ok("月度导出下拉会铺类目与渠道名", /async function fillTagExportSelects\(\)/.test(AR) && /fillTagExportSelects/.test(AR));
+ok("进入面板时一并刷新导出下拉", /await fillTagExportSelects\(\);/.test(AR));
+ok("渠道区块的导出也走月度出口（不再借用周度面板的按钮）", /runMonthTagExport\(te, \{/.test(AR) && !/selCh\.value = "ch:" \+ fch/.test(AR));
+
+console.log("七、实跑：期次类型过滤真的生效");
+if (lib) {
+  const detail = [
+    { image_url: "w1", category: "男装", site: "美国", period_type: "week", period_label: "2026-W41", ratio: 5, abs_delta: 10 },
+    { image_url: "m1", category: "男装", site: "美国", period_type: "month", period_label: "2026-09", ratio: 6, abs_delta: 11 },
+    { image_url: "c1", category: "男装", site: "", channel: "Pinterest", period_type: "month", period_label: "2026-09" },
+  ];
+  const onlyMonth = lib.buildBook(detail, {}, { scope: "all", periodType: "month" }).wb.sheets[0].ws.aoa.slice(1);
+  const urls = onlyMonth.map((r) => r[0]);
+  ok("只要月度的图（周度那张被排除）", urls.indexOf("m1") >= 0 && urls.indexOf("w1") < 0);
+  ok("月度的渠道图也在里面", urls.indexOf("c1") >= 0);
+  const onlyWeek = lib.buildBook(detail, {}, { scope: "all", periodType: "week" }).wb.sheets[0].ws.aoa.slice(1);
+  ok("只要周度时不含月度", onlyWeek.map((r) => r[0]).join(",") === "w1");
+  const allTypes = lib.buildBook(detail, {}, { scope: "all" }).wb.sheets[0].ws.aoa.slice(1);
+  ok("不传类型时保持原样（全部）", allTypes.length === 3);
+  const monthCh = lib.buildBook(detail, {}, { scope: "all", periodType: "month", channel: "__chonly" }).wb.sheets[0].ws.aoa.slice(1);
+  ok("月度 + 仅渠道 两个条件能叠加", monthCh.length === 1 && monthCh[0][0] === "c1");
+  ok("导出后不清空原数组（可重复导出）", detail.length === 3);
 }
 
 console.log("\n结果：通过 " + pass + " 项，失败 " + fail + " 项");
