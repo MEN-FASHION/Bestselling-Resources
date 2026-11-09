@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261109C">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261109C">
+<link rel="stylesheet" href="css/style.css?v=20261109E">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261109E">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -1227,6 +1227,33 @@
         </section>
 
         <section class="rkadm-sec">
+          <h4>批量补渠道 <span class="rkadm-tip">传表时没选渠道 / 渠道名写错，在这里一次性补</span></h4>
+          <p class="hint">
+            榜单表格导入的图默认没有渠道（算作「本站榜单」那一列）。这里按<b>月份 + 类目</b>整片补上归属，
+            补完就会在「横向 · 渠道对比」里单独成列。<b>只改库里已有的条目，不新增、不删图</b>；
+            勾着「只改尚未设渠道的」时，已经有渠道的图不会被改动。渠道名留空并点「清空归属」= 退回「本站榜单」列。
+          </p>
+          <div class="rank-grid">
+            <label class="rank-field"><span>月份</span><select id="rm-fixch-month"></select></label>
+            <label class="rank-field"><span>类目</span><select id="rm-fixch-cat"><option value="">全部类目</option></select></label>
+            <label class="rank-field"><span>渠道</span>
+              <span class="rank-inline">
+                <input id="rm-fixch-channel" class="input" list="rm-ch-channel-list" placeholder="如 SHEIN / Pinterest" maxlength="24">
+              </span>
+            </label>
+            <label class="rank-field"><span>只改尚未设渠道的</span>
+              <span class="rank-inline"><input id="rm-fixch-onlyempty" type="checkbox" checked></span>
+            </label>
+          </div>
+          <div class="rank-inline">
+            <button id="rm-fixch-preview" class="btn-ghost" type="button">看看会影响多少条</button>
+            <button id="rm-fixch-apply" class="btn-primary" type="button">补上渠道</button>
+            <button id="rm-fixch-clear" class="btn-ghost" type="button">清空归属</button>
+            <span id="rm-fixch-tip" class="hint-inline"></span>
+          </div>
+        </section>
+
+        <section class="rkadm-sec">
           <h4>其他渠道传图 <span class="rkadm-tip">Pinterest / SHEIN / 淘宝… 这些渠道往往只有图，没有环比和销量 —— 传上来就能在「上新节奏」前台切到「横向 · 渠道对比」，和本站榜单并排列着看</span></h4>
           <p class="hint">
             一批图共用上面的<b>月份 + 渠道 + 类目</b>；每张传完还能在下面的列表里改渠道 / 类目 / 月份（传错了直接改，不用删了重传）。
@@ -1245,6 +1272,16 @@
             </label>
             <label class="rank-field"><span>类目</span><select id="rm-ch-cat" style="min-width:160px"></select></label>
           </div>
+          <div class="rank-inline" style="margin:4px 0 10px">
+            <span class="hint-inline">已配置渠道：</span>
+            <span id="rm-ch-dict" class="hint-inline">正在读取…</span>
+            <button id="rm-ch-add" class="btn-ghost small" type="button">新增渠道</button>
+            <span id="rm-ch-dict-tip" class="hint-inline"></span>
+          </div>
+          <p class="hint" style="margin-top:0">
+            渠道点右侧「×」可以从候选里删掉，<b>不影响已传的图</b>；想加回来点「新增渠道」。
+            候选里同时会列出历史数据用过的渠道名，所以删了字典也不会让老图失去归属。
+          </p>
           <div id="rm-ch-drop" class="mv-drop">把渠道图拖到这里，或点「选择图片」</div>
           <div class="rank-inline">
             <button id="rm-ch-pick" class="btn-ghost" type="button">选择图片（可多选）</button>
@@ -1780,40 +1817,40 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261109C"></script>
-  <script src="vendor/quill.js?v=20261109C"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261109C"></script>
-  <script src="vendor/jszip.min.js?v=20261109C"></script>
-  <script src="vendor/qrcode.min.js?v=20261109C"></script>
-  <script src="js/config.js?v=20261109C"></script>
-  <script src="js/supabase.js?v=20261109C"></script>
-  <script src="js/track-menu.js?v=20261109C"></script>
+  <script src="vendor/supabase.js?v=20261109E"></script>
+  <script src="vendor/quill.js?v=20261109E"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261109E"></script>
+  <script src="vendor/jszip.min.js?v=20261109E"></script>
+  <script src="vendor/qrcode.min.js?v=20261109E"></script>
+  <script src="js/config.js?v=20261109E"></script>
+  <script src="js/supabase.js?v=20261109E"></script>
+  <script src="js/track-menu.js?v=20261109E"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261109C"></script>
-  <script src="js/admin.js?v=20261109C"></script>
-  <script src="js/admin-images.js?v=20261109C"></script>
-  <script src="js/rank-enums.js?v=20261109C"></script>
-  <script src="js/imageexport.js?v=20261109C"></script>
-  <script src="js/admin-imageimport.js?v=20261109C"></script>
-  <script src="js/admin-movement.js?v=20261109C"></script>
-  <script src="js/admin-smart.js?v=20261109C"></script>
-  <script src="js/admin-trend.js?v=20261109C"></script>
-  <script src="js/admin-notice.js?v=20261109C"></script>
-  <script src="js/marketing-data.js?v=20261109C"></script>
-  <script src="js/admin-festival.js?v=20261109C"></script>
-  <script src="js/admin-tasks.js?v=20261109C"></script>
-  <script src="js/admin-bestseller.js?v=20261109C"></script>
-  <script src="js/admin-perm.js?v=20261109C"></script>
-  <script src="js/admin-pool.js?v=20261109C"></script>
-  <script src="js/rankexport.js?v=20261109C"></script>
-  <script src="js/admin-rankimport.js?v=20261109C"></script>
-  <script src="js/admin-rank.js?v=20261109C"></script>
-  <script src="js/admin-rhythm.js?v=20261109C"></script>
-  <script src="js/plus-sb.js?v=20261109C"></script>
-  <script src="js/plus-match.js?v=20261109C"></script>
-  <script src="js/admin-plus.js?v=20261109C"></script>
-  <script src="js/admin-insight.js?v=20261109C"></script>
-  <script src="js/admin-backup.js?v=20261109C"></script>
+  <script src="js/admin-dialog.js?v=20261109E"></script>
+  <script src="js/admin.js?v=20261109E"></script>
+  <script src="js/admin-images.js?v=20261109E"></script>
+  <script src="js/rank-enums.js?v=20261109E"></script>
+  <script src="js/imageexport.js?v=20261109E"></script>
+  <script src="js/admin-imageimport.js?v=20261109E"></script>
+  <script src="js/admin-movement.js?v=20261109E"></script>
+  <script src="js/admin-smart.js?v=20261109E"></script>
+  <script src="js/admin-trend.js?v=20261109E"></script>
+  <script src="js/admin-notice.js?v=20261109E"></script>
+  <script src="js/marketing-data.js?v=20261109E"></script>
+  <script src="js/admin-festival.js?v=20261109E"></script>
+  <script src="js/admin-tasks.js?v=20261109E"></script>
+  <script src="js/admin-bestseller.js?v=20261109E"></script>
+  <script src="js/admin-perm.js?v=20261109E"></script>
+  <script src="js/admin-pool.js?v=20261109E"></script>
+  <script src="js/rankexport.js?v=20261109E"></script>
+  <script src="js/admin-rankimport.js?v=20261109E"></script>
+  <script src="js/admin-rank.js?v=20261109E"></script>
+  <script src="js/admin-rhythm.js?v=20261109E"></script>
+  <script src="js/plus-sb.js?v=20261109E"></script>
+  <script src="js/plus-match.js?v=20261109E"></script>
+  <script src="js/admin-plus.js?v=20261109E"></script>
+  <script src="js/admin-insight.js?v=20261109E"></script>
+  <script src="js/admin-backup.js?v=20261109E"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

@@ -2610,6 +2610,67 @@ async removeTrendRecord(id) {
       (data || []).forEach((r) => { const v = String(r.channel || "").trim(); if (v) m[v] = 1; });
       return Object.keys(m).sort();
     },
+    /* ============================================================
+     * 渠道字典（20261109E）
+     * ------------------------------------------------------------
+     * 默认三个渠道：Pinterest / SHEIN / Amazon，可自己新增、可删除。
+     * 存在 tag_defs（type = rank_channel）——它本来就是"枚举值维护表"，
+     * 借它一行一个值，不用新建表、不用跑 SQL。
+     * 删除只是从候选里去掉，不动已有图片：图片上的渠道名还在，
+     * 前台照样出那一列（数据说话），避免"删了字典图就消失"。
+     * ============================================================ */
+    RANK_CHANNEL_TYPE: "rank_channel",
+    RANK_CHANNEL_DEFAULTS: ["Pinterest", "SHEIN", "Amazon"],
+    async listRankChannelDict() {
+      try {
+        const rows = await this.listTagDefs(this.RANK_CHANNEL_TYPE);
+        return (rows || []).map((r) => String(r.name || "").trim())
+          .filter((n) => n && n.charAt(0) !== "@");
+      } catch (e) { return []; }
+    },
+    /* 首次进面板时把默认三个灌进去；用一条 @seeded 隐藏记录做标记，
+       这样用户删掉默认渠道后不会被自动补回来。 */
+    async ensureRankChannelDefaults() {
+      let rows = [];
+      try { rows = await this.listTagDefs(this.RANK_CHANNEL_TYPE); } catch (e) { return this.RANK_CHANNEL_DEFAULTS.slice(); }
+      const names = (rows || []).map((r) => String(r.name || "").trim()).filter(Boolean);
+      if (names.indexOf("@seeded") >= 0) return names.filter((n) => n.charAt(0) !== "@");
+      const out = names.filter((n) => n.charAt(0) !== "@");
+      for (let i = 0; i < this.RANK_CHANNEL_DEFAULTS.length; i++) {
+        const d = this.RANK_CHANNEL_DEFAULTS[i];
+        if (out.indexOf(d) >= 0) continue;
+        try { await this.addTagDef(this.RANK_CHANNEL_TYPE, d, ""); out.push(d); } catch (e) { /* 忽略单个失败 */ }
+      }
+      try { await this.addTagDef(this.RANK_CHANNEL_TYPE, "@seeded", ""); } catch (e) { /* 标记失败不影响使用 */ }
+      return out;
+    },
+    async addRankChannel(name) {
+      const n = String(name == null ? "" : name).trim().slice(0, 24);
+      if (!n) throw new Error("渠道名不能为空");
+      const cur = await this.listRankChannelDict();
+      if (cur.indexOf(n) >= 0) return { added: false, name: n };
+      await this.addTagDef(this.RANK_CHANNEL_TYPE, n, "");
+      return { added: true, name: n };
+    },
+    async deleteRankChannel(name) {
+      const n = String(name == null ? "" : name).trim();
+      if (!n) throw new Error("缺少渠道名");
+      const rows = await this.listTagDefs(this.RANK_CHANNEL_TYPE);
+      const hit = (rows || []).filter((r) => String(r.name || "").trim() === n)[0];
+      if (!hit) return false;
+      await this.deleteTagDef(hit.id);
+      return true;
+    },
+    /* 候选 = 字典 ∪ 库里已用过的渠道名：
+       历史数据里的渠道即使从字典删了，也还能被选中/筛选，不会变成孤儿。 */
+    async listRankChannelOptions() {
+      const dict = await this.listRankChannelDict();
+      let used = [];
+      try { used = await this.listRankChannelNames(); } catch (e) { used = []; }
+      const out = dict.slice();
+      used.forEach((n) => { if (n && out.indexOf(n) < 0) out.push(n); });
+      return out;
+    },
     /* 批量传图：逐张传 R2 → 拿到 path → 拼地址 → 写 rank_items（channel 非空）。
        单张失败不影响整批，最后统一返回成功 / 失败清单。 */
     async uploadRankChannelImages(items, opts, onProgress) {
@@ -2659,6 +2720,73 @@ async removeTrendRecord(id) {
       if (patch && patch.period_label != null) o.period_label = String(patch.period_label).trim();
       const { error } = await client.from("rank_items").update(o).eq("id", id);
       if (error) throw new Error(error.message || "修改失败");
+    },
+    /* ============================================================
+     * 批量补渠道（20261109D）
+     * ------------------------------------------------------------
+     * 起因：「上传榜单表格」那条路径从来没有渠道这一步，表格导入的图 channel 一律为空，
+     * 于是它们永远只算「本站榜单」那一列。事后要归到某个渠道，只能逐张改，几百张没法弄。
+     * 这里按「期次（月）+ 类目 + 站点」整片补：只动 rank_items，不动批次台账。
+     *   onlyEmpty = true  只补还没有渠道的（已归属的不动，避免踩掉之前的分类）
+     * 空渠道（null 与 ''）两种存法都要覆盖，否则会漏掉一半。
+     * ============================================================ */
+    _rankSlotQ(f) {
+      const o = f || {};
+      let q = client.from("rank_items").select("id", { count: "exact", head: true });
+      q = q.eq("period_type", o.periodType || "month");
+      if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+      if (o.category) q = q.eq("category", String(o.category));
+      if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
+      return q;
+    },
+    async countRankItemsChannelSlot(f) {
+      const o = f || {};
+      const onlyEmpty = !!o.onlyEmpty;
+      const run = async (emptyKind) => {
+        let q = this._rankSlotQ(o);
+        if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
+        const { count, error } = await q;
+        if (error) throw new Error(error.message || "统计失败（channel 列补丁可能未执行）");
+        return count || 0;
+      };
+      if (!onlyEmpty) return await run();
+      let n = 0;
+      n += await run("null");
+      try { n += await run("empty"); } catch (e) { /* 这一支失败不影响另一支 */ }
+      return n;
+    },
+    /* 把整片条目的渠道改成 channel；channel 传空字符串 = 清空归属（退回「本站榜单」列）。
+       返回实际改动条数。 */
+    async setRankItemsChannelSlot(f, channel) {
+      const o = f || {};
+      const v = String(channel == null ? "" : channel).trim();
+      const onlyEmpty = !!o.onlyEmpty;
+      const run = async (emptyKind) => {
+        let q = client.from("rank_items").update({ channel: v }, { count: "exact" });
+        q = q.eq("period_type", o.periodType || "month");
+        if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+        if (o.category) q = q.eq("category", String(o.category));
+        if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
+        if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
+        const { count, error } = await q;
+        if (error) throw new Error(error.message || "补渠道失败（channel 列补丁可能未执行）");
+        return count || 0;
+      };
+      if (!onlyEmpty) return await run();
+      let n = 0;
+      n += await run("null");
+      try { n += await run("empty"); } catch (e) { /* 忽略空串分支失败 */ }
+      return n;
+    },
+    /* 一次把所有渠道图整体改名 / 清空（用于渠道名写错：Pintrest → Pinterest） */
+    async renameRankChannel(from, to) {
+      const a = String(from == null ? "" : from).trim();
+      const b = String(to == null ? "" : to).trim();
+      if (!a) throw new Error("缺少原渠道名");
+      const { count, error } = await client.from("rank_items")
+        .update({ channel: b }, { count: "exact" }).eq("channel", a);
+      if (error) throw new Error(error.message || "改名失败");
+      return count || 0;
     },
     async deleteRankChannelItem(id) {
       const { error } = await client.from("rank_items").delete().eq("id", id);

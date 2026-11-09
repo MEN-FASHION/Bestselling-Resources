@@ -854,7 +854,20 @@
         catch (e) { sbToast("删除失败", false); }
       };
 
-      act.appendChild(ren); act.appendChild(del);
+      /* 设渠道（20261109D）：不直接改数据，只把上面的「批量补渠道」填好——
+         改数据是批量动作，得让人先看到范围再确认，别点一下就动几百条。 */
+      const setch = document.createElement("button");
+      setch.type = "button"; setch.className = "btn-ghost small"; setch.textContent = "设渠道";
+      setch.onclick = () => {
+        const ms = $("#rm-fixch-month"), cs = $("#rm-fixch-cat"), chs = $("#rm-fixch-channel"), t = $("#rm-fixch-tip");
+        if (ms) ms.value = b.period_label || "";
+        if (cs) cs.value = b.category || "";
+        if (chs) { try { chs.focus(); } catch (e) {} }
+        if (t) t.textContent = "已带入：月度 " + (b.period_label || "") + (b.category ? " · " + b.category : " · 全部类目") + "，填好渠道名再点「补上渠道」";
+        try { document.querySelector("#rm-fixch-channel").scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+      };
+
+      act.appendChild(setch); act.appendChild(ren); act.appendChild(del);
       row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });
@@ -1093,11 +1106,12 @@
     if (txt && ok === false) sbToast(txt, false);
   }
 
+  /* 渠道候选（20261109E）：字典（默认 Pinterest / SHEIN / Amazon，可增删）∪ 历史用过的名字。
+     下拉只是"候选"，真正的列由数据决定 —— 没有图的渠道前台不会出现空列。 */
   async function loadChChannels() {
+    /* 先走一遍 refreshChDict：首次会把默认三个渠道灌进字典，同时铺好候选 datalist */
     let names = [];
-    try { names = await SB.listRankChannelNames(); } catch (e) { names = []; }
-    const dl = $("#rm-ch-channel-list");
-    if (dl) dl.innerHTML = names.map((n) => '<option value="' + escAttr(n) + '"></option>').join("");
+    try { names = await refreshChDict(); } catch (e) { names = []; }
     const fsel = $("#rm-ch-filter-ch");
     if (fsel) {
       const keep = fsel.value;
@@ -1105,6 +1119,44 @@
         names.map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
       if (keep && names.indexOf(keep) >= 0) fsel.value = keep;
     }
+    return names;
+  }
+
+  /* 「已配置渠道」小标签，每个带一个 × */
+  function renderChDict() {
+    const box = $("#rm-ch-dict");
+    if (!box) return;
+    const dict = rmChDict || [];
+    if (!dict.length) { box.innerHTML = '<span class="hint-inline">（还没有渠道，点右边「新增渠道」）</span>'; return; }
+    box.innerHTML = dict.map((n) =>
+      '<span class="rk-ch-chip">' + escHtml(n) +
+      '<button type="button" class="rk-ch-del" data-ch="' + escAttr(n) + '" title="从候选里删掉（不影响已传的图）">×</button></span>'
+    ).join("");
+    Array.prototype.forEach.call(box.querySelectorAll(".rk-ch-del"), (b) => {
+      b.onclick = async () => {
+        const name = b.getAttribute("data-ch") || "";
+        if (!name) return;
+        if (!confirm("从候选里删掉渠道「" + name + "」？\n已传的图不受影响，仍归在「" + name + "」下。")) return;
+        try {
+          await SB.deleteRankChannel(name);
+          await refreshChDict();
+          sbToast("已删除渠道「" + name + "」", true);
+        } catch (e) { sbToast((e && e.message) || "删除失败", false); }
+      };
+    });
+  }
+
+  /* 重读字典（默认值只在第一次灌，删掉后不会自己回来） */
+  async function refreshChDict() {
+    try { rmChDict = await SB.ensureRankChannelDefaults(); } catch (e) { rmChDict = []; }
+    renderChDict();
+    const dl = $("#rm-ch-channel-list");
+    let names = rmChDict.slice();
+    try {
+      const used = await SB.listRankChannelNames();
+      used.forEach((n) => { if (n && names.indexOf(n) < 0) names.push(n); });
+    } catch (e) { /* 忽略 */ }
+    if (dl) dl.innerHTML = names.map((n) => '<option value="' + escAttr(n) + '"></option>').join("");
     return names;
   }
 
@@ -1175,7 +1227,73 @@
       const c = ($("#rm-cat") && $("#rm-cat").value || "").trim();
       if (c) sel.value = c;
     }
+    /* 批量补渠道的类目 / 月份下拉（20261109D） */
+    const fcat = $("#rm-fixch-cat");
+    if (fcat) {
+      const keepc = fcat.value;
+      fcat.innerHTML = '<option value="">全部类目</option>' +
+        (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
+      if (keepc && (rankCats || []).indexOf(keepc) >= 0) fcat.value = keepc;
+    }
+    fillFixChMonths();
   }
+
+  /* 月份下拉：只列库里真正有月度数据的月份（周度不会混进来） */
+  function fillFixChMonths() {
+    const sel = $("#rm-fixch-month");
+    if (!sel) return;
+    const keep = sel.value;
+    const months = (rankPeriods || [])
+      .filter((p) => p && p.type === "month" && p.label)
+      .map((p) => String(p.label))
+      .sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
+    sel.innerHTML = months.map((m) => '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>').join("")
+      || '<option value="">（库里还没有月度数据）</option>';
+    if (keep && months.indexOf(keep) >= 0) sel.value = keep;
+  }
+
+  /* 读「批量补渠道」表单 */
+  function fixChOpts() {
+    const month = ($("#rm-fixch-month") && $("#rm-fixch-month").value || "").trim();
+    const cat = ($("#rm-fixch-cat") && $("#rm-fixch-cat").value || "").trim();
+    const ch = ($("#rm-fixch-channel") && $("#rm-fixch-channel").value || "").trim();
+    const onlyEmpty = !!($("#rm-fixch-onlyempty") && $("#rm-fixch-onlyempty").checked);
+    return { periodType: "month", periodLabel: month, category: cat, channel: ch, onlyEmpty: onlyEmpty };
+  }
+
+  /* 补渠道 / 清空归属 —— 两处共用：都是「按月份+类目整片改 channel」 */
+  async function applyFixChannel(mode) {
+    const o = fixChOpts();
+    const tip = $("#rm-fixch-tip");
+    const say = (t) => { if (tip) tip.textContent = t || ""; };
+    if (!o.periodLabel) { sbToast("请先选月份（库里还没有月度数据？）", false); return; }
+    if (mode === "set" && !o.channel) { sbToast("请填写要补的渠道名", false); return; }
+    const target = (mode === "set") ? o.channel : "";
+    try {
+      const n = await SB.countRankItemsChannelSlot(o);
+      if (!n) {
+        say("这个范围里没有可改的条目" + (o.onlyEmpty ? "（可能都已有渠道了）" : ""));
+        return;
+      }
+      const scope = o.periodLabel + (o.category ? " · " + o.category : " · 全部类目");
+      const what = (mode === "set")
+        ? ("把这 " + n + " 条设为渠道「" + target + "」")
+        : ("把这 " + n + " 条的渠道清空（退回「本站榜单」列）");
+      if (!confirm("即将" + what + "\n范围：" + scope + (o.onlyEmpty ? "\n只改尚未设渠道的条目" : "\n包含已有渠道的条目（会被覆盖）") + "\n\n确定执行？")) return;
+      say("正在修改…");
+      const done = await SB.setRankItemsChannelSlot(o, target);
+      say("已修改 " + done + " 条");
+      sbToast("已修改 " + done + " 条" + (target ? "（渠道：" + target + "）" : "（已清空归属）"), true);
+      await loadChChannels();
+      await loadChList();
+      await fillTagExportSelects();
+    } catch (e) {
+      say("修改失败，请重试");
+      sbToast((e && e.message) || "修改失败", false);
+    }
+  }
+
+  let rmChDict = [];
 
   function renderChPending() {
     const box = $("#rm-ch-pending");
@@ -1351,6 +1469,39 @@
       });
       sbToast("已按「" + (fch || "全部渠道") + (fcat ? " / " + fcat : "") + "」导出，导完直接填表即可", true);
     };
+
+    /* 新增渠道（20261109E）：加完立刻进候选，下次直接选 */
+    const chAdd = $("#rm-ch-add");
+    if (chAdd) chAdd.onclick = async () => {
+      const tip = $("#rm-ch-dict-tip");
+      const v = (prompt("新增渠道名（例如 Pinterest / SHEIN / Amazon）", "") || "").trim();
+      if (!v) return;
+      try {
+        const r = await SB.addRankChannel(v);
+        await refreshChDict();
+        const chs = $("#rm-ch-channel");
+        if (chs && r && r.added) chs.value = r.name;
+        if (tip) tip.textContent = r && r.added ? ("已新增「" + v + "」") : ("「" + v + "」本来就有");
+      } catch (e) { sbToast((e && e.message) || "新增失败", false); }
+    };
+
+    /* 批量补渠道（20261109D） */
+    const fcpv = $("#rm-fixch-preview");
+    if (fcpv) fcpv.onclick = async () => {
+      const o = fixChOpts();
+      const tip = $("#rm-fixch-tip");
+      if (!o.periodLabel) { if (tip) tip.textContent = "请先选月份"; return; }
+      if (tip) tip.textContent = "正在统计…";
+      try {
+        const n = await SB.countRankItemsChannelSlot(o);
+        const scope = o.periodLabel + (o.category ? " · " + o.category : " · 全部类目");
+        if (tip) tip.textContent = scope + "：" + (o.onlyEmpty ? "尚未设渠道 " : "共 ") + n + " 条将被修改";
+      } catch (e) { if (tip) tip.textContent = "统计失败，请重试"; }
+    };
+    const fcok = $("#rm-fixch-apply");
+    if (fcok) fcok.onclick = () => applyFixChannel("set");
+    const fccl = $("#rm-fixch-clear");
+    if (fccl) fccl.onclick = () => applyFixChannel("clear");
 
     /* 月度打标表导出（面板里独立的那个区块） */
     const mtb = $("#rm-tag-export-btn");

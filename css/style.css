@@ -6639,3 +6639,9 @@ html, body{
   border: 1px solid #dfe2e8; background: #fff; color: #4a4f57; cursor: pointer;
 }
 .rm-ch-card .rm-ch-acts button:hover { border-color: #2f6fed; color: #2f6fed; }
+
+/* 渠道字典小标签（20261109E）：后台「其他渠道传图」里显示已配置渠道，每个带一个 × */
+.rk-ch-chip{display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:1px 6px 1px 8px;
+  border:1px solid rgba(0,0,0,.12);border-radius:10px;background:rgba(0,0,0,.03);font-size:12px;line-height:18px;white-space:nowrap}
+.rk-ch-del{border:0;background:none;padding:0 2px;cursor:pointer;color:#8a8a8a;font-size:13px;line-height:1}
+.rk-ch-del:hover{color:#d33}
