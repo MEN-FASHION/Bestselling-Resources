@@ -77,7 +77,8 @@ ok("已传列表可改渠道 / 改类目月份 / 删除", /data-chact="channel"/
 ok("进入面板时一并加载渠道清单与列表", /await loadChChannels\(\);\s*fillChCatSelects\(\);\s*await loadChList\(\);/.test(AR));
 
 console.log("四、数据口径（关键：渠道图不能污染榜单）");
-ok("写入时 channel 必填、site 一律为空", /channel: it\.channel,[\s\S]{0,120}site: "",\s*\n?\s*channel/.test(S) || /site: "",\s*\n\s*channel: it\.channel/.test(S));
+ok("写入时 channel 必填、site 一律为空", /if \(colOk\) row\.channel = it\.channel;/.test(S) && /site: "",/.test(S));
+ok("无渠道列时改存字典（不写空值列）", /if \(!colOk\) \{[\s\S]{0,160}map\[url\] = it\.channel;/.test(S));
 ok("写入 period_type 固定 month", /period_type: "month",\s*\n\s*period_label: it\.periodLabel/.test(S));
 ok("渠道图不写环比（ratio / abs_delta 为 null）", /ratio: null,\s*\n\s*abs_delta: null/.test(S));
 ok("单张失败不影响整批", /failed\.push\(\{ name: \(it\.file && it\.file\.name\) \|\| "", reason/.test(S));
@@ -96,7 +97,7 @@ ok("加列幂等", /alter table rank_items add column if not exists channel text
 ok("建索引幂等", /create index if not exists idx_rank_items_channel/.test(SQL));
 ok("索引口径 = 期次+类目+渠道", /\(period_type, period_label, category, channel\)/.test(SQL));
 const vers = [...new Set(allHtml.flatMap((f) => [...R(f).matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1])))];
-ok("所有页面版本号统一（本次 20261110D）", vers.length === 1 && vers[0] === "20261110D");
+ok("所有页面版本号统一（本次 20261110E）", vers.length === 1 && vers[0] === "20261110E");
 
 console.log("六、列口径实跑（直接执行真实函数）");
 let chLib = null;

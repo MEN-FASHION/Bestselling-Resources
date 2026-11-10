@@ -2632,11 +2632,120 @@ async removeTrendRecord(id) {
       return data || [];
     },
     /* 已用过的渠道清单：给后台「默认渠道」下拉与筛选用（不额外维护字典表） */
+    /* ============================================================
+     * 渠道归属的「无列」兼容层（20261110E）
+     * ------------------------------------------------------------
+     * rank_items.channel 是后加的列，要执行 SQL 补丁才有。
+     * 没执行时所有带 channel 的查询会被数据库整体拒绝（400），
+     * 表现就是「补渠道永远 0 条」「前台没有渠道列」。
+     * 这里透明兜底：先探测列是否存在
+     *   · 存在   → 一切照旧走列
+     *   · 不存在 → 归属改存 site_settings.frontend_dims.rank_channel_map
+     *              （一个字典：图片地址 → 渠道名），读写都走它，
+     *              功能一样，不用改表结构、不用跑 SQL。
+     * ============================================================ */
+    _chColOk: null,
+    async rankChannelColumn() {
+      if (this._chColOk !== null) return this._chColOk;
+      try {
+        const { error } = await client.from("rank_items").select("channel").limit(1);
+        this._chColOk = !error;
+        this._chColErr = error ? String((error && error.message) || "") : "";
+      } catch (e) { this._chColOk = false; }
+      return this._chColOk;
+    },
+    channelStorage() { return this._chColOk === false ? "map" : "column"; },
+    _chMap: null,
+    _chMapAt: 0,
+    async _chMapLoad(force) {
+      const now = Date.now();
+      if (!force && this._chMap && now - this._chMapAt < 60000) return this._chMap;
+      let m = {};
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        if (d.rank_channel_map && typeof d.rank_channel_map === "object") m = Object.assign({}, d.rank_channel_map);
+      } catch (e) { m = {}; }
+      this._chMap = m; this._chMapAt = now;
+      return m;
+    },
+    async _chMapSave(map) {
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.rank_channel_map = map || {};
+      const { error } = await client.from("site_settings").update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(errHint(error, "保存渠道归属失败"));
+      this._chMap = dims.rank_channel_map; this._chMapAt = Date.now();
+    },
+    /* 给一批条目补上 channel（有列时原样返回，代价只是开头一次探测） */
+    async applyChannelMap(rows) {
+      const list = rows || [];
+      if (!list.length) return list;
+      if (await this.rankChannelColumn()) return list;
+      const m = await this._chMapLoad();
+      list.forEach((r) => {
+        if (!r) return;
+        const u = String(r.image_url || "").trim();
+        const v = u ? String(m[u] || "").trim() : "";
+        if (v) r.channel = v;
+        else if (r.channel == null) r.channel = "";
+      });
+      return list;
+    },
+    /* 无列时：按「月份 + 类目」捞图片地址（带期次写法兜底） */
+    async _chSlotRows(o) {
+      const grab = async (ls) => {
+        let q = client.from("rank_items").select("id,image_url");
+        q = q.eq("period_type", o.periodType || "month");
+        if (Array.isArray(ls) && ls.length > 1) q = q.in("period_label", ls);
+        else if (Array.isArray(ls) && ls.length === 1) q = q.eq("period_label", ls[0]);
+        else if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+        if (o.category) q = q.eq("category", String(o.category));
+        if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
+        const res = await q.limit(60000);
+        if (res.error) throw new Error(errHint(res.error, "读取条目失败"));
+        return res.data || [];
+      };
+      let rows = await grab(this._labelVariants(o.periodLabel).slice(0, 1));
+      if (!rows.length) {
+        const all = this._labelVariants(o.periodLabel);
+        if (all.length > 1) rows = await grab(all);
+      }
+      return rows;
+    },
+    async _chMapPick(o, onlyEmpty) {
+      const rows = await this._chSlotRows(o);
+      const map = await this._chMapLoad(true);
+      const hit = [];
+      rows.forEach((r) => {
+        const u = String((r && r.image_url) || "").trim();
+        if (!u) return;
+        if (onlyEmpty && String(map[u] || "").trim()) return;
+        hit.push(u);
+      });
+      return hit;
+    },
+    _chMapCount(o, onlyEmpty) {
+      return this._chMapPick(o, onlyEmpty).then((a) => a.length);
+    },
+    async _chMapApply(o, channel, onlyEmpty) {
+      const urls = await this._chMapPick(o, onlyEmpty);
+      const map = await this._chMapLoad(true);
+      const v = String(channel == null ? "" : channel).trim();
+      urls.forEach((u) => { if (v) map[u] = v; else delete map[u]; });
+      await this._chMapSave(map);
+      return urls.length;
+    },
     async listRankChannelNames() {
-      const { data, error } = await client.from("rank_items").select("channel").neq("channel", "").limit(3000);
-      if (error) return [];
       const m = {};
-      (data || []).forEach((r) => { const v = String(r.channel || "").trim(); if (v) m[v] = 1; });
+      if (await this.rankChannelColumn()) {
+        const { data, error } = await client.from("rank_items").select("channel").neq("channel", "").limit(3000);
+        if (error) return [];
+        (data || []).forEach((r) => { const v = String(r.channel || "").trim(); if (v) m[v] = 1; });
+      } else {
+        const map = await this._chMapLoad(true);
+        Object.keys(map).forEach((k) => { const v = String(map[k] || "").trim(); if (v) m[v] = 1; });
+      }
       return Object.keys(m).sort();
     },
     /* ============================================================
@@ -2721,18 +2830,25 @@ async removeTrendRecord(id) {
           if (!it.periodLabel) throw new Error("缺少月份");
           const path = await this.uploadImage(it.file, it.category || "其他渠道");
           const url = base + "/" + path;
-          const { error } = await client.from("rank_items").insert({
+          const colOk = await this.rankChannelColumn();
+          const row = {
             period_type: "month",
             period_label: it.periodLabel,
             category: it.category,
             site: "",
-            channel: it.channel,
             image_url: url,
             title: String(it.file.name || "").replace(/\.[^.]+$/, ""),
             ratio: null,
             abs_delta: null,
-          });
+          };
+          if (colOk) row.channel = it.channel;         /* 没有这一列时不能带，否则整条被拒 */
+          const { error } = await client.from("rank_items").insert(row);
           if (error) throw new Error(error.message || "写入失败");
+          if (!colOk) {
+            const map = await this._chMapLoad(true);
+            map[url] = it.channel;
+            await this._chMapSave(map);
+          }
           ok.push({ name: it.file.name, url, channel: it.channel });
         } catch (e) {
           failed.push({ name: (it.file && it.file.name) || "", reason: String((e && e.message) || e || "失败") });
@@ -2743,12 +2859,25 @@ async removeTrendRecord(id) {
     },
     /* 单张改渠道 / 类目 / 月份（传错不用删了重传） */
     async updateRankChannelItem(id, patch) {
+      const colOk = await this.rankChannelColumn();
       const o = {};
-      if (patch && patch.channel != null) o.channel = String(patch.channel).trim();
+      if (patch && patch.channel != null && colOk) o.channel = String(patch.channel).trim();
       if (patch && patch.category != null) o.category = String(patch.category).trim();
       if (patch && patch.period_label != null) o.period_label = String(patch.period_label).trim();
-      const { error } = await client.from("rank_items").update(o).eq("id", id);
-      if (error) throw new Error(error.message || "修改失败");
+      if (Object.keys(o).length) {
+        const { error } = await client.from("rank_items").update(o).eq("id", id);
+        if (error) throw new Error(error.message || "修改失败");
+      }
+      if (patch && patch.channel != null && !colOk) {
+        const { data } = await client.from("rank_items").select("image_url").eq("id", id).maybeSingle();
+        const u = String((data && data.image_url) || "").trim();
+        if (u) {
+          const map = await this._chMapLoad(true);
+          const v = String(patch.channel).trim();
+          if (v) map[u] = v; else delete map[u];
+          await this._chMapSave(map);
+        }
+      }
     },
     /* ============================================================
      * 批量补渠道（20261109D）
@@ -2792,6 +2921,7 @@ async removeTrendRecord(id) {
     async countRankItemsChannelSlot(f) {
       const o = f || {};
       const onlyEmpty = !!o.onlyEmpty;
+      if (!(await this.rankChannelColumn())) return await this._chMapCount(o, onlyEmpty);
       const run = async (emptyKind, labels) => {
         let q = this._rankSlotQ(o, labels);
         if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
@@ -2853,8 +2983,23 @@ async removeTrendRecord(id) {
           }
         }
       } catch (e) { /* 留 0 */ }
-      if (!out.hasColumn) return out;
-      // 3) 三种渠道态各多少
+      /* 3) 列缺失时按归属字典统计，让自检依然能说清「能不能补、补多少」 */
+      if (!out.hasColumn) {
+        out.storage = "map";
+        try {
+          const rows = await this._chSlotRows(o);
+          const map = await this._chMapLoad(true);
+          out.monthTotal = rows.length || out.monthTotal;
+          rows.forEach((r) => {
+            const u = String((r && r.image_url) || "").trim();
+            if (String(map[u] || "").trim()) out.filled++;
+            else out.emptyStr++;      /* 字典里没有 = 尚未归属 */
+          });
+        } catch (e) { /* 留 0 */ }
+        return out;
+      }
+      out.storage = "column";
+      // 4) 三种渠道态各多少
       const cnt = async (fn) => {
         try {
           let q = client.from("rank_items").select("id", { count: "exact", head: true })
@@ -2875,6 +3020,7 @@ async removeTrendRecord(id) {
     /* 把整片条目的渠道改成 channel；channel 传空字符串 = 清空归属（退回「本站榜单」列）。
        返回实际改动条数。 */
     async setRankItemsChannelSlot(f, channel) {
+      if (!(await this.rankChannelColumn())) return await this._chMapApply(f || {}, channel, !!(f && f.onlyEmpty));
       const o = f || {};
       const v = String(channel == null ? "" : channel).trim();
       const onlyEmpty = !!o.onlyEmpty;
@@ -2966,10 +3112,19 @@ async removeTrendRecord(id) {
       const out = [];
       this._rankTruncated = false;
       let chMode = f.channelMode || "";
+      /* 渠道列缺失时不能把条件发给数据库（会被整体拒绝），改在内存里按归属字典筛 */
+      const chColOk = (chMode && typeof this.rankChannelColumn === "function") ? await this.rankChannelColumn() : true;
+      const pendingMode = chColOk ? "" : chMode;   /* 局部变量：并发调用时不会串 */
+      if (!chColOk) chMode = "";
+      /* 列缺失时连 select 里也不能带 channel，否则整条查询被拒、还会拖累列白名单 */
+      const colsSafe = (c) => {
+        if (!c || chColOk) return c;
+        return String(c).split(",").map((x) => x.trim()).filter((x) => x && x !== "channel").join(",");
+      };
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
-        let res = await build(from, to, useSlim() ? f.cols : "*", chMode);
-        if (res.error && chMode) { chMode = ""; res = await build(from, to, useSlim() ? f.cols : "*", chMode); }
+        let res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode);
+        if (res.error && chMode) { chMode = ""; res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode); }
         if (res.error && useSlim()) {
           COLS_REJECTED = true;                       /* 记住：后续不再试白名单 */
           res = await build(from, to, "*", chMode);
@@ -2983,6 +3138,16 @@ async removeTrendRecord(id) {
       }
       /* 取到上限还没取完 = 被截断。不要静默：调用方（导出 / 核对）要能把这件事说出来。 */
       if (out.length >= MAX) this._rankTruncated = true;
+      /* 列缺失：把归属字典套上去，再按原本想要的渠道口径筛一遍。
+         这样前台「渠道对比」的两列、后台渠道列表都照常工作。 */
+      if (typeof this.rankChannelColumn === "function" && !(await this.rankChannelColumn())) {
+        await this.applyChannelMap(out);
+        const pm = pendingMode;
+        let list = out;
+        if (pm === "only") list = out.filter((r) => String((r && r.channel) || "").trim() !== "");
+        else if (pm === "exclude") list = out.filter((r) => String((r && r.channel) || "").trim() === "");
+        return wanted ? list.slice(0, wanted) : list;
+      }
       return wanted ? out.slice(0, wanted) : out;
     },
     /* 上一次 listRankItems 是否因上限被截断（导出 / 核对时用来说清"数据不全"） */

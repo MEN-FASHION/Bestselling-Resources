@@ -1322,13 +1322,11 @@
       return;
     }
     const lines = [];
-    lines.push("① 渠道列（rank_items.channel）：" + (d.hasColumn ? "已存在 ✓" : "不存在 ✗"));
+    lines.push("① 渠道列（rank_items.channel）：" + (d.hasColumn ? "已存在 ✓（归属存在该列里）" : "不存在 → 已自动改用字典存储 ✓"));
     if (!d.hasColumn) {
-      lines.push("   原因：这一列还没加上，所以补渠道 / 渠道对比 / 渠道传图全部无法工作。");
-      lines.push("   处理：执行 sql/patch_20261110C_channel_and_tagdefs.sql（幂等，可重复跑）后刷新本页。");
-      if (d.schemaError) lines.push("   数据库返回：" + d.schemaError);
-      box.textContent = lines.join("\n");
-      return;
+      lines.push("   说明：这一列还没加，系统已自动把渠道归属存到配置档里（图片地址 → 渠道名），");
+      lines.push("         补渠道 / 渠道传图 / 前台渠道对比 都照常可用，不需要跑 SQL。");
+      lines.push("   可选：想改成列存储（数据量再大也更稳），执行 sql/patch_20261110C_channel_and_tagdefs.sql 后刷新本页即可，已归属的会继续生效。");
     }
     const wantLabel = (o && o.periodLabel) || "";
     lines.push("② 本月（" + wantLabel + "）总条目：" + d.monthTotal + " 条"
