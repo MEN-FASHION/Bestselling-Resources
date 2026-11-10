@@ -2953,7 +2953,8 @@ async removeTrendRecord(id) {
             category: it.category,
             site: "",
             image_url: url,
-            title: String(it.file.name || "").replace(/\.[^.]+$/, ""),
+            /* 不再写 title：渠道图本来就没有标题，而这张表在部分库里没有这一列，
+               带上它会让整条写入被拒（传图全部失败）。文件名只用于列表里显示。 */
             ratio: null,
             abs_delta: null,
           };

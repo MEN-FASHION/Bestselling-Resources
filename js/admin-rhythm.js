@@ -1432,7 +1432,8 @@
     rmChSetMsg("已上传 " + res.ok.length + " 张" + (res.failed.length ? "，" + res.failed.length + " 张失败" : ""), !res.failed.length);
     if (res.failed.length) {
       const t = res.failed.slice(0, 5).map((f) => (f.name || "未命名") + "：" + f.reason).join("；");
-      sbToast("有 " + res.failed.length + " 张没传上去 —— " + t, false);
+      sbToast("有 " + res.failed.length + " 张没传上去 —— " + t
+        + "（脚本版本 " + BUILD + "；若与部署包不一致，请覆盖 html 后 Ctrl+F5）", false);
     }
     await loadChChannels();
     await loadChList();
@@ -1657,8 +1658,15 @@
     renderChPending();
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { bindRhythmPanel(); bindChannelUploader(); });
-  else { bindRhythmPanel(); bindChannelUploader(); }
+  /* 脚本版本：页面上显示出来，传图失败时一眼能看出「页面跑的是不是旧脚本」 */
+  var BUILD = "20261111D";
+  function showBuild() {
+    var el = document.getElementById("rm-ch-ver");
+    if (el) el.textContent = "脚本版本 " + BUILD + "（若与部署包版本不一致，说明浏览器还在用旧脚本：覆盖 html 后 Ctrl+F5）";
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { bindRhythmPanel(); bindChannelUploader(); showBuild(); });
+  else { bindRhythmPanel(); bindChannelUploader(); showBuild(); }
 
   Object.assign(window, {
     enterRhythmPanel, loadRhythmBatches: loadRankBatches, loadRhythmSites: loadRankSites,
