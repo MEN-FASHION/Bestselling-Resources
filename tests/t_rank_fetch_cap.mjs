@@ -76,20 +76,20 @@ function mkClient(total) {
 }
 const ctx = { SB: {} };
 const list1 = fn(mkClient(2500), false);
-const api1 = { _rankTruncated: false, listRankItems: list1, rankChannelColumn: async () => true, applyChannelMap: async (r) => r, rankItemsTruncated() { return !!this._rankTruncated; } };
+const api1 = { _rankTruncated: false, listRankItems: list1, rankChannelColumn: async () => true, applyChannelMap: async (r) => r, _chMapLoad: async () => ({}), applyChannelMap: async (r) => r, rankItemsTruncated() { return !!this._rankTruncated; } };
 list1.call(api1, {}).then((rows) => {
   ok("达到上限时只返回上限条数", rows.length === 2000);
   ok("并标记为截断", api1.rankItemsTruncated() === true);
 
   const list2 = fn(mkClient(1500), false);
-  const api2 = { _rankTruncated: true, listRankItems: list2, rankChannelColumn: async () => true, applyChannelMap: async (r) => r, rankItemsTruncated() { return !!this._rankTruncated; } };
+  const api2 = { _rankTruncated: true, listRankItems: list2, rankChannelColumn: async () => true, applyChannelMap: async (r) => r, _chMapLoad: async () => ({}), rankItemsTruncated() { return !!this._rankTruncated; } };
   return list2.call(api2, {}).then((r2) => {
     ok("数据量在上限内时取全量", r2.length === 1500);
     ok("且不标记截断", api2.rankItemsTruncated() === false);
     ok("新传的（id 最大）也在结果里", r2[r2.length - 1].id === 1500);
 
     const list3 = fn(mkClient(2500), false);
-    const api3 = { _rankTruncated: false, listRankItems: list3, rankItemsTruncated() { return !!this._rankTruncated; } };
+    const api3 = { _rankTruncated: false, listRankItems: list3, rankChannelColumn: async () => true, applyChannelMap: async (r) => r, _chMapLoad: async () => ({}), rankItemsTruncated() { return !!this._rankTruncated; } };
     return list3.call(api3, { limit: 10 }).then((r3) => {
       ok("wanted 仍按需截断", r3.length === 10);
       console.log("\n结果：通过 " + pass + " 项，失败 " + fail + " 项");

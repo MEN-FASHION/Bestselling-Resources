@@ -15,6 +15,7 @@
   let rankCats = [];      // 类目管理里的类目名
   let rankParsed = null;  // { rows:[], headers:[], missing:[] }
   let rankPeriods = [];   // 由上传记录聚合：[{label,type,rows,batches}]
+  let itemMonths = [];    // 库里真实存在的月份（不依赖批次台账，老数据也能选到）
   let rankGroups = [];    // 地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
   const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
   /* 前台显隐：哪些国家站点 / 周次在前台展示（空数组 = 全部展示）
@@ -1250,17 +1251,25 @@
       if (keepc && (rankCats || []).indexOf(keepc) >= 0) fcat.value = keepc;
     }
     fillFixChMonths();
+    /* 顺带拉一次库里真实存在的月份：老数据没有批次记录时，月份下拉也选得到 */
+    if (!itemMonths.length && typeof SB.listRankLabels === "function") {
+      SB.listRankLabels("month").then((ms) => {
+        itemMonths = (ms || []).slice();
+        fillFixChMonths();
+      }).catch(() => {});
+    }
   }
 
-  /* 月份下拉：只列库里真正有月度数据的月份（周度不会混进来） */
+  /* 月份下拉：只列库里真正有月度数据的月份（周度不会混进来）。
+     合并两个来源：批次台账 + 条目里实际出现的月份 —— 老数据没有批次记录也能选到。 */
   function fillFixChMonths() {
     const sel = $("#rm-fixch-month");
     if (!sel) return;
     const keep = sel.value;
-    const months = (rankPeriods || [])
-      .filter((p) => p && p.type === "month" && p.label)
-      .map((p) => String(p.label))
-      .sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
+    const bag = {};
+    (rankPeriods || []).forEach((p) => { if (p && p.type === "month" && p.label) bag[String(p.label)] = 1; });
+    (itemMonths || []).forEach((m) => { if (m) bag[String(m)] = 1; });
+    const months = Object.keys(bag).sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
     sel.innerHTML = months.map((m) => '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>').join("")
       || '<option value="">（库里还没有月度数据）</option>';
     if (keep && months.indexOf(keep) >= 0) sel.value = keep;

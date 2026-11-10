@@ -87,7 +87,7 @@ ok("列表只读 channel 非空的记录", /from\("rank_items"\)\s*\n\s*\.select
 ok("可以改渠道 / 类目 / 月份", /async updateRankChannelItem\(id, patch\)/.test(S) && /o\.channel = String\(patch\.channel\)\.trim\(\)/.test(S));
 ok("可以单张删除", /async deleteRankChannelItem\(id\)/.test(S));
 ok("榜单取数支持 channelMode 三态", /if \(chMode === "only"\) q = q\.neq\("channel", ""\)/.test(S) && /else if \(chMode === "exclude"\) q = q\.eq\("channel", ""\)/.test(S));
-ok("channel 列缺失时自动去掉条件重取（不整页空白）", /if \(res\.error && chMode\) \{ chMode = ""; res = await build/.test(S));
+ok("channel 列缺失时自动去掉条件重取（不整页空白）", /if \(res\.error && chMode\) \{ chFailed = true; this\._chColOk = false; chMode = ""; res = await build/.test(S));
 ok("列白名单降级仍保留", /if \(res\.error && useSlim\(\)\)/.test(S) && /COLS_REJECTED = true/.test(S));
 ok("旧专区的数据接口已彻底移除", !/(listChannelSites|addChannelSite|listChannelItems|saveChannelTags|getChannelTagVisibility|setChannelTagVisibility)/.test(S));
 
@@ -97,7 +97,7 @@ ok("加列幂等", /alter table rank_items add column if not exists channel text
 ok("建索引幂等", /create index if not exists idx_rank_items_channel/.test(SQL));
 ok("索引口径 = 期次+类目+渠道", /\(period_type, period_label, category, channel\)/.test(SQL));
 const vers = [...new Set(allHtml.flatMap((f) => [...R(f).matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1])))];
-ok("所有页面版本号统一（本次 20261110E）", vers.length === 1 && vers[0] === "20261110E");
+ok("所有页面版本号统一（本次 20261110G）", vers.length === 1 && vers[0] === "20261110G");
 
 console.log("六、列口径实跑（直接执行真实函数）");
 let chLib = null;

@@ -2681,7 +2681,7 @@ async removeTrendRecord(id) {
     async applyChannelMap(rows) {
       const list = rows || [];
       if (!list.length) return list;
-      if (await this.rankChannelColumn()) return list;
+      /* 字典里的归属一律生效：既覆盖「没有该列」，也覆盖「有列但写不进去（权限/缓存）」的情况 */
       const m = await this._chMapLoad();
       list.forEach((r) => {
         if (!r) return;
@@ -2693,9 +2693,10 @@ async removeTrendRecord(id) {
       return list;
     },
     /* 无列时：按「月份 + 类目」捞图片地址（带期次写法兜底） */
-    async _chSlotRows(o) {
+    async _chSlotRows(o, withChannel) {
+      const cols = withChannel ? "id,image_url,channel" : "id,image_url";
       const grab = async (ls) => {
-        let q = client.from("rank_items").select("id,image_url");
+        let q = client.from("rank_items").select(cols);
         q = q.eq("period_type", o.periodType || "month");
         if (Array.isArray(ls) && ls.length > 1) q = q.in("period_label", ls);
         else if (Array.isArray(ls) && ls.length === 1) q = q.eq("period_label", ls[0]);
@@ -2712,6 +2713,23 @@ async removeTrendRecord(id) {
         if (all.length > 1) rows = await grab(all);
       }
       return rows;
+    },
+    /* 统一口径：把「本期次 + 类目」的条目捞出来，并判断每张图当前是否已有渠道。
+       当前归属取「列里有值」或「字典里有值」——两者任一有就算已归属。
+       统计和写入都走这里，保证「数出来的条数」和「实际改掉的条数」完全一致，
+       也不会再出现「列存在但写着写着被权限挡住、页面显示 0 条」。 */
+    async _chSlotTargets(o) {
+      const colOk = await this.rankChannelColumn();
+      const rows = await this._chSlotRows(o, colOk);
+      const map = await this._chMapLoad(true);
+      const out = [];
+      rows.forEach((r) => {
+        const u = String((r && r.image_url) || "").trim();
+        if (!u) return;
+        const cur = String((colOk ? (r.channel || "") : "") || map[u] || "").trim();
+        out.push({ id: r && r.id, url: u, cur: cur });
+      });
+      return out;
     },
     async _chMapPick(o, onlyEmpty) {
       const rows = await this._chSlotRows(o);
@@ -2735,6 +2753,20 @@ async removeTrendRecord(id) {
       urls.forEach((u) => { if (v) map[u] = v; else delete map[u]; });
       await this._chMapSave(map);
       return urls.length;
+    },
+    /* 库里真正存在的期次（按类型）：用于后台下拉、补渠道选月份。
+       不依赖批次台账 —— 老数据没有批次记录时也能选到。 */
+    async listRankLabels(periodType) {
+      const t = String(periodType || "month");
+      const { data, error } = await client.from("rank_items")
+        .select("period_label").eq("period_type", t).limit(60000);
+      if (error) return [];
+      const m = {};
+      (data || []).forEach((r) => {
+        const v = String((r && r.period_label) || "").trim();
+        if (v) m[v] = 1;
+      });
+      return Object.keys(m);
     },
     async listRankChannelNames() {
       const m = {};
@@ -2920,42 +2952,9 @@ async removeTrendRecord(id) {
     },
     async countRankItemsChannelSlot(f) {
       const o = f || {};
-      const onlyEmpty = !!o.onlyEmpty;
-      if (!(await this.rankChannelColumn())) return await this._chMapCount(o, onlyEmpty);
-      const run = async (emptyKind, labels) => {
-        let q = this._rankSlotQ(o, labels);
-        if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
-        const { count, error } = await q;
-        if (error) throw new Error(errHint(error, "统计失败"));
-        /* 有些部署里 head+count 拿不到 Content-Range（返回 null），
-           这时退一步数 id：结果一样，只是多走一次请求。 */
-        if (count == null) {
-          let q2 = client.from("rank_items").select("id").limit(20000);
-          q2 = q2.eq("period_type", o.periodType || "month");
-          if (o.periodLabel) q2 = q2.eq("period_label", String(o.periodLabel));
-          if (o.category) q2 = q2.eq("category", String(o.category));
-          if (typeof o.site === "string" && o.site !== "") q2 = q2.eq("site", o.site);
-          if (onlyEmpty) q2 = (emptyKind === "null") ? q2.is("channel", null) : q2.eq("channel", "");
-          const r2 = await q2;
-          if (r2.error) throw new Error(errHint(r2.error, "统计失败"));
-          return (r2.data || []).length;
-        }
-        return count;
-      };
-      const variants = this._labelVariants(o.periodLabel);
-      const total = async (emptyKind) => {
-        let n = await run(emptyKind, variants.slice(0, 1));
-        if (!n && variants.length > 1) n = await run(emptyKind, variants);
-        return n;
-      };
-      if (!onlyEmpty) return await total();
-      let n = 0;
-      n += await total("null");
-      try { n += await total("empty"); } catch (e) { /* 这一支失败不影响另一支 */ }
-      return n;
+      const tg = await this._chSlotTargets(o);
+      return tg.filter((t) => (!o.onlyEmpty || !t.cur)).length;
     },
-    /* 补渠道前的自检：把「为什么改不动」拆成能看懂的数字。
-       不写任何数据，只做计数，所以随便点、随便试。 */
     async diagnoseChannelSlot(f) {
       const o = f || {};
       const out = { hasColumn: false, schemaError: "", monthTotal: 0, emptyNull: 0, emptyStr: 0, filled: 0 };
@@ -2999,58 +2998,38 @@ async removeTrendRecord(id) {
         return out;
       }
       out.storage = "column";
-      // 4) 三种渠道态各多少
-      const cnt = async (fn) => {
-        try {
-          let q = client.from("rank_items").select("id", { count: "exact", head: true })
-            .eq("period_type", o.periodType || "month");
-          if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
-          if (o.category) q = q.eq("category", String(o.category));
-          if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
-          q = fn(q);
-          const { count, error } = await q;
-          return error ? 0 : (count || 0);
-        } catch (e) { return 0; }
-      };
-      out.emptyNull = await cnt((q) => q.is("channel", null));
-      out.emptyStr = await cnt((q) => q.eq("channel", ""));
-      out.filled = await cnt((q) => q.not("channel", "is", null).neq("channel", ""));
+      // 4) 三种渠道态各多少（统一口径：列值与字典值都算数）
+      try {
+        const tg = await this._chSlotTargets(o);
+        out.monthTotal = tg.length || out.monthTotal;
+        tg.forEach((t) => { if (t.cur) out.filled++; else out.emptyStr++; });
+        out.emptyNull = out.emptyStr;   /* 现在不区分 null / 空串，统一算「未归属」 */
+      } catch (e) {
+        out.diagError = String((e && e.message) || "");
+      }
       return out;
     },
     /* 把整片条目的渠道改成 channel；channel 传空字符串 = 清空归属（退回「本站榜单」列）。
-       返回实际改动条数。 */
+       返回实际改动条数。
+       写法：字典一定写（无列 / 列被权限挡 / 接口缓存没刷新都能生效），
+       有列时顺手把列也写上去；读取时字典里的值会覆盖列值，所以两条路永远一致。 */
     async setRankItemsChannelSlot(f, channel) {
-      if (!(await this.rankChannelColumn())) return await this._chMapApply(f || {}, channel, !!(f && f.onlyEmpty));
       const o = f || {};
       const v = String(channel == null ? "" : channel).trim();
-      const onlyEmpty = !!o.onlyEmpty;
-      const run = async (emptyKind, labels) => {
-        /* 用 .select("id") 拿回被改动的行：数组长度就是真实改了多少条。
-           比读 Content-Range 更硬 —— 有些部署拿不到 count 头，会把「改了 500 条」
-           显示成「已修改 0 条」，让人以为没生效。 */
-        let q = client.from("rank_items").update({ channel: v }).select("id");
-        q = q.eq("period_type", o.periodType || "month");
-        if (Array.isArray(labels) && labels.length > 1) q = q.in("period_label", labels);
-        else if (Array.isArray(labels) && labels.length === 1) q = q.eq("period_label", labels[0]);
-        else if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
-        if (o.category) q = q.eq("category", String(o.category));
-        if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
-        if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
-        const { data, error } = await q;
-        if (error) throw new Error(errHint(error, "补渠道失败"));
-        return (data || []).length;
-      };
-      const variants = this._labelVariants(o.periodLabel);
-      const apply = async (emptyKind) => {
-        let n = await run(emptyKind, variants.slice(0, 1));
-        if (!n && variants.length > 1) n = await run(emptyKind, variants);
-        return n;
-      };
-      if (!onlyEmpty) return await apply();
-      let n = 0;
-      n += await apply("null");
-      try { n += await apply("empty"); } catch (e) { /* 忽略空串分支失败 */ }
-      return n;
+      const tg = (await this._chSlotTargets(o)).filter((t) => (!o.onlyEmpty || !t.cur));
+      if (!tg.length) return 0;
+      const map = await this._chMapLoad(true);
+      tg.forEach((t) => { if (v) map[t.url] = v; else delete map[t.url]; });
+      await this._chMapSave(map);
+      if (await this.rankChannelColumn()) {
+        const ids = tg.map((t) => t.id).filter((x) => x != null);
+        for (let i = 0; i < ids.length; i += 200) {
+          try {
+            await client.from("rank_items").update({ channel: v }).in("id", ids.slice(i, i + 200));
+          } catch (e) { /* 列写不进去也无所谓：字典已经写好了 */ }
+        }
+      }
+      return tg.length;
     },
     /* 一次把所有渠道图整体改名 / 清空（用于渠道名写错：Pintrest → Pinterest） */
     async renameRankChannel(from, to) {
@@ -3111,20 +3090,23 @@ async removeTrendRecord(id) {
       };
       const out = [];
       this._rankTruncated = false;
-      let chMode = f.channelMode || "";
-      /* 渠道列缺失时不能把条件发给数据库（会被整体拒绝），改在内存里按归属字典筛 */
-      const chColOk = (chMode && typeof this.rankChannelColumn === "function") ? await this.rankChannelColumn() : true;
-      const pendingMode = chColOk ? "" : chMode;   /* 局部变量：并发调用时不会串 */
-      if (!chColOk) chMode = "";
+      /* 渠道一律在内存里筛，不下发给数据库：
+         ① 列缺失时下发会被整体拒绝（整页空白 + 一堆 400）
+         ② 列存在但写入被权限挡住时，库里还是空值，按库筛会漏掉「字典里已归属」的图
+         ③ 两种存储混用（部分行在列、部分行在字典）时，只有内存筛才看得全 */
+      const chColOk = (typeof this.rankChannelColumn === "function") ? await this.rankChannelColumn() : false;
+      const pendingMode = f.channelMode || "";
+      let chMode = "";
       /* 列缺失时连 select 里也不能带 channel，否则整条查询被拒、还会拖累列白名单 */
       const colsSafe = (c) => {
         if (!c || chColOk) return c;
         return String(c).split(",").map((x) => x.trim()).filter((x) => x && x !== "channel").join(",");
       };
+      let chFailed = false;   /* 渠道条件被数据库拒过：不管探测结果如何，一律改用字典 */
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
         let res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode);
-        if (res.error && chMode) { chMode = ""; res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode); }
+        if (res.error && chMode) { chFailed = true; this._chColOk = false; chMode = ""; res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode); }
         if (res.error && useSlim()) {
           COLS_REJECTED = true;                       /* 记住：后续不再试白名单 */
           res = await build(from, to, "*", chMode);
@@ -3140,9 +3122,11 @@ async removeTrendRecord(id) {
       if (out.length >= MAX) this._rankTruncated = true;
       /* 列缺失：把归属字典套上去，再按原本想要的渠道口径筛一遍。
          这样前台「渠道对比」的两列、后台渠道列表都照常工作。 */
-      if (typeof this.rankChannelColumn === "function" && !(await this.rankChannelColumn())) {
+      /* 字典里的归属一定合并：无论列是否存在、写入是否被挡，读到的渠道口径都一致 */
+      const needMap = true;
+      if (needMap) {
         await this.applyChannelMap(out);
-        const pm = pendingMode;
+        const pm = pendingMode || (chFailed ? (f.channelMode || "") : "");
         let list = out;
         if (pm === "only") list = out.filter((r) => String((r && r.channel) || "").trim() !== "");
         else if (pm === "exclude") list = out.filter((r) => String((r && r.channel) || "").trim() === "");

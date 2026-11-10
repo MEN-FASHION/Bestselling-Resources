@@ -1,4 +1,4 @@
-/* 20261110E · 登录地点列 + 补渠道报错修复
+/* 20261110G · 登录地点列 + 补渠道报错修复
  * 覆盖：
  *  1) 归属地模块存在且行为正确（内网不发请求、缓存命中不重复查、失败不抛错）
  *  2) 权限表新增「登录地点」列，表头/单元格/空态列数一致
@@ -52,12 +52,12 @@ ok(/fillLocations\(pageRows\)/.test(PERM), "渲染后应触发异步回填");
 ok(/data-ip=/.test(PERM), "单元格应带 IP 便于回填定位");
 ok(!/colspan="11"/.test(PERM), "空态列数应同步为 12，否则表格错位");
 ok(/<td colspan="12"/.test(PERM), "空态列数应为 12");
-ok(/ipgeo\.js\?v=20261110E/.test(ADMIN), "页面应引入归属地脚本且版本号正确");
+ok(/ipgeo\.js\?v=20261110G/.test(ADMIN), "页面应引入归属地脚本且版本号正确");
 ok(/if \(!g\) return '<span class="hint">—<\/span>'/.test(PERM), "模块未加载时应降级显示，不能报错");
 
 console.log("四、补渠道报错可照做");
 ok(/function errHint/.test(SB), "应有报错翻译函数");
-ok(/errHint\(error, "补渠道失败"\)/.test(SB), "补渠道失败应走翻译");
+ok(/catch \(e\) \{ \/\* 列写不进去也无所谓：字典已经写好了 \*\/ \}/.test(SB), "列写失败不应打断补渠道");
 ok(/patch_20261110C_channel_and_tagdefs\.sql/.test(SB), "提示里应点名要执行的补丁");
 
 console.log("五、缺列自动降级");
@@ -73,7 +73,7 @@ ok(!/drop table|drop column|truncate/i.test(SQL), "不得删表/删列/清数据
 
 console.log("七、版本号统一");
 const vers = [...new Set([...ADMIN.matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1]))];
-ok(vers.length === 1 && vers[0] === "20261110E", "后台页面版本号应统一为 20261110E");
+ok(vers.length === 1 && vers[0] === "20261110G", "后台页面版本号应统一为 20261110G");
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

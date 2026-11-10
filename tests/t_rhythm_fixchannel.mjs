@@ -46,9 +46,9 @@ ok("固定只改月度（period_type=month）", /_rankSlotQ\(f, labels\)[\s\S]{0
 ok("按月份收窄", /if \(o\.periodLabel\) q = q\.eq\("period_label"/.test(S));
 ok("按类目收窄（留空=全部类目）", /if \(o\.category\) q = q\.eq\("category"/.test(S));
 ok("只动 channel 列，不改别的字段", /update\(\{ channel: v \}\)/.test(S));
-ok("只改尚未设渠道时覆盖 null", /q = \(emptyKind === "null"\) \? q\.is\("channel", null\) : q\.eq\("channel", ""\)/.test(S));
-ok("只改尚未设渠道时也覆盖空串", /await apply\("empty"\)/.test(S) && /await apply\("null"\)/.test(S));
-ok("统计接口同样处理两种空值", /async countRankItemsChannelSlot\(f\)[\s\S]{0,2600}total\("empty"\)/.test(S));
+ok("只改尚未设渠道时覆盖 null 与空串", /const cur = String\(\(colOk \? \(r\.channel \|\| ""\) : ""\) \|\| map\[u\] \|\| ""\)\.trim\(\);/.test(S));
+ok("已归属判定按「列值或字典值」", /\.filter\(\(t\) => \(!o\.onlyEmpty \|\| !t\.cur\)\)/.test(S));
+ok("统计接口同样处理两种空值", /async countRankItemsChannelSlot\(f\)[\s\S]{0,400}_chSlotTargets/.test(S));
 ok("请空渠道返回条数", /return count \|\| 0;/.test(S));
 
 console.log("四、清空归属的语义");

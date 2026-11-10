@@ -1,4 +1,4 @@
-/* 20261110E · 补渠道「改不动」的定位与修复
+/* 20261110G · 补渠道「改不动」的定位与修复
  * 覆盖：
  *  1) 改动条数不再依赖响应头 count（曾把「改了 N 条」显示成「已修改 0 条」）
  *  2) 0 条时自动自检，把原因摊开（列缺失 / 月份无数据 / 都有渠道了 / 类目筛空 / 权限）
@@ -17,21 +17,24 @@ const SB = R("js/supabase.js");
 const AR = R("js/admin-rhythm.js");
 const ADMIN = R("admin.html");
 
-console.log("一、改动条数用真实行数");
-ok(/update\(\{ channel: v \}\)\.select\("id"\)/.test(SB), "应以 select(\"id\") 拿回被改动的行");
-ok(/return \(data \|\| \[\]\)\.length;/.test(SB), "应返回数组长度作为改动条数");
-ok(!/update\(\{ channel: v \}, \{ count: "exact" \}\)/.test(SB), "不应再依赖 PATCH 的 count 头");
+console.log("一、改动条数用真实目标行数（不再依赖任何响应头）");
+ok(/const tg = \(await this\._chSlotTargets\(o\)\)\.filter/.test(SB), "应以真实目标行计算待改条数");
+ok(/if \(!tg\.length\) return 0;/.test(SB) && /return tg\.length;/.test(SB), "返回实际改动的目标行数");
+ok(!/count: "exact"/.test(SB.slice(SB.indexOf("async setRankItemsChannelSlot"), SB.indexOf("async renameRankChannel"))), "补渠道不应依赖 count 头");
+ok(/map\[t\.url\] = v/.test(SB), "字典一定写入（列写不进去也能生效）");
+ok(/\.in\("id", ids\.slice/.test(SB), "有列时顺手按 id 批量写列");
 
-console.log("二、统计接口的退化路径");
-ok(/if \(count == null\)/.test(SB), "count 为空时应走退化统计");
-ok(/select\("id"\)\.limit\(20000\)/.test(SB), "退化统计应有上限，避免拉全表");
+console.log("二、统计与写入同一口径");
+ok(/async _chSlotTargets\(o\)/.test(SB), "应有统一的取目标行方法");
+ok(/const tg = await this\._chSlotTargets\(o\);\s*\n\s*return tg\.filter/.test(SB), "统计复用同一口径");
 
 console.log("三、自检能力");
 ok(/async diagnoseChannelSlot\(f\)/.test(SB), "应有自检方法");
 ok(/select\("channel"\)\.limit\(1\)/.test(SB), "自检应探测 channel 列是否存在");
 ok(/hasColumn/.test(SB) && /schemaError/.test(SB), "自检应回传列是否存在与原始报错");
-ok(/out\.emptyNull = await cnt/.test(SB) && /out\.emptyStr = await cnt/.test(SB) && /out\.filled = await cnt/.test(SB),
-   "自检应分别统计 null / 空串 / 已有渠道");
+ok(/out\.filled\+\+/.test(SB) && /out\.emptyStr\+\+/.test(SB),
+   "自检应分别统计 已归属 / 未归属");
+ok(/out\.storage = "column"/.test(SB) && /out\.storage = "map"/.test(SB), "自检应报出当前存储方式");
 ok(!/update\(/.test(SB.slice(SB.indexOf("async diagnoseChannelSlot"), SB.indexOf("async setRankItemsChannelSlot"))),
    "自检不得写入任何数据");
 
