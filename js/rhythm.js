@@ -306,8 +306,18 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111B";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111C";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_BASE = "榜单";
+  /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
+     渠道对比只按"年+月"比对，避免补渠道后因为写法差异一列都出不来。 */
+  function sameMonth(a, b) {
+    var y = function (s) { var m = String(s || "").match(/(20\d{2})/); return m ? m[1] : ""; };
+    var n = function (s) { var m = String(s || "").match(/(?:年|[-/.])(\d{1,2})(?!\d)/); return m ? String(parseInt(m[1], 10)) : ""; };
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (/W\d/i.test(String(a)) || /W\d/i.test(String(b))) return false;   /* 周次不按月份比 */
+    return y(a) && y(a) === y(b) && n(a) && n(a) === n(b);
+  }
   function chOf(it) { return String((it && it.channel) || "").trim() || CH_BASE; }
   /* 渠道列：榜单永远排第一，其余按图片多少排，最多 4 个渠道（再多每列就只剩一条缝） */
   function channelColumns(items) {
@@ -652,6 +662,10 @@
     else if (MODE === "s") {
       /* 渠道对比一次要拿两批：榜单列（channel 为空）+ 各渠道图（channel 非空） */
       filter.cols = REL_COLS + ",channel";
+      /* 渠道对比里「本站榜单」列的标题就写着「全部站点」，而渠道图本身没有国家，
+         下发国家条件会把两类都筛掉一部分 —— 这一模式统一不按国家取。 */
+      filter.sites = [];
+      filter.allowEmptySite = true;
       if (CAT && CAT !== ALL) filter.category = CAT;
       else if (FACETS.categories.length) filter.categories = FACETS.categories;
     }
@@ -1555,7 +1569,7 @@
          列 = 「榜单」+ 各上传过图的渠道。榜单列用本月榜单（全部站点）；
          渠道图没有环比数据，因此不出版位标签，只比「长什么样」。 */
       var pS = periods[periods.length - 1] || "";
-      var inS = all.filter(function (it) { return !pS || (it.period_label || "") === pS; });
+      var inS = all.filter(function (it) { return !pS || sameMonth(it.period_label, pS); });
       var colsS = channelColumns(inS);
       colsS.forEach(function (ch) {
         var mine = inS.filter(function (it) { return chOf(it) === ch; });
@@ -1694,7 +1708,7 @@
 
     if (MODE === "s") {
       var pS2 = periods[periods.length - 1] || "";
-      var inS2 = items.filter(function (it) { return !pS2 || (it.period_label || "") === pS2; });
+      var inS2 = items.filter(function (it) { return !pS2 || sameMonth(it.period_label, pS2); });
       return channelColumns(inS2).map(function (ch) {
         return {
           key: ch, label: ch,

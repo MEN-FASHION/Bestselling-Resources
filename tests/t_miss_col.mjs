@@ -1,4 +1,4 @@
-/* 20261111B · 表里缺列（如 title）导致传图/读取整体被拒：自动减列重试 */
+/* 20261111C · 表里缺列（如 title）导致传图/读取整体被拒：自动减列重试 */
 import fs from "node:fs";
 const SB = fs.readFileSync("js/supabase.js", "utf8");
 let pass = 0, fail = 0;

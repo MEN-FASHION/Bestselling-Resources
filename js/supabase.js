@@ -3165,7 +3165,11 @@ async removeTrendRecord(id) {
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
         if (f.periodType) q = q.eq("period_type", f.periodType);
         if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
-        if (f.sites && f.sites.length) q = q.in("site", f.sites);
+        /* 渠道图（其他渠道传上来的）按设计不含站点，site 一律为空。
+           一旦下发国家条件，它们会被整体滤掉 —— 表现就是「补了渠道，前台渠道列还是不出现」。
+           所以看渠道口径时不下发站点条件；国家为空的图本来也不该被某个国家筛掉。 */
+        const skipSites = f.channelMode === "only" || f.allowEmptySite;
+        if (!skipSites && f.sites && f.sites.length) q = q.in("site", f.sites);
         /* 20261109A：渠道口径。"only" = 只看其他渠道传的图；"exclude" = 只看榜单表格导入的图。
            这一列是后加的补丁，没执行时查询会整体失败 —— 所以下面遇到错误会自动去掉
            这个条件重取一次，页面至少还能显示原有榜单数据。 */

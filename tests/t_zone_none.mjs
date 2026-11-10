@@ -52,7 +52,7 @@ ok(/Array\.isArray\(myz\) && myz\.length && myz\.indexOf\("rank"\) === -1/.test(
 
 console.log("七、版本号");
 const admin = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
-ok(/admin-perm\.js\?v=20261111B/.test(admin), "admin.html 里 admin-perm.js 版本号应升到 20261111A");
+ok(/admin-perm\.js\?v=20261111C/.test(admin), "admin.html 里 admin-perm.js 版本号应升到 20261111A");
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);
