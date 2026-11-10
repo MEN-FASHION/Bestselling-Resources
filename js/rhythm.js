@@ -306,8 +306,11 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111H";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111I";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_STAT = { board: 0, channel: 0 };   /* 本次渠道对比实际取到的张数，直接显示在页面上 */
+  /* 其他渠道的图：与榜单条目完全分开的一批，只用于「并排看图」 */
+  var CH_PICS = [];
+  var CH_COL_MAX = 4;                       /* 渠道列最多几列（再多每列只剩一条缝） */
   var CH_BASE = "榜单";
   /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
      渠道对比只按"年+月"比对，避免补渠道后因为写法差异一列都出不来。 */
@@ -329,6 +332,20 @@
   }
   function chOf(it) { return String((it && it.channel) || "").trim() || CH_BASE; }
   /* 渠道列：榜单永远排第一，其余按图片多少排，最多 4 个渠道（再多每列就只剩一条缝） */
+  /* 渠道列数：按「当前选中月份」实际上传的渠道数（最多 CH_COL_MAX），用于顶部「共 N 列」 */
+  function chColumnCount() {
+    var ps = activePeriods();
+    var pS = ps.length ? ps[ps.length - 1] : "";
+    var seen = {};
+    (CH_PICS || []).forEach(function (p) {
+      if (!p || !p.image_url) return;
+      if (pS && !sameMonth(p.period_label, pS)) return;
+      var cn = String(p.channel || "").trim() || "未分渠道";
+      seen[cn] = 1;
+    });
+    return Math.min(CH_COL_MAX, Object.keys(seen).length);
+  }
+
   function channelColumns(items) {
     var cnt = {}, order = [];
     (items || []).forEach(function (it) {
@@ -686,31 +703,28 @@
     /* 20261104G：取数失败不能静默变成「暂无数据」——那会让人以为数据被删了。
        这里记下失败，渲染时明确提示"加载失败 + 可刷新重试"。 */
     try {
-      /* 渠道对比：榜单走原来的路，渠道图单独读（20261111F 重做）
-         —— 渠道图不再跟榜单共用同一套筛选条件，避免被国家 / 期次写法 / 列白名单整批滤掉。 */
+      /* 渠道对比（20261111I 按用户口径重做）：
+         ① 「月度榜单」= 与其它模式完全一致的取数路径，一个国家、期次、类目都不改；
+         ② 其他渠道的图 = 独立的一批，只用于并排看图；
+         ③ 两批严格互斥：渠道图绝不出现在榜单列，也绝不参与榜单排序 / 位次 / 打标筛选。 */
       if (MODE === "s") {
         var fBoard = Object.assign({}, filter);
         delete fBoard.channelMode;
-        var rBoard = await SBX.listRankItems(fBoard);
-        var rCh = [];
+        items = await SBX.listRankItems(fBoard);
         try {
-          rCh = await SBX.listRankChannelPics({
+          CH_PICS = (await SBX.listRankChannelPics({
             periodType: PTYPE,
-            category: filter.category || "",
-            categories: filter.categories || null,
-            /* 只取「当前选中的月份」，不带上基线用的上一月，否则渠道图会跨月混进同一列 */
+            category: (CAT && CAT !== ALL) ? CAT : "",
             periods: periods,
-          });
-        } catch (eCh) { rCh = []; }
-        var seenU = {}, mergedItems = [];
-        (rBoard || []).concat(rCh || []).forEach(function (it) {
-          var k = String((it && it.image_url) || "");
-          if (!k || seenU[k]) return;
-          seenU[k] = 1; mergedItems.push(it);
-        });
-        items = mergedItems;
-        CH_STAT = { board: (rBoard || []).length, channel: (rCh || []).length };
+          })) || [];
+        } catch (eCh) { CH_PICS = []; }
+        var _chUrl = {};
+        CH_PICS.forEach(function (p) { if (p && p.image_url) _chUrl[String(p.image_url)] = 1; });
+        items = (items || []).filter(function (it) { return !_chUrl[String((it && it.image_url) || "")]; });
+        CH_STAT = { board: items.length, channel: CH_PICS.length };
       } else {
+        CH_PICS = [];
+        CH_STAT = { board: 0, channel: 0 };
         items = await SBX.listRankItems(filter);
       }
       LOAD_ERR = null;
@@ -775,9 +789,9 @@
       if (!SEL_CATS.length) SEL_CATS = pickCats(2);      /* 一个都没选时才兜底两个 */
       SEL_CATS = SEL_CATS.slice(0, CAT_MAX);
     } else if (MODE === "s") {
-      /* 渠道对比：月份单选、不按国家切（渠道图本身没有国家），位次筛选也不适用 */
+      /* 渠道对比：月份单选；站点保留（榜单列按所选站点取，与其它模式一致）
+         位次筛选不适用（渠道图没有环比基线） */
       if (SEL_PERIODS.length > 1) SEL_PERIODS = [SEL_PERIODS[SEL_PERIODS.length - 1]];
-      SEL_SITES = [];
       ONLY = "off";
       MOVE = "off";
     } else {
@@ -844,7 +858,7 @@
     } else if (MODE === "s") {
       var spS = sortPeriods(FACETS.periods);
       SEL_PERIODS = spS.length ? [spS[spS.length - 1]] : [];
-      SEL_SITES = [];
+      if (!SEL_SITES.length) { var allS = orderedSites(); SEL_SITES = allS.slice(0, Math.max(2, Math.min(COLS_MAX, allS.length))); }
     } else {
       var all2 = orderedSites();
       var kept = SEL_SITES.filter(function (x) { return all2.indexOf(x) >= 0; });
@@ -992,8 +1006,9 @@
       groupHtml +
       catsGroup +
       (MODE === "s"
-        ? '<div class="tag-group"><span class="tag-group-name">对比列</span><div class="tag-chips"><span class="rk-note">列 = 榜单 + 各渠道，按「这个类目 · 这个月份」实际上传的图自动出列（最多 4 个渠道）。渠道图在后台「上新节奏 → 其他渠道传图」上传。</span></div></div>'
-        : '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>') +
+        ? '<div class="tag-group"><span class="tag-group-name">对比列</span><div class="tag-chips"><span class="rk-note">左起第一列是月度榜单（与平时看到的榜单完全一致），后面每列一个渠道，只并排看图、不与榜单混算。渠道图在后台「上新节奏 → 其他渠道传图」上传，最多出 4 个渠道列。</span></div></div>'
+        : '') +
+      '<div class="tag-group"><span class="tag-group-name">国家站点' + (SEL_GROUP ? "（已按地区合并，点上方「取消地区」可单选国家）" : (MODE === "h" ? "（可多选，最多 " + COLS_MAX + " 个）" : "（单选，选一个其它自动取消）")) + '</span><div class="tag-chips" id="rk-g-sites">' + sitesHtml + '</div></div>' +
       '<div class="tag-group"><span class="tag-group-name">月份 / 期次' + (MODE === "v"
         ? (PERIODS_AUTO
             ? "（现为最近 " + SEL_PERIODS.length + " 月，点选即改为你自己选的月份）"
@@ -1223,7 +1238,7 @@
     var cols = (LAST_COLS_MODE === MODE && LAST_COLS) ? LAST_COLS
       : (MODE === "v" ? periods.length
         : (MODE === "c" ? activeCats().length
-          : (MODE === "s" ? channelColumns((CACHE && CACHE.items) || []).length : sites.length)));
+          : (MODE === "s" ? (1 + chColumnCount()) : sites.length)));
     h += '<button type="button" class="rk-eye-btn" id="rk-eye-btn" title="一次看到所有对比列的全部图片">天眼 · 查看全部对比图</button>';
     h += '<button type="button" class="rk-exp-img" id="rk-exp-img" title="把当前这个页面此刻的样子定格成一张高清长图（列、卡片、位次标签都在原位，可放大看清）">导出图片（整页 · 高清）</button>';
     h += '<button type="button" class="rk-rep-btn" id="rk-week-report" title="按当前选中的两月生成一份对比分析报告（PPT）：款式 / 图案印花与设计元素 / 二次工艺 / 场景与背景构成 / 主图视觉 / 类目结构 六维差异 + 趋势结论">生成月对比分析报告</button>';
@@ -1585,44 +1600,65 @@
         });
       });
     } else if (MODE === "s") {
-      /* 页面上常驻版本号：一眼能确认跑的是不是新脚本（渠道不显示时先看这里） */
+      /* ===== 横向 · 渠道对比：榜单列 + 各渠道列（两批分别取、分别画，互不混淆） ===== */
+      var pS = periods[periods.length - 1] || "";
+      var boardIn = all.filter(function (it) { return !pS || sameMonth(it.period_label, pS); });
       html += '<div class="rk-ch-build">渠道口径 ' + esc(BUILD)
         + ' · 榜单 ' + CH_STAT.board + ' 张 · 其他渠道 ' + CH_STAT.channel + ' 张</div>';
-      /* ===== 横向 · 渠道对比：每渠道一列（同一类目 · 同一月） =====
-         列 = 「榜单」+ 各上传过图的渠道。榜单列用本月榜单（全部站点）；
-         渠道图没有环比数据，因此不出版位标签，只比「长什么样」。 */
-      var pS = periods[periods.length - 1] || "";
-      var inS = all.filter(function (it) { return !pS || sameMonth(it.period_label, pS); });
-      var colsS = channelColumns(inS);
-      colsS.forEach(function (ch) {
-        var mine = inS.filter(function (it) { return chOf(it) === ch; });
-        var list = sortItems(mine);
-        if (TAGGED !== "off") list = list.filter(hitTagged);
-        if (list.length > maxLen) maxLen = list.length;
-        var metaS = pS + (ch === CH_BASE ? " · 本站榜单（全部站点）" : " · 其他渠道传图");
-        var cardsS = list.slice(0, limit).map(function (it) {
+
+      /* ① 榜单列：与「横向 · 国家对比」用的是同一批条目、同一套排序，只是把站点合到一列 */
+      if (boardIn.length) {
+        var bList = sortItems(boardIn);
+        if (TAGGED !== "off") bList = bList.filter(hitTagged);
+        if (bList.length > maxLen) maxLen = bList.length;
+        var bCards = bList.slice(0, limit).map(function (it) {
           return cardHtml(it, { eager: opts.eager, eye: opts.eye });
         }).join("");
-        html += poolHtml(ch, metaS, list.length, cardsS, opts.noFoot ? null : Math.min(limit, list.length));
-        kept += list.length; cols++;
-        list.forEach(function (it) {
+        var bMeta = pS + " · 月度榜单" + (sites.length ? "（" + sites.join(" / ") + "）" : "（全部站点）");
+        html += poolHtml(CH_BASE, bMeta, bList.length, bCards, opts.noFoot ? null : Math.min(limit, bList.length));
+        kept += bList.length; cols++;
+        bList.forEach(function (it) {
           EXPORT_ITEMS.push({
             url: it.image_url, label: "", site: it.site || "",
-            period: pS, cat: it.leaf_category || it.category || CAT || ""
+            period: it.period_label || pS, cat: it.leaf_category || it.category || CAT || ""
+          });
+        });
+      }
+
+      /* ② 其他渠道列：只并排看图 —— 不打位次标签、不参与榜单排序、不做打标筛选 */
+      var byCh = {}, orderCh = [];
+      (CH_PICS || []).forEach(function (p) {
+        if (!p || !p.image_url) return;
+        if (pS && !sameMonth(p.period_label, pS)) return;
+        var cn = String(p.channel || "").trim() || "未分渠道";
+        if (!byCh[cn]) { byCh[cn] = []; orderCh.push(cn); }
+        byCh[cn].push(p);
+      });
+      orderCh.sort(function (x, y) { return byCh[y].length - byCh[x].length; });
+      orderCh.slice(0, CH_COL_MAX).forEach(function (cn) {
+        var pics = byCh[cn];
+        if (pics.length > maxLen) maxLen = pics.length;
+        var chCards = pics.slice(0, limit).map(function (p) {
+          /* 渠道图没有环比 / 位次 / 国家，只带「图 + 渠道名 + 类目月份」 */
+          return cardHtml({
+            image_url: p.image_url, site: "", period_label: p.period_label || pS,
+            category: p.category || "", leaf_category: "", ratio: null, abs_delta: null,
+            channel: cn, title: ""
+          }, { eager: opts.eager, eye: opts.eye });
+        }).join("");
+        var chMeta = pS + " · 其他渠道" + (pics[0] && pics[0].category ? "（" + pics[0].category + "）" : "");
+        html += poolHtml(cn, chMeta, pics.length, chCards, opts.noFoot ? null : Math.min(limit, pics.length));
+        kept += pics.length; cols++;
+        pics.forEach(function (p) {
+          EXPORT_ITEMS.push({
+            url: p.image_url, label: "", site: "",
+            period: p.period_label || pS, cat: p.category || ""
           });
         });
       });
-      /* 只有一个「榜单」列时给出可操作提示：要么确实没传渠道图，要么后台补了渠道但页面还是旧脚本。
-         把当前脚本版本一起写出来，方便核对是不是缓存。 */
-      if (cols === 1 && colsS[0] === CH_BASE) {
-        html += '<div class="rk-empty rk-ch-hint">只看到「榜单」一列 —— '
-          + '本次取到 榜单 ' + CH_STAT.board + ' 张 / 其他渠道 ' + CH_STAT.channel + ' 张。'
-          + (CH_STAT.channel ? '渠道图取到了但没成列，请刷新重试。'
-            : '这个月这个类目还没有归属到渠道的图：去后台「其他渠道传图」传图，或在「批量补渠道」里补上。')
-          + '<span class="rk-ch-ver">渠道口径 ' + esc(BUILD) + '</span></div>';
-      }
+
       if (!cols) {
-        html += '<div class="rk-empty">这个类目在 ' + esc(pS || "所选月份") + ' 还没有任何图。'
+        html += '<div class="rk-empty">这个月「' + esc(CAT || ALL) + '」既没有榜单数据，也没有其他渠道的图。'
           + '先到后台「上新节奏 → 其他渠道传图」传一批，或换一个月份。</div>';
         cols = 1;
       }

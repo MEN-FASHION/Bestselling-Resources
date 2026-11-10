@@ -1,4 +1,4 @@
-/* 20261111H · 渠道图改用独立文档存储（不依赖榜单表的列与约束） */
+/* 20261111I · 渠道图改用独立文档存储（不依赖榜单表的列与约束） */
 import fs from "node:fs";
 const S = fs.readFileSync("js/supabase.js", "utf8");
 const R = fs.readFileSync("js/rhythm.js", "utf8");
@@ -21,10 +21,10 @@ ok(/API\.listRankChannelItems = async function/.test(S), "后台列表也读文�
 ok(/isCpId\(id\)/.test(S), "文档里的图用 cp: 前缀的 id 定位");
 
 console.log("三、前台");
-const chFetch = R.slice(R.indexOf("rCh = await SBX.listRankChannelPics"), R.indexOf("rCh = await SBX.listRankChannelPics") + 400);
+const chFetch = R.slice(R.indexOf("SBX.listRankChannelPics("), R.indexOf("SBX.listRankChannelPics(") + 400);
 ok(/periods: periods,/.test(chFetch), "渠道图只取选中月份，不带基线月");
 ok(/渠道对比里「榜单」这一列允许为空/.test(R), "榜单为空时不再拦掉渠道图");
-ok(/var BUILD = "20261111H"/.test(R) && /var BUILD = "20261111H"/.test(A), "版本号已统一");
+ok(/var BUILD = "20261111I"/.test(R) && /var BUILD = "20261111I"/.test(A), "版本号已统一");
 
 console.log("四、后台可核对");
 ok(/channelPicStats/.test(A), "后台显示存储里共有多少张");

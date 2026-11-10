@@ -47,7 +47,7 @@ ok("有对应样式", /\.rk-ch-chip/.test(C) && /\.rk-ch-del/.test(C));
 
 console.log("四、前台仍按数据出列");
 ok("渠道列由条目里的 channel 决定", /function channelColumns/.test(Y));
-ok("没有图的渠道不会单独成列（列来自 items）", /channelColumns\(\(CACHE && CACHE\.items\) \|\| \[\]\)/.test(Y));
+ok("没有图的渠道不会单独成列（列只来自实际上传的渠道图）", /orderCh\.sort/.test(Y) && /orderCh\.slice\(0, CH_COL_MAX\)/.test(Y));
 
 console.log("五、实跑：字典去重与候选合并");
 /* 用假的枚举表读写，跑真实逻辑 */

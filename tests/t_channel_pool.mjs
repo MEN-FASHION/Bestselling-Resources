@@ -1,4 +1,4 @@
-/* 20261111H · 重做：榜单 + 其他渠道图在同一个对比池里并排 */
+/* 20261111I · 重做：榜单 + 其他渠道图在同一个对比池里并排 */
 import fs from "node:fs";
 const R = (p) => fs.readFileSync(p, "utf8");
 const SB = R("js/supabase.js"), RHY = R("js/rhythm.js");
@@ -15,12 +15,12 @@ ok(/this\._sameMonth\(r\.period_label, lb\)/.test(SB), "月份按年月比对，
 console.log("二、前台把两批合并后统一分组");
 ok(/var fBoard = Object\.assign\(\{\}, filter\);/.test(RHY), "榜单走原路");
 ok(/await SBX\.listRankChannelPics\(\{/.test(RHY), "渠道单独取");
-ok(/CH_STAT = \{ board: \(rBoard \|\| \[\]\)\.length/.test(RHY), "记录两批张数");
+ok(/CH_STAT = \{ board: items\.length, channel: CH_PICS\.length \}/.test(RHY), "记录两批张数");
 ok(/delete fBoard\.channelMode;/.test(RHY), "榜单查询不再带渠道条件");
 
 console.log("三、页面上能看到「到底取到了多少」");
 ok(/榜单 ' \+ CH_STAT\.board \+ ' 张 · 其他渠道 ' \+ CH_STAT\.channel/.test(RHY), "徽标显示两批张数");
-ok(/渠道图取到了但没成列/.test(RHY), "有渠道图却不成列时给出明确提示");
+ok(/其他渠道 ' \+ CH_STAT\.channel/.test(RHY), "页面上直接写出两批张数，便于判断是没数据还是没生效");
 
 console.log("四、写入统一月份写法");
 ok(/_normMonth\(label\) \{/.test(SB), "有月份归一函数");
