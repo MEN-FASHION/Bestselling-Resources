@@ -306,13 +306,22 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111E";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111F";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var CH_STAT = { board: 0, channel: 0 };   /* 本次渠道对比实际取到的张数，直接显示在页面上 */
   var CH_BASE = "榜单";
   /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
      渠道对比只按"年+月"比对，避免补渠道后因为写法差异一列都出不来。 */
   function sameMonth(a, b) {
-    var y = function (s) { var m = String(s || "").match(/(20\d{2})/); return m ? m[1] : ""; };
-    var n = function (s) { var m = String(s || "").match(/(?:年|[-/.])(\d{1,2})(?!\d)/); return m ? String(parseInt(m[1], 10)) : ""; };
+    var y = function (s) {
+      var c = String(s || "").match(/^(20\d{2})(\d{2})$/);
+      if (c) return c[1];
+      var m = String(s || "").match(/(20\d{2})/); return m ? m[1] : "";
+    };
+    var n = function (s) {
+      var c = String(s || "").match(/^(20\d{2})(\d{2})$/);
+      if (c) return String(parseInt(c[2], 10));
+      var m = String(s || "").match(/(?:年|[-/.])(\d{1,2})(?!\d)/); return m ? String(parseInt(m[1], 10)) : "";
+    };
     if (!a || !b) return false;
     if (a === b) return true;
     if (/W\d/i.test(String(a)) || /W\d/i.test(String(b))) return false;   /* 周次不按月份比 */
@@ -676,37 +685,29 @@
     /* 20261104G：取数失败不能静默变成「暂无数据」——那会让人以为数据被删了。
        这里记下失败，渲染时明确提示"加载失败 + 可刷新重试"。 */
     try {
+      /* 渠道对比：榜单走原来的路，渠道图单独读（20261111F 重做）
+         —— 渠道图不再跟榜单共用同一套筛选条件，避免被国家 / 期次写法 / 列白名单整批滤掉。 */
       if (MODE === "s") {
-        var fBase = Object.assign({}, filter, { channelMode: "exclude" });
-        var fCh = Object.assign({}, filter, { channelMode: "only" });
-        var rBase = await SBX.listRankItems(fBase);
-        var rCh = await SBX.listRankItems(fCh);
-        /* 去重：库里还没有 channel 列时，两次查询都会降级成「全量」，
-           同一个 url 会回来两遍，页面上就会看到一张图重复成两张。按「渠道 + 图」去重。 */
-        var seenCh = {}, mergedCh = [];
-        (rBase || []).concat(rCh || []).forEach(function (it) {
-          var k = String(it.channel || "") + "\u0001" + String(it.image_url || "");
-          if (seenCh[k]) return;
-          seenCh[k] = 1; mergedCh.push(it);
+        var fBoard = Object.assign({}, filter);
+        delete fBoard.channelMode;
+        var rBoard = await SBX.listRankItems(fBoard);
+        var rCh = [];
+        try {
+          rCh = await SBX.listRankChannelPics({
+            periodType: PTYPE,
+            category: filter.category || "",
+            categories: filter.categories || null,
+            periods: needPeriods,
+          });
+        } catch (eCh) { rCh = []; }
+        var seenU = {}, mergedItems = [];
+        (rBoard || []).concat(rCh || []).forEach(function (it) {
+          var k = String((it && it.image_url) || "");
+          if (!k || seenU[k]) return;
+          seenU[k] = 1; mergedItems.push(it);
         });
-        /* 兜底：如果两次查询都没带回任何渠道值（比如筛选口径与库里的存储方式不一致），
-           就一次性取全量再按渠道分组，保证「补过渠道的图」一定会成列，而不是静默消失。 */
-        var hasAnyCh = mergedCh.some(function (it) { return String((it && it.channel) || "").trim(); });
-        if (!hasAnyCh && mergedCh.length) {
-          try {
-            var rAll = await SBX.listRankItems(Object.assign({}, filter, { channelMode: "" }));
-            if (rAll && rAll.some(function (it) { return String((it && it.channel) || "").trim(); })) {
-              var seenA = {}, allM = [];
-              (rAll || []).forEach(function (it) {
-                var k2 = String(it.channel || "") + "\u0001" + String(it.image_url || "");
-                if (seenA[k2]) return;
-                seenA[k2] = 1; allM.push(it);
-              });
-              mergedCh = allM;
-            }
-          } catch (e1) { /* 兜底失败就保持原样，不额外报错 */ }
-        }
-        items = mergedCh;
+        items = mergedItems;
+        CH_STAT = { board: (rBoard || []).length, channel: (rCh || []).length };
       } else {
         items = await SBX.listRankItems(filter);
       }
@@ -1583,7 +1584,8 @@
       });
     } else if (MODE === "s") {
       /* 页面上常驻版本号：一眼能确认跑的是不是新脚本（渠道不显示时先看这里） */
-      html += '<div class="rk-ch-build">渠道口径 ' + esc(BUILD) + '</div>';
+      html += '<div class="rk-ch-build">渠道口径 ' + esc(BUILD)
+        + ' · 榜单 ' + CH_STAT.board + ' 张 · 其他渠道 ' + CH_STAT.channel + ' 张</div>';
       /* ===== 横向 · 渠道对比：每渠道一列（同一类目 · 同一月） =====
          列 = 「榜单」+ 各上传过图的渠道。榜单列用本月榜单（全部站点）；
          渠道图没有环比数据，因此不出版位标签，只比「长什么样」。 */
@@ -1612,8 +1614,9 @@
          把当前脚本版本一起写出来，方便核对是不是缓存。 */
       if (cols === 1 && colsS[0] === CH_BASE) {
         html += '<div class="rk-empty rk-ch-hint">只看到「榜单」一列 —— '
-          + '① 后台「其他渠道传图」还没传这个类目这个月的图；'
-          + '② 或后台已补渠道，但页面跑的还是旧脚本（请 Ctrl+F5 强制刷新）。'
+          + '本次取到 榜单 ' + CH_STAT.board + ' 张 / 其他渠道 ' + CH_STAT.channel + ' 张。'
+          + (CH_STAT.channel ? '渠道图取到了但没成列，请刷新重试。'
+            : '这个月这个类目还没有归属到渠道的图：去后台「其他渠道传图」传图，或在「批量补渠道」里补上。')
           + '<span class="rk-ch-ver">渠道口径 ' + esc(BUILD) + '</span></div>';
       }
       if (!cols) {

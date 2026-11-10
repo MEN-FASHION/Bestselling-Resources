@@ -83,6 +83,28 @@ const SB = (() => {
       || /42P01/.test(t);
   }
 
+  /* 期次写法千奇百怪（2026-11 / 2026年11月 / 202611 / 2026/11 …）：
+     补齐同一月份的不同写法，查询时一起匹配，避免写法不同导致整批取不到。
+     周次（W45）保持原样，不做展开。 */
+  function expandPeriods(list) {
+    const out = [];
+    const push = (v) => { if (v && out.indexOf(v) < 0) out.push(v); };
+    (list || []).forEach((lb) => {
+      const s0 = String(lb || "").trim();
+      if (!s0) return;
+      push(s0);
+      if (/W\s*\d/i.test(s0)) return;
+      const m = s0.match(/(20\d{2})\D{0,2}(\d{1,2})/);
+      if (!m) return;
+      const y = m[1], n = parseInt(m[2], 10);
+      if (!n || n > 12) return;
+      const n2 = String(n).padStart(2, "0");
+      [y + "-" + n, y + "-" + n2, y + "年" + n + "月", y + "年" + n2 + "月",
+       y + "/" + n, y + "/" + n2, y + "." + n, y + n2].forEach(push);
+    });
+    return out.length ? out : list;
+  }
+
   // 取当前登录令牌（会话里是过期令牌时先用 refresh token 续期，确保拿到新鲜 token）
   async function freshAccessToken() {
     const readSess = async () => {
@@ -2761,6 +2783,70 @@ async removeTrendRecord(id) {
       if (error) throw new Error(errHint(error, "保存渠道归属失败"));
       this._chMap = dims.rank_channel_map; this._chMapAt = Date.now();
     },
+    /* ============================================================
+     * 其他渠道图片：独立读取（20261111F 重做）
+     * ------------------------------------------------------------
+     * 渠道图不参与榜单那套筛选（国家 / 期次精确匹配 / 列白名单），
+     * 单独按「期次类型 + 类目」取出来，再在内存里按月份归类。
+     * 这样无论库里的期次写法、站点是否为空、有没有某些列，
+     * 渠道图都不会被榜单查询的条件整体滤掉。
+     * ============================================================ */
+    async listRankChannelPics(opts) {
+      const o = opts || {};
+      const PT = o.periodType || "month";
+      const PAGE = 1000, HARD = 60000;
+      let rows = [], from = 0;
+      for (; from < HARD; from += PAGE) {
+        let q = client.from("rank_items").select("*").eq("period_type", PT);
+        if (o.category) q = q.eq("category", o.category);
+        else if (o.categories && o.categories.length) q = q.in("category", o.categories);
+        const { data, error } = await q.order("id", { ascending: true }).range(from, from + PAGE - 1);
+        if (error) throw new Error(errHint(error, "读取渠道图片失败"));
+        rows = rows.concat(data || []);
+        if (!data || data.length < PAGE) break;
+      }
+      await this.applyChannelMap(rows);
+      const labels = (o.periods && o.periods.length) ? o.periods : (o.periodLabel ? [o.periodLabel] : []);
+      const keep = rows.filter((r) => {
+        const ch = String(r.channel || "").trim();
+        if (!ch) return false;
+        if (!labels.length) return true;
+        return labels.some((lb) => this._sameMonth(r.period_label, lb));
+      });
+      return keep;
+    },
+    /* 把月份统一成 YYYY-MM（2026年3月 / 2026-3 / 2026/03 / 202603 → 2026-03） */
+    _normMonth(label) {
+      const s0 = String(label || "").trim();
+      if (!s0 || /W\s*\d/i.test(s0)) return s0;
+      const m = s0.match(/(20\d{2})\D{0,2}(\d{1,2})/);
+      if (!m) return s0;
+      const n = parseInt(m[2], 10);
+      if (!n || n > 12) return s0;
+      return m[1] + "-" + String(n).padStart(2, "0");
+    },
+    /* 同一个月判断：期的写法可能不同，只比较「年 + 月」；周次不参与 */
+    _sameMonth(a, b) {
+      const sa = String(a || "").trim(), sb = String(b || "").trim();
+      if (!sa || !sb) return false;
+      if (sa === sb) return true;
+      if (/W\s*\d/i.test(sa) || /W\s*\d/i.test(sb)) return false;
+      /* 202611 这种紧凑写法：6 位数字按「前 4 位年 + 后 2 位月」拆 */
+      const y = (x) => {
+        const c = x.match(/^(20\d{2})(\d{2})$/);
+        if (c) return c[1];
+        const m = x.match(/(20\d{2})/);
+        return m ? m[1] : "";
+      };
+      const n = (x) => {
+        const c = x.match(/^(20\d{2})(\d{2})$/);
+        if (c) return String(parseInt(c[2], 10));
+        const m = x.match(/(?:年|[-/.])(\d{1,2})(?!\d)/);
+        return m ? String(parseInt(m[1], 10)) : "";
+      };
+      return !!y(sa) && y(sa) === y(sb) && !!n(sa) && n(sa) === n(sb);
+    },
+
     /* 给一批条目补上 channel（有列时原样返回，代价只是开头一次探测） */
     async applyChannelMap(rows) {
       const list = rows || [];
@@ -2944,6 +3030,8 @@ async removeTrendRecord(id) {
           if (!it.channel) throw new Error("缺少渠道");
           if (!it.category) throw new Error("缺少类目");
           if (!it.periodLabel) throw new Error("缺少月份");
+          /* 统一存成 YYYY-MM：前台按月份归类时不再受写法差异影响 */
+          it.periodLabel = this._normMonth(it.periodLabel);
           const path = await this.uploadImage(it.file, it.category || "其他渠道");
           const url = base + "/" + path;
           const colOk = await this.rankChannelColumn();
@@ -2981,7 +3069,7 @@ async removeTrendRecord(id) {
       const o = {};
       if (patch && patch.channel != null && colOk) o.channel = String(patch.channel).trim();
       if (patch && patch.category != null) o.category = String(patch.category).trim();
-      if (patch && patch.period_label != null) o.period_label = String(patch.period_label).trim();
+      if (patch && patch.period_label != null) o.period_label = this._normMonth(patch.period_label);
       if (Object.keys(o).length) {
         const { error } = await client.from("rank_items").update(o).eq("id", id);
         if (error) throw new Error(error.message || "修改失败");
@@ -3165,7 +3253,7 @@ async removeTrendRecord(id) {
         if (f.category) q = q.eq("category", f.category);
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
         if (f.periodType) q = q.eq("period_type", f.periodType);
-        if (f.periods && f.periods.length) q = q.in("period_label", f.periods);
+        if (f.periods && f.periods.length) q = q.in("period_label", expandPeriods(f.periods));
         /* 渠道图（其他渠道传上来的）按设计不含站点，site 一律为空。
            一旦下发国家条件，它们会被整体滤掉 —— 表现就是「补了渠道，前台渠道列还是不出现」。
            所以看渠道口径时不下发站点条件；国家为空的图本来也不该被某个国家筛掉。 */
