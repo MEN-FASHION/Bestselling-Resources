@@ -50,7 +50,7 @@ ok("渠道列按图数降序（同一批里谁多谁靠前）", /\(cnt\[b\] - cn
 ok("渠道模式不吃国家筛选", /if \(MODE === "s"\) return \[\];/.test(Y));
 ok("渠道模式不按国家预取类目", /MODE === "c" \|\| MODE === "s"\)\s*return;/.test(Y));
 ok("取数分两批：榜单（channel 空）+ 渠道（channel 非空）", /channelMode: "exclude"/.test(Y) && /channelMode: "only"/.test(Y));
-ok("渠道模式取数据带 channel 列", /REL_COLS \+ ",channel"/.test(Y));
+ok("渠道模式取数据不再强带 channel 列（缺列会整条 400）", !/filter\.cols = REL_COLS \+ ",channel"/.test(R("js/rhythm.js")) && /渠道归属在内存里合并即可/.test(R("js/rhythm.js")));
 ok("渠道模式不出版位标签（渠道图没有环比可比）", /MODE === "s"\) \{[\s\S]{0,260}ONLY = "off";\s*MOVE = "off";/.test(Y));
 ok("体征按渠道分列统计", /return channelColumns\(inS2\)\.map/.test(Y));
 ok("体征文案口径改为「渠道」", /noun: "渠道"/.test(Y));
@@ -97,7 +97,7 @@ ok("加列幂等", /alter table rank_items add column if not exists channel text
 ok("建索引幂等", /create index if not exists idx_rank_items_channel/.test(SQL));
 ok("索引口径 = 期次+类目+渠道", /\(period_type, period_label, category, channel\)/.test(SQL));
 const vers = [...new Set(allHtml.flatMap((f) => [...R(f).matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1])))];
-ok("所有页面版本号统一（本次 20261111G）", vers.length === 1 && vers[0] === "20261111G");
+ok("所有页面版本号统一（本次 20261111H）", vers.length === 1 && vers[0] === "20261111H");
 
 console.log("六、列口径实跑（直接执行真实函数）");
 let chLib = null;

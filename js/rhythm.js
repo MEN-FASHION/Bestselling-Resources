@@ -306,7 +306,7 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111G";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111H";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_STAT = { board: 0, channel: 0 };   /* 本次渠道对比实际取到的张数，直接显示在页面上 */
   var CH_BASE = "榜单";
   /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
@@ -670,7 +670,8 @@
     if (MODE === "c") filter.categories = cats;
     else if (MODE === "s") {
       /* 渠道对比一次要拿两批：榜单列（channel 为空）+ 各渠道图（channel 非空） */
-      filter.cols = REL_COLS + ",channel";
+      /* 榜单这一批仍只取渲染要用的列：带上 channel 时若库里没这一列，整条查询会被拒，
+         表现就是「导入的榜单数据前台不显示」。渠道归属在内存里合并即可。 */
       /* 渠道对比里「本站榜单」列的标题就写着「全部站点」，而渠道图本身没有国家，
          下发国家条件会把两类都筛掉一部分 —— 这一模式统一不按国家取。 */
       filter.sites = [];
@@ -3681,7 +3682,13 @@
           + '<span class="rk-ch-ver">渠道口径 ' + esc(BUILD) + '</span></div>';
         return;
       }
-      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return;
+      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据'
+        + '<br><span class="rk-ch-ver">查询：' + esc(MODE === "s" ? "渠道对比" : MODE === "c" ? "类目对比" : MODE === "v" ? "时间对比" : "国家对比")
+        + ' · 类目 ' + esc(CAT || "全部") + ' · 期次 ' + esc((periods || []).join(" / ") || "无")
+        + ' · 站点 ' + esc(MODE === "s" ? "全部" : ((sites || []).join(" / ") || "无"))
+        + ' · 条目 ' + ((CACHE && CACHE.items.length) || 0) + ' 条'
+        + (LOAD_ERR ? ' · 取数失败：' + esc(LOAD_ERR) : '')
+        + ' · 脚本 ' + esc(BUILD) + '</span></div>'; return;
     }
 
     /* 先把标签取数发出去（并行），再看是否已核对完成 */
@@ -4318,7 +4325,7 @@
     var sites = sc.sites || [], periods = sc.periods || [];
     if (MODE === "s") {
       if (!periods.length) return { items: [], sites: [], periods: periods };
-      var fS = { periods: periods, periodType: PTYPE, cols: REL_COLS + ",channel" };
+      var fS = { periods: periods, periodType: PTYPE, cols: REL_COLS };
       if (CAT && CAT !== ALL) fS.category = CAT;
       else if (FACETS.categories.length) fS.categories = FACETS.categories;
       var itS = [];

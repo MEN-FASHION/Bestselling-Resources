@@ -1,4 +1,4 @@
-/* 20261111G · 榜单数据补了渠道、前台渠道对比仍不显示：站点条件把渠道图整体滤掉了 */
+/* 20261111H · 榜单数据补了渠道、前台渠道对比仍不显示：站点条件把渠道图整体滤掉了 */
 import fs from "node:fs";
 const R = (p) => fs.readFileSync(p, "utf8");
 const SB = R("js/supabase.js"), RHY = R("js/rhythm.js");

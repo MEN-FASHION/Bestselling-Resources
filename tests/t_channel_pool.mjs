@@ -1,4 +1,4 @@
-/* 20261111G · 重做：榜单 + 其他渠道图在同一个对比池里并排 */
+/* 20261111H · 重做：榜单 + 其他渠道图在同一个对比池里并排 */
 import fs from "node:fs";
 const R = (p) => fs.readFileSync(p, "utf8");
 const SB = R("js/supabase.js"), RHY = R("js/rhythm.js");
