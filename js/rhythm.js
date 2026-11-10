@@ -306,7 +306,7 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111D";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111E";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_BASE = "榜单";
   /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
      渠道对比只按"年+月"比对，避免补渠道后因为写法差异一列都出不来。 */
@@ -689,6 +689,23 @@
           if (seenCh[k]) return;
           seenCh[k] = 1; mergedCh.push(it);
         });
+        /* 兜底：如果两次查询都没带回任何渠道值（比如筛选口径与库里的存储方式不一致），
+           就一次性取全量再按渠道分组，保证「补过渠道的图」一定会成列，而不是静默消失。 */
+        var hasAnyCh = mergedCh.some(function (it) { return String((it && it.channel) || "").trim(); });
+        if (!hasAnyCh && mergedCh.length) {
+          try {
+            var rAll = await SBX.listRankItems(Object.assign({}, filter, { channelMode: "" }));
+            if (rAll && rAll.some(function (it) { return String((it && it.channel) || "").trim(); })) {
+              var seenA = {}, allM = [];
+              (rAll || []).forEach(function (it) {
+                var k2 = String(it.channel || "") + "\u0001" + String(it.image_url || "");
+                if (seenA[k2]) return;
+                seenA[k2] = 1; allM.push(it);
+              });
+              mergedCh = allM;
+            }
+          } catch (e1) { /* 兜底失败就保持原样，不额外报错 */ }
+        }
         items = mergedCh;
       } else {
         items = await SBX.listRankItems(filter);
@@ -1565,6 +1582,8 @@
         });
       });
     } else if (MODE === "s") {
+      /* 页面上常驻版本号：一眼能确认跑的是不是新脚本（渠道不显示时先看这里） */
+      html += '<div class="rk-ch-build">渠道口径 ' + esc(BUILD) + '</div>';
       /* ===== 横向 · 渠道对比：每渠道一列（同一类目 · 同一月） =====
          列 = 「榜单」+ 各上传过图的渠道。榜单列用本月榜单（全部站点）；
          渠道图没有环比数据，因此不出版位标签，只比「长什么样」。 */

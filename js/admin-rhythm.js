@@ -1659,7 +1659,7 @@
   }
 
   /* 脚本版本：页面上显示出来，传图失败时一眼能看出「页面跑的是不是旧脚本」 */
-  var BUILD = "20261111D";
+  var BUILD = "20261111E";
   function showBuild() {
     var el = document.getElementById("rm-ch-ver");
     if (el) el.textContent = "脚本版本 " + BUILD + "（若与部署包版本不一致，说明浏览器还在用旧脚本：覆盖 html 后 Ctrl+F5）";
