@@ -27,6 +27,18 @@ window.CONFIG = {
   // ---------- Cloudflare Worker（图片守门员） ★ 必填 ----------
   WORKER_URL: "https://img.newtrend.top",
 
+  /* 登录 IP 归属地（后台「权限管理」用户表显示城市）
+   * - enabled: false 可整体关闭，关闭后该列只显示「未启用」
+   * - url: 查询服务模板，{ip} 会被替换；返回 JSON 里只要能读到
+   *        country / region|regionName|province / city 任一即可
+   * - ttlDays: 本机缓存天数，同一 IP 不会重复查询
+   * 想换成内部地址库接口时，只改这里即可（返回结构保持一致）。 */
+  IP_GEO: {
+    enabled: true,
+    url: "https://ipwho.is/{ip}",
+    ttlDays: 30,
+  },
+
   // ---------- 功能开关 ----------
   enableSignup: true,      // 前台是否允许自助注册（默认允许）
 

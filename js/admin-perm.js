@@ -59,6 +59,34 @@ let permEditZones = [];
 let permEditCats = [];
 (function () {
 
+/* 登录地点单元格：先用本地缓存/内网判断直接出结果，
+   未缓存的先显示占位，稍后由 IPGeo 异步补上（不阻塞表格渲染）。 */
+function locCellHtml(ip) {
+  const g = window.IPGeo;
+  if (!g) return '<span class="hint">—</span>';
+  const r = g.peek(ip);
+  if (r.state === "cached") return escHtml(r.text);
+  if (r.state === "private") return '<span class="hint">内网地址</span>';
+  if (r.state === "off") return '<span class="hint">未启用</span>';
+  if (!String(ip || "").trim()) return '<span class="hint">—</span>';
+  return '<span class="hint perm-loc-wait">查询中…</span>';
+}
+
+/* 表格渲染完成后，把「查询中」的格子逐个补上真实地点 */
+function fillLocations(rows) {
+  const g = window.IPGeo;
+  if (!g || !g.enabled) return;
+  const ips = (rows || []).map(r => r.ip).filter(Boolean);
+  g.resolveMany(ips, (ip, text) => {
+    document.querySelectorAll('.perm-td-loc[data-ip="' + (window.CSS && CSS.escape ? CSS.escape(ip) : ip) + '"]').forEach((td) => {
+      const wait = td.querySelector('.perm-loc-wait');
+      if (!wait) return;                       // 已经有结果，不覆盖
+      td.innerHTML = escHtml(text || "");
+      if (!text) td.innerHTML = '<span class="hint">—</span>';
+    });
+  });
+}
+
 function permRoleLabel(r) {
     return r === "super_admin" ? "超级管理员" : r === "admin" ? "管理员" : "访客";
   }
@@ -159,8 +187,8 @@ function bindDefaultPerms() {
     // 按「标签」筛选：all=全部，__none__=仅无标签，其它=仅该标签
     const shown = permTagFilter === "" ? users : (permTagFilter === NONE_TAG ? users.filter(u => !(u.user_tag && u.user_tag.trim())) : users.filter(u => u.user_tag === permTagFilter));
     permShownIds = shown.map(u => u.user_id);
-    if (!users.length) { body.innerHTML = '<tr><td colspan="11" class="hint">暂无用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
-    if (!shown.length) { body.innerHTML = '<tr><td colspan="11" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
+    if (!users.length) { body.innerHTML = '<tr><td colspan="12" class="hint">暂无用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
+    if (!shown.length) { body.innerHTML = '<tr><td colspan="12" class="hint">没有符合当前「按标签筛选」条件的用户</td></tr>'; renderPermPager(0); updateBatchCount(); return; }
     body.innerHTML = "";
     // ── 分页：用户多了以后不再从表格顶部一路拉到底 ──
     // 只渲染当前页；「全选」作用于当前筛选结果的全部用户（不受分页影响），批量维护语义不变。
@@ -215,6 +243,7 @@ function bindDefaultPerms() {
         '<td class="perm-td-zones">' + escHtml(manageZoneTxt) + '</td>' +
         '<td class="perm-td-device">' + devTxt + '</td>' +
         '<td class="perm-td-ip">' + ipTxt + '</td>' +
+        '<td class="perm-td-loc" data-ip="' + escAttr(u.ip || "") + '">' + locCellHtml(u.ip) + '</td>' +
         '<td class="perm-td-ops">' +
           '<button class="btn-ghost small" type="button" data-act="edit" data-uid="' + u.user_id + '">编辑</button>' +
           '<button class="btn-ghost small" type="button" data-act="del" data-uid="' + u.user_id + '" data-email="' + escAttr(u.email || "") + '" style="margin-left:6px;color:var(--danger,#c25e5a)">删除</button>' +
@@ -282,6 +311,8 @@ function bindDefaultPerms() {
       };
       body.appendChild(tr);
     });
+    // 登录地点：先把本机已缓存/内网的直接填上，其余异步补（不阻塞表格）
+    fillLocations(pageRows);
     // 同步顶部「按标签筛选」下拉（保留用户当前选择）
     syncPermTagFilter();
     // 同步批量维护工具条（已选人数 / 全选态 / 标签候选）

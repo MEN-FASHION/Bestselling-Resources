@@ -7,6 +7,20 @@ const SB = (() => {
   if (!window.supabase) throw new Error("supabase-js 未加载，请检查 CDN 脚本顺序");
   /* 20261104G：榜单页的列白名单被服务端拒绝过就置 true，之后退回 select(*) */
   let COLS_REJECTED = false;
+  /* 把「缺列」这类数据库报错翻译成能直接照做的提示，
+     避免只显示一句 400 让人无从下手 */
+  function errHint(err, prefix) {
+    const msg = String((err && err.message) || "");
+    if (/channel/i.test(msg) && /column|does not exist|schema cache/i.test(msg)) {
+      return (prefix || "操作失败") + "：数据库缺少「渠道」列，请先执行 sql/patch_20261110C_channel_and_tagdefs.sql，刷新后重试";
+    }
+    if (/tag_defs/i.test(msg) && /column|does not exist|schema cache/i.test(msg)) {
+      return (prefix || "操作失败") + "：枚举表缺少必要字段，请执行 sql/patch_20261110C_channel_and_tagdefs.sql 后重试";
+    }
+    return (prefix ? prefix + "：" : "") + (msg || "请稍后重试");
+  }
+
+
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -865,9 +879,18 @@ const SB = (() => {
 
     // ---------- 标签定义表（风格/元素自定义标签） ----------
     async listTagDefs(type) {
-      let q = client.from("tag_defs").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
-      if (type) q = q.eq("type", type);
-      const { data, error } = await q;
+      const build = (ordered) => {
+        let q = client.from("tag_defs").select("*");
+        if (ordered) q = q.order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+        if (type) q = q.eq("type", type);
+        return q;
+      };
+      let { data, error } = await build(true);
+      // 老库可能缺 sort_order / created_at 列：排序会整条被拒（400），退回不排序再取一次
+      if (error && /sort_order|created_at|column/i.test(error.message || "")) {
+        const r2 = await build(false);
+        data = r2.data; error = r2.error;
+      }
       if (error) throw new Error(error.message || "读取标签失败");
       return data || [];
     },
@@ -878,7 +901,13 @@ const SB = (() => {
       // 新增标签一律置顶（sort_order 0 最小，排最前面）
       const payload = { type, name: n, sort_order: 0 };
       if (type === "scene" && (group === "indoor" || group === "outdoor")) payload.group = group;
-      const { data, error } = await client.from("tag_defs").insert(payload).select();
+      let { data, error } = await client.from("tag_defs").insert(payload).select();
+      // 老库缺 sort_order / group 列时，去掉这两项再写一次（否则一直 400）
+      if (error && /sort_order|"group"|column/i.test(error.message || "")) {
+        const slim = { type, name: n };
+        const r2 = await client.from("tag_defs").insert(slim).select();
+        data = r2.data; error = r2.error;
+      }
       if (error) throw new Error(error.message || "新增标签失败");
       return data && data[0];
     },
@@ -2599,7 +2628,7 @@ async removeTrendRecord(id) {
       if (f.category) q = q.eq("category", f.category);
       if (f.channel) q = q.eq("channel", f.channel);
       const { data, error } = await q.order("id", { ascending: false }).limit(f.limit || 400);
-      if (error) throw new Error(error.message || "读取渠道图片失败（channel 列补丁可能未执行）");
+      if (error) throw new Error(errHint(error, "读取渠道图片失败"));
       return data || [];
     },
     /* 已用过的渠道清单：给后台「默认渠道」下拉与筛选用（不额外维护字典表） */
@@ -2746,7 +2775,7 @@ async removeTrendRecord(id) {
         let q = this._rankSlotQ(o);
         if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
         const { count, error } = await q;
-        if (error) throw new Error(error.message || "统计失败（channel 列补丁可能未执行）");
+        if (error) throw new Error(errHint(error, "统计失败"));
         return count || 0;
       };
       if (!onlyEmpty) return await run();
@@ -2769,7 +2798,7 @@ async removeTrendRecord(id) {
         if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
         if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
         const { count, error } = await q;
-        if (error) throw new Error(error.message || "补渠道失败（channel 列补丁可能未执行）");
+        if (error) throw new Error(errHint(error, "补渠道失败"));
         return count || 0;
       };
       if (!onlyEmpty) return await run();
