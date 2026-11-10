@@ -291,6 +291,10 @@
     if (o.periodType) {
       detail = (detail || []).filter(function (r) { return ((r && r.period_type) || "week") === o.periodType; });
     }
+    /* 20261109H：再按期次收窄（导出普通调用也会走这里，取数层已经收窄，这里兜一次底） */
+    if (o.period) {
+      detail = (detail || []).filter(function (r) { return String((r && r.period_label) || "") === o.period; });
+    }
     var byUrl = collectImages(detail);
     var stats = { total: byUrl.size, todo: 0, partial: 0, done: 0, picked: 0 };
     var kw = String(o.keyword || "").trim().toLowerCase();
@@ -411,7 +415,7 @@
 
   /* 只算不导：给后台「预计导出 N 张」用 */
   async function preview(opts) {
-    var detail = await SB.listRankItems({ max: 200000 });
+    var detail = await fetchDetail(opts);
     if (opts && opts.periodType) {
       detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === opts.periodType; });
     }
@@ -441,8 +445,19 @@
       keyword: kw ? String(kw.value || "").trim() : "",
       channel: (function () { var ch = q("#rank-export-channel"); return ch ? String(ch.value || "") : ""; })(),
       split: !!(sp && sp.checked),
-      splitLevel: (lv && lv.value === "leaf") ? "leaf" : "cat"
+      splitLevel: (lv && lv.value === "leaf") ? "leaf" : "cat",
+      /* 20261109H：按周（月度则按月）导出。选定期次后只查这一期，数据量小、速度也快，
+         更重要的是不再受单次读取上限影响 —— 分期导永远取不到"被截断"的那一半。 */
+      period: (function () { var p = q("#rank-export-period"); return p ? String(p.value || "").trim() : ""; })()
     };
+  }
+
+  /* 按需取数：指定了期次就只取那一期，否则全量（此时才可能碰到上限） */
+  async function fetchDetail(o, maxRows) {
+    var f = { max: maxRows || 200000 };
+    if (o && o.period) f.periods = [o.period];
+    if (o && o.periodType) f.periodType = o.periodType;
+    return await SB.listRankItems(f);
   }
 
   /* 文件名里不能出现的字符统一换掉，避免 zip 内文件名非法 */
@@ -570,8 +585,9 @@
       tip.className = "rank-file-tip" + (ok === false ? " bad" : ok === true ? " good" : "");
     }
     try {
-      say("正在读取榜单与已打标签…");
-      var detail = await SB.listRankItems({ max: 200000 });
+      say("正在读取榜单与已打标签…" + (o.period ? "（只读 " + o.period + " 这一期）" : ""));
+      /* 指定了期次就只查这一期；没指定才全量 */
+      var detail = await fetchDetail(o);
       if (o.periodType) {
         detail = detail.filter(function (r) { return ((r && r.period_type) || "week") === o.periodType; });
       }
@@ -592,9 +608,10 @@
         return { ok: false, reason: "nothing", stats: pack.stats };
       }
       var buf = XLSX.write(pack.wb, { bookType: "xlsx", type: "array" });
-      var name = (o.title || "趋势上升榜") + "-打标表-" + (SCOPE_NAME[o.scope] || "全部") + "-" + stamp() + ".xlsx";
+      var name = (o.title || "趋势上升榜") + "-打标表-" + (o.period ? o.period + "-" : "")
+        + (SCOPE_NAME[o.scope] || "全部") + "-" + stamp() + ".xlsx";
       download(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name);
-      say("已导出 " + pack.images + " 张图（" + (SCOPE_NAME[o.scope] || "全部") + "）。榜单共 "
+      say("已导出 " + pack.images + " 张图（" + (o.period ? o.period + " · " : "") + (SCOPE_NAME[o.scope] || "全部") + "）。榜单共 "
         + pack.stats.total + " 张：未打标 " + pack.stats.todo + " / 部分 " + pack.stats.partial
         + " / 已打标 " + pack.stats.done + cutWarn, !cut);
       if (window.console) console.log("导出完成：" + name + " · " + pack.images + " 张");

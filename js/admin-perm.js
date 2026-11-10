@@ -498,7 +498,8 @@ function updatePermEditCatCount() {
       await SB.setUserManageZones(uid, manageZones);
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
-      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "channel"];
+      // 注意：已下线的专区不要再写入；新增专区若要卡类目，在这里补 key
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm"];
       for (const z of ALL_CAT_ZONES) {
         await SB.setUserPermissions(uid, z, cats);
       }

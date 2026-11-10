@@ -34,7 +34,7 @@ console.log("二、截断不再静默");
 ok("每次查询先清空截断标记", /this\._rankTruncated = false;/.test(li));
 ok("到上限即标记截断", /if \(out\.length >= MAX\) this\._rankTruncated = true;/.test(li));
 ok("对外可查", /rankItemsTruncated\(\) \{ return !!this\._rankTruncated; \}/.test(S));
-ok("导出用更高的上限取全量", /SB\.listRankItems\(\{ max: 200000 \}\)/.test(E) && (E.match(/max: 200000/g) || []).length >= 4);
+ok("导出取数上限已放宽（可按期次收窄）", /max: maxRows \|\| 200000/.test(E) && /fetchDetail\(o\)/.test(E));
 ok("导出会读这个标记", /var cut = !!\(SB\.rankItemsTruncated && SB\.rankItemsTruncated\(\)\);/.test(E));
 ok("导出成功后提示里说明只导出了一部分", /本次只导出了较早的一部分/.test(E));
 ok("截断时提示不是绿色成功态", /\+ cutWarn, !cut\);/.test(E));

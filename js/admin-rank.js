@@ -842,6 +842,7 @@
     });
     rankPeriods = Object.keys(map).map((k) => map[k]).sort((a, b) => admPeriodKey(a.label) - admPeriodKey(b.label));
     renderRankPeriods();
+    fillExportPeriods();
     fillRankPvControls();
     loadRankPrintSwitch();          /* 图案印花款开关：每次进面板按库里最新值渲染 */
 
@@ -976,6 +977,21 @@
     f.src = rankPreviewUrl();
     if (hint) hint.textContent = "正在预览：" + (rankPv.cat || "全部类目") + " · " + ((rankPv.site || "").replace(/^g:/, "地区 · ") || "全部站点") + " · " + (rankPv.period || "最新期次") + " · " + (rankPv.mode === "v" ? "纵向时间对比" : (rankPv.mode === "c" ? "横向类目对比" : "横向国家对比"));
   }
+  /* 导出用的期次下拉（20261109H）：按周导出，只查这一期 —— 数据量小、也不吃读取上限。
+     只列周度期次，月度期次归「上新节奏」面板导。 */
+  function fillExportPeriods() {
+    const sel = document.querySelector("#rank-export-period");
+    if (!sel) return;
+    const keep = sel.value;
+    const weeks = (rankPeriods || [])
+      .filter((p) => p && ((p.type || "week") === "week") && p.label)
+      .map((p) => String(p.label))
+      .sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
+    sel.innerHTML = '<option value="">全部期次</option>' +
+      weeks.map((w) => '<option value="' + escAttr(w) + '">' + escHtml(w) + '</option>').join("");
+    if (keep && weeks.indexOf(keep) >= 0) sel.value = keep;
+  }
+
   function fillRankPvControls() {
     const mk = (sel, list, cur, allLabel) => {
       if (!sel) return;

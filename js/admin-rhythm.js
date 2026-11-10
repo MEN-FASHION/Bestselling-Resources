@@ -1162,6 +1162,18 @@
 
   /* 月度打标表导出区（20261109C）：类目 / 来源两个下拉，进面板时按库里实际有的值铺一遍 */
   async function fillTagExportSelects() {
+    /* 期次（月份）下拉：只列库里真有月度数据的月份，新的在前 */
+    const per = $("#rm-tag-period");
+    if (per) {
+      const keep = per.value;
+      const months = (rankPeriods || [])
+        .filter((p) => p && p.type === "month" && p.label)
+        .map((p) => String(p.label))
+        .sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
+      per.innerHTML = '<option value="">全部月份</option>' +
+        months.map((m) => '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>').join("");
+      if (keep && months.indexOf(keep) >= 0) per.value = keep;
+    }
     const cat = $("#rm-tag-cat");
     if (cat) {
       const keep = cat.value;
@@ -1191,10 +1203,12 @@
     }
     const say = (t) => { if (tip) tip.textContent = t || ""; };
     say("正在读取月度数据…");
+    /* 期次（月份）：选了就只导这一个月，数据量小、也不会被单次读取上限碰到 */
+    const perSel = $("#rm-tag-period");
     const opts = Object.assign({
-      scope: "todo", category: "", keyword: "", channel: "",
+      scope: "todo", category: "", keyword: "", channel: "", period: "",
       periodType: "month", title: "上新节奏", tipSelector: "#rm-tag-export-tip",
-    }, o || {});
+    }, { period: (perSel && perSel.value) || "" }, o || {});
     Promise.resolve(window.RankExport.all(btn, opts)).then((r) => {
       if (r && r.ok) {
         say("已导出 " + (r.images || 0) + " 张图，文件名「" + (r.filename || "") + "」");
@@ -1462,10 +1476,12 @@
       const fch = ($("#rm-ch-filter-ch") && $("#rm-ch-filter-ch").value || "").trim();
       const fcat = ($("#rm-ch-filter-cat") && $("#rm-ch-filter-cat").value || "").trim();
       /* 渠道区块的导出：把当前筛选带进导出选项，默认「仅未打标 + 仅月度」 */
+      const fper = ($("#rm-tag-period") && $("#rm-tag-period").value || "").trim();
       runMonthTagExport(te, {
         scope: "todo",
         category: fcat,
         channel: fch ? ("ch:" + fch) : "__chonly",
+        period: fper,           /* 面板上选了月份就只导那个月，和范围保持一致 */
       });
       sbToast("已按「" + (fch || "全部渠道") + (fcat ? " / " + fcat : "") + "」导出，导完直接填表即可", true);
     };
