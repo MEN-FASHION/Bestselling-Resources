@@ -1,4 +1,4 @@
-/* 20261110C · 「前台可见专区」全部取消后仍然显示有权限 —— 哨兵值验证
+/* 20261110D · 「前台可见专区」全部取消后仍然显示有权限 —— 哨兵值验证
  *
  * 背景：frontend_zones 用空数组表示「从没配过 → 跟随全局」，
  *       而权限弹窗里把专区全部取消勾选，保存的也是空数组，
@@ -52,7 +52,7 @@ ok(/Array\.isArray\(myz\) && myz\.length && myz\.indexOf\("rank"\) === -1/.test(
 
 console.log("七、版本号");
 const admin = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
-ok(/admin-perm\.js\?v=20261110C/.test(admin), "admin.html 里 admin-perm.js 版本号应升到 20261110C");
+ok(/admin-perm\.js\?v=20261110D/.test(admin), "admin.html 里 admin-perm.js 版本号应升到 20261110D");
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

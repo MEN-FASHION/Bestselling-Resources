@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261110C">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261110C">
+<link rel="stylesheet" href="css/style.css?v=20261110D">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261110D">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -1285,8 +1285,10 @@
             <button id="rm-fixch-preview" class="btn-ghost" type="button">看看会影响多少条</button>
             <button id="rm-fixch-apply" class="btn-primary" type="button">补上渠道</button>
             <button id="rm-fixch-clear" class="btn-ghost" type="button">清空归属</button>
+            <button id="rm-fixch-check" class="btn-ghost" type="button">自检（改不动时点我）</button>
             <span id="rm-fixch-tip" class="hint-inline"></span>
           </div>
+          <pre id="rm-fixch-diag" class="hint" style="display:none;white-space:pre-wrap;margin:8px 0 0;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,.04);font-size:12px;line-height:1.7"></pre>
         </section>
 
         <section class="rkadm-sec">
@@ -1853,41 +1855,41 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261110C"></script>
-  <script src="vendor/quill.js?v=20261110C"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261110C"></script>
-  <script src="vendor/jszip.min.js?v=20261110C"></script>
-  <script src="vendor/qrcode.min.js?v=20261110C"></script>
-  <script src="js/config.js?v=20261110C"></script>
-  <script src="js/supabase.js?v=20261110C"></script>
-  <script src="js/track-menu.js?v=20261110C"></script>
+  <script src="vendor/supabase.js?v=20261110D"></script>
+  <script src="vendor/quill.js?v=20261110D"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261110D"></script>
+  <script src="vendor/jszip.min.js?v=20261110D"></script>
+  <script src="vendor/qrcode.min.js?v=20261110D"></script>
+  <script src="js/config.js?v=20261110D"></script>
+  <script src="js/supabase.js?v=20261110D"></script>
+  <script src="js/track-menu.js?v=20261110D"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261110C"></script>
-  <script src="js/admin.js?v=20261110C"></script>
-  <script src="js/admin-images.js?v=20261110C"></script>
-  <script src="js/rank-enums.js?v=20261110C"></script>
-  <script src="js/imageexport.js?v=20261110C"></script>
-  <script src="js/admin-imageimport.js?v=20261110C"></script>
-  <script src="js/admin-movement.js?v=20261110C"></script>
-  <script src="js/admin-smart.js?v=20261110C"></script>
-  <script src="js/admin-trend.js?v=20261110C"></script>
-  <script src="js/admin-notice.js?v=20261110C"></script>
-  <script src="js/marketing-data.js?v=20261110C"></script>
-  <script src="js/admin-festival.js?v=20261110C"></script>
-  <script src="js/admin-tasks.js?v=20261110C"></script>
-  <script src="js/admin-bestseller.js?v=20261110C"></script>
-  <script src="js/ipgeo.js?v=20261110C"></script>
-  <script src="js/admin-perm.js?v=20261110C"></script>
-  <script src="js/admin-pool.js?v=20261110C"></script>
-  <script src="js/rankexport.js?v=20261110C"></script>
-  <script src="js/admin-rankimport.js?v=20261110C"></script>
-  <script src="js/admin-rank.js?v=20261110C"></script>
-  <script src="js/admin-rhythm.js?v=20261110C"></script>
-  <script src="js/plus-sb.js?v=20261110C"></script>
-  <script src="js/plus-match.js?v=20261110C"></script>
-  <script src="js/admin-plus.js?v=20261110C"></script>
-  <script src="js/admin-insight.js?v=20261110C"></script>
-  <script src="js/admin-backup.js?v=20261110C"></script>
+  <script src="js/admin-dialog.js?v=20261110D"></script>
+  <script src="js/admin.js?v=20261110D"></script>
+  <script src="js/admin-images.js?v=20261110D"></script>
+  <script src="js/rank-enums.js?v=20261110D"></script>
+  <script src="js/imageexport.js?v=20261110D"></script>
+  <script src="js/admin-imageimport.js?v=20261110D"></script>
+  <script src="js/admin-movement.js?v=20261110D"></script>
+  <script src="js/admin-smart.js?v=20261110D"></script>
+  <script src="js/admin-trend.js?v=20261110D"></script>
+  <script src="js/admin-notice.js?v=20261110D"></script>
+  <script src="js/marketing-data.js?v=20261110D"></script>
+  <script src="js/admin-festival.js?v=20261110D"></script>
+  <script src="js/admin-tasks.js?v=20261110D"></script>
+  <script src="js/admin-bestseller.js?v=20261110D"></script>
+  <script src="js/ipgeo.js?v=20261110D"></script>
+  <script src="js/admin-perm.js?v=20261110D"></script>
+  <script src="js/admin-pool.js?v=20261110D"></script>
+  <script src="js/rankexport.js?v=20261110D"></script>
+  <script src="js/admin-rankimport.js?v=20261110D"></script>
+  <script src="js/admin-rank.js?v=20261110D"></script>
+  <script src="js/admin-rhythm.js?v=20261110D"></script>
+  <script src="js/plus-sb.js?v=20261110D"></script>
+  <script src="js/plus-match.js?v=20261110D"></script>
+  <script src="js/admin-plus.js?v=20261110D"></script>
+  <script src="js/admin-insight.js?v=20261110D"></script>
+  <script src="js/admin-backup.js?v=20261110D"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

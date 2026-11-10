@@ -2759,11 +2759,32 @@ async removeTrendRecord(id) {
      *   onlyEmpty = true  只补还没有渠道的（已归属的不动，避免踩掉之前的分类）
      * 空渠道（null 与 ''）两种存法都要覆盖，否则会漏掉一半。
      * ============================================================ */
-    _rankSlotQ(f) {
+    /* 期次可能有好几种写法：2026-03 / 2026年3月 / 2026/3 / 202603。
+       用户看到的月份是从批次台账来的，而条目上的 period_label 是导入时写的，
+       两者一旦写法不同，「按月份补渠道」就会一条都匹配不到（显示 0 条）。
+       这里先按原写法精确匹配，匹配不到才把同月的其它写法一起匹配。 */
+    _labelVariants(label) {
+      const s = String(label || "").trim();
+      const out = [];
+      if (s) out.push(s);
+      const m = s.match(/^(\d{4})\D{0,3}(\d{1,2})\D{0,3}$/);
+      // 月份必须在 1–12 之间：2026-W45 这类周次写法不能被当成「2026年45月」
+      const mo = m ? Number(m[2]) : 0;
+      if (m && mo >= 1 && mo <= 12) {
+        const y = m[1], mm = String(m[2]).padStart(2, "0"), m1 = String(Number(m[2]));
+        out.push(y + "-" + mm, y + "-" + m1, y + "/" + mm, y + "/" + m1,
+                 y + "年" + m1 + "月", y + "年" + mm + "月",
+                 y + mm);
+      }
+      return [...new Set(out.filter(Boolean))];
+    },
+    _rankSlotQ(f, labels) {
       const o = f || {};
       let q = client.from("rank_items").select("id", { count: "exact", head: true });
       q = q.eq("period_type", o.periodType || "month");
-      if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+      if (Array.isArray(labels) && labels.length > 1) q = q.in("period_label", labels);
+      else if (Array.isArray(labels) && labels.length === 1) q = q.eq("period_label", labels[0]);
+      else if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
       if (o.category) q = q.eq("category", String(o.category));
       if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
       return q;
@@ -2771,18 +2792,85 @@ async removeTrendRecord(id) {
     async countRankItemsChannelSlot(f) {
       const o = f || {};
       const onlyEmpty = !!o.onlyEmpty;
-      const run = async (emptyKind) => {
-        let q = this._rankSlotQ(o);
+      const run = async (emptyKind, labels) => {
+        let q = this._rankSlotQ(o, labels);
         if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
         const { count, error } = await q;
         if (error) throw new Error(errHint(error, "统计失败"));
-        return count || 0;
+        /* 有些部署里 head+count 拿不到 Content-Range（返回 null），
+           这时退一步数 id：结果一样，只是多走一次请求。 */
+        if (count == null) {
+          let q2 = client.from("rank_items").select("id").limit(20000);
+          q2 = q2.eq("period_type", o.periodType || "month");
+          if (o.periodLabel) q2 = q2.eq("period_label", String(o.periodLabel));
+          if (o.category) q2 = q2.eq("category", String(o.category));
+          if (typeof o.site === "string" && o.site !== "") q2 = q2.eq("site", o.site);
+          if (onlyEmpty) q2 = (emptyKind === "null") ? q2.is("channel", null) : q2.eq("channel", "");
+          const r2 = await q2;
+          if (r2.error) throw new Error(errHint(r2.error, "统计失败"));
+          return (r2.data || []).length;
+        }
+        return count;
       };
-      if (!onlyEmpty) return await run();
+      const variants = this._labelVariants(o.periodLabel);
+      const total = async (emptyKind) => {
+        let n = await run(emptyKind, variants.slice(0, 1));
+        if (!n && variants.length > 1) n = await run(emptyKind, variants);
+        return n;
+      };
+      if (!onlyEmpty) return await total();
       let n = 0;
-      n += await run("null");
-      try { n += await run("empty"); } catch (e) { /* 这一支失败不影响另一支 */ }
+      n += await total("null");
+      try { n += await total("empty"); } catch (e) { /* 这一支失败不影响另一支 */ }
       return n;
+    },
+    /* 补渠道前的自检：把「为什么改不动」拆成能看懂的数字。
+       不写任何数据，只做计数，所以随便点、随便试。 */
+    async diagnoseChannelSlot(f) {
+      const o = f || {};
+      const out = { hasColumn: false, schemaError: "", monthTotal: 0, emptyNull: 0, emptyStr: 0, filled: 0 };
+      // 1) 渠道列到底在不在
+      try {
+        const { error } = await client.from("rank_items").select("channel").limit(1);
+        if (error) { out.hasColumn = false; out.schemaError = String(error.message || ""); }
+        else out.hasColumn = true;
+      } catch (e) { out.hasColumn = false; out.schemaError = String((e && e.message) || ""); }
+      // 2) 该期次总条目（不带任何其它条件）；精确匹配为 0 时再看同月的其它写法
+      out.matchedLabel = "";
+      const probe = async (label) => {
+        const { count, error } = await client.from("rank_items").select("id", { count: "exact", head: true })
+          .eq("period_type", o.periodType || "month")
+          .eq("period_label", label);
+        return error ? 0 : (count || 0);
+      };
+      try {
+        out.monthTotal = await probe(String(o.periodLabel || ""));
+        out.matchedLabel = out.monthTotal ? String(o.periodLabel || "") : "";
+        if (!out.monthTotal) {
+          for (const lb of this._labelVariants(o.periodLabel).slice(1)) {
+            const n = await probe(lb);
+            if (n) { out.monthTotal = n; out.matchedLabel = lb; break; }
+          }
+        }
+      } catch (e) { /* 留 0 */ }
+      if (!out.hasColumn) return out;
+      // 3) 三种渠道态各多少
+      const cnt = async (fn) => {
+        try {
+          let q = client.from("rank_items").select("id", { count: "exact", head: true })
+            .eq("period_type", o.periodType || "month");
+          if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+          if (o.category) q = q.eq("category", String(o.category));
+          if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
+          q = fn(q);
+          const { count, error } = await q;
+          return error ? 0 : (count || 0);
+        } catch (e) { return 0; }
+      };
+      out.emptyNull = await cnt((q) => q.is("channel", null));
+      out.emptyStr = await cnt((q) => q.eq("channel", ""));
+      out.filled = await cnt((q) => q.not("channel", "is", null).neq("channel", ""));
+      return out;
     },
     /* 把整片条目的渠道改成 channel；channel 传空字符串 = 清空归属（退回「本站榜单」列）。
        返回实际改动条数。 */
@@ -2790,21 +2878,32 @@ async removeTrendRecord(id) {
       const o = f || {};
       const v = String(channel == null ? "" : channel).trim();
       const onlyEmpty = !!o.onlyEmpty;
-      const run = async (emptyKind) => {
-        let q = client.from("rank_items").update({ channel: v }, { count: "exact" });
+      const run = async (emptyKind, labels) => {
+        /* 用 .select("id") 拿回被改动的行：数组长度就是真实改了多少条。
+           比读 Content-Range 更硬 —— 有些部署拿不到 count 头，会把「改了 500 条」
+           显示成「已修改 0 条」，让人以为没生效。 */
+        let q = client.from("rank_items").update({ channel: v }).select("id");
         q = q.eq("period_type", o.periodType || "month");
-        if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
+        if (Array.isArray(labels) && labels.length > 1) q = q.in("period_label", labels);
+        else if (Array.isArray(labels) && labels.length === 1) q = q.eq("period_label", labels[0]);
+        else if (o.periodLabel) q = q.eq("period_label", String(o.periodLabel));
         if (o.category) q = q.eq("category", String(o.category));
         if (typeof o.site === "string" && o.site !== "") q = q.eq("site", o.site);
         if (onlyEmpty) q = (emptyKind === "null") ? q.is("channel", null) : q.eq("channel", "");
-        const { count, error } = await q;
+        const { data, error } = await q;
         if (error) throw new Error(errHint(error, "补渠道失败"));
-        return count || 0;
+        return (data || []).length;
       };
-      if (!onlyEmpty) return await run();
+      const variants = this._labelVariants(o.periodLabel);
+      const apply = async (emptyKind) => {
+        let n = await run(emptyKind, variants.slice(0, 1));
+        if (!n && variants.length > 1) n = await run(emptyKind, variants);
+        return n;
+      };
+      if (!onlyEmpty) return await apply();
       let n = 0;
-      n += await run("null");
-      try { n += await run("empty"); } catch (e) { /* 忽略空串分支失败 */ }
+      n += await apply("null");
+      try { n += await apply("empty"); } catch (e) { /* 忽略空串分支失败 */ }
       return n;
     },
     /* 一次把所有渠道图整体改名 / 清空（用于渠道名写错：Pintrest → Pinterest） */

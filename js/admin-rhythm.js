@@ -1287,6 +1287,8 @@
       const n = await SB.countRankItemsChannelSlot(o);
       if (!n) {
         say("这个范围里没有可改的条目" + (o.onlyEmpty ? "（可能都已有渠道了）" : ""));
+        // 0 条最容易让人以为「点了没反应」，这里直接把原因摊开
+        await runFixChannelDiag(o);
         return;
       }
       const scope = o.periodLabel + (o.category ? " · " + o.category : " · 全部类目");
@@ -1305,6 +1307,58 @@
       say("修改失败，请重试");
       sbToast((e && e.message) || "修改失败", false);
     }
+  }
+
+  /* 自检：把「为什么改不动」拆成能看懂的数字，只做计数不写数据 */
+  async function runFixChannelDiag(o) {
+    const box = $("#rm-fixch-diag");
+    if (!box) return;
+    box.style.display = "block";
+    box.textContent = "自检中…";
+    let d = null;
+    try { d = await SB.diagnoseChannelSlot(o || fixChOpts()); } catch (e) { d = null; }
+    if (!d) {
+      box.textContent = "自检失败：这次请求本身没走通（网络被拦或数据库拒绝）。请把浏览器控制台里 rank_items 那条请求的返回内容发给开发。";
+      return;
+    }
+    const lines = [];
+    lines.push("① 渠道列（rank_items.channel）：" + (d.hasColumn ? "已存在 ✓" : "不存在 ✗"));
+    if (!d.hasColumn) {
+      lines.push("   原因：这一列还没加上，所以补渠道 / 渠道对比 / 渠道传图全部无法工作。");
+      lines.push("   处理：执行 sql/patch_20261110C_channel_and_tagdefs.sql（幂等，可重复跑）后刷新本页。");
+      if (d.schemaError) lines.push("   数据库返回：" + d.schemaError);
+      box.textContent = lines.join("\n");
+      return;
+    }
+    const wantLabel = (o && o.periodLabel) || "";
+    lines.push("② 本月（" + wantLabel + "）总条目：" + d.monthTotal + " 条"
+      + (d.matchedLabel && d.matchedLabel !== wantLabel ? "（实际写法是「" + d.matchedLabel + "」，已自动兼容）" : ""));
+    lines.push("③ 其中渠道为空（null）：" + d.emptyNull + " 条");
+    lines.push("④ 其中渠道为空（空字符串）：" + d.emptyStr + " 条");
+    lines.push("⑤ 其中已有渠道：" + d.filled + " 条");
+    const empty = d.emptyNull + d.emptyStr;
+    lines.push("");
+    if (!d.monthTotal) {
+      lines.push("结论：这个月份下一条条目都没有 —— 月份选错了，或这批数据是用别的期次格式存进来的。");
+      lines.push("处理：换一个月份再看；若所有月份都是 0，说明月度数据还没导入成功。");
+    } else if (!empty) {
+      lines.push("结论：这个月份下的条目都已经有渠道了，勾着「只改尚未设渠道的」自然改不到。");
+      lines.push("处理：取消勾选「只改尚未设渠道的」再点「补上渠道」（会覆盖已有归属）。");
+    } else if (o && o.category) {
+      lines.push("结论：不选类目时有 " + empty + " 条。你当前限定在「" + o.category + "」，那一类可能一条都没有。");
+      lines.push("处理：类目改回「全部类目」再试。");
+    } else {
+      lines.push("结论：范围内有 " + empty + " 条可补，但仍改不动 —— 多半是数据库的写入权限（RLS）不允许更新这些行。");
+      lines.push("处理：用数据库管理员账号执行 select * from pg_policies where tablename='rank_items'; 看是否有 update 策略。");
+    }
+    box.textContent = lines.join("\n");
+  }
+
+  function bindFixChannelCheck() {
+    const b = $("#rm-fixch-check");
+    if (!b || b.__bound) return;
+    b.__bound = true;
+    b.onclick = () => runFixChannelDiag(fixChOpts());
   }
 
   let rmChDict = [];
@@ -1579,6 +1633,7 @@
     if (fcok) fcok.onclick = () => applyFixChannel("set");
     const fccl = $("#rm-fixch-clear");
     if (fccl) fccl.onclick = () => applyFixChannel("clear");
+    bindFixChannelCheck();
 
     /* 月度打标表导出（面板里独立的那个区块） */
     const mtb = $("#rm-tag-export-btn");
