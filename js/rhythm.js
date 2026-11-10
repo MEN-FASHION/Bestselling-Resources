@@ -306,7 +306,7 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111A";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111B";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_BASE = "榜单";
   function chOf(it) { return String((it && it.channel) || "").trim() || CH_BASE; }
   /* 渠道列：榜单永远排第一，其余按图片多少排，最多 4 个渠道（再多每列就只剩一条缝） */

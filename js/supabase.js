@@ -2437,9 +2437,9 @@ async removeTrendRecord(id) {
       const ids = [];
       for (let i = 0; i < list.length; i += 200) {
         const chunk = list.slice(i, i + 200);
-        const { data, error } = await client.from("rank_items").insert(chunk).select("id");
-        if (error) throw new Error(error.message || "写入榜单数据失败");
-        (data || []).forEach((d) => ids.push(d.id));
+        const ins = await this._safeInsert("rank_items", chunk, "id");
+        if (ins.error) throw new Error(errHint(ins.error, "写入榜单数据失败"));
+        (ins.data || []).forEach((d) => ids.push(d.id));
       }
       return ids;
     },
@@ -2489,16 +2489,18 @@ async removeTrendRecord(id) {
       let inserted = 0;
       for (let i = 0; i < list.length; i += 300) {
         const chunk = list.slice(i, i + 300);
-        const { data, error } = await client.from("rank_items").insert(chunk).select("id");
-        if (!error) { inserted += (data || []).length; continue; }
+        const ins = await this._safeInsert("rank_items", chunk, "id");
+        if (!ins.error) { inserted += (ins.data || []).length; continue; }
+        const error = ins.error;
         const code = String((error && (error.code != null ? error.code : "")) || "");
         // 库里若还留着旧版唯一约束（同站点/期次/类目下同一张图算重复），
         // 直接插入会整批被拒；此时改成「覆盖写入」——同键的旧行被新数据更新，不新增重复。
         // 否则会出现「有效行 200，却一条也进不去」或「只进去一部分」。
         if (code === "23505") {
+          const chunk2 = chunk.map((r) => this._dropMiss("rank_items", Object.assign({}, r)));
           const { data: d2, error: e2 } = await client
             .from("rank_items")
-            .upsert(chunk, { onConflict: "category,site,period_type,period_label,image_url", ignoreDuplicates: false })
+            .upsert(chunk2, { onConflict: "category,site,period_type,period_label,image_url", ignoreDuplicates: false })
             .select("id");
           if (e2) throw new Error(e2.message || "写入榜单数据失败");
           inserted += (d2 || []).length;
@@ -2619,17 +2621,99 @@ async removeTrendRecord(id) {
      * 这批图只有图（没有环比、没有标题销量），site 一律写空，
      * 所以在「按国家对比」里不会冒出来，只出现在「横向 · 渠道对比」。
      * ============================================================ */
+    /* ============================================================
+     * 列缺失自愈（20261111B）
+     * ------------------------------------------------------------
+     * 这张表的历史补丁有些没执行过（例如 title），只要请求里带了不存在的列，
+     * 数据库就整条拒掉：读 400、写失败。这里按报错自动减列并重试，
+     * 缺的列会记下来，后续请求不再带它 —— 前后台都不用改、也不用跑 SQL。
+     * ============================================================ */
+    _missCols: null,
+    _missMap() { if (!this._missCols) this._missCols = {}; return this._missCols; },
+    _missKnow(table, col) { const m = this._missMap(); return !!(m[table] && m[table][col]); },
+    _missMark(table, col) { const m = this._missMap(); (m[table] = m[table] || {})[col] = 1; },
+    _missName(err) {
+      const s = String((err && (err.message || err.details || err.hint)) || "");
+      const m = s.match(/Could not find the '([^']+)' column/i)
+        || s.match(/column\s+[A-Za-z0-9_]+:([A-Za-z0-9_]+)\s+does not exist/i)
+        || s.match(/column\s+"?([A-Za-z0-9_]+)"?\s+does not exist/i)
+        || s.match(/unknown (?:column|field)\s+"?([A-Za-z0-9_]+)/i);
+      return m ? m[1] : "";
+    },
+    _dropMiss(table, obj) {
+      Object.keys(obj || {}).forEach((k) => { if (this._missKnow(table, k)) delete obj[k]; });
+      return obj;
+    },
+    _colList(table, cols) {
+      const list = String(cols || "*").split(",").map((c) => c.trim()).filter(Boolean)
+        .filter((c) => c === "*" || !this._missKnow(table, c));
+      return list.join(",") || "id";
+    },
+    /* 插入：缺列自动剔掉再重试（title 之类后加列没补时也能写进去） */
+    async _safeInsert(table, rows, selectCols) {
+      const one = !Array.isArray(rows);
+      const data0 = one ? Object.assign({}, rows) : rows.map((r) => Object.assign({}, r));
+      const fixed = {};
+      for (let i = 0; i < 16; i++) {
+        const payload = one ? this._dropMiss(table, data0) : data0.map((r) => this._dropMiss(table, r));
+        let q = client.from(table).insert(payload);
+        if (selectCols !== false) q = q.select(selectCols || "id");
+        const { data, error } = await q;
+        if (!error) return { data, error: null };
+        const col = this._missName(error);
+        if (col) {
+          const has = one ? (data0[col] !== undefined) : data0.some((r) => r[col] !== undefined);
+          if (has) { this._missMark(table, col); continue; }
+        }
+        /* 「这一列不能为空」：渠道图本来就没有环比 / 标题，遇到必填的旧约束就补默认值，
+           而不是让整张图传不上去（补的值不代表真实数据，页面显示为空位）。 */
+        const nul = (String((error && error.message) || "").match(/null value in column "?([A-Za-z0-9_]+)"?/i) || [])[1];
+        if (nul && !fixed[nul]) {
+          fixed[nul] = 1;
+          const filler = /(_at|date|time)/i.test(nul) ? new Date().toISOString() : 0;
+          const fix = (r) => { if (r[nul] === null || r[nul] === undefined) r[nul] = filler; };
+          if (one) fix(data0); else data0.forEach(fix);
+          continue;
+        }
+        return { data: null, error };
+      }
+      return { data: null, error: { message: "写入失败：缺少必要字段" } };
+    },
+    /* 查询：缺列自动剔掉再重试（build 收到的是剔除后的列清单） */
+    async _safeSelect(table, cols, build) {
+      const wanted = String(cols || "*");
+      for (let i = 0; i < 16; i++) {
+        const use = this._colList(table, wanted);
+        const { data, error } = await build(use);
+        if (!error) return { data, error: null };
+        const col = this._missName(error);
+        if (col && wanted.split(",").map((x) => x.trim()).indexOf(col) >= 0) { this._missMark(table, col); continue; }
+        return { data: null, error };
+      }
+      return { data: null, error: { message: "读取失败" } };
+    },
     async listRankChannelItems(o) {
       const f = o || {};
-      let q = client.from("rank_items")
-        .select("id,period_type,period_label,category,channel,image_url,title,created_at")
-        .neq("channel", "");
-      if (f.periodLabel) q = q.eq("period_label", f.periodLabel);
-      if (f.category) q = q.eq("category", f.category);
-      if (f.channel) q = q.eq("channel", f.channel);
-      const { data, error } = await q.order("id", { ascending: false }).limit(f.limit || 400);
+      /* 渠道列缺失时不能带 channel 条件（整条会被拒成 400），
+         改为「读回来 + 按图片地址的归属合并」，再在内存里筛。 */
+      const hasCh = await this.rankChannelColumn();
+      const cols = hasCh
+        ? "id,period_type,period_label,category,channel,image_url,title,created_at"
+        : "id,period_type,period_label,category,image_url,title,created_at";
+      const run = (c) => {
+        let q = client.from("rank_items").select(c);
+        if (hasCh) q = q.neq("channel", "");
+        if (f.periodLabel) q = q.eq("period_label", f.periodLabel);
+        if (f.category) q = q.eq("category", f.category);
+        if (hasCh && f.channel) q = q.eq("channel", f.channel);
+        return q.order("id", { ascending: false }).limit(f.limit || 400);
+      };
+      const { data, error } = await this._safeSelect("rank_items", cols, run);
       if (error) throw new Error(errHint(error, "读取渠道图片失败"));
-      return data || [];
+      let rows = await this.applyChannelMap(data || []);
+      if (!hasCh) rows = rows.filter((r) => String(r.channel || "").trim());
+      if (!hasCh && f.channel) rows = rows.filter((r) => String(r.channel || "").trim() === String(f.channel).trim());
+      return rows.map((r) => Object.assign({}, r, { title: r.title || "" }));
     },
     /* 已用过的渠道清单：给后台「默认渠道」下拉与筛选用（不额外维护字典表） */
     /* ============================================================
@@ -2874,9 +2958,10 @@ async removeTrendRecord(id) {
             abs_delta: null,
           };
           if (colOk) row.channel = it.channel;         /* 没有这一列时不能带，否则整条被拒 */
-          const { error } = await client.from("rank_items").insert(row);
-          if (error) throw new Error(error.message || "写入失败");
-          if (!colOk) {
+          const ins = await this._safeInsert("rank_items", row, false);
+          if (ins.error) throw new Error(errHint(ins.error, "写入这张图失败"));
+          const colOk2 = colOk && !this._missKnow("rank_items", "channel");
+          if (!colOk2) {
             const map = await this._chMapLoad(true);
             map[url] = it.channel;
             await this._chMapSave(map);
@@ -3099,8 +3184,12 @@ async removeTrendRecord(id) {
       let chMode = "";
       /* 列缺失时连 select 里也不能带 channel，否则整条查询被拒、还会拖累列白名单 */
       const colsSafe = (c) => {
-        if (!c || chColOk) return c;
-        return String(c).split(",").map((x) => x.trim()).filter((x) => x && x !== "channel").join(",");
+        if (!c) return c;
+        const list = String(c).split(",").map((x) => x.trim())
+          .filter((x) => x)
+          .filter((x) => chColOk || x !== "channel")          /* 没这一列就别带，否则整条被拒 */
+          .filter((x) => !this._missKnow("rank_items", x));   /* 已确认缺的列（如 title）不再带 */
+        return list.join(",") || "id";
       };
       let chFailed = false;   /* 渠道条件被数据库拒过：不管探测结果如何，一律改用字典 */
       for (let from = 0; from < MAX; from += PAGE) {
@@ -3108,8 +3197,18 @@ async removeTrendRecord(id) {
         let res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode);
         if (res.error && chMode) { chFailed = true; this._chColOk = false; chMode = ""; res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode); }
         if (res.error && useSlim()) {
-          COLS_REJECTED = true;                       /* 记住：后续不再试白名单 */
-          res = await build(from, to, "*", chMode);
+          /* 先分清是「某一列不存在」还是「白名单整体不被接受」：
+             前者只把那一列摘掉再试，白名单留着（速度不丢）；
+             后者才退回全量。以前一律退回全量，等于每次都白付一次 400。 */
+          const miss = this._missName(res.error);
+          if (miss) {
+            this._missMark("rank_items", miss);
+            res = await build(from, to, colsSafe(f.cols), chMode);
+          }
+          if (res.error) {
+            COLS_REJECTED = true;                     /* 记住：后续不再试白名单 */
+            res = await build(from, to, "*", chMode);
+          }
         }
         const { data, error } = res;
         if (error) throw new Error(error.message || "读取榜单数据失败");
@@ -3610,11 +3709,16 @@ async removeTrendRecord(id) {
        filter: { category, period, site, limit } —— 不传即全部 */
     async listRankTagQueue(filter) {
       const f = filter || {};
-      let q = client.from("rank_items").select("id,period_type,period_label,category,site,leaf_category,image_url,rank_ratio,rank_abs");
-      if (f.category) q = q.eq("category", f.category);
-      if (f.period) q = q.eq("period_label", f.period);
-      if (f.site) q = q.eq("site", f.site);
-      const { data, error } = await q.order("rank_ratio", { ascending: true }).limit(f.limit || 3000);
+      const cols = "id,period_type,period_label,category,site,leaf_category,image_url,rank_ratio,rank_abs";
+      const run = (c) => {
+        let q = client.from("rank_items").select(c);
+        if (f.category) q = q.eq("category", f.category);
+        if (f.period) q = q.eq("period_label", f.period);
+        if (f.site) q = q.eq("site", f.site);
+        const ord = this._missKnow("rank_items", "rank_ratio") ? "id" : "rank_ratio";
+        return q.order(ord, { ascending: true }).limit(f.limit || 3000);
+      };
+      const { data, error } = await this._safeSelect("rank_items", cols, run);
       if (error) throw new Error(error.message || "读取榜单图失败");
       const map = new Map();
       (data || []).forEach((r) => {

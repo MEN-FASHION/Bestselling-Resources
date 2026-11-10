@@ -78,12 +78,12 @@ ok("进入面板时一并加载渠道清单与列表", /await loadChChannels\(\)
 
 console.log("四、数据口径（关键：渠道图不能污染榜单）");
 ok("写入时 channel 必填、site 一律为空", /if \(colOk\) row\.channel = it\.channel;/.test(S) && /site: "",/.test(S));
-ok("无渠道列时改存字典（不写空值列）", /if \(!colOk\) \{[\s\S]{0,160}map\[url\] = it\.channel;/.test(S));
+ok("无渠道列时改存字典（不写空值列）", /if \(!colOk2\) \{[\s\S]{0,160}map\[url\] = it\.channel;/.test(S));
 ok("写入 period_type 固定 month", /period_type: "month",\s*\n\s*period_label: it\.periodLabel/.test(S));
 ok("渠道图不写环比（ratio / abs_delta 为 null）", /ratio: null,\s*\n\s*abs_delta: null/.test(S));
 ok("单张失败不影响整批", /failed\.push\(\{ name: \(it\.file && it\.file\.name\) \|\| "", reason/.test(S));
 ok("批量上传按进度回调", /typeof onProgress === "function"/.test(S));
-ok("列表只读 channel 非空的记录", /from\("rank_items"\)\s*\n\s*\.select\("id,period_type,period_label,category,channel,image_url,title,created_at"\)\s*\n\s*\.neq\("channel", ""\)/.test(S));
+ok("列表只读 channel 非空的记录（无该列时降级为内存筛）", /if \(hasCh\) q = q\.neq\("channel", ""\);/.test(S));
 ok("可以改渠道 / 类目 / 月份", /async updateRankChannelItem\(id, patch\)/.test(S) && /o\.channel = String\(patch\.channel\)\.trim\(\)/.test(S));
 ok("可以单张删除", /async deleteRankChannelItem\(id\)/.test(S));
 ok("榜单取数支持 channelMode 三态", /if \(chMode === "only"\) q = q\.neq\("channel", ""\)/.test(S) && /else if \(chMode === "exclude"\) q = q\.eq\("channel", ""\)/.test(S));
@@ -97,7 +97,7 @@ ok("加列幂等", /alter table rank_items add column if not exists channel text
 ok("建索引幂等", /create index if not exists idx_rank_items_channel/.test(SQL));
 ok("索引口径 = 期次+类目+渠道", /\(period_type, period_label, category, channel\)/.test(SQL));
 const vers = [...new Set(allHtml.flatMap((f) => [...R(f).matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1])))];
-ok("所有页面版本号统一（本次 20261111A）", vers.length === 1 && vers[0] === "20261111A");
+ok("所有页面版本号统一（本次 20261111B）", vers.length === 1 && vers[0] === "20261111B");
 
 console.log("六、列口径实跑（直接执行真实函数）");
 let chLib = null;
