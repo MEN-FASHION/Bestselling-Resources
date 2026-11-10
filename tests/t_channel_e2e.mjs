@@ -1,4 +1,4 @@
-/* 20261111F · 实跑：渠道图独立读取（不依赖真实数据库，用假数据源跑真实代码） */
+/* 20261111G · 实跑：渠道图独立读取（不依赖真实数据库，用假数据源跑真实代码） */
 import fs from "node:fs";
 import vm from "node:vm";
 let pass = 0, fail = 0;
@@ -26,16 +26,35 @@ function builder() {
     eq(k, v) { op[k] = v; return api; },
     in(k, v) { op["in_" + k] = v; return api; },
     neq() { return api; },
+    limit() { return api; },
     order() { return api; },
     range(a, b) {
       let rows = ROWS.filter((r) => r.period_type === "month");
-      if (table === "site_settings") return { data: [{ id: 1, frontend_dims: { rank_channel_map: { u2: "Amazon" } } }], error: null };
+      if (table === "site_settings") return { data: [{ id: 1, frontend_dims: {
+        rank_channel_map: { b1: "Amazon" },
+        rank_channel_pics: [
+          { u: "c1", ch: "Pinterest", c: "套装", m: "2026-11" },
+          { u: "c2", ch: "SHEIN", c: "套装", m: "2026年11月" },
+          { u: "c3", ch: "Pinterest", c: "套装", m: "2026-10" },
+          { u: "c4", ch: "TEMU", c: "长裤", m: "2026-11" },
+        ],
+      } }], error: null };
       if (op.period_type) rows = rows.filter((r) => r.period_type === op.period_type);
       if (op.category) rows = rows.filter((r) => r.category === op.category);
       if (op["in_category"]) rows = rows.filter((r) => op["in_category"].includes(r.category));
       return { data: rows.slice(a, b + 1), error: null };
     },
-    maybeSingle() { return { data: { id: 1, frontend_dims: { rank_channel_map: { u2: "Amazon" } } }, error: null }; },
+    maybeSingle() {
+      return { data: { id: 1, frontend_dims: {
+        rank_channel_map: { b1: "Amazon" },
+        rank_channel_pics: [
+          { u: "c1", ch: "Pinterest", c: "套装", m: "2026-11" },
+          { u: "c2", ch: "SHEIN", c: "套装", m: "2026年11月" },
+          { u: "c3", ch: "Pinterest", c: "套装", m: "2026-10" },
+          { u: "c4", ch: "TEMU", c: "长裤", m: "2026-11" },
+        ],
+      } }, error: null };
+    },
     then(res) { return Promise.resolve({ data: [], error: null }).then(res); },
   };
   return { from(t) { table = t; op = {}; return api; } };
@@ -51,9 +70,11 @@ const SB = ctx.SB;
 console.log("一、渠道图独立读取");
 const rows = await SB.listRankChannelPics({ periodType: "month", category: "套装", periods: ["2026-11"] });
 console.log("  实际条数:", rows.length, rows.map(r=>[r.image_url,r.period_label,r.channel]));
-ok(rows.length === 3, "取到 3 张（月份三种写法都认，上个月与周度不混入）");
+ok(rows.length === 4, "取到 4 张（文档 2 + 库里带渠道 2；上月 / 别类目 / 周度都不混入）");
+ok(!rows.some((r) => String(r.image_url) === "u4" || String(r.image_url) === "u7"), "上个月与周度数据没混进来");
 ok(rows.every((r) => String(r.channel || "").trim()), "每张都有渠道（其中一张来自归属字典）");
-ok(rows.some((r) => r.channel === "Amazon"), "字典里的归属也生效");
+ok(rows.filter((r) => r._doc).length === 2, "文档存储里的两张都在");
+ok(rows.every((r) => String(r.channel || "").trim()), "每张都带渠道名");
 ok(!rows.some((r) => r.site === "美国"), "榜单表格导入的图不会混进渠道批");
 
 console.log("二、月份归一与同月判断");

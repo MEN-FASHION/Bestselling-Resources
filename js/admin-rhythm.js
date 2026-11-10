@@ -1452,7 +1452,17 @@
       if (cnt) cnt.textContent = "—";
       return;
     }
-    if (cnt) cnt.textContent = "已传 " + rmChList.length + " 张" + (rmChList.length >= 400 ? "（只显示最近 400 张，可用筛选收窄）" : "");
+    if (cnt) {
+      /* 把「存储里到底有多少张」一并写出来：传成功却看不到时，一眼能判断是没存进去还是没显示出来 */
+      let extra = "";
+      try {
+        const st = await SB.channelPicStats();
+        const ms = Object.keys(st.byMonth || {}).sort().reverse().slice(0, 6);
+        extra = "　｜　存储共 " + st.total + " 张"
+          + (ms.length ? "（" + ms.map((k) => k + " " + st.byMonth[k] + "张").join("、") + "）" : "");
+      } catch (e) { extra = "　｜　存储统计读取失败"; }
+      cnt.textContent = "已传 " + rmChList.length + " 张" + (rmChList.length >= 400 ? "（只显示最近 400 张，可用筛选收窄）" : "") + extra;
+    }
     if (!rmChList.length) { box.innerHTML = '<div class="hint">还没有渠道图片。选好月份 / 渠道 / 类目后把图拖到上面即可。</div>'; return; }
     box.innerHTML = rmChList.map((it) => {
       const mon = it.period_label || "";
@@ -1659,7 +1669,7 @@
   }
 
   /* 脚本版本：页面上显示出来，传图失败时一眼能看出「页面跑的是不是旧脚本」 */
-  var BUILD = "20261111F";
+  var BUILD = "20261111G";
   function showBuild() {
     var el = document.getElementById("rm-ch-ver");
     if (el) el.textContent = "脚本版本 " + BUILD + "（若与部署包版本不一致，说明浏览器还在用旧脚本：覆盖 html 后 Ctrl+F5）";

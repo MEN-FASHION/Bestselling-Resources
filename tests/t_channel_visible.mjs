@@ -1,4 +1,4 @@
-/* 20261111F · 后台补了渠道前台为什么看不到：把「前台能不能读到渠道」锁死 */
+/* 20261111G · 后台补了渠道前台为什么看不到：把「前台能不能读到渠道」锁死 */
 import fs from "node:fs";
 const R = (p) => fs.readFileSync(p, "utf8");
 const SB = R("js/supabase.js");
@@ -22,7 +22,7 @@ ok(/pm === "only" \|\| ""/.test(SB) || /if \(pm === "only"\)/.test(SB), "only �
 ok(/if \(pm === "exclude"\)/.test(SB), "exclude 口径按合后结果筛");
 
 console.log("四、前台版本可核对（区分「没传图」与「旧脚本」）");
-ok(/var BUILD = "20261111F";/.test(RHY), "前台脚本带版本号");
+ok(/var BUILD = "20261111G";/.test(RHY), "前台脚本带版本号");
 ok(/rk-ch-hint/.test(RHY), "单列时给出提示");
 ok(/Ctrl\+F5/.test(RHY), "提示里写了强制刷新");
 
@@ -30,7 +30,7 @@ console.log("五、页面引用版本已升级（换 URL 才能顶掉旧缓存�
 const pages = ["rhythm.html", "rank.html", "admin.html"];
 pages.forEach((p) => {
   const H = R(p);
-  ok(/supabase\.js\?v=20261111F/.test(H), p + " 引用新版本 supabase.js");
+  ok(/supabase\.js\?v=20261111G/.test(H), p + " 引用新版本 supabase.js");
 });
 
 console.log("六、补渠道确实写进了「读得到」的地方");

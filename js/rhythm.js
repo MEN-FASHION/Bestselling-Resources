@@ -306,7 +306,7 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
-  var BUILD = "20261111F";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261111G";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_STAT = { board: 0, channel: 0 };   /* 本次渠道对比实际取到的张数，直接显示在页面上 */
   var CH_BASE = "榜单";
   /* 同一个月判断：期次写法可能不同（2026-10 / 2026年10月 / 202610），
@@ -697,7 +697,8 @@
             periodType: PTYPE,
             category: filter.category || "",
             categories: filter.categories || null,
-            periods: needPeriods,
+            /* 只取「当前选中的月份」，不带上基线用的上一月，否则渠道图会跨月混进同一列 */
+            periods: periods,
           });
         } catch (eCh) { rCh = []; }
         var seenU = {}, mergedItems = [];
@@ -3670,7 +3671,18 @@
         + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；若刷新后仍然如此，多半是这一期的数据还没上传完整。</div>';
       return;
     }
-    if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
+    /* 渠道对比里「榜单」这一列允许为空：有的月份只有渠道图、没有榜单表格。
+       以前这里一律拦掉，于是「其他渠道传了图」也显示成「暂无榜单数据」。 */
+    if (!CACHE || !CACHE.items.length) {
+      if (MODE === "s") {
+        box.innerHTML = '<div class="rk-empty">这个类目在 ' + esc(periods[periods.length - 1] || "所选月份")
+          + ' 既没有榜单数据、也没有其他渠道的图。'
+          + '<br>到后台「上新节奏 → 其他渠道传图」传一批，或换一个月份。'
+          + '<span class="rk-ch-ver">渠道口径 ' + esc(BUILD) + '</span></div>';
+        return;
+      }
+      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return;
+    }
 
     /* 先把标签取数发出去（并行），再看是否已核对完成 */
     ensureTags(CACHE.items);

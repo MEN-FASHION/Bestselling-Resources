@@ -203,7 +203,7 @@ const SB = (() => {
     }
   }
 
-  return {
+  const API = {
     client,
 
     // ============ Auth ============
@@ -4340,7 +4340,255 @@ async removeTrendRecord(id) {
        不新建第二个 createClient —— 两个客户端各自维护会话，会出现"一边登录一边未登录"。 */
     _client() { return client; },
   };
+
+  /* ============================================================
+   * 20261111G：渠道图改用「独立文档存储」
+   * ------------------------------------------------------------
+   * 之前的做法把渠道图当成 rank_items 的普通行写进去，依赖这张表的结构
+   * （channel 列、不要 title 列、各种非空约束…）。只要有一处不匹配，
+   * 插入就被整条拒绝，表现就是「传了图什么也没有」。
+   *
+   * 现在渠道图只存在 site_settings.frontend_dims 的一个数组里：
+   *   rank_channel_pics = [{ u: 图片地址, ch: 渠道, c: 类目, m: 月份 }]
+   * 这里已经证明可写（渠道归属字典一直存在这里并且生效）。
+   * 图片文件仍然传到图床，只是不再依赖榜单表的任何列 / 约束。
+   * 有 channel 列时仍会顺手写一份行记录（失败也不影响）。
+   * ============================================================ */
+  const CH_PIC_KEY = "rank_channel_pics";
+  let _chPic = null, _chPicAt = 0;
+
+  async function chPicLoad(force) {
+    const now = Date.now();
+    if (!force && _chPic && now - _chPicAt < 30000) return _chPic.slice();
+    let arr = [];
+    try {
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const d = (data && data.frontend_dims) || {};
+      if (Array.isArray(d[CH_PIC_KEY])) arr = d[CH_PIC_KEY].filter((x) => x && x.u);
+    } catch (e) { arr = []; }
+    _chPic = arr; _chPicAt = now;
+    return arr.slice();
+  }
+  async function chPicSave(arr) {
+    const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+    const dims = Object.assign({}, (data && data.frontend_dims) || {});
+    dims[CH_PIC_KEY] = (arr || []).filter((x) => x && x.u);
+    const { error } = await client.from("site_settings")
+      .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+    if (error) throw new Error(errHint(error, "保存渠道图片失败"));
+    _chPic = dims[CH_PIC_KEY]; _chPicAt = Date.now();
+  }
+  const cpId = (u) => "cp:" + String(u || "");
+  const isCpId = (v) => String(v || "").indexOf("cp:") === 0;
+  const cpUrl = (id) => String(id || "").slice(3);
+
+  /* 渠道图读取：文档存储为主，有 channel 列时把库里的行也并进来（去重，文档优先） */
+  API.listRankChannelPics = async function (opts) {
+    const o = opts || {};
+    const PT = o.periodType || "month";
+    const wantPeriods = (o.periods || []).filter(Boolean);
+    const pick = (label) => !wantPeriods.length || wantPeriods.some((p) => API._sameMonth(label, p));
+    const keepCat = (c) => {
+      const v = String(c || "").trim();
+      if (!v) return false;
+      if (o.category) return v === String(o.category).trim();
+      if (o.categories && o.categories.length) return o.categories.map(String).indexOf(v) >= 0;
+      return true;
+    };
+
+    const out = [];
+    const seen = {};
+    (await chPicLoad()).forEach((x) => {
+      const u = String(x.u || "");
+      if (!u || seen[u]) return;
+      const m = API._normMonth(x.m || "");
+      if (PT !== "month") return;
+      if (!pick(m)) return;
+      if (!keepCat(x.c)) return;
+      seen[u] = 1;
+      out.push({
+        id: cpId(u), period_type: "month", period_label: m,
+        category: String(x.c || ""), site: "", image_url: u,
+        channel: String(x.ch || ""), _doc: 1,
+      });
+    });
+
+    /* 有 channel 列时把库里已有的渠道行也并进来（历史数据不丢） */
+    try {
+      if (await API.rankChannelColumn()) {
+        const PAGE = 1000, HARD = 20000;
+        for (let from = 0; from < HARD; from += PAGE) {
+          let q = client.from("rank_items").select("*").eq("period_type", PT);
+          if (o.category) q = q.eq("category", o.category);
+          else if (o.categories && o.categories.length) q = q.in("category", o.categories);
+          const { data, error } = await q.order("id", { ascending: true }).range(from, from + PAGE - 1);
+          if (error) break;
+          const rows = data || [];
+          rows.forEach((r) => {
+            const u = String(r.image_url || "");
+            const ch = String(r.channel || "").trim();
+            if (!u || !ch || seen[u]) return;
+            if (!pick(r.period_label)) return;
+            seen[u] = 1;
+            out.push(r);
+          });
+          if (rows.length < PAGE) break;
+        }
+      }
+    } catch (e) { /* 库里那部分拿不到也不影响文档里的图 */ }
+
+    /* 归属字典：榜单表格导入的图补过渠道的，按地址并进来 */
+    try {
+      const map = await API._chMapLoad();
+      out.forEach((r) => {
+        const u = String(r.image_url || "");
+        if (u && map[u] && !r.channel) r.channel = String(map[u]);
+      });
+    } catch (e) {}
+
+    return out;
+  };
+
+  /* 批量传图：先上图床，再整体写进文档（一次写清，避免逐张写一半） */
+  API.uploadRankChannelImages = async function (items, opts, onProgress) {
+    const o = opts || {};
+    const list = Array.from(items || []).map((it) => ({
+      file: it.file,
+      channel: String(it.channel || o.channel || "").trim(),
+      category: String(it.category || o.category || "").trim(),
+      periodLabel: String(it.periodLabel || o.periodLabel || "").trim(),
+    }));
+    const done = [], failed = [];
+    const doc = await chPicLoad(true);
+    let changed = false;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      try {
+        if (!it.file) throw new Error("缺少图片文件");
+        if (!it.channel) throw new Error("缺少渠道");
+        if (!it.category) throw new Error("缺少类目");
+        if (!it.periodLabel) throw new Error("缺少月份");
+        const m = API._normMonth(it.periodLabel);
+        const path = await API.uploadImage(it.file, it.category || "其他渠道");
+        const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+        const url = base + "/" + path;
+        const idx = doc.findIndex((x) => String(x.u || "") === url);
+        const rec = { u: url, ch: it.channel, c: it.category, m };
+        if (idx >= 0) doc[idx] = rec; else doc.push(rec);
+        changed = true;
+        done.push({ name: it.file.name, url, channel: it.channel });
+      } catch (e) {
+        failed.push({ name: (it.file && it.file.name) || "", reason: String((e && e.message) || e || "失败") });
+      }
+      if (typeof onProgress === "function") { try { onProgress(i + 1, list.length); } catch (e0) {} }
+    }
+    if (changed) {
+      try {
+        await chPicSave(doc);
+        /* 写成功要回读确认，读不到就当成失败，避免「显示成功其实没存」 */
+        const back = await chPicLoad(true);
+        if (back.length < doc.length) throw new Error("图片记录没有全部写入，请重试");
+      } catch (e) {
+        const why = String((e && e.message) || "保存失败");
+        done.splice(0).forEach((d) => failed.push({ name: d.name, reason: why }));
+      }
+    }
+    return { ok: done, failed };
+  };
+
+  API.updateRankChannelItem = async function (id, patch) {
+    if (isCpId(id)) {
+      const url = cpUrl(id);
+      const doc = await chPicLoad(true);
+      const hit = doc.find((x) => String(x.u || "") === url);
+      if (!hit) throw new Error("这张图已经不在了，请刷新列表");
+      if (patch && patch.channel != null) hit.ch = String(patch.channel).trim();
+      if (patch && patch.category != null) hit.c = String(patch.category).trim();
+      if (patch && patch.period_label != null) hit.m = API._normMonth(patch.period_label);
+      if (!hit.ch) throw new Error("渠道不能为空");
+      await chPicSave(doc);
+      return true;
+    }
+    const colOk = await API.rankChannelColumn();
+    const o2 = {};
+    if (patch && patch.channel != null && colOk) o2.channel = String(patch.channel).trim();
+    if (patch && patch.category != null) o2.category = String(patch.category).trim();
+    if (patch && patch.period_label != null) o2.period_label = API._normMonth(patch.period_label);
+    if (Object.keys(o2).length) {
+      const { error } = await client.from("rank_items").update(o2).eq("id", id);
+      if (error) throw new Error(error.message || "修改失败");
+    }
+    return true;
+  };
+
+  API.deleteRankChannelItem = async function (id) {
+    if (isCpId(id)) {
+      const url = cpUrl(id);
+      const doc = await chPicLoad(true);
+      const next = doc.filter((x) => String(x.u || "") !== url);
+      await chPicSave(next);
+      return true;
+    }
+    const { error } = await client.from("rank_items").delete().eq("id", id);
+    if (error) throw new Error(error.message || "删除失败");
+    return true;
+  };
+
+  API.listRankChannelNames = async function () {
+    const m = {};
+    try { (await chPicLoad()).forEach((x) => { const v = String(x.ch || "").trim(); if (v) m[v] = 1; }); } catch (e) {}
+    try {
+      if (await API.rankChannelColumn()) {
+        const { data, error } = await client.from("rank_items").select("channel").neq("channel", "").limit(3000);
+        if (!error) (data || []).forEach((r) => { const v = String(r.channel || "").trim(); if (v) m[v] = 1; });
+      }
+    } catch (e) {}
+    const map = await API._chMapLoad();
+    Object.keys(map || {}).forEach((k) => { const v = String(map[k] || "").trim(); if (v) m[v] = 1; });
+    return Object.keys(m).sort();
+  };
+
+  /* 后台「已传列表」：直接列文档里的渠道图（含库里 channel 列的历史行） */
+  API.listRankChannelItems = async function (o) {
+    const f = o || {};
+    const rows = await API.listRankChannelPics({
+      periodType: f.periodType || "month",
+      category: f.category || "",
+      periods: f.periodLabel ? [f.periodLabel] : [],
+    }).catch(() => []);
+    let out = rows.map((r) => ({
+      id: r._doc ? cpId(r.image_url) : r.id,
+      period_type: r.period_type || "month",
+      period_label: API._normMonth(r.period_label || ""),
+      category: String(r.category || ""),
+      channel: String(r.channel || "").trim(),
+      image_url: r.image_url || "",
+      title: r.title || "",
+      created_at: r.created_at || "",
+    }));
+    out = out.filter((r) => r.channel);
+    if (f.channel) out = out.filter((r) => r.channel === String(f.channel).trim());
+    if (f.category) out = out.filter((r) => r.category === String(f.category).trim());
+    out.sort((a, b) => (a.period_label < b.period_label ? 1 : a.period_label > b.period_label ? -1 : 0));
+    return out.slice(0, f.limit || 400);
+  };
+
+  /* 面板用：当前存储里一共有多少张渠道图、都是哪些月 */
+  API.channelPicStats = async function () {
+    const doc = await chPicLoad(true);
+    const byMonth = {}, byChannel = {};
+    doc.forEach((x) => {
+      const m = API._normMonth(x.m || "");
+      byMonth[m] = (byMonth[m] || 0) + 1;
+      const c = String(x.ch || "").trim();
+      if (c) byChannel[c] = (byChannel[c] || 0) + 1;
+    });
+    return { total: doc.length, byMonth, byChannel };
+  };
+
+  return API;
 })();
+
 
 // 经典脚本里的 const 不会自动挂到 window 上；显式暴露，供其它模块的 `window.SB` 守卫使用。
 try { window.SB = SB; } catch (e) {}
