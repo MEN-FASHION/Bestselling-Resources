@@ -39,6 +39,10 @@ const PERM_TAG_OPTIONS = ["招商", "测试", "内部", "商家"];
 
 const NONE_TAG = "__none__";
 
+// 「前台可见专区」全部取消时写入的哨兵值。
+// 用空数组表示"从没配过"（跟随全局），用 [ZONE_NONE] 表示"明确全部关闭"，两者不能混为一谈。
+const ZONE_NONE = "__none__";
+
 // 仅用于"按标签筛选"里的"无标签"筛选值
 let permTagFilter = "";
 
@@ -177,14 +181,18 @@ function bindDefaultPerms() {
       tr.dataset.uid = u.user_id;          // 批量维护：按行定位该用户
       // 勾选框（批量维护入口）：勾中的用户可批量打标签 / 改角色 / 加减专区
       const ckOn = permBatchSel.has(u.user_id) ? " checked" : "";
-      const frontZones = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
+      const frontZonesRaw = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
       const manageZones = Array.isArray(u.manage_zones) ? u.manage_zones : [];
       // 「前台可见专区」= 单独配置的 frontend_zones；未配置则跟随全局，直接展开列出全局可见专区
-      const frontZoneKeys = frontZones.length ? frontZones : permGlobalZones;
+      // 注意：空数组既可能是「从没配过」，也可能是「明确全部取消」——两者语义相反。
+      // 明确取消的情况在保存时写入哨兵 ZONE_NONE，这里要区分开，否则全部取消后会又显示成全局全部。
+      const frontConfigured = frontZonesRaw.length > 0;
+      const frontZones = frontZonesRaw.filter(z => z !== ZONE_NONE);
+      const frontZoneKeys = frontConfigured ? frontZones : permGlobalZones;
       const frontZoneTxt = frontZoneKeys.length ? frontZoneKeys.map(z => {
         const zz = PERM_ZONES.find(x => x.key === z);
         return zz ? zz.label : z;
-      }).join("、") : "无";
+      }).join("、") : (frontConfigured ? "无（已全部关闭）" : "无");
       // 「后台管理专区」= 单独配置的 manage_zones；未配置则为「无后台权限」
       const manageZoneTxt = manageZones.length ? manageZones.map(z => {
         const zz = PERM_ZONES.find(x => x.key === z);
@@ -425,7 +433,7 @@ async function loadPermForUser(user) {
     ]).then(([allCats, perm, frontZones, manageZones]) => {
       permEditAllCats = allCats;
       renderPermEditCats(allCats, perm);
-      renderPermEditZones(frontZones, "#perm-edit-zones");
+      renderPermEditZones((frontZones || []).filter(z => z !== ZONE_NONE), "#perm-edit-zones");
       renderPermEditZones(manageZones, "#perm-edit-manage-zones");
     });
   }
@@ -493,7 +501,9 @@ function updatePermEditCatCount() {
       await SB.setUserTag(uid, tag);
       await SB.setUserRole(uid, role);
       // 前端可见专区（frontend_zones）
-      await SB.setUserFrontendZones(uid, frontZones);
+      // 全都不勾 = 明确「一个都不给看」，必须写哨兵；写空数组会被当成「未配置 → 跟随全局」，
+      // 于是取消勾选后反而又显示全部专区（本次修的 bug）。
+      await SB.setUserFrontendZones(uid, frontZones.length ? frontZones : [ZONE_NONE]);
       // 后台可管理专区（manage_zones）
       await SB.setUserManageZones(uid, manageZones);
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
@@ -849,11 +859,13 @@ function refreshBatchZoneOptions() {
 }
 
 function batchZoneTexts(u) {
-  const front = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
+  const rawFront = Array.isArray(u.frontend_zones) ? u.frontend_zones : [];
+  const front = rawFront.filter(z => z !== ZONE_NONE);
+  const frontConfigured = rawFront.length > 0;
   const manage = Array.isArray(u.manage_zones) ? u.manage_zones : [];
-  const fk = front.length ? front : permGlobalZones;     // 未单独配置 = 跟随全局
+  const fk = frontConfigured ? front : permGlobalZones;     // 未单独配置 = 跟随全局
   return [
-    fk.length ? fk.map(zoneLabelOf).join("、") : "无",
+    fk.length ? fk.map(zoneLabelOf).join("、") : (frontConfigured ? "无（已全部关闭）" : "无"),
     manage.length ? manage.map(zoneLabelOf).join("、") : "无（仅前台）",
   ];
 }
