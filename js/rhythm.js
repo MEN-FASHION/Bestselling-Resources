@@ -306,6 +306,7 @@
      一张图归到哪一列只看 item.channel：
        · 后台「其他渠道传图」传进来的图带 channel（Pinterest / SHEIN…）
        · 榜单表格导入的图没有 channel → 归到「榜单」这一列 */
+  var BUILD = "20261111A";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
   var CH_BASE = "榜单";
   function chOf(it) { return String((it && it.channel) || "").trim() || CH_BASE; }
   /* 渠道列：榜单永远排第一，其余按图片多少排，最多 4 个渠道（再多每列就只剩一条缝） */
@@ -1574,6 +1575,14 @@
           });
         });
       });
+      /* 只有一个「榜单」列时给出可操作提示：要么确实没传渠道图，要么后台补了渠道但页面还是旧脚本。
+         把当前脚本版本一起写出来，方便核对是不是缓存。 */
+      if (cols === 1 && colsS[0] === CH_BASE) {
+        html += '<div class="rk-empty rk-ch-hint">只看到「榜单」一列 —— '
+          + '① 后台「其他渠道传图」还没传这个类目这个月的图；'
+          + '② 或后台已补渠道，但页面跑的还是旧脚本（请 Ctrl+F5 强制刷新）。'
+          + '<span class="rk-ch-ver">渠道口径 ' + esc(BUILD) + '</span></div>';
+      }
       if (!cols) {
         html += '<div class="rk-empty">这个类目在 ' + esc(pS || "所选月份") + ' 还没有任何图。'
           + '先到后台「上新节奏 → 其他渠道传图」传一批，或换一个月份。</div>';

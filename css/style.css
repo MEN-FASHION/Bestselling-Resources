@@ -6645,3 +6645,11 @@ html, body{
   border:1px solid rgba(0,0,0,.12);border-radius:10px;background:rgba(0,0,0,.03);font-size:12px;line-height:18px;white-space:nowrap}
 .rk-ch-del{border:0;background:none;padding:0 2px;cursor:pointer;color:#8a8a8a;font-size:13px;line-height:1}
 .rk-ch-del:hover{color:#d33}
+
+/* 20261111A · 渠道对比单列提示（用于区分「没传图」与「页面是旧脚本」） */
+.rk-ch-hint { line-height: 1.9; margin: 4px 0 14px; }
+.rk-ch-hint .rk-ch-ver {
+  display: inline-block; margin-left: 10px; padding: 1px 8px;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 999px;
+  font-size: 12px; opacity: .72; white-space: nowrap;
+}

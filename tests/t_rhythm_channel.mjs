@@ -97,7 +97,7 @@ ok("加列幂等", /alter table rank_items add column if not exists channel text
 ok("建索引幂等", /create index if not exists idx_rank_items_channel/.test(SQL));
 ok("索引口径 = 期次+类目+渠道", /\(period_type, period_label, category, channel\)/.test(SQL));
 const vers = [...new Set(allHtml.flatMap((f) => [...R(f).matchAll(/v=(2026\d{4}[A-Z])/g)].map((m) => m[1])))];
-ok("所有页面版本号统一（本次 20261110G）", vers.length === 1 && vers[0] === "20261110G");
+ok("所有页面版本号统一（本次 20261111A）", vers.length === 1 && vers[0] === "20261111A");
 
 console.log("六、列口径实跑（直接执行真实函数）");
 let chLib = null;
