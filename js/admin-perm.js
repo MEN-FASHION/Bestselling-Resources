@@ -23,6 +23,9 @@ let PERM_ZONES = [
   { key: "rhythm", label: "上新节奏" },
   { key: "plus", label: "大码专区" },
   { key: "movement", label: "趋势动向" },
+  { key: "pinterest", label: "Pinterest 专区" },
+  { key: "shein", label: "SHEIN 专区" },
+  { key: "compare", label: "渠道对比" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
@@ -540,7 +543,7 @@ function updatePermEditCatCount() {
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
       // 注意：已下线的专区不要再写入；新增专区若要卡类目，在这里补 key
-      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm"];
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm", "pinterest", "shein", "compare"];
       for (const z of ALL_CAT_ZONES) {
         await SB.setUserPermissions(uid, z, cats);
       }
@@ -698,6 +701,9 @@ const ZDEF_HREF_PRESETS = [
   { label: "趋势上升榜 (rank.html)", href: "rank.html" },
   { label: "上新节奏 · 月度趋势 (rhythm.html)", href: "rhythm.html" },
   { label: "营销日历 (marketing.html)", href: "marketing.html" },
+  { label: "Pinterest 专区 (pinterest.html)", href: "pinterest.html" },
+  { label: "SHEIN 专区 (shein.html)", href: "shein.html" },
+  { label: "渠道对比 (compare.html)", href: "compare.html" },
 ];
 
 function zdefKey(label) {

@@ -44,6 +44,9 @@ const PANEL_ZONE = {
   "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
   "movement-card": "movement", // 趋势动向：独立专区，按「后台可管理专区」授权管控
   "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
+  "pinterest-card": "pinterest", // Pinterest 专区：纯图片专区（只传图 + 打标），按专区授权管控
+  "shein-card": "shein",         // SHEIN 专区：同上
+  "compare-card": "compare",     // 渠道对比：只读聚合页的列配置（按专区授权管控）
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
   "recruit-card": "recruit",
@@ -77,7 +80,10 @@ const CAT_VIS_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
-  { key: "plus", label: "大码专区" }
+  { key: "plus", label: "大码专区" },
+  { key: "pinterest", label: "Pinterest 专区", href: "pinterest.html" },
+  { key: "shein", label: "SHEIN 专区", href: "shein.html" },
+  { key: "compare", label: "渠道对比", href: "compare.html" }
 ];
 
 // 当前生效的专区定义（内置 7 个 + 超管在「专区管理」里新增的），
@@ -226,6 +232,13 @@ function switchPanel(target) {
     if (target === "manage-card") { setVisualTab(visualTab); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
     if (target === "plus-card" && window.PLUSADMIN && typeof window.PLUSADMIN.refresh === "function") { window.PLUSADMIN.refresh(); }
+    /* 渠道图片专区（Pinterest / SHEIN）：首次进入才拉数据 */
+    if ((target === "pinterest-card" || target === "shein-card") && window.ChannelZoneAdmin && typeof window.ChannelZoneAdmin.reload === "function") {
+      window.ChannelZoneAdmin.reload(target === "shein-card" ? "shein" : "pinterest");
+    }
+    if (target === "compare-card" && window.CompareAdmin && typeof window.CompareAdmin.reload === "function") {
+      window.CompareAdmin.reload();
+    }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); if (typeof window.loadRecruitDashStats === "function") window.loadRecruitDashStats(); }
     /* 趋势动向：首次进入才拉数据，避免进后台就多发一次请求 */

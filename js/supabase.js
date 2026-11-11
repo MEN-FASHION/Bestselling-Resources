@@ -1193,6 +1193,43 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "保存失败");
     },
 
+    // ============ 渠道对比 · 来源列配置（20261111R） ============
+    // 存在 site_settings.frontend_dims.compare_sources，不改表结构：
+    //   { list:[{key,label,type,channel,month}], showEmpty:bool, perRow:0 }
+    //   type = "rank"（上新节奏·月度榜单） | "channel"（某个渠道的图，channel=渠道名）
+    async getCompareSources() {
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        const raw = d.compare_sources;
+        if (!raw) return null;
+        const list = (Array.isArray(raw.list) ? raw.list : []).filter((x) => x && x.key).map((x) => ({
+          key: String(x.key),
+          label: String(x.label || x.key),
+          type: x.type === "rank" ? "rank" : "channel",
+          channel: String(x.channel || ""),
+        }));
+        return { list, showEmpty: raw.showEmpty !== false, perRow: Number(raw.perRow) || 0 };
+      } catch (e) { return null; }
+    },
+    async setCompareSources(cfg) {
+      const c = cfg || {};
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.compare_sources = {
+        list: (Array.isArray(c.list) ? c.list : []).map((x) => ({
+          key: String(x.key || ""), label: String(x.label || ""),
+          type: x.type === "rank" ? "rank" : "channel", channel: String(x.channel || ""),
+        })).filter((x) => x.key),
+        showEmpty: c.showEmpty !== false,
+        perRow: Number(c.perRow) || 0,
+      };
+      const { error } = await client.from("site_settings")
+        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(errHint(error, "保存渠道对比配置失败"));
+      return dims.compare_sources;
+    },
+
     // ============ 新用户默认权限设置（超管） ============
     // 读取新用户默认权限：{ role, frontZones, manageZones }
     // frontZones = 新用户默认前台可见专区（空 = 未配置，按全局 frontend_zone_visibility 显示）
