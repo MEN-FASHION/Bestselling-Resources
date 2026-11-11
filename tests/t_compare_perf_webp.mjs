@@ -1,4 +1,4 @@
-/* 20261111AA · 渠道对比加载提速 + 压缩池「转 WebP」自检
+/* 20261111AB · 渠道对比加载提速 + 压缩池「转 WebP」自检
  *
  * 这里盯两个容易「看着做完、其实没用」的点：
  *  1. 对比页的分批渲染：如果 renderPools 仍然一次铺全量、或者打标还在 load() 里全量查，
@@ -52,7 +52,7 @@ ok(/state\.cat = name; state\.shown = \{\}/.test(CF), "切类目时未重置分�
 ok(/\.rk-pool\s*\{[^}]*content-visibility:\s*auto/.test(CSS), "缺少列级 content-visibility（几列并排时会白等）");
 ok(/\.cmp-card\.cmp-broken/.test(CSS), "缺少图片失效占位样式");
 
-/* ================= 一·补、20261111AA 取数提速 ================= */
+/* ================= 一·补、20261111AB 取数提速 ================= */
 ok(/var CACHE_TTL = 5 \* 60 \* 1000;/.test(CF), "缺少会话级数据缓存（每次打开都重新全量取，必然慢）");
 ok(/var LOAD_TIMEOUT = 8000;/.test(CF), "取数缺少超时（超过 8 秒必须先出东西，不能一直加载中）");
 ok(/function withTimeout\(p, ms, fallback\)/.test(CF), "缺少超时包装器");

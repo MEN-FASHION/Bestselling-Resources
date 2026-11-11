@@ -1,4 +1,4 @@
-/* 20261111AA · 专区后台「导出 / 导入打标表」
+/* 20261111AB · 专区后台「导出 / 导入打标表」
  *
  * 背景（真实故障）：后台点「导出打标表」提示「导出模块未加载，请强刷页面」，
  * 强刷也没用。原因是 rankexport.js 结尾导出清单里引用了一个已经不存在的函数，
@@ -163,7 +163,7 @@ ok(iExp > 0 && iImp > 0 && iCZ > 0, "admin.html 缺少脚本引用（rankexport 
 ok(iExp < iCZ, "rankexport.js 必须在 admin-channelzone.js 之前加载（专区导出依赖它）");
 ok(iImp < iCZ, "admin-rankimport.js 必须在 admin-channelzone.js 之前加载");
 
-/* ---------- 8. 按类目导出（20261111AA） ---------- */
+/* ---------- 8. 按类目导出（20261111AB） ---------- */
 const AD2 = read("js/admin-channelzone.js");
 const MV = read("js/admin-movement.js");
 const ADMIN2 = read("admin.html");

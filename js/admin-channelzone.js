@@ -241,6 +241,7 @@
   }
 
   function importModalHtml(z) {
+    var k = z.key;
     return '' +
       '<div id="' + id(k, "imp-modal") + '" class="modal-mask hidden">' +
         '<div class="modal cz-batch-modal">' +
@@ -1303,7 +1304,16 @@
 
   function init() {
     ZONES.forEach(function (z) {
-      if (document.getElementById(z.key + "-card")) mount(z);
+      var card = document.getElementById(z.key + "-card");
+      if (!card) return;
+      /* 逐个专区独立初始化：某一个专区出错时，只影响它自己，
+         不能让后面的专区连外框都没生成（表现为整块空白、且看不出原因）。 */
+      try {
+        mount(z);
+      } catch (e) {
+        card.innerHTML = '<div class="rkadm-head"><div><h3>' + esc(z.label) + '</h3>' +
+          '<p class="hint" style="color:#b3382f">这个面板初始化出错，请强刷页面；若仍不行请联系管理员。</p></div></div>';
+      }
     });
   }
 

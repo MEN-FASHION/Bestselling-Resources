@@ -603,7 +603,7 @@
   }
 
   /* ============================================================================
-   * 按类目分表导出（20261111AA）
+   * 按类目分表导出（20261111AB）
    * ----------------------------------------------------------------------------
    * 用户痛点：一个专区的图横跨多个类目，一张表全导出来后要自己筛；
    * 分头打标时也不方便各自导回。这里每个类目出一个工作表，表头与单表完全一致
@@ -671,7 +671,7 @@
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME,
-    /* 20261111AA：清单里曾引用一个随「渠道列」下线时一起删掉的函数，浏览器在加载阶段
+    /* 20261111AB：清单里曾引用一个随「渠道列」下线时一起删掉的函数，浏览器在加载阶段
        就抛 ReferenceError，导致 window.RankExport 永远不被赋值 —— 表现就是后台点
        导出提示「导出模块未加载」，强刷也没用。只导出真正还存在的成员。 */
     catStats: catStats, loadCats: loadCats, hitCat: hitCat,
