@@ -198,8 +198,49 @@
       '</div>';
   }
 
-  function importModalHtml(z) {
+  function exportModalHtml(z) {
     var k = z.key;
+    return '' +
+      '<div id="' + id(k, "exp-modal") + '" class="modal-mask hidden">' +
+        '<div class="modal cz-exp-modal">' +
+          '<div class="mv-tag-head">' +
+            '<h3>' + esc(z.label) + ' · 导出打标表</h3>' +
+            '<span id="' + id(k, "exp-title") + '" class="hint-inline"></span>' +
+          '</div>' +
+          '<div class="cz-batch-body">' +
+            '<p class="cz-batch-tip">可选单个或多个类目；「按类目分表」时每个类目一个工作表，方便分头打标再分别导回。</p>' +
+            '<div class="cz-exp-row">' +
+              '<span class="cz-exp-label">类目</span>' +
+              '<button id="' + id(k, "exp-all") + '" class="btn-ghost cz-mini" type="button">全选</button>' +
+              '<button id="' + id(k, "exp-none") + '" class="btn-ghost cz-mini" type="button">清空</button>' +
+              '<span id="' + id(k, "exp-cat-n") + '" class="hint-inline"></span>' +
+            '</div>' +
+            '<div id="' + id(k, "exp-cats") + '" class="cz-exp-cats"></div>' +
+            '<div class="cz-exp-grid">' +
+              '<label class="cz-batch-field"><span>月份</span>' +
+                '<select id="' + id(k, "exp-month") + '" class="input"><option value="">全部月份</option></select></label>' +
+              '<label class="cz-batch-field"><span>打标范围</span>' +
+                '<select id="' + id(k, "exp-scope") + '" class="input">' +
+                  '<option value="all">全部（含已打标）</option>' +
+                  '<option value="todo">仅未打标</option>' +
+                  '<option value="partial">仅打标不完整</option>' +
+                  '<option value="done">仅已打标</option>' +
+                '</select></label>' +
+            '</div>' +
+            '<label class="cz-row-all" style="margin-top:2px;">' +
+              '<input id="' + id(k, "exp-split") + '" type="checkbox">' +
+              '<span> 按类目分表（每类一个工作表）</span></label>' +
+            '<p id="' + id(k, "exp-msg") + '" class="cz-batch-tip"></p>' +
+          '</div>' +
+          '<div class="mtag-actions">' +
+            '<button id="' + id(k, "exp-run") + '" class="btn-primary" type="button">导出</button>' +
+            '<button id="' + id(k, "exp-close") + '" class="btn-ghost" type="button">取消</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function importModalHtml(z) {
     return '' +
       '<div id="' + id(k, "imp-modal") + '" class="modal-mask hidden">' +
         '<div class="modal cz-batch-modal">' +
@@ -971,39 +1012,183 @@
     }
   }
 
-  /* ---------- 导出打标表（复用榜单那套列） ---------- */
-  async function doExport(k) {
+  /* ---------- 导出打标表（复用榜单那套列，支持按类目导出） ---------- */
+  function catCounts(k, month) {
+    var st = state[k];
+    var cnt = {};
+    st.items.forEach(function (r) {
+      if (month && r.month !== month) return;
+      var c = r.category || "未分类";
+      cnt[c] = (cnt[c] || 0) + 1;
+    });
+    return cnt;
+  }
+
+  function openExport(k) {
+    var st = state[k];
+    if (!window.RankExport) { toast("导出模块未加载，请强刷页面（若仍不行，多为脚本缓存）", false); return; }
+    if (typeof XLSX === "undefined") { toast("表格组件未加载，请强刷页面", false); return; }
+    if (!st.items.length) { toast("当前没有图片，先传图再导出", false); return; }
+
+    /* 月份下拉 */
+    var ms = {};
+    st.items.forEach(function (r) { if (r.month) ms[r.month] = 1; });
+    var months = Object.keys(ms).sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
+    var sel = el(k, "exp-month");
+    if (sel) {
+      sel.innerHTML = "";
+      sel.add(new Option("全部月份", ""));
+      months.forEach(function (m) { sel.add(new Option(m, m)); });
+      sel.value = st.curMonth || "";
+    }
+
+    /* 类目多选：默认勾上左侧菜单当前类目；没选就全勾 */
+    var cnt = catCounts(k, st.curMonth || "");
+    var names = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+    var box = el(k, "exp-cats");
+    if (box) {
+      box.innerHTML = "";
+      if (!names.length) {
+        box.innerHTML = '<div class="cz-exp-empty">当前筛选下没有图片</div>';
+      }
+      names.forEach(function (c) {
+        var lab = document.createElement("label");
+        lab.className = "cz-exp-cat";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = c;
+        cb.className = "cz-exp-cbx";
+        cb.checked = st.curCat ? c === st.curCat : true;
+        cb.onchange = function () { syncExpCount(k); };
+        var sp = document.createElement("span");
+        sp.textContent = c + "（" + cnt[c] + "）";
+        lab.appendChild(cb);
+        lab.appendChild(sp);
+        box.appendChild(lab);
+      });
+    }
+    var sp2 = el(k, "exp-split"); if (sp2) sp2.checked = false;
+    var sc = el(k, "exp-scope"); if (sc) sc.value = "all";
+    var g = el(k, "exp-msg"); if (g) g.textContent = "";
+    syncExpCount(k);
+    var m = el(k, "exp-modal");
+    if (m) m.classList.remove("hidden");
+  }
+
+  function closeExport(k) {
+    var m = el(k, "exp-modal");
+    if (m) m.classList.add("hidden");
+  }
+
+  function setAllExpCats(k, on) {
+    var box = el(k, "exp-cats");
+    if (!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll(".cz-exp-cbx"), function (c) { c.checked = !!on; });
+    syncExpCount(k);
+  }
+
+  function expCheckedCats(k) {
+    var box = el(k, "exp-cats");
+    if (!box) return [];
+    return Array.prototype.slice.call(box.querySelectorAll(".cz-exp-cbx"))
+      .filter(function (c) { return c.checked; })
+      .map(function (c) { return c.value; });
+  }
+
+  function syncExpCount(k) {
+    var st = state[k];
+    var month = (el(k, "exp-month") && el(k, "exp-month").value) || "";
+    var cats = expCheckedCats(k);
+    var n = st.items.filter(function (r) {
+      if (month && r.month !== month) return false;
+      return !cats.length ? false : cats.indexOf(r.category || "未分类") >= 0;
+    }).length;
+    var cn = el(k, "exp-cat-n");
+    if (cn) cn.textContent = "已选 " + cats.length + " 类 · 约 " + n + " 张";
+    var t = el(k, "exp-title");
+    if (t) t.textContent = "本专区 " + st.items.length + " 张";
+    return n;
+  }
+
+  /* 工作表名：Excel 不允许 : \ / ? * [ ]，且最长 31 字 */
+
+  async function runExport(k) {
     var st = state[k];
     var RE = window.RankExport;
     if (!RE) { toast("导出模块未加载，请强刷页面（若仍不行，多为脚本缓存）", false); return; }
     if (typeof XLSX === "undefined") { toast("表格组件未加载，请强刷页面", false); return; }
-    if (!st.items.length) { toast("当前没有图片，先传图再导出", false); return; }
+
+    var month = (el(k, "exp-month") && el(k, "exp-month").value) || "";
+    var scope = (el(k, "exp-scope") && el(k, "exp-scope").value) || "all";
+    var split = !!(el(k, "exp-split") && el(k, "exp-split").checked);
+    var cats = expCheckedCats(k);
+    if (!cats.length) { toast("至少选一个类目（或点「全选」）", false); return; }
+
+    var base = st.items.filter(function (r) {
+      if (month && r.month !== month) return false;
+      return cats.indexOf(r.category || "未分类") >= 0;
+    });
+    if (!base.length) { toast("所选类目 + 月份下没有图片", false); return; }
+
+    var btn = el(k, "exp-run");
+    if (btn) { btn.disabled = true; btn.textContent = "导出中…"; }
+    var msg = el(k, "exp-msg");
+    if (msg) msg.textContent = "正在生成表格…";
     try {
-      say(k, "导出中…");
-      /* 只导本专区当前筛选下的图；scope 必须给 all —— buildBook 的默认范围是
-         「仅未打标」，专区的图多数已经打过标，用默认值会导出一张只有表头的空表。 */
-      var scopeItems = filteredItems(k);
-      var detail = scopeItems.map(function (r) {
-        return {
-          image_url: r.image_url,
-          category: r.category || "",
-          period_label: r.month || r.uploaded || "",
-        };
-      });
-      var pack = RE.buildBook(detail, st.tagMap, { scope: "all" });
-      if (!pack.stats || !pack.stats.total) {
-        say(k, "当前筛选下没有可导出的图");
-        toast("当前筛选下没有可导出的图", false);
-        return;
+      var detailOf = function (rows) {
+        return rows.map(function (r) {
+          return { image_url: r.image_url, category: r.category || "", period_label: r.month || r.uploaded || "" };
+        });
+      };
+      var total = 0, sheets = 0;
+      var fname = st.zone.label + "-打标表-" +
+        (cats.length === 1 ? String(cats[0]).replace(/[:\\\/\?\*\[\]]/g, "-") + "-" : "") +
+        new Date().toISOString().slice(0, 10).replace(/-/g, "") + ".xlsx";
+
+      if (!split) {
+        /* 一次出：所选类目合并在「打标表」里（首列仍是图片URL，导回时按地址匹配） */
+        var pack = RE.buildBook(detailOf(base), st.tagMap, { scope: scope });
+        /* stats.picked = 真正写进表的张数；stats.total 只是这批图有多少张，
+           用它判断会把「范围过滤后为空」也当成有内容，导出一张只有表头的表。 */
+        total = (pack.stats && pack.stats.picked) || 0;
+        if (!total) {
+          if (msg) msg.textContent = "所选范围里没有符合条件的图（可能是打标范围太窄）";
+          toast("所选范围里没有符合条件的图", false);
+          return;
+        }
+        XLSX.writeFile(pack.wb, fname);
+      } else {
+        /* 分表：逻辑在导出模块里（buildBookSplit），改完每类可直接导回 */
+        var sp = RE.buildBookSplit(detailOf(base), st.tagMap, { scope: scope });
+        total = sp.total;
+        sheets = sp.sheets;
+        if (!total) {
+          if (msg) msg.textContent = "所选范围里没有符合条件的图（可能是打标范围太窄）";
+          toast("所选范围里没有符合条件的图", false);
+          return;
+        }
+        XLSX.writeFile(sp.wb, fname);
+        if (sp.emptyCats && sp.emptyCats.length) {
+          say(k, "已导出 " + total + " 张；无符合条件图片未出表的类目：" +
+            sp.emptyCats.slice(0, 5).join("、") + (sp.emptyCats.length > 5 ? " 等" : ""));
+        }
       }
-      XLSX.writeFile(pack.wb, st.zone.label + "-打标表-" +
-        new Date().toISOString().slice(0, 10).replace(/-/g, "") + ".xlsx");
-      say(k, "已导出 " + pack.stats.total + " 张（含已打标，导入时只改填写过的维度）");
-      toast("已导出 " + pack.stats.total + " 张", true);
+
+      var line = "已导出 " + total + " 张" + (split ? " · " + sheets + " 个类目分表" : "") +
+        (month ? " · " + month : " · 全部月份");
+      if (msg) msg.textContent = line;
+      say(k, line);
+      toast("已导出 " + total + " 张", true);
+      closeExport(k);
     } catch (e) {
-      say(k, "导出失败：" + ((e && e.message) || "未知错误"));
+      var why = (e && e.message) || "未知错误";
+      if (msg) msg.textContent = "导出失败：" + why;
+      toast("导出失败，请重试", false);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "导出"; }
     }
   }
+
 
   /* ---------- 初始化 ---------- */
   function mount(z) {
@@ -1016,7 +1201,7 @@
     card.innerHTML = panelHtml(z);
     /* 打标弹窗放到 body，避免被面板隐藏态带走 */
     var holder = document.createElement("div");
-    holder.innerHTML = modalHtml(z) + batchModalHtml(z) + importModalHtml(z);
+    holder.innerHTML = modalHtml(z) + batchModalHtml(z) + importModalHtml(z) + exportModalHtml(z);
     while (holder.firstChild) document.body.appendChild(holder.firstChild);
 
     fillCatSelects(k);
@@ -1028,7 +1213,41 @@
     var fm = el(k, "filter-month");
     if (fm) fm.onchange = function () { state[k].curMonth = fm.value || ""; renderAll(k); };
     var ex = el(k, "export");
-    if (ex) ex.onclick = function () { doExport(k); };
+    if (ex) ex.onclick = function () { openExport(k); };
+    var ea = el(k, "exp-all");
+    if (ea) ea.onclick = function () { setAllExpCats(k, true); };
+    var en = el(k, "exp-none");
+    if (en) en.onclick = function () { setAllExpCats(k, false); };
+    var em = el(k, "exp-month");
+    if (em) em.onchange = function () {
+      /* 换月份后类目清单与张数跟着变，避免勾着本月不存在的类目 */
+      var cnt = catCounts(k, em.value || "");
+      var names = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+      var box0 = el(k, "exp-cats");
+      if (box0) {
+        var keep = expCheckedCats(k);
+        box0.innerHTML = "";
+        names.forEach(function (c) {
+          var lab = document.createElement("label");
+          lab.className = "cz-exp-cat";
+          var cb = document.createElement("input");
+          cb.type = "checkbox"; cb.value = c; cb.className = "cz-exp-cbx";
+          cb.checked = keep.length ? keep.indexOf(c) >= 0 : true;
+          cb.onchange = function () { syncExpCount(k); };
+          var sp = document.createElement("span");
+          sp.textContent = c + "（" + cnt[c] + "）";
+          lab.appendChild(cb); lab.appendChild(sp);
+          box0.appendChild(lab);
+        });
+      }
+      syncExpCount(k);
+    };
+    var er = el(k, "exp-run");
+    if (er) er.onclick = function () { runExport(k); };
+    var ec = el(k, "exp-close");
+    if (ec) ec.onclick = function () { closeExport(k); };
+    var exm = el(k, "exp-modal");
+    if (exm) exm.onclick = function (e) { if (e.target === exm) closeExport(k); };
     var im = el(k, "import");
     if (im) im.onclick = function () { openImport(k); };
     var ir = el(k, "imp-run");

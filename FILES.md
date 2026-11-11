@@ -45,6 +45,8 @@
 
 | 文件 | 对应页面 |
 |---|---|
+| `admin-pool.js` | 存量图片压缩池：按目标 KB 压缩（200/100/40K）+ 独立「转 WebP」（只换格式、加载更快） |
+| `imagesearch.js` | 大图「找相似款」：任意前台页面放大图片后，右下角按钮一键跳 Google/Bing/Yandex/TinEye 以图搜图（纯前端跳转，不落库） |
 | `frontend.js` | 视觉专区（首页） |
 | `channel-zone-front.js` | Pinterest / SHEIN 两个纯图片专区的**共用前台脚本**（页面用 `window.CZONE` 声明是哪个渠道） |
 | `compare-front.js` | 渠道对比页（多列并排看各来源的图；列由后台配置，未配置时自动按渠道发现） |
@@ -82,7 +84,7 @@
 | `admin-rank.js` | 站内趋势上升榜单（Excel 上传 + 导出打标表 + 打标结果回填 + 批次撤回） |
 | `admin-rhythm.js` | 上新节奏 · 月度榜单（同上，但期次锁死月度、只读写 month 数据） |
 | `admin-plus.js` | 大码专区数据（独立上传入口 + 开始匹配） |
-| `admin-channelzone.js` | Pinterest / SHEIN 两个纯图片专区后台（批量传图 → 打标 → 导出/导入打标表；图墙支持单张删除、按类目整行删除、勾选批量删除与批量编辑月份/上传日期/类目/渠道名。面板 id 带 `cz-<专区>-` 前缀，一个脚本驱动两块面板） |
+| `admin-channelzone.js` | Pinterest / SHEIN 两个纯图片专区后台（批量传图 → 打标 → 导出/导入打标表（支持按类目选择与按类目分表）；图墙支持单张删除、按类目整行删除、勾选批量删除与批量编辑月份/上传日期/类目/渠道名。面板 id 带 `cz-<专区>-` 前缀，一个脚本驱动两块面板） |
 | `admin-compare.js` | 渠道对比的列配置（对比哪几列、列名、顺序、空列是否显示、每列每行张数） |
 | `admin-bestseller.js` | 爆款图库 / 图片管理 |
 | `admin-images.js` | 图片上传与分组 |

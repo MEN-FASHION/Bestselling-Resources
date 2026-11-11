@@ -602,15 +602,80 @@
     }
   }
 
+  /* ============================================================================
+   * 按类目分表导出（20261111X）
+   * ----------------------------------------------------------------------------
+   * 用户痛点：一个专区的图横跨多个类目，一张表全导出来后要自己筛；
+   * 分头打标时也不方便各自导回。这里每个类目出一个工作表，表头与单表完全一致
+   * （首列仍是「图片URL」），改完可以直接分别导回。
+   *
+   * 口径：
+   *   · 空类目（该范围下没有符合条件的图）不生成空表，计入 emptyCats 由界面提示
+   *   · 工作表名按 Excel 规则清洗（禁 : \ / ? * [ ]，31 字上限，重名加序号）
+   *   · 末尾附一张「枚举参考」，与单表导出的那张同源
+   * ==========================================================================*/
+  function safeSheetName(name, used) {
+    var s = String(name || "未分类").replace(/[:\\\/\?\*\[\]]/g, "-").trim() || "未分类";
+    if (s.length > 31) s = s.slice(0, 31);
+    var base = s, i = 2;
+    while (used[s]) { s = (base.slice(0, 28) + "(" + i + ")").slice(0, 31); i++; }
+    used[s] = 1;
+    return s;
+  }
+
+  function buildBookSplit(detail, tagMap, opts) {
+    var o = opts || {};
+    var byCat = {};
+    (detail || []).forEach(function (r) {
+      var c = String((r && r.category) || "").trim() || "未分类";
+      (byCat[c] = byCat[c] || []).push(r);
+    });
+    var order = Object.keys(byCat).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
+    var wb = XLSX.utils.book_new();
+    var used = {}, total = 0, sheets = 0, emptyCats = [], enumAoa = null;
+
+    order.forEach(function (c) {
+      var p = buildBook(byCat[c], tagMap, { scope: o.scope });
+      /* 必须用 stats.picked（真正写进表的张数）。stats.total 是「这个类目下有多少图」，
+         范围过滤把图全筛掉时它仍然大于 0，按它判断会生成一张只有表头的空表。 */
+      var n = (p.stats && p.stats.picked) || 0;
+      if (!n) { emptyCats.push(c); return; }
+      if (!enumAoa && p.wb.Sheets["枚举参考"]) {
+        enumAoa = XLSX.utils.sheet_to_json(p.wb.Sheets["枚举参考"], { header: 1, defval: "", raw: false });
+      }
+      var ws = p.wb.Sheets[p.wb.SheetNames[0]];
+      var aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+      var name = safeSheetName(c, used);
+      var nws = XLSX.utils.aoa_to_sheet(aoa);
+      if (aoa[0]) {
+        var cw = [{ wch: 46 }];
+        for (var i = 1; i < aoa[0].length; i++) cw.push({ wch: 14 });
+        nws["!cols"] = cw;
+      }
+      wb.Sheets[name] = nws;
+      wb.SheetNames.push(name);
+      total += n;
+      sheets++;
+    });
+
+    if (sheets) {
+      var en = safeSheetName("枚举参考", used);
+      wb.Sheets[en] = XLSX.utils.aoa_to_sheet(enumAoa && enumAoa.length ? enumAoa : [["（无）"]]);
+      wb.SheetNames.push(en);
+    }
+    return { wb: wb, total: total, sheets: sheets, emptyCats: emptyCats, picked: total };
+  }
+
   window.RankExport = {
     all: exportAll, preview: preview, buildBook: buildBook, collectImages: collectImages,
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME,
-    /* 20261111U：清单里曾引用一个随「渠道列」下线时一起删掉的函数，浏览器在加载阶段
+    /* 20261111X：清单里曾引用一个随「渠道列」下线时一起删掉的函数，浏览器在加载阶段
        就抛 ReferenceError，导致 window.RankExport 永远不被赋值 —— 表现就是后台点
        导出提示「导出模块未加载」，强刷也没用。只导出真正还存在的成员。 */
     catStats: catStats, loadCats: loadCats, hitCat: hitCat,
+    buildBookSplit: buildBookSplit, safeSheetName: safeSheetName,
     CRAFT_GUIDE: CRAFT_GUIDE, CRAFT_HINT: CRAFT_HINT
   };
 

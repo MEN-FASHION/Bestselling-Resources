@@ -1,4 +1,4 @@
-/* 上新节奏（月度）与趋势上升榜（周度）口径一致 —— 20261111U
+/* 上新节奏（月度）与趋势上升榜（周度）口径一致 —— 20261111X
    用户要求：月度整体按周度那套来，渠道对比整块下线。
    这里锁住「不能再长出第四种模式」「不能再出现渠道入口」「两页同一套脚本、同一个版本」。 */
 import fs from "node:fs";
@@ -28,15 +28,15 @@ ok(!/bindChannelUploader|loadChChannels|uploadChPending|applyFixChannel/.test(AR
 
 console.log("三、两页同一套脚本、同一个版本");
 const v1 = (RH.match(/js\/rhythm\.js\?v=(\w+)/) || [])[1];
-ok(v1 === "20261111U", "月度页 rhythm.js 引用版本已升级（否则浏览器仍用旧脚本）");
-ok(/js\/rank\.js\?v=20261111U/.test(RK), "周度页 rank.js 引用版本同步升级");
+ok(v1 === "20261111X", "月度页 rhythm.js 引用版本已升级（否则浏览器仍用旧脚本）");
+ok(/js\/rank\.js\?v=20261111X/.test(RK), "周度页 rank.js 引用版本同步升级");
 const rj = fs.readFileSync(path.join(ROOT, "js/rank.js"), "utf8");
 ok(!/渠道对比|listRankChannelPics|MODE === "s"/.test(rj), "周度脚本本身没有渠道对比残留");
-ok(/"20261111U"/.test(R), "前台版本常量 20261111U");
+ok(/"20261111X"/.test(R), "前台版本常量 20261111X");
 const s1 = (RH.match(/js\/supabase\.js\?v=(\w+)/) || [])[1];
 const s2 = (RK.match(/js\/supabase\.js\?v=(\w+)/) || [])[1];
 ok(!!s1 && s1 === s2, "两页引用同一个数据层版本");
-ok(!!s1 && s1 === "20261111U", "数据层引用版本为 20261111U");
+ok(!!s1 && s1 === "20261111X", "数据层引用版本为 20261111X");
 
 console.log("四、取数口径只剩一条路");
 ok((R.match(/SBX\.listRankItems\(/g) || []).length >= 1, "取数仍走统一入口");

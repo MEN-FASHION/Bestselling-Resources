@@ -545,30 +545,158 @@
     return col;
   }
 
+  /* ---------- 导出打标表（支持按类目选、按类目分表） ---------- */
+  function expCols() {
+    /* 榜单导出的列里没有这三项，趋势动向要打，所以导出后按 URL 补列。
+       分表时每个工作表都要补，抽出来复用。 */
+    var modelMap = {}, chanMap = {}, waistMap = {};
+    state.items.forEach(function (r) {
+      var t = state.tagMap[r.image_url] || {};
+      if ((t.skin_tags || []).length) modelMap[r.image_url] = t.skin_tags.join("，");
+      if ((t.tags || []).length) chanMap[r.image_url] = t.tags.join("，");
+      var w = (t.fit_tags || []).filter(function (x) { return String(x).indexOf("腰型·") === 0; })
+        .map(function (x) { return String(x).split("·")[1]; });
+      if (w.length) waistMap[r.image_url] = w.join("，");
+    });
+    return { modelMap: modelMap, chanMap: chanMap, waistMap: waistMap };
+  }
+
+  function expCatCounts() {
+    var cnt = {};
+    state.items.forEach(function (r) {
+      var c = (r.category || "未分类");
+      cnt[c] = (cnt[c] || 0) + 1;
+    });
+    return cnt;
+  }
+
+  function expCheckedCats() {
+    var box = document.getElementById("mv-exp-cats");
+    if (!box) return [];
+    return Array.prototype.slice.call(box.querySelectorAll(".mv-exp-cbx"))
+      .filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+  }
+
+  function syncExpCount() {
+    var cats = expCheckedCats();
+    var n = state.items.filter(function (r) { return cats.indexOf(r.category || "未分类") >= 0; }).length;
+    var t = document.getElementById("mv-exp-cat-n");
+    if (t) t.textContent = "已选 " + cats.length + " 类 · 约 " + n + " 张";
+  }
+
+  function setAllExpCats(on) {
+    var box = document.getElementById("mv-exp-cats");
+    if (!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll(".mv-exp-cbx"), function (c) { c.checked = !!on; });
+    syncExpCount();
+  }
+
+  function openExport() {
+    if (!window.RankExport || typeof XLSX === "undefined") {
+      toast("导出模块未加载，请强刷页面", false); return;
+    }
+    if (!state.items.length) { toast("当前没有图片", false); return; }
+    var cnt = expCatCounts();
+    var names = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+    var box = document.getElementById("mv-exp-cats");
+    if (box) {
+      box.innerHTML = "";
+      names.forEach(function (c) {
+        var lab = document.createElement("label");
+        lab.className = "cz-exp-cat";
+        var cb = document.createElement("input");
+        cb.type = "checkbox"; cb.value = c; cb.className = "mv-exp-cbx";
+        cb.checked = state.curCat ? c === state.curCat : true;
+        cb.onchange = syncExpCount;
+        var sp = document.createElement("span");
+        sp.textContent = c + "（" + cnt[c] + "）";
+        lab.appendChild(cb); lab.appendChild(sp);
+        box.appendChild(lab);
+      });
+    }
+    var sc = document.getElementById("mv-exp-scope");
+    if (sc) sc.value = "all";
+    var sp = document.getElementById("mv-exp-split");
+    if (sp) sp.checked = false;
+    var g = document.getElementById("mv-exp-msg");
+    if (g) g.textContent = "";
+    syncExpCount();
+    var m = document.getElementById("mv-exp-modal");
+    if (m) m.classList.remove("hidden");
+  }
+
+  function closeExport() {
+    var m = document.getElementById("mv-exp-modal");
+    if (m) m.classList.add("hidden");
+  }
+
   async function doExport() {
     var RE = window.RankExport;
     if (!RE || typeof XLSX === "undefined") { toast("导出模块未加载，请强刷页面", false); return; }
-    if (!state.items.length) { toast("当前没有图片", false); return; }
+    var cats = expCheckedCats();
+    if (!cats.length) { toast("至少选一个类目（或点「全选」）", false); return; }
+    var scope = (document.getElementById("mv-exp-scope") || {}).value || "all";
+    var split = !!(document.getElementById("mv-exp-split") || {}).checked;
+    var rows = state.items.filter(function (r) { return cats.indexOf(r.category || "未分类") >= 0; });
+    if (!rows.length) { toast("所选类目下没有图片", false); return; }
+
+    var btn = document.getElementById("mv-exp-run");
+    if (btn) { btn.disabled = true; btn.textContent = "导出中…"; }
+    var msg = document.getElementById("mv-exp-msg");
+    if (msg) msg.textContent = "正在生成表格…";
     try {
       say("导出中…");
-      var pack = RE.buildBook(buildDetail(), state.tagMap, {});
-      var ws = pack.wb.Sheets[pack.wb.SheetNames[0]];
-      var modelMap = {}, chanMap = {}, waistMap = {};
-      state.items.forEach(function (r) {
-        var t = state.tagMap[r.image_url] || {};
-        if ((t.skin_tags || []).length) modelMap[r.image_url] = t.skin_tags.join("，");
-        if ((t.tags || []).length) chanMap[r.image_url] = t.tags.join("，");
-        var w = (t.fit_tags || []).filter(function (x) { return String(x).indexOf("腰型·") === 0; })
-          .map(function (x) { return String(x).split("·")[1]; });
-        if (w.length) waistMap[r.image_url] = w.join("，");
+      var detail = rows.map(function (r) {
+        return { image_url: r.image_url, category: r.category || "", period_label: r.season_label || "" };
       });
-      appendCol(ws, "模特", modelMap);
-      appendCol(ws, "腰型", waistMap);
-      appendCol(ws, "渠道", chanMap);
-      XLSX.writeFile(pack.wb, "趋势动向-打标表-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + ".xlsx");
-      say("已导出 " + state.items.length + " 张");
+      var extra = expCols();
+      var total = 0, sheets = 0;
+      var fname = "趋势动向-打标表-" +
+        (cats.length === 1 ? String(cats[0]).replace(/[:\\\/\?\*\[\]]/g, "-") + "-" : "") +
+        new Date().toISOString().slice(0, 10).replace(/-/g, "") + ".xlsx";
+
+      if (!split) {
+        var pack = RE.buildBook(detail, state.tagMap, { scope: scope });
+        /* 用 picked（真正写进表的张数），total 只是这批图有多少张 */
+        total = (pack.stats && pack.stats.picked) || 0;
+        if (!total) {
+          if (msg) msg.textContent = "所选范围里没有符合条件的图（可能是打标范围太窄）";
+          toast("所选范围里没有符合条件的图", false); return;
+        }
+        var ws = pack.wb.Sheets[pack.wb.SheetNames[0]];
+        appendCol(ws, "模特", extra.modelMap);
+        appendCol(ws, "腰型", extra.waistMap);
+        appendCol(ws, "渠道", extra.chanMap);
+        XLSX.writeFile(pack.wb, fname);
+      } else {
+        var sp = RE.buildBookSplit(detail, state.tagMap, { scope: scope });
+        total = sp.total; sheets = sp.sheets;
+        if (!total) {
+          if (msg) msg.textContent = "所选范围里没有符合条件的图（可能是打标范围太窄）";
+          toast("所选范围里没有符合条件的图", false); return;
+        }
+        /* 分表时每个工作表都要补上趋势动向自己的三列 */
+        sp.wb.SheetNames.forEach(function (nm) {
+          if (nm === "枚举参考") return;
+          appendCol(sp.wb.Sheets[nm], "模特", extra.modelMap);
+          appendCol(sp.wb.Sheets[nm], "腰型", extra.waistMap);
+          appendCol(sp.wb.Sheets[nm], "渠道", extra.chanMap);
+        });
+        XLSX.writeFile(sp.wb, fname);
+      }
+
+      var line = "已导出 " + total + " 张" + (split ? " · " + sheets + " 个类目分表" : "");
+      if (msg) msg.textContent = line;
+      say(line);
+      toast("已导出 " + total + " 张", true);
+      closeExport();
     } catch (e) {
-      say("导出失败：" + ((e && e.message) || "未知错误"));
+      var why = (e && e.message) || "未知错误";
+      if (msg) msg.textContent = "导出失败：" + why;
+      say("导出失败：" + why);
+      toast("导出失败，请重试", false);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "导出"; }
     }
   }
 
@@ -748,7 +876,17 @@
     var vc = document.getElementById("mv-vis-close");
     if (vc) vc.onclick = closeVis;
     var ex = document.getElementById("mv-export-btn");
-    if (ex) ex.onclick = doExport;
+    if (ex) ex.onclick = openExport;
+    var eall = document.getElementById("mv-exp-all");
+    if (eall) eall.onclick = function () { setAllExpCats(true); };
+    var enone = document.getElementById("mv-exp-none");
+    if (enone) enone.onclick = function () { setAllExpCats(false); };
+    var erun = document.getElementById("mv-exp-run");
+    if (erun) erun.onclick = doExport;
+    var ecls = document.getElementById("mv-exp-close");
+    if (ecls) ecls.onclick = closeExport;
+    var emsk = document.getElementById("mv-exp-modal");
+    if (emsk) emsk.onclick = function (e) { if (e.target === emsk) closeExport(); };
     var sv = document.getElementById("mv-tag-save");
     if (sv) sv.onclick = saveTag;
     var dl = document.getElementById("mv-tag-del");

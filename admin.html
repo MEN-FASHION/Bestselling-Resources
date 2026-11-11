@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261111U">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261111U">
+<link rel="stylesheet" href="css/style.css?v=20261111X">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261111X">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -639,9 +639,16 @@
               <button id="imgpool-selnone" class="btn-ghost" type="button">取消全选</button>
               <button id="imgpool-compress" class="btn-primary" type="button" disabled>压缩选中(0)</button>
               <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压全部</button>
+              <button id="imgpool-webp" class="btn-ghost" type="button" disabled>转WebP选中(0)</button>
+              <button id="imgpool-webp-all" class="btn-ghost" type="button">全部转WebP</button>
             </span>
             <span id="imgpool-stat" class="imgpool-stat">-</span>
           </div>
+          <p class="hint-inline" style="margin:6px 0 2px;line-height:1.7">
+            本池只统计<strong>本站存储里</strong>的图（视觉专区图 + 各专区/Pinterest/SHEIN 上传的图）。
+            榜单里带的是<strong>外部图片链接</strong>（第三方平台的首图地址），文件不在本站存储，因此不出现在这里、也无法压缩——
+            如果想让它加载更快，只能重新上传成本站图片。
+          </p>
           <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
           <div class="imgpool-pools" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="smart-pool" id="imgpool-pool-done" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
@@ -1629,6 +1636,39 @@
       </div>
     </div>
 
+    <!-- 导出打标表：可选一个或多个类目，可按类目分表（每个类目一个工作表） -->
+    <div id="mv-exp-modal" class="modal-mask hidden">
+      <div class="modal cz-exp-modal">
+        <div class="mv-tag-head">
+          <h3>趋势动向 · 导出打标表</h3>
+          <span class="hint-inline">按「图片URL」一列导回，改完可直接导入</span>
+        </div>
+        <div class="cz-batch-body">
+          <div class="cz-exp-row">
+            <span class="cz-exp-label">类目</span>
+            <button id="mv-exp-all" class="btn-ghost cz-mini" type="button">全选</button>
+            <button id="mv-exp-none" class="btn-ghost cz-mini" type="button">清空</button>
+            <span id="mv-exp-cat-n" class="hint-inline"></span>
+          </div>
+          <div id="mv-exp-cats" class="cz-exp-cats"></div>
+          <label class="cz-batch-field"><span>打标范围</span>
+            <select id="mv-exp-scope" class="input">
+              <option value="all">全部（含已打标）</option>
+              <option value="todo">仅未打标</option>
+              <option value="partial">仅打标不完整</option>
+              <option value="done">仅已打标</option>
+            </select>
+          </label>
+          <label class="cz-row-all"><input id="mv-exp-split" type="checkbox"><span> 按类目分表（每类一个工作表）</span></label>
+          <p id="mv-exp-msg" class="cz-batch-tip"></p>
+        </div>
+        <div class="mtag-actions">
+          <button id="mv-exp-run" class="btn-primary" type="button">导出</button>
+          <button id="mv-exp-close" class="btn-ghost" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+
       <!-- 数据导出（仅管理员）：与前台一致的筛选栏 + 导出 Excel -->
       
     </main>
@@ -1823,43 +1863,43 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261111U"></script>
-  <script src="vendor/quill.js?v=20261111U"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261111U"></script>
-  <script src="vendor/jszip.min.js?v=20261111U"></script>
-  <script src="vendor/qrcode.min.js?v=20261111U"></script>
-  <script src="js/config.js?v=20261111U"></script>
-  <script src="js/supabase.js?v=20261111U"></script>
-  <script src="js/track-menu.js?v=20261111U"></script>
+  <script src="vendor/supabase.js?v=20261111X"></script>
+  <script src="vendor/quill.js?v=20261111X"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261111X"></script>
+  <script src="vendor/jszip.min.js?v=20261111X"></script>
+  <script src="vendor/qrcode.min.js?v=20261111X"></script>
+  <script src="js/config.js?v=20261111X"></script>
+  <script src="js/supabase.js?v=20261111X"></script>
+  <script src="js/track-menu.js?v=20261111X"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261111U"></script>
-  <script src="js/admin.js?v=20261111U"></script>
-  <script src="js/admin-images.js?v=20261111U"></script>
-  <script src="js/rank-enums.js?v=20261111U"></script>
-  <script src="js/imageexport.js?v=20261111U"></script>
-  <script src="js/admin-imageimport.js?v=20261111U"></script>
-  <script src="js/admin-movement.js?v=20261111U"></script>
-  <script src="js/admin-smart.js?v=20261111U"></script>
-  <script src="js/admin-trend.js?v=20261111U"></script>
-  <script src="js/admin-notice.js?v=20261111U"></script>
-  <script src="js/marketing-data.js?v=20261111U"></script>
-  <script src="js/admin-festival.js?v=20261111U"></script>
-  <script src="js/admin-tasks.js?v=20261111U"></script>
-  <script src="js/admin-bestseller.js?v=20261111U"></script>
-  <script src="js/ipgeo.js?v=20261111U"></script>
-  <script src="js/admin-perm.js?v=20261111U"></script>
-  <script src="js/admin-pool.js?v=20261111U"></script>
-  <script src="js/rankexport.js?v=20261111U"></script>
-  <script src="js/admin-rankimport.js?v=20261111U"></script>
-<script src="js/admin-channelzone.js?v=20261111U"></script>
-<script src="js/admin-compare.js?v=20261111U"></script>
-  <script src="js/admin-rank.js?v=20261111U"></script>
-  <script src="js/admin-rhythm.js?v=20261111U"></script>
-  <script src="js/plus-sb.js?v=20261111U"></script>
-  <script src="js/plus-match.js?v=20261111U"></script>
-  <script src="js/admin-plus.js?v=20261111U"></script>
-  <script src="js/admin-insight.js?v=20261111U"></script>
-  <script src="js/admin-backup.js?v=20261111U"></script>
+  <script src="js/admin-dialog.js?v=20261111X"></script>
+  <script src="js/admin.js?v=20261111X"></script>
+  <script src="js/admin-images.js?v=20261111X"></script>
+  <script src="js/rank-enums.js?v=20261111X"></script>
+  <script src="js/imageexport.js?v=20261111X"></script>
+  <script src="js/admin-imageimport.js?v=20261111X"></script>
+  <script src="js/admin-movement.js?v=20261111X"></script>
+  <script src="js/admin-smart.js?v=20261111X"></script>
+  <script src="js/admin-trend.js?v=20261111X"></script>
+  <script src="js/admin-notice.js?v=20261111X"></script>
+  <script src="js/marketing-data.js?v=20261111X"></script>
+  <script src="js/admin-festival.js?v=20261111X"></script>
+  <script src="js/admin-tasks.js?v=20261111X"></script>
+  <script src="js/admin-bestseller.js?v=20261111X"></script>
+  <script src="js/ipgeo.js?v=20261111X"></script>
+  <script src="js/admin-perm.js?v=20261111X"></script>
+  <script src="js/admin-pool.js?v=20261111X"></script>
+  <script src="js/rankexport.js?v=20261111X"></script>
+  <script src="js/admin-rankimport.js?v=20261111X"></script>
+<script src="js/admin-channelzone.js?v=20261111X"></script>
+<script src="js/admin-compare.js?v=20261111X"></script>
+  <script src="js/admin-rank.js?v=20261111X"></script>
+  <script src="js/admin-rhythm.js?v=20261111X"></script>
+  <script src="js/plus-sb.js?v=20261111X"></script>
+  <script src="js/plus-match.js?v=20261111X"></script>
+  <script src="js/admin-plus.js?v=20261111X"></script>
+  <script src="js/admin-insight.js?v=20261111X"></script>
+  <script src="js/admin-backup.js?v=20261111X"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

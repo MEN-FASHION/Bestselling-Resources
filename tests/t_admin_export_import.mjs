@@ -1,4 +1,4 @@
-/* 20261111U · 专区后台「导出 / 导入打标表」
+/* 20261111X · 专区后台「导出 / 导入打标表」
  *
  * 背景（真实故障）：后台点「导出打标表」提示「导出模块未加载，请强刷页面」，
  * 强刷也没用。原因是 rankexport.js 结尾导出清单里引用了一个已经不存在的函数，
@@ -85,9 +85,9 @@ ok(!/\bhitChannel\s*[,}]/.test(expList), "导出清单不应再引用已下线�
  * 用默认值会导出一张只有表头的空表（用户看到的「导出没反应」）。 */
 const exFn = AD_SRC_SAFE();
 function AD_SRC_SAFE() { return fs.readFileSync(path.join(ROOT, "js/admin-channelzone.js"), "utf8"); }
-ok(/buildBook\(detail, st\.tagMap, \{ scope: "all" \}\)/.test(exFn), "专区导出必须显式指定 scope=all，否则空表");
-ok(/当前筛选下没有可导出的图/.test(exFn), "无可导出内容时应提示，而不是下载一张只有表头的空表");
-ok(/已导出 " \+ pack\.stats\.total/.test(exFn), "导出结果应报实际张数");
+ok(/\{ scope: scope \}/.test(exFn) || /scope: "all"/.test(exFn), "专区导出必须显式传打标范围（默认不能落到「仅未打标」）");
+ok(/所选范围里没有符合条件的图/.test(exFn), "无可导出内容时应提示，而不是下载一张只有表头的空表");
+ok(/pack\.stats\.picked/.test(exFn), "导出张数应取 stats.picked（真正写进表的数量），不能取 total");
 
 /* 实测：两张图（一张部分打标、一张未打标）在 scope=all 下都要出现 */
 if (sb.window.RankExport) {
@@ -140,10 +140,12 @@ ok(/async function runImport\(k\) \{[\s\S]{0,260}guardZone/.test(AD), "导入必
 ok(/function openImport\(k\) \{[\s\S]{0,400}RankTagImport/.test(AD), "导入入口应检查模块可用性，缺失时提示而非静默");
 
 /* ---------- 7. 导出报错区分真实原因 ---------- */
-const expFn = AD.slice(AD.indexOf("async function doExport"), AD.indexOf("async function doExport") + 900);
-ok(/if \(!RE\)/.test(expFn), "导出应先判断导出模块是否可用");
-ok(/typeof XLSX === "undefined"/.test(expFn), "导出应单独判断表格组件");
-ok(/表格组件未加载/.test(expFn), "缺表格组件时的提示要与「模块未加载」区分开");
+/* 专区的导出入口现在是弹窗 + 执行两段，两段都要做前置判断 */
+const openFn = AD.slice(AD.indexOf("function openExport(k)"), AD.indexOf("function openExport(k)") + 700);
+const runFn2 = AD.slice(AD.indexOf("async function runExport(k)"), AD.indexOf("async function runExport(k)") + 700);
+ok(/if \(!window\.RankExport\)/.test(openFn) && /if \(!RE\)/.test(runFn2), "导出应先判断导出模块是否可用");
+ok(/typeof XLSX === "undefined"/.test(openFn) && /typeof XLSX === "undefined"/.test(runFn2), "导出应单独判断表格组件");
+ok(/表格组件未加载/.test(openFn), "缺表格组件时的提示要与「模块未加载」区分开");
 
 /* 后台必须真的引用了这两个脚本（否则上面的入口都是死的） */
 const ADMIN = read("admin.html");
@@ -160,6 +162,63 @@ const iCZ = scriptOrder("admin-channelzone.js");
 ok(iExp > 0 && iImp > 0 && iCZ > 0, "admin.html 缺少脚本引用（rankexport / admin-rankimport / admin-channelzone）");
 ok(iExp < iCZ, "rankexport.js 必须在 admin-channelzone.js 之前加载（专区导出依赖它）");
 ok(iImp < iCZ, "admin-rankimport.js 必须在 admin-channelzone.js 之前加载");
+
+/* ---------- 8. 按类目导出（20261111X） ---------- */
+const AD2 = read("js/admin-channelzone.js");
+const MV = read("js/admin-movement.js");
+const ADMIN2 = read("admin.html");
+
+/* 专区：导出改为弹窗，能选一个或多个类目 */
+ok(/function exportModalHtml\(z\)/.test(AD2), "专区缺少导出弹窗（按类目导出没有入口）");
+ok(/cz-exp-cbx/.test(AD2), "导出弹窗缺少类目勾选");
+ok(/全选/.test(AD2) && /function setAllExpCats/.test(AD2), "导出弹窗缺少类目全选/清空");
+ok(/id="' \+ id\(k, "exp-split"\)/.test(AD2) && /按类目分表/.test(AD2), "导出弹窗缺少「按类目分表」选项");
+ok(/id="' \+ id\(k, "exp-scope"\)/.test(AD2), "导出弹窗缺少打标范围选择");
+ok(/id="' \+ id\(k, "exp-month"\)/.test(AD2), "导出弹窗缺少月份筛选");
+ok(/buildBookSplit\(detailOf\(base\)/.test(AD2), "分表导出应调用 buildBookSplit");
+ok(/至少选一个类目/.test(AD2), "一个类目都不选时应提示，而不是导出全部");
+ok(/cats\.length === 1 \? String\(cats\[0\]\).*\+ "-" : ""/.test(AD2), "单类目导出时文件名应带上类目名");
+
+/* 上新节奏：同样支持按类目选 + 分表 */
+ok(/mv-exp-cats/.test(ADMIN2) && /mv-exp-split/.test(ADMIN2), "趋势动向导出弹窗未接入 admin.html");
+ok(/function expCheckedCats\(\)/.test(MV), "趋势动向缺少类目勾选读取");
+ok(/buildBookSplit\(detail, state\.tagMap/.test(MV), "趋势动向分表导出应调用 buildBookSplit");
+ok(/sp\.wb\.SheetNames\.forEach/.test(MV) && /appendCol\(sp\.wb\.Sheets\[nm\]/.test(MV),
+  "趋势动向分表时每个工作表都要补「模特/腰型/渠道」三列");
+ok(/stats\.picked/.test(MV), "趋势动向导出张数应取 stats.picked");
+
+/* 导出模块：分表实现 ---------- */
+const REX = read("js/rankexport.js");
+ok(/function buildBookSplit\(detail, tagMap, opts\)/.test(REX), "导出模块缺少 buildBookSplit");
+ok(/buildBookSplit: buildBookSplit/.test(REX), "buildBookSplit 未对外暴露（界面调不到）");
+ok(/function safeSheetName\(name, used\)/.test(REX), "缺少工作表名清洗（Excel 禁 : \\ / ? * [ ]，31 字上限）");
+ok(/replace\(/g.test(REX), "工作表名应清洗非法字符");
+ok(/while \(used\[s\]\)/.test(REX), "重名工作表应自动加序号，否则同名类目会覆盖");
+ok(/p\.stats\.picked/.test(REX), "分表应把「范围过滤后为空」的类目跳过（用 picked 判断）");
+ok(/枚举参考/.test(REX), "分表应附一张枚举参考");
+
+/* 实测：两个类目 → 两个工作表 + 枚举参考，空类目不出表 */
+if (sb.window.RankExport && sb.window.RankExport.buildBookSplit) {
+  const detail = [
+    { image_url: "https://x/a.jpg", category: "T恤", period_label: "2026-11" },
+    { image_url: "https://x/b.jpg", category: "T恤", period_label: "2026-11" },
+    { image_url: "https://x/c.jpg", category: "裤装/长裤", period_label: "2026-11" },
+  ];
+  const tags = { "https://x/a.jpg": { style_tags: ["街头潮流"] }, "https://x/b.jpg": {}, "https://x/c.jpg": {} };
+  const r1 = sb.window.RankExport.buildBookSplit(detail, tags, { scope: "all" });
+  ok(r1.sheets === 2 && r1.total === 3, "分表结果应为 2 类 3 张（实际 " + r1.sheets + " 类 " + r1.total + " 张）");
+  ok(r1.wb.SheetNames.includes("枚举参考"), "分表缺少「枚举参考」工作表");
+  ok(r1.wb.SheetNames.includes("裤装-长裤"), "工作表名应清洗非法字符（/ → -）");
+  const aoa = sb.XLSX.utils.sheet_to_json(r1.wb.Sheets["T恤"], { header: 1 });
+  ok(aoa.length === 3, "T恤 表应为表头 + 2 行，实际 " + aoa.length);
+  ok(aoa[0][0] === "图片URL", "分表首列仍须是「图片URL」（导回时按地址匹配）");
+
+  const r2 = sb.window.RankExport.buildBookSplit(detail, tags, { scope: "done" });
+  ok(r2.sheets === 0 && r2.total === 0, "打标范围过滤后全空时，不应生成任何工作表（实际 " + r2.sheets + " 个）");
+  ok(r2.emptyCats.length === 2, "被跳过的类目应记录在 emptyCats，供界面提示");
+} else {
+  ok(false, "buildBookSplit 不可用，无法验证按类目分表");
+}
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 if (fail) process.exit(1);
