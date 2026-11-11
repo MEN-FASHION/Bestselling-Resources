@@ -855,20 +855,7 @@
         catch (e) { sbToast("删除失败", false); }
       };
 
-      /* 设渠道（20261109D）：不直接改数据，只把上面的「批量补渠道」填好——
-         改数据是批量动作，得让人先看到范围再确认，别点一下就动几百条。 */
-      const setch = document.createElement("button");
-      setch.type = "button"; setch.className = "btn-ghost small"; setch.textContent = "设渠道";
-      setch.onclick = () => {
-        const ms = $("#rm-fixch-month"), cs = $("#rm-fixch-cat"), chs = $("#rm-fixch-channel"), t = $("#rm-fixch-tip");
-        if (ms) ms.value = b.period_label || "";
-        if (cs) cs.value = b.category || "";
-        if (chs) { try { chs.focus(); } catch (e) {} }
-        if (t) t.textContent = "已带入：月度 " + (b.period_label || "") + (b.category ? " · " + b.category : " · 全部类目") + "，填好渠道名再点「补上渠道」";
-        try { document.querySelector("#rm-fixch-channel").scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
-      };
-
-      act.appendChild(setch); act.appendChild(ren); act.appendChild(del);
+      act.appendChild(ren); act.appendChild(del);
       row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });
@@ -1007,11 +994,7 @@
     if (!rankPv.site && rankSites.length) rankPv.site = rankSites[0].name;
     fillRankPvControls();
     rankPreviewRefresh();
-    /* 其他渠道传图：渠道清单 / 类目下拉 / 已传列表（和榜单数据互不影响） */
-    await loadChChannels();
-    fillChCatSelects();
     await fillTagExportSelects();
-    await loadChList();
   }
 
   /* ---------- 事件绑定（script 顺序保证本文件在 admin.js 之后加载） ---------- */
@@ -1086,82 +1069,6 @@
     if (refresh) refresh.onclick = async () => { await enterRhythmPanel(); sbToast("已刷新", true); };
   }
 
-  /* ============================================================
-   * 其他渠道传图（20261109A）
-   * ------------------------------------------------------------
-   * 这些渠道（Pinterest / SHEIN / 淘宝…）只有图：没有环比、没有销量、
-   * 也没有国家归属。写入 rank_items 时 channel 非空、site 留空，
-   * 因此它们只出现在前台的「横向 · 渠道对比」，不会混进国家 / 时间 / 类目对比，
-   * 也不会被「覆盖导入」清掉（覆盖只清站点维度的榜单数据）。
-   * ============================================================ */
-  let rmChPending = [];      // 待传：[{file}]
-  let rmChList = [];         // 已传：最近 400 条
-
-  function rmChMonth() {
-    const el = $("#rm-ch-month");
-    return (el && el.value || "").trim();
-  }
-  function rmChSetMsg(txt, ok) {
-    const el = $("#rm-ch-msg");
-    if (el) el.textContent = txt || "";
-    if (txt && ok === false) sbToast(txt, false);
-  }
-
-  /* 渠道候选（20261109E）：字典（默认 Pinterest / SHEIN / Amazon，可增删）∪ 历史用过的名字。
-     下拉只是"候选"，真正的列由数据决定 —— 没有图的渠道前台不会出现空列。 */
-  async function loadChChannels() {
-    /* 先走一遍 refreshChDict：首次会把默认三个渠道灌进字典，同时铺好候选 datalist */
-    let names = [];
-    try { names = await refreshChDict(); } catch (e) { names = []; }
-    const fsel = $("#rm-ch-filter-ch");
-    if (fsel) {
-      const keep = fsel.value;
-      fsel.innerHTML = '<option value="">全部渠道</option>' +
-        names.map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
-      if (keep && names.indexOf(keep) >= 0) fsel.value = keep;
-    }
-    return names;
-  }
-
-  /* 「已配置渠道」小标签，每个带一个 × */
-  function renderChDict() {
-    const box = $("#rm-ch-dict");
-    if (!box) return;
-    const dict = rmChDict || [];
-    if (!dict.length) { box.innerHTML = '<span class="hint-inline">（还没有渠道，点右边「新增渠道」）</span>'; return; }
-    box.innerHTML = dict.map((n) =>
-      '<span class="rk-ch-chip">' + escHtml(n) +
-      '<button type="button" class="rk-ch-del" data-ch="' + escAttr(n) + '" title="从候选里删掉（不影响已传的图）">×</button></span>'
-    ).join("");
-    Array.prototype.forEach.call(box.querySelectorAll(".rk-ch-del"), (b) => {
-      b.onclick = async () => {
-        const name = b.getAttribute("data-ch") || "";
-        if (!name) return;
-        if (!confirm("从候选里删掉渠道「" + name + "」？\n已传的图不受影响，仍归在「" + name + "」下。")) return;
-        try {
-          await SB.deleteRankChannel(name);
-          await refreshChDict();
-          sbToast("已删除渠道「" + name + "」", true);
-        } catch (e) { sbToast((e && e.message) || "删除失败", false); }
-      };
-    });
-  }
-
-  /* 重读字典（默认值只在第一次灌，删掉后不会自己回来） */
-  async function refreshChDict() {
-    try { rmChDict = await SB.ensureRankChannelDefaults(); } catch (e) { rmChDict = []; }
-    renderChDict();
-    const dl = $("#rm-ch-channel-list");
-    let names = rmChDict.slice();
-    try {
-      const used = await SB.listRankChannelNames();
-      used.forEach((n) => { if (n && names.indexOf(n) < 0) names.push(n); });
-    } catch (e) { /* 忽略 */ }
-    if (dl) dl.innerHTML = names.map((n) => '<option value="' + escAttr(n) + '"></option>').join("");
-    return names;
-  }
-
-  /* 月度打标表导出区（20261109C）：类目 / 来源两个下拉，进面板时按库里实际有的值铺一遍 */
   async function fillTagExportSelects() {
     /* 期次（月份）下拉：只列库里真有月度数据的月份，新的在前 */
     const per = $("#rm-tag-period");
@@ -1181,17 +1088,6 @@
       cat.innerHTML = '<option value="">全部类目</option>' +
         (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
       if (keep && (rankCats || []).indexOf(keep) >= 0) cat.value = keep;
-    }
-    const ch = $("#rm-tag-channel");
-    if (ch) {
-      const keepCh = ch.value;
-      let names = [];
-      try { names = await SB.listRankChannelNames(); } catch (e) { names = []; }
-      ch.innerHTML = '<option value="">全部（榜单图 + 所有渠道）</option>'
-        + '<option value="__rank">仅榜单表格导入的图</option>'
-        + '<option value="__chonly">仅其他渠道传的图</option>'
-        + names.map((n) => '<option value="ch:' + escAttr(n) + '">仅渠道：' + escHtml(n) + '</option>').join("");
-      if (keepCh && Array.prototype.some.call(ch.options, (o) => o.value === keepCh)) ch.value = keepCh;
     }
   }
 
@@ -1217,347 +1113,15 @@
         say("按当前范围没有可导出的图（月度共 " + r.stats.total + " 张：未打标 " + r.stats.todo
           + " / 部分 " + r.stats.partial + " / 已打标 " + r.stats.done + "）");
       } else if (r && r.reason === "empty") {
-        say("库里还没有月度图，先上传或传渠道图");
+        say("库里还没有月度图，先上传月度数据");
       } else {
         say("导出失败，请重试");
       }
     }, () => { say("导出失败，请重试"); });
   }
 
-  function fillChCatSelects() {
-    const sel = $("#rm-ch-cat");
-    if (sel && !sel.options.length) {
-      sel.innerHTML = '<option value="">请选择类目…</option>' +
-        (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
-    }
-    const fsel = $("#rm-ch-filter-cat");
-    if (fsel) {
-      const keep = fsel.value;
-      fsel.innerHTML = '<option value="">全部类目</option>' +
-        (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
-      if (keep && (rankCats || []).indexOf(keep) >= 0) fsel.value = keep;
-    }
-    /* 类目下拉跟榜单上传保持同一偏好：默认选当前榜单类目，省得两边不一致 */
-    if (sel && !sel.value) {
-      const c = ($("#rm-cat") && $("#rm-cat").value || "").trim();
-      if (c) sel.value = c;
-    }
-    /* 批量补渠道的类目 / 月份下拉（20261109D） */
-    const fcat = $("#rm-fixch-cat");
-    if (fcat) {
-      const keepc = fcat.value;
-      fcat.innerHTML = '<option value="">全部类目</option>' +
-        (rankCats || []).map((n) => '<option value="' + escAttr(n) + '">' + escHtml(n) + '</option>').join("");
-      if (keepc && (rankCats || []).indexOf(keepc) >= 0) fcat.value = keepc;
-    }
-    fillFixChMonths();
-    /* 顺带拉一次库里真实存在的月份：老数据没有批次记录时，月份下拉也选得到 */
-    if (!itemMonths.length && typeof SB.listRankLabels === "function") {
-      SB.listRankLabels("month").then((ms) => {
-        itemMonths = (ms || []).slice();
-        fillFixChMonths();
-      }).catch(() => {});
-    }
-  }
-
-  /* 月份下拉：只列库里真正有月度数据的月份（周度不会混进来）。
-     合并两个来源：批次台账 + 条目里实际出现的月份 —— 老数据没有批次记录也能选到。 */
-  function fillFixChMonths() {
-    const sel = $("#rm-fixch-month");
-    if (!sel) return;
-    const keep = sel.value;
-    const bag = {};
-    (rankPeriods || []).forEach((p) => { if (p && p.type === "month" && p.label) bag[String(p.label)] = 1; });
-    (itemMonths || []).forEach((m) => { if (m) bag[String(m)] = 1; });
-    const months = Object.keys(bag).sort((a, b) => admPeriodKey(b) - admPeriodKey(a));
-    sel.innerHTML = months.map((m) => '<option value="' + escAttr(m) + '">' + escHtml(m) + '</option>').join("")
-      || '<option value="">（库里还没有月度数据）</option>';
-    if (keep && months.indexOf(keep) >= 0) sel.value = keep;
-  }
-
-  /* 读「批量补渠道」表单 */
-  function fixChOpts() {
-    const month = ($("#rm-fixch-month") && $("#rm-fixch-month").value || "").trim();
-    const cat = ($("#rm-fixch-cat") && $("#rm-fixch-cat").value || "").trim();
-    const ch = ($("#rm-fixch-channel") && $("#rm-fixch-channel").value || "").trim();
-    const onlyEmpty = !!($("#rm-fixch-onlyempty") && $("#rm-fixch-onlyempty").checked);
-    return { periodType: "month", periodLabel: month, category: cat, channel: ch, onlyEmpty: onlyEmpty };
-  }
-
-  /* 补渠道 / 清空归属 —— 两处共用：都是「按月份+类目整片改 channel」 */
-  async function applyFixChannel(mode) {
-    const o = fixChOpts();
-    const tip = $("#rm-fixch-tip");
-    const say = (t) => { if (tip) tip.textContent = t || ""; };
-    if (!o.periodLabel) { sbToast("请先选月份（库里还没有月度数据？）", false); return; }
-    if (mode === "set" && !o.channel) { sbToast("请填写要补的渠道名", false); return; }
-    const target = (mode === "set") ? o.channel : "";
-    try {
-      const n = await SB.countRankItemsChannelSlot(o);
-      if (!n) {
-        say("这个范围里没有可改的条目" + (o.onlyEmpty ? "（可能都已有渠道了）" : ""));
-        // 0 条最容易让人以为「点了没反应」，这里直接把原因摊开
-        await runFixChannelDiag(o);
-        return;
-      }
-      const scope = o.periodLabel + (o.category ? " · " + o.category : " · 全部类目");
-      const what = (mode === "set")
-        ? ("把这 " + n + " 条设为渠道「" + target + "」")
-        : ("把这 " + n + " 条的渠道清空（退回「本站榜单」列）");
-      if (!confirm("即将" + what + "\n范围：" + scope + (o.onlyEmpty ? "\n只改尚未设渠道的条目" : "\n包含已有渠道的条目（会被覆盖）") + "\n\n确定执行？")) return;
-      say("正在修改…");
-      const done = await SB.setRankItemsChannelSlot(o, target);
-      say("已修改 " + done + " 条");
-      sbToast("已修改 " + done + " 条" + (target ? "（渠道：" + target + "）" : "（已清空归属）"), true);
-      await loadChChannels();
-      await loadChList();
-      await fillTagExportSelects();
-    } catch (e) {
-      say("修改失败，请重试");
-      sbToast((e && e.message) || "修改失败", false);
-    }
-  }
-
-  /* 自检：把「为什么改不动」拆成能看懂的数字，只做计数不写数据 */
-  async function runFixChannelDiag(o) {
-    const box = $("#rm-fixch-diag");
-    if (!box) return;
-    box.style.display = "block";
-    box.textContent = "自检中…";
-    let d = null;
-    try { d = await SB.diagnoseChannelSlot(o || fixChOpts()); } catch (e) { d = null; }
-    if (!d) {
-      box.textContent = "自检失败：这次请求本身没走通（网络被拦或数据库拒绝）。请把浏览器控制台里 rank_items 那条请求的返回内容发给开发。";
-      return;
-    }
-    const lines = [];
-    lines.push("① 渠道列（rank_items.channel）：" + (d.hasColumn ? "已存在 ✓（归属存在该列里）" : "不存在 → 已自动改用字典存储 ✓"));
-    if (!d.hasColumn) {
-      lines.push("   说明：这一列还没加，系统已自动把渠道归属存到配置档里（图片地址 → 渠道名），");
-      lines.push("         补渠道 / 渠道传图 / 前台渠道对比 都照常可用，不需要跑 SQL。");
-      lines.push("   可选：想改成列存储（数据量再大也更稳），执行 sql/patch_20261110C_channel_and_tagdefs.sql 后刷新本页即可，已归属的会继续生效。");
-    }
-    const wantLabel = (o && o.periodLabel) || "";
-    lines.push("② 本月（" + wantLabel + "）总条目：" + d.monthTotal + " 条"
-      + (d.matchedLabel && d.matchedLabel !== wantLabel ? "（实际写法是「" + d.matchedLabel + "」，已自动兼容）" : ""));
-    lines.push("③ 其中渠道为空（null）：" + d.emptyNull + " 条");
-    lines.push("④ 其中渠道为空（空字符串）：" + d.emptyStr + " 条");
-    lines.push("⑤ 其中已有渠道：" + d.filled + " 条");
-    const empty = d.emptyNull + d.emptyStr;
-    lines.push("");
-    if (!d.monthTotal) {
-      lines.push("结论：这个月份下一条条目都没有 —— 月份选错了，或这批数据是用别的期次格式存进来的。");
-      lines.push("处理：换一个月份再看；若所有月份都是 0，说明月度数据还没导入成功。");
-    } else if (!empty) {
-      lines.push("结论：这个月份下的条目都已经有渠道了，勾着「只改尚未设渠道的」自然改不到。");
-      lines.push("处理：取消勾选「只改尚未设渠道的」再点「补上渠道」（会覆盖已有归属）。");
-    } else if (o && o.category) {
-      lines.push("结论：不选类目时有 " + empty + " 条。你当前限定在「" + o.category + "」，那一类可能一条都没有。");
-      lines.push("处理：类目改回「全部类目」再试。");
-    } else {
-      lines.push("结论：范围内有 " + empty + " 条可补，但仍改不动 —— 多半是数据库的写入权限（RLS）不允许更新这些行。");
-      lines.push("处理：用数据库管理员账号执行 select * from pg_policies where tablename='rank_items'; 看是否有 update 策略。");
-    }
-    box.textContent = lines.join("\n");
-  }
-
-  function bindFixChannelCheck() {
-    const b = $("#rm-fixch-check");
-    if (!b || b.__bound) return;
-    b.__bound = true;
-    b.onclick = () => runFixChannelDiag(fixChOpts());
-  }
-
-  let rmChDict = [];
-
-  function renderChPending() {
-    const box = $("#rm-ch-pending");
-    const btn = $("#rm-ch-upload");
-    const tip = $("#rm-ch-tip");
-    if (btn) { btn.disabled = rmChPending.length === 0; btn.textContent = "上传（" + rmChPending.length + "）"; }
-    if (tip) tip.textContent = rmChPending.length ? "共 " + rmChPending.length + " 张待传" : "";
-    if (!box) return;
-    if (!rmChPending.length) { box.innerHTML = ""; return; }
-    box.innerHTML = rmChPending.map((it, i) =>
-      '<span class="mv-pend-item"><img src="' + escAttr(it.preview || "") + '" alt="">'
-      + '<button type="button" data-chrm="' + i + '" title="移出待传">×</button></span>'
-    ).join("");
-    Array.prototype.forEach.call(box.querySelectorAll("[data-chrm]"), (b) => {
-      b.onclick = () => {
-        const i = parseInt(b.getAttribute("data-chrm"), 10);
-        if (rmChPending[i] && rmChPending[i].preview) URL.revokeObjectURL(rmChPending[i].preview);
-        rmChPending.splice(i, 1);
-        renderChPending();
-      };
-    });
-  }
-
-  function addChFiles(files) {
-    const list = Array.from(files || []).filter((f) => f && /^image\//i.test(f.type || ""));
-    if (!list.length) return;
-    list.forEach((f) => rmChPending.push({ file: f, preview: URL.createObjectURL(f) }));
-    renderChPending();
-  }
-
-  async function uploadChPending() {
-    const month = rmChMonth();
-    const channel = ($("#rm-ch-channel") && $("#rm-ch-channel").value || "").trim();
-    const category = ($("#rm-ch-cat") && $("#rm-ch-cat").value || "").trim();
-    if (!month) { sbToast("请先选月份", false); return; }
-    if (!channel) { sbToast("请先填渠道名（如 Pinterest）", false); return; }
-    if (!category) { sbToast("请先选类目", false); return; }
-    if (!rmChPending.length) return;
-
-    const btn = $("#rm-ch-upload");
-    const bar = $("#rm-ch-progress");
-    const fill = $("#rm-ch-progress-bar");
-    if (btn) btn.disabled = true;
-    if (bar) bar.classList.remove("hidden");
-    let done = 0;
-    const total = rmChPending.length;
-    const setPct = () => { if (fill) fill.style.width = Math.round((done / total) * 100) + "%"; };
-    setPct();
-
-    /* 逐张串行：R2 上传 + 写库，单张失败不影响整批 */
-    const res = await SB.uploadRankChannelImages(rmChPending, {
-      channel, category, periodLabel: month,
-    }, (i) => { done = i; setPct(); });
-
-    if (bar) bar.classList.add("hidden");
-    if (fill) fill.style.width = "0%";
-    rmChPending.forEach((it) => { if (it.preview) URL.revokeObjectURL(it.preview); });
-    rmChPending = [];
-    renderChPending();
-    if (btn) btn.disabled = true;
-    rmChSetMsg("已上传 " + res.ok.length + " 张" + (res.failed.length ? "，" + res.failed.length + " 张失败" : ""), !res.failed.length);
-    if (res.failed.length) {
-      const t = res.failed.slice(0, 5).map((f) => (f.name || "未命名") + "：" + f.reason).join("；");
-      sbToast("有 " + res.failed.length + " 张没传上去 —— " + t
-        + "（脚本版本 " + BUILD + "；若与部署包不一致，请覆盖 html 后 Ctrl+F5）", false);
-    }
-    await loadChChannels();
-    await loadChList();
-  }
-
-  async function loadChList() {
-    const box = $("#rm-ch-list");
-    const cnt = $("#rm-ch-count");
-    const fch = ($("#rm-ch-filter-ch") && $("#rm-ch-filter-ch").value || "").trim();
-    const fcat = ($("#rm-ch-filter-cat") && $("#rm-ch-filter-cat").value || "").trim();
-    if (!box) return;
-    box.innerHTML = '<div class="hint">正在读取…</div>';
-    try { rmChList = await SB.listRankChannelItems({ channel: fch, category: fcat, limit: 400 }); }
-    catch (e) {
-      box.innerHTML = '<div class="hint">读不到渠道图片：' + escHtml(String((e && e.message) || "列 channel 可能还没加（补丁未执行）")) + '</div>';
-      if (cnt) cnt.textContent = "—";
-      return;
-    }
-    if (cnt) {
-      /* 把「存储里到底有多少张」一并写出来：传成功却看不到时，一眼能判断是没存进去还是没显示出来 */
-      let extra = "";
-      try {
-        const st = await SB.channelPicStats();
-        const ms = Object.keys(st.byMonth || {}).sort().reverse().slice(0, 6);
-        extra = "　｜　存储共 " + st.total + " 张"
-          + (ms.length ? "（" + ms.map((k) => k + " " + st.byMonth[k] + "张").join("、") + "）" : "");
-      } catch (e) { extra = "　｜　存储统计读取失败"; }
-      cnt.textContent = "已传 " + rmChList.length + " 张" + (rmChList.length >= 400 ? "（只显示最近 400 张，可用筛选收窄）" : "") + extra;
-    }
-    if (!rmChList.length) { box.innerHTML = '<div class="hint">还没有渠道图片。选好月份 / 渠道 / 类目后把图拖到上面即可。</div>'; return; }
-    box.innerHTML = rmChList.map((it) => {
-      const mon = it.period_label || "";
-      const cat = it.category || "";
-      return '<figure class="rm-ch-card" data-id="' + escAttr(String(it.id)) + '">'
-        + '<img src="' + escAttr(it.image_url || "") + '" loading="lazy" alt="">'
-        + '<figcaption>'
-        + '<b>' + escHtml(it.channel || "") + '</b>'
-        + '<span class="rm-ch-meta">' + escHtml([cat, mon].filter(Boolean).join(" · ")) + '</span>'
-        + '<span class="rm-ch-acts">'
-        + '<button type="button" data-chact="channel">改渠道</button>'
-        + '<button type="button" data-chact="slot">改类目/月份</button>'
-        + '<button type="button" data-chact="del">删除</button>'
-        + '</span>'
-        + '</figcaption></figure>';
-    }).join("");
-
-    Array.prototype.forEach.call(box.querySelectorAll(".rm-ch-card"), (card) => {
-      const id = parseInt(card.getAttribute("data-id"), 10);
-      const row = rmChList.filter((x) => x.id === id)[0] || {};
-      Array.prototype.forEach.call(card.querySelectorAll("[data-chact]"), (b) => {
-        b.onclick = async () => {
-          const act = b.getAttribute("data-chact");
-          try {
-            if (act === "channel") {
-              const v = (window.prompt("改成哪个渠道？", row.channel || "") || "").trim();
-              if (!v) return;
-              await SB.updateRankChannelItem(id, { channel: v });
-            } else if (act === "slot") {
-              const c = (window.prompt("改成哪个类目？", row.category || "") || "").trim();
-              if (!c) return;
-              const m = (window.prompt("改成哪个月份？（格式 2026-10）", row.period_label || "") || "").trim();
-              if (!m) return;
-              await SB.updateRankChannelItem(id, { category: c, period_label: m });
-            } else if (act === "del") {
-              if (!window.confirm("删除这张渠道图？（只删这条记录，不动榜单数据）")) return;
-              await SB.deleteRankChannelItem(id);
-            }
-            await loadChChannels();
-            await loadChList();
-          } catch (e) { sbToast(String((e && e.message) || "操作失败"), false); }
-        };
-      });
-    });
-  }
-
-  function bindChannelUploader() {
-    if (!$("#rm-ch-drop")) return;
-    const mEl = $("#rm-ch-month");
-    if (mEl && !mEl.value) {
-      const now = new Date();
-      const pad = (n) => (n < 10 ? "0" : "") + n;
-      mEl.value = now.getFullYear() + "-" + pad(now.getMonth() + 1);
-    }
-    const drop = $("#rm-ch-drop");
-    const file = $("#rm-ch-file");
-    const pick = $("#rm-ch-pick");
-    if (pick && file) pick.onclick = () => file.click();
-    if (file) file.onchange = () => { addChFiles(file.files); file.value = ""; };
-    if (drop) {
-      drop.onclick = () => { if (file) file.click(); };
-      drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("is-over"); });
-      drop.addEventListener("dragleave", () => drop.classList.remove("is-over"));
-      drop.addEventListener("drop", (e) => {
-        e.preventDefault(); drop.classList.remove("is-over");
-        addChFiles(e.dataTransfer && e.dataTransfer.files);
-      });
-    }
-    const clear = $("#rm-ch-clear");
-    if (clear) clear.onclick = () => {
-      rmChPending.forEach((it) => { if (it.preview) URL.revokeObjectURL(it.preview); });
-      rmChPending = []; renderChPending();
-    };
-    const up = $("#rm-ch-upload");
-    if (up) up.onclick = () => uploadChPending();
-    const rf = $("#rm-ch-refresh");
-    if (rf) rf.onclick = async () => { await loadChChannels(); fillChCatSelects(); await loadChList(); };
-    /* 导出这批图的打标表（20261109B）：
-       渠道图没有环比也不影响打标 —— 打标表只按图片地址走，标签写回 rank_image_tags，
-       和榜单图同一套枚举、同一张表、同一个回填入口。这里只是把导出区按当前筛选预设好再点一下。 */
-    const te = $("#rm-ch-tag-export");
-    if (te) te.onclick = () => {
-      const fch = ($("#rm-ch-filter-ch") && $("#rm-ch-filter-ch").value || "").trim();
-      const fcat = ($("#rm-ch-filter-cat") && $("#rm-ch-filter-cat").value || "").trim();
-      /* 渠道区块的导出：把当前筛选带进导出选项，默认「仅未打标 + 仅月度」 */
-      const fper = ($("#rm-tag-period") && $("#rm-tag-period").value || "").trim();
-      runMonthTagExport(te, {
-        scope: "todo",
-        category: fcat,
-        channel: fch ? ("ch:" + fch) : "__chonly",
-        period: fper,           /* 面板上选了月份就只导那个月，和范围保持一致 */
-      });
-      sbToast("已按「" + (fch || "全部渠道") + (fcat ? " / " + fcat : "") + "」导出，导完直接填表即可", true);
-    };
-
+  /* 月度面板里除上传之外的额外操作（打标导出 / 回填） */
+  function bindMonthExtras() {
     /* 月度打标结果回填（20261109F）：走与周度同一套导入逻辑，但只认月度条目。
        UI 状态留着（选中的文件 + 上次解析结果），避免二次点按钮时让人重选文件。 */
     const tagImpFile = $("#rm-tag-imp-file");
@@ -1619,64 +1183,17 @@
       };
     }
 
-    /* 新增渠道（20261109E）：加完立刻进候选，下次直接选 */
-    const chAdd = $("#rm-ch-add");
-    if (chAdd) chAdd.onclick = async () => {
-      const tip = $("#rm-ch-dict-tip");
-      const v = (prompt("新增渠道名（例如 Pinterest / SHEIN / Amazon）", "") || "").trim();
-      if (!v) return;
-      try {
-        const r = await SB.addRankChannel(v);
-        await refreshChDict();
-        const chs = $("#rm-ch-channel");
-        if (chs && r && r.added) chs.value = r.name;
-        if (tip) tip.textContent = r && r.added ? ("已新增「" + v + "」") : ("「" + v + "」本来就有");
-      } catch (e) { sbToast((e && e.message) || "新增失败", false); }
-    };
-
-    /* 批量补渠道（20261109D） */
-    const fcpv = $("#rm-fixch-preview");
-    if (fcpv) fcpv.onclick = async () => {
-      const o = fixChOpts();
-      const tip = $("#rm-fixch-tip");
-      if (!o.periodLabel) { if (tip) tip.textContent = "请先选月份"; return; }
-      if (tip) tip.textContent = "正在统计…";
-      try {
-        const n = await SB.countRankItemsChannelSlot(o);
-        const scope = o.periodLabel + (o.category ? " · " + o.category : " · 全部类目");
-        if (tip) tip.textContent = scope + "：" + (o.onlyEmpty ? "尚未设渠道 " : "共 ") + n + " 条将被修改";
-      } catch (e) { if (tip) tip.textContent = "统计失败，请重试"; }
-    };
-    const fcok = $("#rm-fixch-apply");
-    if (fcok) fcok.onclick = () => applyFixChannel("set");
-    const fccl = $("#rm-fixch-clear");
-    if (fccl) fccl.onclick = () => applyFixChannel("clear");
-    bindFixChannelCheck();
-
     /* 月度打标表导出（面板里独立的那个区块） */
     const mtb = $("#rm-tag-export-btn");
     if (mtb) mtb.onclick = () => {
       const scope = ($("#rm-tag-scope") && $("#rm-tag-scope").value || "todo");
       const cat = ($("#rm-tag-cat") && $("#rm-tag-cat").value || "").trim();
-      const ch = ($("#rm-tag-channel") && $("#rm-tag-channel").value || "").trim();
-      runMonthTagExport(mtb, { scope: scope, category: cat, channel: ch });
+      runMonthTagExport(mtb, { scope: scope, category: cat });
     };
-    const fch = $("#rm-ch-filter-ch");
-    if (fch) fch.onchange = () => loadChList();
-    const fcat = $("#rm-ch-filter-cat");
-    if (fcat) fcat.onchange = () => loadChList();
-    renderChPending();
   }
 
-  /* 脚本版本：页面上显示出来，传图失败时一眼能看出「页面跑的是不是旧脚本」 */
-  var BUILD = "20261111I";
-  function showBuild() {
-    var el = document.getElementById("rm-ch-ver");
-    if (el) el.textContent = "脚本版本 " + BUILD + "（若与部署包版本不一致，说明浏览器还在用旧脚本：覆盖 html 后 Ctrl+F5）";
-  }
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { bindRhythmPanel(); bindChannelUploader(); showBuild(); });
-  else { bindRhythmPanel(); bindChannelUploader(); showBuild(); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { bindRhythmPanel(); bindMonthExtras(); });
+  else { bindRhythmPanel(); bindMonthExtras(); }
 
   Object.assign(window, {
     enterRhythmPanel, loadRhythmBatches: loadRankBatches, loadRhythmSites: loadRankSites,
@@ -1684,7 +1201,6 @@
     computeRhythmFlags: computeFlags, rhythmPreviewRefresh: rankPreviewRefresh,
     renderRhythmPeriods: renderRankPeriods, fillRhythmPvControls: fillRankPvControls,
     computeRhythmCounts: computeRankCounts, rhythmBatchSlotKey: batchSlotKey, rhythmBatchSites: batchSites,
-    loadRhythmChannelList: loadChList, uploadRhythmChannels: uploadChPending, rmChPendingState: () => rmChPending,
   });
   window.RhythmAdmin = {
     enter: enterRhythmPanel, reload: enterRhythmPanel,

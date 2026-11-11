@@ -46,7 +46,7 @@ console.log("三、翻页逻辑没被改坏");
 ok("不满一页即停", /if \(rows\.length < PAGE\) break;/.test(li));
 ok("wanted 截断仍生效", /return wanted \? out\.slice\(0, wanted\) : out;/.test(li));
 ok("列白名单被拒会退回全量", /if \(res\.error && useSlim\(\)\)/.test(li));
-ok("渠道条件失败会去掉重取", /if \(res\.error && chMode\)/.test(li));
+ok("不再有渠道条件分支（渠道功能已下线）", !/chMode/.test(li));
 
 console.log("四、实跑：翻页到上限的行为");
 /* 用假客户端跑真实翻页代码：模拟 2500 行数据，PAGE=1000 → 3 次请求 */

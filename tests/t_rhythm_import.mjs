@@ -60,7 +60,7 @@ ok("各维度写入行数会返回", /out\.dims\[dimOf\[k\]\]/.test(AI));
 
 console.log("五、数据层");
 ok("listRankItems 支持 periodType", /periodType/.test(S.split("async listRankItems")[1] || ""));
-ok("支持按渠道收窄（只渠道图 / 排除渠道图）", /chMode === "only"/.test(S) && /chMode === "exclude"/.test(S));
+ok("不再有渠道收窄（渠道功能已下线）", !/channelMode/.test(AR));
 ok("列白名单被拒会退回全量（不会白屏）", /COLS_REJECTED = true/.test(S));
 
 console.log("\n结果：通过 " + pass + " 项，失败 " + fail + " 项");

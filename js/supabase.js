@@ -2274,7 +2274,7 @@ async removeTrendRecord(id) {
       try {
         for (let page = 0; page < 20; page++) {
           const { data, error } = await client.from("rank_batches")
-            .select("period_type, period_label, category, site")
+            .select("*")
             .order("id", { ascending: true })
             .range(page * 1000, page * 1000 + 999);
           if (error) break;
@@ -2753,11 +2753,18 @@ async removeTrendRecord(id) {
     _chColOk: null,
     async rankChannelColumn() {
       if (this._chColOk !== null) return this._chColOk;
+      /* 探测要「不制造报错」：直接 select("channel") 在缺列时必然 400，
+         控制台每次刷新都多一条红字，看起来像坏了。
+         改成取一行全字段，看返回对象里有没有 channel 这个键 —— 有列 / 无列都只发一条正常请求。 */
       try {
-        const { error } = await client.from("rank_items").select("channel").limit(1);
-        this._chColOk = !error;
-        this._chColErr = error ? String((error && error.message) || "") : "";
-      } catch (e) { this._chColOk = false; }
+        const { data, error } = await client.from("rank_items").select("*").limit(1);
+        if (error) { this._chColOk = false; this._chColErr = String((error && error.message) || ""); }
+        else {
+          const row = (data && data[0]) || null;
+          this._chColOk = !!(row && Object.prototype.hasOwnProperty.call(row, "channel"));
+          this._chColErr = this._chColOk ? "" : "rank_items 没有 channel 列，已自动改用归属字典存储";
+        }
+      } catch (e) { this._chColOk = false; this._chColErr = String((e && e.message) || ""); }
       return this._chColOk;
     },
     channelStorage() { return this._chColOk === false ? "map" : "column"; },
@@ -3132,11 +3139,10 @@ async removeTrendRecord(id) {
     async diagnoseChannelSlot(f) {
       const o = f || {};
       const out = { hasColumn: false, schemaError: "", monthTotal: 0, emptyNull: 0, emptyStr: 0, filled: 0 };
-      // 1) 渠道列到底在不在
+      // 1) 渠道列到底在不在（走统一的探测方法：不制造 400，结果被记住）
       try {
-        const { error } = await client.from("rank_items").select("channel").limit(1);
-        if (error) { out.hasColumn = false; out.schemaError = String(error.message || ""); }
-        else out.hasColumn = true;
+        out.hasColumn = await this.rankChannelColumn();
+        if (!out.hasColumn) out.schemaError = String(this._chColErr || "rank_items 没有 channel 列");
       } catch (e) { out.hasColumn = false; out.schemaError = String((e && e.message) || ""); }
       // 2) 该期次总条目（不带任何其它条件）；精确匹配为 0 时再看同月的其它写法
       out.matchedLabel = "";
@@ -3244,7 +3250,7 @@ async removeTrendRecord(id) {
          整条查询会以 400 整体失败，前台表现就是「一张图都没有」——这比慢严重得多。
          所以做成可降级：白名单失败立刻退回全量再取一次，并在本次会话内记住。 */
       const useSlim = () => !!f.cols && !COLS_REJECTED;
-      const build = (from, to, cols, chMode) => {
+      const build = (from, to, cols) => {
         /* cols：只需要 URL 做比对时不要拉全量字段（每条记录几十个字段，上万行就是几 MB） */
         /* 20261104F：cols 由调用方指定成"渲染真正要用的列"。
            榜单页原来 select("*") 会把每条记录的几十个字段全拉回来，一个类目三周就是好几 MB，
@@ -3254,41 +3260,24 @@ async removeTrendRecord(id) {
         else if (f.categories && f.categories.length) q = q.in("category", f.categories);
         if (f.periodType) q = q.eq("period_type", f.periodType);
         if (f.periods && f.periods.length) q = q.in("period_label", expandPeriods(f.periods));
-        /* 渠道图（其他渠道传上来的）按设计不含站点，site 一律为空。
-           一旦下发国家条件，它们会被整体滤掉 —— 表现就是「补了渠道，前台渠道列还是不出现」。
-           所以看渠道口径时不下发站点条件；国家为空的图本来也不该被某个国家筛掉。 */
-        const skipSites = f.channelMode === "only" || f.allowEmptySite;
-        if (!skipSites && f.sites && f.sites.length) q = q.in("site", f.sites);
-        /* 20261109A：渠道口径。"only" = 只看其他渠道传的图；"exclude" = 只看榜单表格导入的图。
-           这一列是后加的补丁，没执行时查询会整体失败 —— 所以下面遇到错误会自动去掉
-           这个条件重取一次，页面至少还能显示原有榜单数据。 */
-        if (chMode === "only") q = q.neq("channel", "");
-        else if (chMode === "exclude") q = q.eq("channel", "");
+        if (f.sites && f.sites.length) q = q.in("site", f.sites);
         return q.order("id", { ascending: true }).range(from, to);
       };
       const out = [];
       this._rankTruncated = false;
-      /* 渠道一律在内存里筛，不下发给数据库：
-         ① 列缺失时下发会被整体拒绝（整页空白 + 一堆 400）
-         ② 列存在但写入被权限挡住时，库里还是空值，按库筛会漏掉「字典里已归属」的图
-         ③ 两种存储混用（部分行在列、部分行在字典）时，只有内存筛才看得全 */
-      const chColOk = (typeof this.rankChannelColumn === "function") ? await this.rankChannelColumn() : false;
-      const pendingMode = f.channelMode || "";
-      let chMode = "";
-      /* 列缺失时连 select 里也不能带 channel，否则整条查询被拒、还会拖累列白名单 */
+      /* 列缺失自愈：已确认不存在的列（如 title / channel）不再带进 select，
+         否则整条查询会被数据库整体拒绝。 */
       const colsSafe = (c) => {
         if (!c) return c;
         const list = String(c).split(",").map((x) => x.trim())
           .filter((x) => x)
-          .filter((x) => chColOk || x !== "channel")          /* 没这一列就别带，否则整条被拒 */
-          .filter((x) => !this._missKnow("rank_items", x));   /* 已确认缺的列（如 title）不再带 */
+          .filter((x) => !this._missKnow("rank_items", x));
         return list.join(",") || "id";
       };
-      let chFailed = false;   /* 渠道条件被数据库拒过：不管探测结果如何，一律改用字典 */
+
       for (let from = 0; from < MAX; from += PAGE) {
         const to = Math.min(from + PAGE, MAX) - 1;
-        let res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode);
-        if (res.error && chMode) { chFailed = true; this._chColOk = false; chMode = ""; res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*", chMode); }
+        let res = await build(from, to, useSlim() ? colsSafe(f.cols) : "*");
         if (res.error && useSlim()) {
           /* 先分清是「某一列不存在」还是「白名单整体不被接受」：
              前者只把那一列摘掉再试，白名单留着（速度不丢）；
@@ -3296,11 +3285,11 @@ async removeTrendRecord(id) {
           const miss = this._missName(res.error);
           if (miss) {
             this._missMark("rank_items", miss);
-            res = await build(from, to, colsSafe(f.cols), chMode);
+            res = await build(from, to, colsSafe(f.cols));
           }
           if (res.error) {
             COLS_REJECTED = true;                     /* 记住：后续不再试白名单 */
-            res = await build(from, to, "*", chMode);
+            res = await build(from, to, "*");
           }
         }
         const { data, error } = res;
@@ -3312,18 +3301,6 @@ async removeTrendRecord(id) {
       }
       /* 取到上限还没取完 = 被截断。不要静默：调用方（导出 / 核对）要能把这件事说出来。 */
       if (out.length >= MAX) this._rankTruncated = true;
-      /* 列缺失：把归属字典套上去，再按原本想要的渠道口径筛一遍。
-         这样前台「渠道对比」的两列、后台渠道列表都照常工作。 */
-      /* 字典里的归属一定合并：无论列是否存在、写入是否被挡，读到的渠道口径都一致 */
-      const needMap = true;
-      if (needMap) {
-        await this.applyChannelMap(out);
-        const pm = pendingMode || (chFailed ? (f.channelMode || "") : "");
-        let list = out;
-        if (pm === "only") list = out.filter((r) => String((r && r.channel) || "").trim() !== "");
-        else if (pm === "exclude") list = out.filter((r) => String((r && r.channel) || "").trim() === "");
-        return wanted ? list.slice(0, wanted) : list;
-      }
       return wanted ? out.slice(0, wanted) : out;
     },
     /* 上一次 listRankItems 是否因上限被截断（导出 / 核对时用来说清"数据不全"） */

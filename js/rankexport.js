@@ -22,7 +22,7 @@
  * ==========================================================================*/
 (function () {
   var COLS = [
-    "图片URL", "类目", "叶子类目", "出现期次", "站点", "渠道", "最优位次", "最高环比%", "打标状态",
+    "图片URL", "类目", "叶子类目", "出现期次", "站点", "最优位次", "最高环比%", "打标状态",
     "风格", "视觉-背景", "视觉-画面构成", "视觉-呈现主体",
     "图案类型", "图案元素", "结构部件", "面料", "二次工艺", "拍摄方式",
     "文化背景", "消费心理",
@@ -184,7 +184,7 @@
       if (!u) return;
       var hit = byUrl.get(u);
       if (!hit) {
-        hit = { url: u, cats: {}, periods: {}, sites: {}, channels: {}, leaf: {}, leafLeaf: {}, bestRank: null, bestRatio: null };
+        hit = { url: u, cats: {}, periods: {}, sites: {}, leaf: {}, leafLeaf: {}, bestRank: null, bestRatio: null };
         byUrl.set(u, hit);
       }
       if (r.category) hit.cats[r.category] = 1;
@@ -197,9 +197,6 @@
       }
       if (r.period_label) hit.periods[r.period_label] = 1;
       if (r.site) hit.sites[r.site] = 1;
-      /* 20261109B：其他渠道传进来的图没有站点、只有渠道名，这里一并收集，
-         导出打标表时才分得清「这张是哪来的」，也才能按渠道单独导一张表。 */
-      if (r.channel) hit.channels[r.channel] = 1;
       if (r.rank_ratio != null && (hit.bestRank == null || r.rank_ratio < hit.bestRank)) hit.bestRank = r.rank_ratio;
       if (r.ratio != null && (hit.bestRatio == null || r.ratio > hit.bestRatio)) hit.bestRatio = r.ratio;
     });
@@ -216,21 +213,6 @@
     if (v.indexOf("c:") === 0) return !!h.cats[v.slice(2)];
     if (v.indexOf("l:") === 0) return !!h.leafLeaf[v.slice(2)];
     return !!h.cats[v] || !!h.leafLeaf[v];
-  }
-
-  /* 渠道筛选（20261109B）：
-       ""        全部（榜单 + 所有渠道）
-       "__rank"  只导榜单表格导入的图（没有渠道的那些）
-       "ch:名字" 只导这个渠道
-     渠道图只有图、没有环比与站点，所以它们是单独一批导出去打标的。 */
-  function hitChannel(h, sel) {
-    var v = String(sel || "").trim();
-    if (!v) return true;
-    var chs = Object.keys(h.channels || {});
-    if (v === "__rank") return chs.length === 0;
-    if (v === "__chonly") return chs.length > 0;
-    if (v.indexOf("ch:") === 0) return !!h.channels[v.slice(3)];
-    return !!h.channels[v];
   }
 
   /* 类目分布：每个主类目 / 叶子末级各有多少张图、打标进度如何
@@ -282,7 +264,7 @@
   }
 
   /* 组装工作簿
-     opts: { scope:'todo'|'partial'|'done'|'all', category:'', keyword:'', channel:'', periodType:'', title:'' }
+     opts: { scope:'todo'|'partial'|'done'|'all', category:'', keyword:'', periodType:'', title:'' }
      返回 { wb, images, rows, picked:[url], stats:{total, todo, partial, done, picked} } */
   function buildBook(detail, tagMap, opts) {
     var o = opts || {};
@@ -313,7 +295,6 @@
       else stats.partial++;
 
       if (!hitCat(h, cat)) return;
-      if (!hitChannel(h, o.channel)) return;
       if (kw) {
         var hay = [u, Object.keys(h.cats).join(" "), Object.keys(h.leaf).join(" ")].join(" ").toLowerCase();
         if (hay.indexOf(kw) < 0) return;
@@ -337,7 +318,6 @@
         Object.keys(h.leaf).join("，"),
         Object.keys(h.periods).sort().join("，"),
         Object.keys(h.sites).join("，"),
-        Object.keys(h.channels).join("，"),
         h.bestRank == null ? "" : h.bestRank,
         h.bestRatio == null ? "" : h.bestRatio,
         pr.status,
@@ -365,7 +345,6 @@
     ws["!cols"] = head.map(function (h) {
       if (h === "图片URL") return { wch: 58 };
       if (h === "出现期次" || h === "叶子类目" || h === "类目") return { wch: 18 };
-      if (h === "渠道") return { wch: 14 };
       if (h === "打标状态") return { wch: 11 };
       if (h === "备注") return { wch: 24 };
       return { wch: 13 };
@@ -374,11 +353,11 @@
 
     var keep = {};
     picked.forEach(function (u) { keep[u] = 1; });
-    var detailAoa = [["期次类型", "期次", "类目", "站点", "渠道", "叶子类目", "图片URL", "环比比例%", "环比绝对值", "潜力机会", "趋势爆款", "周度激增"]];
+    var detailAoa = [["期次类型", "期次", "类目", "站点", "叶子类目", "图片URL", "环比比例%", "环比绝对值", "潜力机会", "趋势爆款", "周度激增"]];
     (detail || []).forEach(function (r) {
       if (!keep[String(r.image_url || "").trim()]) return;
       detailAoa.push([
-        r.period_type || "", r.period_label || "", r.category || "", r.site || "", r.channel || "",
+        r.period_type || "", r.period_label || "", r.category || "", r.site || "",
         r.leaf_category || "", r.image_url || "",
         r.ratio == null ? "" : r.ratio, r.abs_delta == null ? "" : r.abs_delta,
         r.flag_opportunity ? "是" : "", r.flag_hot ? "是" : "", r.flag_surge ? "是" : ""
@@ -443,7 +422,6 @@
       scope: sc ? sc.value : "todo",
       category: ct ? String(ct.value || "").trim() : "",
       keyword: kw ? String(kw.value || "").trim() : "",
-      channel: (function () { var ch = q("#rank-export-channel"); return ch ? String(ch.value || "") : ""; })(),
       split: !!(sp && sp.checked),
       splitLevel: (lv && lv.value === "leaf") ? "leaf" : "cat",
       /* 20261109H：按周（月度则按月）导出。选定期次后只查这一期，数据量小、速度也快，

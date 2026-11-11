@@ -39,7 +39,7 @@ ok("周度只列 week", /\(p\.type \|\| "week"\) === "week"/.test(AR));
 ok("周度期次新的在前", /admPeriodKey\(b\) - admPeriodKey\(a\)/.test(AR));
 ok("周度刷新时重建下拉", /fillExportPeriods\(\);/.test(AR));
 ok("月度只列 month", /p\.type === "month"/.test(AH));
-ok("月度渠道区块导出也带月份", /period: fper/.test(AH));
+ok("月度不再有「其他渠道传图」区块", !/rm-ch-tag-export/.test(AH));
 ok("面板导出按钮读月份", /const perSel = \$\("#rm-tag-period"\)/.test(AH));
 
 console.log("五、实跑：期次过滤的语义");

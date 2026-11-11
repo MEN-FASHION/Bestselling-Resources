@@ -776,7 +776,6 @@
     /* 能对上的范围：不传 periodType 就是全部（周度面板的原有行为） */
     var f = { cols: "image_url" };
     if (opts.periodType) f.periodType = opts.periodType;
-    if (opts.channel) f.channelMode = opts.channel;
     var detail = await SB.listRankItems(f);
     var exist = {};
     (detail || []).forEach(function (r) { exist[String(r.image_url || "").trim()] = 1; });
