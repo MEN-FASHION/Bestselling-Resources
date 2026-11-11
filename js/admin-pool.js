@@ -287,10 +287,10 @@ function bindImagePool() {
       imgPoolRender();
       sbToast("已将所有待压缩图目标设为 " + v + "K", true);
     });
-    if (compressAll) compressAll.addEventListener("click", () => {
+    if (compressAll) compressAll.addEventListener("click", async () => {
       const todo = imgPoolItems.filter(i => i.size > IMG_POOL_TARGET).map(i => i.key);
       if (!todo.length) { sbToast("当前没有待压缩的图片", false); return; }
-      if (!confirm("确认压缩全部 " + todo.length + " 张待压缩图片？此操作会覆盖原图（URL不变），请确保已备份。")) return;
+      if (!(await uiConfirm("确认压缩全部 " + todo.length + " 张待压缩图片？此操作会覆盖原图（URL不变），请确保已备份。"))) return;
       imgPoolCompressBatch(todo);
     });
     // 首次进入面板时自动加载清单

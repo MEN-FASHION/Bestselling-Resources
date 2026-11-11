@@ -1,4 +1,4 @@
-/* 20261111AD · 渠道图片专区的删除与批量编辑
+/* 20261111AF · 渠道图片专区的删除与批量编辑
  * 覆盖：
  *  1) 单张删除 / 整行删除 / 批量删除三个入口都在（原来只有打标弹层里能删）
  *  2) 批量删除走数据层批接口：文档存储与 rank_items 两条都要照顾，且分块发请求
@@ -21,7 +21,11 @@ const DB = read("js/supabase.js");
 
 /* ---------- 1. 三个删除入口 ---------- */
 ok(/cz-card-del/.test(AD), "卡片上缺少单张删除按钮（列表里无法直接删）");
-ok(/delRow\.textContent\s*=\s*"删除整行（"/.test(AD), "缺少「删除整行」按钮");
+/* 20261111AF：类目组那个按钮其实是「清空该类目」（=全部），
+   真正的「一行」由视觉行行尾的「删此行」承担，两个功能分开。 */
+ok(/delRow\.textContent\s*=\s*"清空该类目（"/.test(AD), "缺少「清空该类目」按钮");
+ok(/cz-vrow-del/.test(AD) && /删此行/.test(AD), "缺少「删此行」（按视觉行删除）按钮");
+ok(/vcolsOf/.test(AD), "缺少列数计算：一行几张要和实际栅格一致");
 ok(/id="' \+ id\(k, "del-sel"\) \+ '"/.test(AD) || /"del-sel"/.test(AD), "工具栏缺少批量删除按钮");
 ok(/id="' \+ id\(k, "batch-edit"\)/.test(AD) || /"batch-edit"/.test(AD), "工具栏缺少批量编辑按钮");
 ok(/function delMany\(k, ids, what\)/.test(AD), "缺少统一删除函数（三个入口应共用同一条路径）");
@@ -74,10 +78,11 @@ ok(/t: new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/.test(DB), "新上传的图
 /* ---------- 6. 权限守卫与二次确认 ---------- */
 const delFn = AD.slice(AD.indexOf("async function delMany"), AD.indexOf("async function delMany") + 1400);
 ok(/guardZone/.test(delFn), "批量删除必须走专区权限守卫");
-ok(/window\.confirm\(/.test(delFn), "删除必须二次确认");
+/* 20261111AF：不再用浏览器原生 confirm，改为站内弹窗 uiConfirm（仍是二次确认） */
+ok(/await uiConfirm\(/.test(delFn), "删除必须二次确认（站内弹窗）");
 const batchFn = AD.slice(AD.indexOf("async function applyBatch"), AD.indexOf("async function applyBatch") + 2200);
 ok(/guardZone/.test(batchFn), "批量编辑必须走专区权限守卫");
-ok(/window\.confirm\(/.test(batchFn), "批量编辑必须二次确认，并列出将要改成什么");
+ok(/await uiConfirm\(/.test(batchFn), "批量编辑必须二次确认，并列出将要改成什么");
 ok(/专区的图/.test(batchFn) || /where/.test(batchFn) || /what\.push/.test(batchFn), "确认框应说明改哪些字段");
 ok(/数据层版本偏旧/.test(delFn), "接口缺失时应提示强刷，而不是静默失败");
 

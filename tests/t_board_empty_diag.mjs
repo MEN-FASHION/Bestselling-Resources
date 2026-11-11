@@ -1,4 +1,4 @@
-/* 20261111AD · 榜单数据不显示时的自述信息 + 不再强带 channel 列 */
+/* 20261111AF · 榜单数据不显示时的自述信息 + 不再强带 channel 列 */
 import fs from "node:fs";
 const R = (p) => fs.readFileSync(p, "utf8");
 const RHY = R("js/rhythm.js");
@@ -21,7 +21,7 @@ ok("取数失败时给出原因", /LOAD_ERR \? ' · 取数失败：'/.test(RHY))
 ok("带脚本版本", /' · 脚本 ' \+ esc\(BUILD\)/.test(RHY));
 
 console.log("三、版本");
-ok("前台版本 20261111AD", /var BUILD = "20261111AD"/.test(RHY));
+ok("前台版本 20261111AF", /var BUILD = "20261111AF"/.test(RHY));
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

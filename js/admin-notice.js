@@ -237,7 +237,7 @@ async function toggleNoticePublish(a) {
   }
 
 async function deleteNotice(a) {
-    if (!confirm("确认删除公告「" + (a.title || "") + "」？")) return;
+    if (!(await uiConfirm("确认删除公告「" + (a.title || "") + "」？"))) return;
     try {
       await SB.removeAnnouncement(a.id);
       sbToast("已删除");

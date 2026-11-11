@@ -570,7 +570,7 @@ async function copyBestsellerSps(t, spuList) {
   }
 
 async function confirmDeleteBestseller(t) {
-    if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
+    if (!(await uiConfirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。"))) return;
     if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可删除")) return;
     try {
       await SB.removeBestsellerTask(t.id);
@@ -583,7 +583,7 @@ async function confirmDeleteBestseller(t) {
   async function bulkDeleteBestseller() {
     const ids = [...bestsellerSelected];
     if (!ids.length) return sbToast("请先勾选要删除的任务", false);
-    if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
+    if (!(await uiConfirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。"))) return;
     if (!guardZone("bestseller", "无权限：只有可操作BESTSELLER专区的管理员可删除")) return;
     try {
       await SB.bulkUpdateBestsellerTasks(ids, { deleted_at: new Date().toISOString() });
@@ -682,7 +682,7 @@ async function bulkRestoreBestseller() {
 async function bulkPurgeBestseller() {
     const ids = [...bestsellerTrashSelected];
     if (!ids.length) return sbToast("请先勾选要永久删除的任务", false);
-    if (!confirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    if (!(await uiConfirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！"))) return;
     try {
       const inTrash = bestsellerTrash.filter(t => ids.includes(t.id));
       for (const t of inTrash) { if (t.image_path) await SB.deleteBestsellerImage(t.image_path).catch(() => {}); }

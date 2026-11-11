@@ -1,5 +1,5 @@
 /* ============================================================================
- * compare-front.js —— 渠道对比（多列图片横向对比，20261111AD）
+ * compare-front.js —— 渠道对比（多列图片横向对比，20261111AF）
  * ----------------------------------------------------------------------------
  * 一屏之内把「同一个类目 · 同一个月」的各个来源的图并排摆开，一眼看差异。
  *
@@ -37,6 +37,8 @@
     gate: "",
     vis: true,
     loading: false,
+    srcOn: {},          // 用户手动打开的列 key（默认按「有没有图」自动决定）
+    srcOff: {},         // 用户手动关掉的列 key
   };
 
   function normMonth(v) {
@@ -92,12 +94,30 @@
     return all.some(function (r) { return r.month === state.month; });
   }
 
+  /* 某一列在「当前月份」下到底有没有图 */
+  function colHasData(s) { return sourceHasData(s); }
+
+  /* 现在到底显示哪几列：
+     - 后台勾了「显示空列」→ 全部显示；
+     - 否则默认只显示这个月份有图的列（空列不再占位置）；
+     - 但顶部「渠道」筛选里手动点开的列一律显示、手动关掉的一律不显示。
+     这三个分支都只做本地过滤，不发任何请求，不会影响打开速度。 */
   function activeSources() {
-    var list = state.sources.slice();
-    if (state.cfg && state.cfg.showEmpty === false) {
-      list = list.filter(function (s) { return sourceHasData(s); });
-    }
-    return list;
+    var forceAll = !!(state.cfg && state.cfg.showEmpty === true);
+    return state.sources.filter(function (s) {
+      if (state.srcOff[s.key]) return false;
+      if (state.srcOn[s.key]) return true;
+      return forceAll ? true : colHasData(s);
+    });
+  }
+
+  /* 被自动隐藏的列（有图与否决定），用于在筛选里提示「已隐藏 N 个没有图的渠道」 */
+  function hiddenByEmpty() {
+    var forceAll = !!(state.cfg && state.cfg.showEmpty === true);
+    if (forceAll) return [];
+    return state.sources.filter(function (s) {
+      return !state.srcOff[s.key] && !state.srcOn[s.key] && !colHasData(s);
+    });
   }
 
   /* ---------- 取数 ---------- */
@@ -246,11 +266,80 @@
     g.appendChild(chips);
     box.appendChild(g);
 
+    /* ---------- 渠道筛选：决定下面到底摆哪几列 ---------- */
+    box.appendChild(srcGroup());
+
+    syncSummary();
+  }
+
+  /* 「渠道」筛选组：只控制显示哪些列（本地过滤，不重新取数）
+     - 当前月份没有图的渠道，默认不显示，不再占一列空白；
+     - 想在筛选里点名看某个空渠道，点它就能强制显示。 */
+  function srcGroup() {
+    var g = document.createElement("div");
+    g.className = "tag-group";
+    var name = document.createElement("div");
+    name.className = "tag-group-name";
+    name.textContent = "渠道";
+    var chips = document.createElement("div");
+    chips.className = "tag-chips";
+
+    var shown = activeSources();
+    var shownKey = {};
+    shown.forEach(function (s) { shownKey[s.key] = 1; });
+
+    /* 全部：回到默认（有图的都显示），并清掉手动开关 */
+    var allBtn = document.createElement("button");
+    allBtn.type = "button";
+    allBtn.className = "tag-chip" + (shown.length === state.sources.length ? " active" : "");
+    allBtn.textContent = "全部";
+    allBtn.title = "恢复默认：显示这个月份下有图的全部渠道";
+    allBtn.onclick = function () {
+      state.srcOn = {};
+      state.srcOff = {};
+      renderFilter(); renderCats(); renderPools();
+    };
+    chips.appendChild(allBtn);
+
+    state.sources.forEach(function (s) {
+      var n = sourceItems(s).filter(function (r) {
+        return !state.month || r.month === state.month;
+      }).length;
+      var on = !!shownKey[s.key];
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tag-chip" + (on ? " active" : "");
+      b.title = on ? "点一下隐藏这一列" : (n ? "点一下显示这一列" : "这个月份下没有图，点一下仍可显示");
+      b.textContent = s.label + (n ? " " + n : " 无图");
+      if (!n) b.style.opacity = on ? ".85" : ".5";
+      b.onclick = function () {
+        var willHide = !!shownKey[s.key];
+        if (willHide) {
+          /* 至少留一列，否则整页空白 */
+          if (shown.length <= 1) { toast("至少要保留一列", false); return; }
+          delete state.srcOn[s.key];
+          state.srcOff[s.key] = 1;
+        } else {
+          delete state.srcOff[s.key];
+          state.srcOn[s.key] = 1;
+        }
+        renderFilter(); renderCats(); renderPools();
+      };
+      chips.appendChild(b);
+    });
+
+    g.appendChild(name);
+    g.appendChild(chips);
+    return g;
+  }
+
+  function syncSummary() {
     var sum = $("#cmp-summary");
-    if (sum) {
-      var n = activeSources().length;
-      sum.textContent = (state.month || "全部月份") + " · " + n + " 列对比";
-    }
+    if (!sum) return;
+    var n = activeSources().length;
+    var hid = hiddenByEmpty().length;
+    sum.textContent = (state.month || "全部月份") + " · " + n + " 列对比" +
+      (hid ? "（已隐藏 " + hid + " 个无图渠道）" : "");
   }
 
   /* ---------- 左侧：服装类目 ---------- */
@@ -355,7 +444,15 @@
       return;
     }
     if (!total) {
-      body.innerHTML = '<div class="rk-empty">这个月份 / 类目下还没有图片，换个月份或类目试试。</div>';
+      /* 分清两种情况：真的没图 vs 被渠道筛选筛空了 */
+      var hasAny = state.sources.some(function (s) {
+        return sourceItems(s).some(function (r) {
+          return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
+        });
+      });
+      body.innerHTML = hasAny
+        ? '<div class="rk-empty">当前显示的 ' + srcs.length + ' 列在这个月份 / 类目下都没有图片。<br>点上方「筛选 → 渠道」打开其它渠道再看看。</div>'
+        : '<div class="rk-empty">这个月份 / 类目下还没有图片，换个月份或类目试试。</div>';
       return;
     }
 

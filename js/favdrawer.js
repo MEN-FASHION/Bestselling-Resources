@@ -1277,7 +1277,7 @@
     var c = catOf(id);
     var SB = SBX();
     if (!SB || !SB.deleteFavCategory) return;
-    if (!window.confirm("删除分类「" + ((c && c.name) || "") + "」？里面的图会退回未分类，不会被删除。")) return;
+    if (!(await uiConfirm("删除分类「" + ((c && c.name) || "") + "」？里面的图会退回未分类，不会被删除。"))) return;
     try {
       await SB.deleteFavCategory(id);
       ST.items.forEach(function (it) { if (Number(it.category_id) === Number(id)) it.category_id = null; });

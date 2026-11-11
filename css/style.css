@@ -6900,3 +6900,19 @@ html, body{
 .cz-exp-empty { font-size: 12px; color: #9a9488; }
 .cz-exp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 560px) { .cz-exp-grid { grid-template-columns: 1fr; } }
+
+/* ---------- 后台专区：视觉行与「删此行」 ---------- */
+.cz-vrows { display: flex; flex-direction: column; gap: 8px; }
+.cz-vrow { display: flex; align-items: stretch; gap: 8px; }
+.cz-vrow-imgs { display: grid; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.cz-vrow-del {
+  flex: 0 0 auto; align-self: center; width: 54px;
+  padding: 8px 4px; font-size: 11px; line-height: 1.35; white-space: normal;
+  color: #8a8378; background: #fff; border: 1px solid #e5e2db;
+  border-radius: 8px; cursor: pointer;
+}
+.cz-vrow-del:hover { color: #b3382f; background: #fdf3f2; border-color: #e2a9a3; }
+@media (max-width: 720px) {
+  .cz-vrow { flex-direction: column; }
+  .cz-vrow-del { width: 100%; align-self: stretch; }
+}

@@ -96,15 +96,15 @@ let zoneCatModalCats = [];
 (function () {
 
 // 复制专区类目分享链接（方案A）：trends.html?zone=recruit|bestseller&cat=类目名
-  function copyZoneCatLink(zone, cat) {
+  async function copyZoneCatLink(zone, cat) {
     const c = (cat || "").trim();
     if (!c) { sbToast("请先选择一个类目", false); return; }
     const base = new URL(window.location.href);
     const link = base.origin + base.pathname.replace(/\/[^\/]*$/, "/trends.html") + "?zone=" + encodeURIComponent(zone) + "&cat=" + encodeURIComponent(c);
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(link).then(() => sbToast("已复制「" + c + "」分享链接")).catch(() => prompt("复制分享链接：", link));
+      navigator.clipboard.writeText(link).then(() => sbToast("已复制「" + c + "」分享链接")).catch(() => { uiPrompt("复制分享链接：", link); });
     } else {
-      prompt("复制分享链接：", link);
+      await uiPrompt("复制分享链接：", link);
     }
   }
 
@@ -304,8 +304,8 @@ function buildRecruitXlsxPreview() {
       tb.appendChild(clr);
       const delSel = document.createElement("button");
       delSel.type = "button"; delSel.className = "rg-mini-btn2 rg-mini-del"; delSel.textContent = "删除选中 " + recruitSelRows.size + " 张（不导入）";
-      delSel.addEventListener("click", () => {
-        if (!confirm("确认将勾选的 " + recruitSelRows.size + " 行移除（不导入）？")) return;
+      delSel.addEventListener("click", async () => {
+        if (!(await uiConfirm("确认将勾选的 " + recruitSelRows.size + " 行移除（不导入）？"))) return;
         const arr = [...recruitSelRows];
         arr.forEach(r => {
           const dump = a => { const i = a.indexOf(r); if (i >= 0) a.splice(i, 1); };
@@ -429,9 +429,9 @@ function recruitPreCell(label, url, hasUrl, row) {
       delBtn.className = "rg-card-del";
       delBtn.textContent = "✕";
       delBtn.title = "不导入此行（从匹配中移除）";
-      delBtn.addEventListener("click", (e) => {
+      delBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!confirm("确认不导入该「" + label + "」？")) return;
+        if (!(await uiConfirm("确认不导入该「" + label + "」？"))) return;
         removeRecruitRow(row);
       });
       cell.appendChild(delBtn);
@@ -864,7 +864,7 @@ async function copyRecruitSps(t, spuList) {
   }
 
 async function confirmDeleteRecruit(t) {
-    if (!confirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。")) return;
+    if (!(await uiConfirm("确认将招品任务ID「" + t.task_id + "」移入回收站？可在回收站中恢复。"))) return;
     if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可删除")) return;
     try {
       await SB.removeRecruitTask(t.id);
@@ -877,7 +877,7 @@ async function confirmDeleteRecruit(t) {
   async function bulkDeleteRecruit() {
     const ids = [...recruitSelected];
     if (!ids.length) return sbToast("请先勾选要删除的任务", false);
-    if (!confirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。")) return;
+    if (!(await uiConfirm("确认将选中的 " + ids.length + " 个任务移入回收站？可在回收站中恢复。"))) return;
     if (!guardZone("recruit", "无权限：只有可操作招品回品专区的管理员可删除")) return;
     try {
       await SB.bulkUpdateRecruitTasks(ids, { deleted_at: new Date().toISOString() });
@@ -972,7 +972,7 @@ async function restoreTrashOne(t) {
   }
 
 async function purgeTrashOne(t) {
-    if (!confirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    if (!(await uiConfirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！"))) return;
     try {
       if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {});
       await SB.purgeRecruitTasks([t.id]);
@@ -995,7 +995,7 @@ async function bulkRestoreRecruit() {
 async function bulkPurgeRecruit() {
     const ids = [...recruitTrashSelected];
     if (!ids.length) return sbToast("请先勾选要永久删除的任务", false);
-    if (!confirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    if (!(await uiConfirm("确认永久删除选中的 " + ids.length + " 个任务？其图片与商家提交记录将彻底移除，不可恢复！"))) return;
     try {
       const inTrash = recruitTrash.filter(t => ids.includes(t.id));
       for (const t of inTrash) { if (t.image_path) await SB.deleteRecruitImage(t.image_path).catch(() => {}); }
@@ -1473,8 +1473,8 @@ async function loadZoneCatList() {
         '<span class="zone-cat-name">' + c.name + '</span>' +
         '<button type="button" class="btn-ghost small zc-rename">✎ 改名</button>' +
         '<button type="button" class="btn-danger small zc-del">删除</button>';
-      row.querySelector(".zc-rename").onclick = () => {
-        const nn = prompt("输入新的类目名：", c.name);
+      row.querySelector(".zc-rename").onclick = async () => {
+        const nn = await uiPrompt("输入新的类目名：", c.name);
         if (!nn) return;
         SB.renameZoneCat(zoneCatModalZone, c.id, nn, c.name).then(() => { sbToast("已改名"); loadZoneCatList(); fillZoneCatSelect(zoneCatModalZone); })
           .catch(e => sbToast("改名失败：" + (e.message || ""), false));
@@ -1518,7 +1518,7 @@ async function restoreTrashOne(t) {
   }
 
 async function purgeTrashOne(t) {
-    if (!confirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！")) return;
+    if (!(await uiConfirm("确认永久删除任务ID「" + t.task_id + "」？其图片与商家提交记录将彻底移除，不可恢复！"))) return;
     try {
       if (t.image_path) await SB.deleteBestsellerImage(t.image_path).catch(() => {});
       await SB.purgeBestsellerTasks([t.id]);

@@ -632,9 +632,9 @@ function bindPermCreateUser() {
   }
 
 // ============ 超管：删除用户（走 Worker Auth Admin API，二次确认） ============
-  function confirmDeletePermUser(u) {
+  async function confirmDeletePermUser(u) {
     if (!u || !u.user_id) return;
-    if (!confirm("确定删除用户「" + (u.email || u.user_id) + "」？\n删除后将无法登录，其权限与引导数据一并清除。此操作不可恢复。")) return;
+    if (!(await uiConfirm("确定删除用户「" + (u.email || u.user_id) + "」？\n删除后将无法登录，其权限与引导数据一并清除。此操作不可恢复。"))) return;
     (async () => {
       try {
         await SB.superDeleteUser(u.user_id);
@@ -763,7 +763,7 @@ async function renderZoneDefsBox() {
       catch (e) { sbToast("保存失败：" + (e.message || ""), false); }
     };
     if (!builtin) row.querySelector(".zdef-del").onclick = async () => {
-      if (!confirm("确定删除专区「" + (d.label || d.key) + "」？删除后该专区不再出现在前台菜单与权限勾选列表里（已勾选该专区的用户会失去这一项）。")) return;
+      if (!(await uiConfirm("确定删除专区「" + (d.label || d.key) + "」？删除后该专区不再出现在前台菜单与权限勾选列表里（已勾选该专区的用户会失去这一项）。"))) return;
       const next = currentZoneDefs().filter(x => x.key !== d.key);
       try { await persistZoneDefs(next); sbToast("已删除：" + (d.label || d.key)); }
       catch (e) { sbToast("删除失败：" + (e.message || ""), false); }

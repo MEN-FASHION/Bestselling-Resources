@@ -1032,7 +1032,7 @@ function bindGlobal(){
   });
 
   /* 卡片操作 / 时间轴 / 甘特点击 */
-  document.querySelector('.main-inner').addEventListener('click', function(e){
+  document.querySelector('.main-inner').addEventListener('click', async function(e){
     var actBtn = e.target.closest('button[data-act]');
     if(actBtn && MK_READONLY){ return; }   /* 前台只读：不响应任何编辑/删除 */
     if(actBtn){
@@ -1041,7 +1041,7 @@ function bindGlobal(){
       if(actBtn.getAttribute('data-act')==='del'){
         var h = null;
         for(var i=0;i<state.festivals.length;i++){ if(state.festivals[i].id===id){ h=state.festivals[i]; break; } }
-        if(h && confirm('确认删除「'+h.name+'」？此操作不可撤销。')){
+        if(h && await uiConfirm('确认删除「'+h.name+'」？此操作不可撤销。')){
           state.festivals.splice(i,1); saveFestivals(); render(); toast('已删除「'+h.name+'」');
         }
         return;

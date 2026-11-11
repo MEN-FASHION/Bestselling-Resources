@@ -221,7 +221,7 @@
       const commit = async () => {
         const v = (name.value || "").trim();
         if (!v || v === s.name) { name.value = s.name; return; }
-        if (!confirm("把站点「" + s.name + "」改名为「" + v + "」？\n该站点已上传的榜单数据会一起改名。")) { name.value = s.name; return; }
+        if (!(await uiConfirm("把站点「" + s.name + "」改名为「" + v + "」？\n该站点已上传的榜单数据会一起改名。"))) { name.value = s.name; return; }
         try {
           await SB.updateRankSiteById(s.id, { name: v });
           await SB.renameRankSiteData(s.name, v);
@@ -264,7 +264,7 @@
       const del = document.createElement("button");
       del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除站点";
       del.onclick = async () => {
-        if (!confirm("删除站点「" + s.name + "」？\n（已上传的榜单数据不受影响，仅从站点清单移除）")) return;
+        if (!(await uiConfirm("删除站点「" + s.name + "」？\n（已上传的榜单数据不受影响，仅从站点清单移除）"))) return;
         try { await SB.removeRankSite(s.name); await loadRankSites(); fillRankPvControls(); rankPreviewRefresh(); sbToast("已删除站点", true); }
         catch (e) { sbToast("删除失败", false); }
       };
@@ -308,12 +308,12 @@
       name.value = g.name;
       name.title = "点一下即可改地区名";
       name.onfocus = () => name.select();
-      const commit = () => {
+      const commit = async () => {
         const v = (name.value || "").trim();
         if (!v || v === g.name) { name.value = g.name; return; }
         if (rankGroups.some((x, i) => i !== gi && x.name === v)) { name.value = g.name; sbToast("已有同名地区", false); return; }
         const old = g.name;
-        if (!confirm("把地区「" + old + "」改名为「" + v + "」？\n该地区下已选的国家不受影响。")) { name.value = old; return; }
+        if (!(await uiConfirm("把地区「" + old + "」改名为「" + v + "」？\n该地区下已选的国家不受影响。"))) { name.value = old; return; }
         rankGroups[gi].name = v;
         saveRankGroups("已改名为「" + v + "」");
       };
@@ -333,7 +333,7 @@
       const del = document.createElement("button");
       del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除地区";
       del.onclick = async () => {
-        if (!confirm("删除地区「" + g.name + "」？\n（仅删除这个分组，各国家的数据与站点清单都不受影响）")) return;
+        if (!(await uiConfirm("删除地区「" + g.name + "」？\n（仅删除这个分组，各国家的数据与站点清单都不受影响）"))) return;
         rankGroups.splice(gi, 1);
         await saveRankGroups("已删除地区");
       };
@@ -837,9 +837,9 @@
       const ren = document.createElement("button");
       ren.type = "button"; ren.className = "btn-ghost small"; ren.textContent = "改期次名";
       ren.onclick = async () => {
-        const v = (prompt("该批次所属期次改名（会同步该期次全部数据）：", b.period_label) || "").trim();
+        const v = (await uiPrompt("该批次所属期次改名（会同步该期次全部数据）：", b.period_label) || "").trim();
         if (!v || v === b.period_label) return;
-        if (!confirm("把期次「" + b.period_label + "」改名为「" + v + "」？\n该期次全部数据会一起改名。")) return;
+        if (!(await uiConfirm("把期次「" + b.period_label + "」改名为「" + v + "」？\n该期次全部数据会一起改名。"))) return;
         try {
           const mv = await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type);
           await loadRankBatches(); rankPreviewRefresh();
@@ -850,7 +850,7 @@
       const del = document.createElement("button");
       del.type = "button"; del.className = "btn-ghost small rank-batch-del"; del.textContent = "删除";
       del.onclick = async () => {
-        if (!confirm("删除该批次「" + b.period_label + " · " + b.category + "」及其全部条目？")) return;
+        if (!(await uiConfirm("删除该批次「" + b.period_label + " · " + b.category + "」及其全部条目？"))) return;
         try { await SB.deleteRankBatch(b.id); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该批次", true); }
         catch (e) { sbToast("删除失败", false); }
       };
@@ -881,7 +881,7 @@
       type.title = "点击切换：周度 ↔ 月度";
       type.onclick = async () => {
         const nt = p.type === "month" ? "week" : "month";
-        if (!confirm("把期次「" + p.label + "」的频次改为「" + (nt === "month" ? "月度" : "周度") + "」？\n该期次全部数据会一起切换。")) return;
+        if (!(await uiConfirm("把期次「" + p.label + "」的频次改为「" + (nt === "month" ? "月度" : "周度") + "」？\n该期次全部数据会一起切换。"))) return;
         try {
           await SB.updateRankPeriodData(p.label, p.type, p.label, nt);
           await loadRankBatches(); rankPreviewRefresh();
@@ -900,7 +900,7 @@
         const v = (name.value || "").trim();
         if (!v || v === p.label) { name.value = p.label; return; }
         if (renaming || committed) return;
-        if (!confirm("把期次「" + p.label + "」改名为「" + v + "」？\n该期次已上传的全部数据（" + p.rows + " 条）会一起改名。")) { name.value = p.label; return; }
+        if (!(await uiConfirm("把期次「" + p.label + "」改名为「" + v + "」？\n该期次已上传的全部数据（" + p.rows + " 条）会一起改名。"))) { name.value = p.label; return; }
         renaming = true;
         try {
           const mv = await SB.updateRankPeriodData(p.label, p.type, v, p.type);
@@ -923,7 +923,7 @@
       const del = document.createElement("button");
       del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除整个期次";
       del.onclick = async () => {
-        if (!confirm("删除整个期次「" + p.label + "」及其全部数据（" + p.rows + " 条）？此操作不可恢复。")) return;
+        if (!(await uiConfirm("删除整个期次「" + p.label + "」及其全部数据（" + p.rows + " 条）？此操作不可恢复。"))) return;
         try { await SB.deleteRankPeriod(p.label, p.type); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该期次", true); }
         catch (e) { sbToast((e && e.message) || "删除失败", false); }
       };
@@ -1031,7 +1031,7 @@
 
     const catAdd = $("#rm-cat-add");
     if (catAdd) catAdd.onclick = async () => {
-      const v = (prompt("输入新类目名称（将同步到「标签管理 → 前台类目」）：") || "").trim();
+      const v = (await uiPrompt("输入新类目名称（将同步到「标签管理 → 前台类目」）：") || "").trim();
       if (!v) return;
       try {
         await SB.addCategory(v);

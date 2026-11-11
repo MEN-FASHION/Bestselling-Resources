@@ -164,7 +164,7 @@
     }
   }
 
-  function confirmRestore(b) {
+  async function confirmRestore(b) {
     var whenTxt = when(b && b.created_at);
     var auto = (b && b.kind === "auto") ? "（这是恢复前自动备份）" : "";
     var msg = "确定恢复到这份快照吗？\n\n生成时间：" + whenTxt + auto +
@@ -173,7 +173,7 @@
       "· 恢复会把「图片记录 / 类目 / 标签 / 榜单 / 公告 / 权限配置」等数据整体回滚到该时间点\n" +
       "· 快照不含图片文件本身，若文件已被物理删除，恢复只能找回记录、找不回文件\n" +
       "· 恢复期间请不要关闭页面";
-    return window.confirm(msg);
+    return await uiConfirm(msg);
   }
 
   async function doRestore(id) {
@@ -208,7 +208,7 @@
 
   async function delBackup(id) {
     if (BKP_BUSY) return;
-    if (!window.confirm("删除这份快照？删除后无法用它恢复（不影响站点数据）。")) return;
+    if (!(await uiConfirm("删除这份快照？删除后无法用它恢复（不影响站点数据）。"))) return;
     try {
       await SB.backupDelete(id);
       if (typeof sbToast === "function") sbToast("已删除该快照");

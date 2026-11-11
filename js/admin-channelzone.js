@@ -426,6 +426,18 @@
     if (f) f.value = state[k].curCat || "";
   }
 
+  /* 视觉行每行几张：与 .grid 的 minmax(150px,1fr) + 8px 间距保持一致，
+     另外扣掉行尾「删此行」按钮的宽度，避免算多一张把行尾挤掉。 */
+  var CZ_MIN_W = 150, CZ_GAP = 8, CZ_ROWBTN = 54;
+  function vcolsOf(box) {
+    var w = 0;
+    try { w = box ? box.clientWidth : 0; } catch (e) { w = 0; }
+    if (!w) w = 900;
+    var usable = Math.max(CZ_MIN_W, w - CZ_ROWBTN - CZ_GAP);
+    var c = Math.floor((usable + CZ_GAP) / (CZ_MIN_W + CZ_GAP));
+    return Math.max(1, c);
+  }
+
   function renderGrid(k) {
     var st = state[k];
     var box = el(k, "grid");
@@ -493,7 +505,8 @@
       var delRow = document.createElement("button");
       delRow.type = "button";
       delRow.className = "cz-row-del";
-      delRow.textContent = "删除整行（" + g.items.length + "）";
+      delRow.textContent = "清空该类目（" + g.items.length + "）";
+      delRow.title = "删除「" + g.cat + "」这个类目下的全部图片";
       delRow.onclick = function (e) {
         e.stopPropagation();
         delMany(k, g.items.map(function (r) { return r.id; }), "「" + g.cat + "」这一行的 " + g.items.length + " 张图");
@@ -501,9 +514,35 @@
       head.appendChild(delRow);
       row.appendChild(head);
 
+      /* 【视觉行】原来是 bg 级 grid 自动换行，用户看到的「一行」和代码里的一行对不上。
+         现在按实际列数切成视觉行，行尾给「删此行」，删的就是你眼下这一排的图。 */
+      var cols = vcolsOf(box);
       var gbox = document.createElement("div");
-      gbox.className = "grid";
-      g.items.forEach(function (r) { gbox.appendChild(cardOf(k, r)); });
+      gbox.className = "cz-vrows";
+      for (var vi = 0; vi < g.items.length; vi += cols) {
+        var chunk = g.items.slice(vi, vi + cols);
+        var vrow = document.createElement("div");
+        vrow.className = "cz-vrow";
+        var imgs = document.createElement("div");
+        imgs.className = "cz-vrow-imgs";
+        imgs.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        chunk.forEach(function (r) { imgs.appendChild(cardOf(k, r)); });
+        vrow.appendChild(imgs);
+        /* 行尾按钮：删除这一排（不是整个类目、也不是勾选的那批） */
+        (function (ch) {
+          var vb = document.createElement("button");
+          vb.type = "button";
+          vb.className = "cz-vrow-del";
+          vb.title = "删除这一排的 " + ch.length + " 张图";
+          vb.textContent = "删此行(" + ch.length + ")";
+          vb.onclick = function (e) {
+            e.stopPropagation();
+            delMany(k, ch.map(function (r) { return r.id; }), "这一排的 " + ch.length + " 张图");
+          };
+          vrow.appendChild(vb);
+        })(chunk);
+        gbox.appendChild(vrow);
+      }
       row.appendChild(gbox);
 
       /* 行内已全选则勾上 */
@@ -608,7 +647,7 @@
       toast("数据层版本偏旧，请强刷页面后重试", false);
       return;
     }
-    if (!window.confirm("删除" + what + "？\n删掉后前台立即不再展示，打标记录会保留。")) return;
+    if (!(await uiConfirm("删除" + what + "？\n删掉后前台立即不再展示，打标记录会保留。"))) return;
     say(k, "删除中…");
     try {
       var res = await SB.deleteRankChannelItems(list);
@@ -676,7 +715,7 @@
     if (patch.uploaded) what.push("上传日期 → " + patch.uploaded);
     if (patch.category) what.push("类目 → " + patch.category);
     if (patch.channel) what.push("渠道 → " + patch.channel);
-    if (!window.confirm("把这 " + ids.length + " 张图改成：\n" + what.join("\n") + "\n\n确认？")) return;
+    if (!(await uiConfirm("把这 " + ids.length + " 张图改成：\n" + what.join("\n") + "\n\n确认？"))) return;
 
     var btn = el(k, "batch-apply");
     if (btn) btn.disabled = true;
@@ -934,7 +973,7 @@
     var item = curItem(k);
     if (!SB || !item) return;
     if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
-    if (!window.confirm("删除这张图？删掉后前台立即不再展示（打标记录保留）。")) return;
+    if (!(await uiConfirm("删除这张图？删掉后前台立即不再展示（打标记录保留）。"))) return;
     try {
       await SB.deleteRankChannelItem(item.id);
       closeTag(k);
@@ -1208,6 +1247,15 @@
     fillCatSelects(k);
     bindUpload(k);
     renderPending(k);
+
+    /* 窗口宽度变了，一行能放几张也变了：重算一次视觉行 */
+    var czRsz = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(czRsz);
+      czRsz = setTimeout(function () {
+        if (state[k] && state[k].ready) renderGrid(k);
+      }, 300);
+    });
 
     var ref = el(k, "refresh");
     if (ref) ref.onclick = function () { loadAll(k); };

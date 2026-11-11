@@ -691,8 +691,8 @@
       undo.textContent = b.status === "reverted" ? "已撤回" : "撤回本批";
       undo.disabled = b.status === "reverted";
       undo.onclick = async function () {
-        if (!confirm("撤回批次「" + b.batch_id + "」？\n\n会把这次改动前的标签写回去（涉及 "
-          + (b.changed_count || 0) + " 张图）。\n此后再被人改过的字段会跳过、不会被覆盖。\n撤回本身也记在案，撤回后不能重做。")) return;
+        if (!(await uiConfirm("撤回批次「" + b.batch_id + "」？\n\n会把这次改动前的标签写回去（涉及 "
+          + (b.changed_count || 0) + " 张图）。\n此后再被人改过的字段会跳过、不会被覆盖。\n撤回本身也记在案，撤回后不能重做。"))) return;
         undo.disabled = true;
         undo.textContent = "撤回中…";
         try {

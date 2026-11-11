@@ -519,7 +519,7 @@
   async function renameCat(id) {
     var c = ST.cats.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!c) return;
-    var n = window.prompt("分类改名", c.name);
+    var n = await uiPrompt("分类改名", c.name);
     if (n == null) return;
     n = String(n).trim();
     if (!n || n === c.name) return;
@@ -534,7 +534,7 @@
     var msg = n
       ? '删除分类「' + c.name + '」？里面的 ' + n + ' 张图不会消失，会回到「未分类」。'
       : '删除分类「' + c.name + '」？';
-    if (!window.confirm(msg)) return;
+    if (!(await uiConfirm(msg))) return;
     try {
       await SBX.deleteFavCategory(id);
       if (ST.filter === catIdKey(id)) ST.filter = "";
@@ -830,12 +830,12 @@
       });
   }
 
-  function bind() {
+  async function bind() {
     var body = $("#fv-body");
     if (!body) return;
 
     /* 点击类：周折叠、周平铺、未分类折叠、勾选、取消收藏、灯箱 */
-    body.addEventListener("click", function (e) {
+    body.addEventListener("click", async function (e) {
       var t = e.target;
       if (!t || !t.closest) return;
 
@@ -875,7 +875,7 @@
       if (del) {
         e.preventDefault(); e.stopPropagation();
         var fig = del.closest(".fv-card");
-        if (fig && window.confirm("取消收藏这张图？")) removeItem(fig.getAttribute("data-id"));
+        if (fig && await uiConfirm("取消收藏这张图？")) removeItem(fig.getAttribute("data-id"));
         return;
       }
       var pick = t.closest(".fv-pick");

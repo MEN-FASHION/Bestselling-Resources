@@ -559,7 +559,7 @@ async function loadManage() {
         del.textContent = "×";
         del.onclick = async (ev) => {
           ev.stopPropagation();
-          if (!confirm("类目「" + c + "」未在配置表中（疑似误加）。确定删除吗？\n删除后会同步清空该类目下所有图片的类目字段（图片本身保留）。")) return;
+          if (!(await uiConfirm("类目「" + c + "」未在配置表中（疑似误加）。确定删除吗？\n删除后会同步清空该类目下所有图片的类目字段（图片本身保留）。"))) return;
           try {
             const imgs = await SB.listImages(c);
             let n = 0;
@@ -873,7 +873,7 @@ function checkedTags() {
 
 async function clearTags() {
     if (!selectedImages.size) return;
-    if (!confirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素/场景/拍摄方式/肤色 全部标签？")) return;
+    if (!(await uiConfirm("确认清空选中的 " + selectedImages.size + " 张图片的 渠道/风格/元素/场景/拍摄方式/肤色 全部标签？"))) return;
     closeTagModal();
     try {
       await SB.clearImageFields([...selectedImages], ["tags", "style_tags", "element_tags", "scene_tags", "shoot_tags", "skin_tags"]);
@@ -1024,13 +1024,9 @@ async function renameTagDef(d, type, used) {
     const disp = type === "scene" ? (d.name.split("·")[1] || d.name) : d.name;
     const cur = disp;
     let group = (d.group === "indoor" || d.group === "outdoor") ? d.group : null;
-    if (type === "scene") {
-      const g = confirm("请选择新分组：确定 = 室内；取消 = 室外");
-      // confirm 只能二选一，改用 prompt 更直观
-    }
     let newName = "";
     if (type === "scene") {
-      const g = prompt("【" + cur + "】\n请输入新场景名（不含前缀）：", cur);
+      const g = await uiPrompt("【" + cur + "】\n请输入新场景名（不含前缀）：", cur);
       if (g === null) return;
       newName = String(g).trim();
       if (!newName) { sbToast("名称不能为空", false); return; }
@@ -1047,7 +1043,7 @@ async function renameTagDef(d, type, used) {
       } catch (e) { sbToast("重命名失败：" + (e.message || ""), false); }
       return;
     }
-    newName = prompt("【" + cur + "】\n请输入新名称：", cur);
+    newName = await uiPrompt("【" + cur + "】\n请输入新名称：", cur);
     if (newName === null) return;
     newName = String(newName).trim();
     if (!newName) { sbToast("名称不能为空", false); return; }
@@ -1115,7 +1111,7 @@ async function addTagDef(type, input, groupSelect) {
 
 async function deleteTagDef(def, type, used) {
     const tname = def.name;
-    if (!confirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并从这些图片上移除。" : "？"))) return;
+    if (!(await uiConfirm("确认删除「" + tname + "」" + (used > 0 ? "？该标签当前被 " + used + " 张图片使用，将一并从这些图片上移除。" : "？")))) return;
     try {
       /* 顺序：先把图片上的该标签清掉（数据库函数一次完成；函数未建库时自动分批清理，单条失败不中断），
          再删标签定义本身 —— 反过来的话清除时就用不到标签名了。
@@ -1224,7 +1220,7 @@ async function refreshTagConsumers() {
       if (!p) return;
       const mode = (document.getElementById("img-imp-mode") || {}).value || "overwrite";
       const clearEmpty = !!(document.getElementById("img-imp-clear") || {}).checked;
-      if (clearEmpty && !confirm("已勾选「空单元格也清空」：表里空着的维度会把库里已有的标签清掉，确认继续？")) return;
+      if (clearEmpty && !(await uiConfirm("已勾选「空单元格也清空」：表里空着的维度会把库里已有的标签清掉，确认继续？"))) return;
       btn.disabled = true; say("写入中…");
       try {
         const r = await ImageImport.run({
@@ -1495,7 +1491,7 @@ function renderHBars(el, rows, total, color, label) {
 // 批量删除
   async function batchDelete() {
     if (!selectedImages.size) return;
-    if (!confirm("确认删除选中的 " + selectedImages.size + " 张图片？此操作不可恢复。")) return;
+    if (!(await uiConfirm("确认删除选中的 " + selectedImages.size + " 张图片？此操作不可恢复。"))) return;
     // 拿当前网格对应的完整图片记录
     let allImgs = [];
     try { allImgs = await SB.listImages(null); } catch (e) {}
@@ -1528,7 +1524,7 @@ function renderHBars(el, rows, total, color, label) {
 
 // 单个删除
   async function removeImage(img) {
-    if (!confirm("确认删除该图片？")) return;
+    if (!(await uiConfirm("确认删除该图片？"))) return;
     if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可删除")) return;
     try {
       if (img.path) await SB.deleteImage(img.path);

@@ -397,7 +397,7 @@
     }).join("");
     $$(".pl-batch-del").forEach(function (b) {
       b.onclick = async function () {
-        if (!window.confirm("删除这次上传的全部数据？此操作不可撤销。")) return;
+        if (!(await uiConfirm("删除这次上传的全部数据？此操作不可撤销。"))) return;
         b.disabled = true;
         try { await SBP.deleteBatch(b.getAttribute("data-id")); toast("已删除", true); await loadBatches(); await refreshFacets(); }
         catch (e) { toast((e && e.message) || "删除失败", false); b.disabled = false; }
@@ -731,7 +731,7 @@
     $$('input[name="pl-catmode"]').forEach(function (r) { r.onchange = function () { if (ST.file) reparse(); }; });
     var pcatAdd = $("#pl-cat-add");
     if (pcatAdd) pcatAdd.onclick = async function () {
-      var v = (window.prompt("输入新类目名称（会同步到「标签管理 → 前台类目」）：") || "").trim();
+      var v = (await uiPrompt("输入新类目名称（会同步到「标签管理 → 前台类目」）：") || "").trim();
       if (!v) return;
       try {
         await SB.addCategory(v);
@@ -764,7 +764,7 @@
       var p = ($("#pl-match-period") && $("#pl-match-period").value) || "";
       var c = ($("#pl-match-cat") && $("#pl-match-cat").value) || "";
       if (!p) return;
-      if (!window.confirm("清空该期次" + (c ? "该类目" : "全部类目") + "的匹配结论？人工判定也会一起清掉。")) return;
+      if (!(await uiConfirm("清空该期次" + (c ? "该类目" : "全部类目") + "的匹配结论？人工判定也会一起清掉。"))) return;
       try { await SBP.clearMatches({ periodLabel: p, category: c }); toast("已清空结论", true); await loadReview(); }
       catch (e) { toast((e && e.message) || "清空失败", false); }
     };

@@ -502,7 +502,7 @@
     var SB = SBx();
     var item = curItem();
     if (!SB || !item) return;
-    if (!window.confirm("删除这张图？打标记录会一并清空。")) return;
+    if (!(await uiConfirm("删除这张图？打标记录会一并清空。"))) return;
     try {
       await SB.deleteMovementItem(item.id);
       closeTag();

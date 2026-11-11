@@ -282,7 +282,7 @@ function escapeHtml(s) {
   }
 
 async function confirmDeleteTrend(t) {
-    if (!confirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件与封面。")) return;
+    if (!(await uiConfirm("确认删除趋势文件「" + (t.title || "") + "」？此操作会同时删除 R2 中的文件与封面。"))) return;
     if (!guardZone("trend", "无权限：只有可操作趋势专区的管理员可删除")) return;
     try {
       await SB.deleteTrendFile(t.path, t.cover || "");

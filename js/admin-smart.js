@@ -334,7 +334,7 @@ function renderSmartGrid(gridEl, list, isDone, smartToken) {
     const action = single
       ? (toDone ? "打上「" + smartTag + "」类目" : "清空「" + smartTag + "」类目")
       : (toDone ? "打上「" + smartTag + "」标签" : "移除「" + smartTag + "」标签");
-    if (!confirm("确认要对本行 " + ids.length + " 张图片批量" + action + "？")) return;
+    if (!(await uiConfirm("确认要对本行 " + ids.length + " 张图片批量" + action + "？"))) return;
     let ok = 0, fail = 0;
     for (const id of ids) {
       const img = smartAll.find(i => i.id === id);
@@ -752,7 +752,7 @@ function bindSmartDrop() {
     if (!smartDim) { sbToast("请先选择一个维度（风格/元素/渠道等）", false); return; }
     const dimLabel = { category: "类目", style: "风格", element: "元素", channel: "渠道", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || smartDim;
     if (smartDim === "channel") { sbToast("渠道标签请在 config.js 维护 CHANNEL_TAGS，不支持在此新增", false); return; }
-    const name = prompt("请输入新的「" + dimLabel + "」标签名称：");
+    const name = await uiPrompt("请输入新的「" + dimLabel + "」标签名称：");
     if (name === null) return;
     const tag = name.trim();
     if (!tag) { sbToast("标签名称不能为空", false); return; }
@@ -760,7 +760,7 @@ function bindSmartDrop() {
     // 场景维度需带 indoor/outdoor 分组
     let group = null;
     if (smartDim === "scene") {
-      const g = prompt("该场景属于室内还是室外？输入 室内 或 室外（回车留空=不分组）：");
+      const g = await uiPrompt("该场景属于室内还是室外？输入 室内 或 室外（回车留空=不分组）：");
       if (g !== null && g.trim()) {
         const gv = g.trim();
         group = (gv === "室内" || gv === "indoor") ? "indoor" : (gv === "室外" || gv === "outdoor") ? "outdoor" : null;
@@ -797,7 +797,7 @@ function bindSmartDrop() {
 // 删除智能打标中的单张图片（确认后删除 R2 文件 + 数据库记录，并刷新池子与标签覆盖）
   async function smartDeleteImage(img) {
     if (!img || !img.id) return;
-    if (!confirm("确认删除该图片？此操作不可恢复。")) return;
+    if (!(await uiConfirm("确认删除该图片？此操作不可恢复。"))) return;
     if (!guardZone("visual", "无权限：只有可操作视觉专区的管理员可删除")) return;
     try {
       if (img.path) await SB.deleteImage(img.path);
@@ -822,7 +822,7 @@ function bindSmartDrop() {
     if (!tag) return;
     if (smartDim === "channel") { sbToast("渠道标签请在 config.js 维护，不支持在此改名", false); return; }
     const dimLabel = { category: "类目", style: "风格", element: "元素", scene: "场景", shoot: "拍摄方式", skin: "肤色" }[smartDim] || smartDim;
-    const newName = prompt("重命名「" + tag + "」（" + dimLabel + "）：\n请输入新标签名称");
+    const newName = await uiPrompt("重命名「" + tag + "」（" + dimLabel + "）：\n请输入新标签名称");
     if (newName === null) return;
     const n = String(newName || "").trim();
     if (!n) { sbToast("标签名称不能为空", false); return; }
@@ -836,7 +836,7 @@ function bindSmartDrop() {
       group = hit ? (hit.group || null) : null;
     } catch (e) { /* 忽略 */ }
     if (smartDim === "scene") {
-      const g = prompt("该场景属于室内还是室外？输入 室内 或 室外（回车保留原分组）：");
+      const g = await uiPrompt("该场景属于室内还是室外？输入 室内 或 室外（回车保留原分组）：");
       if (g !== null && g.trim()) {
         const gv = g.trim();
         group = (gv === "室内" || gv === "indoor") ? "indoor" : (gv === "室外" || gv === "outdoor") ? "outdoor" : group;
@@ -881,7 +881,7 @@ function bindSmartDrop() {
 // 删除图册（打标时）：删除该标签，同步移除图片上的该标签，并同步删除标签管理里的标签
   async function smartDeleteAlbum(tag) {
     if (!tag) return;
-    if (!confirm("确认删除图册「" + tag + "」？将同步移除图片上已打的该标签，并从标签管理删除该标签。")) return;
+    if (!(await uiConfirm("确认删除图册「" + tag + "」？将同步移除图片上已打的该标签，并从标签管理删除该标签。"))) return;
     const field = smartFieldMap[smartDim];
     try {
       // 1. 从数据库删除标签定义（先按 type+name 查出 id）
@@ -1011,7 +1011,7 @@ async function moveSmart(id, toDone) {
     // 注意：用全量清单取图（分批渲染下页面只渲染了一部分）
     const ids = smartFullUndone.map(i => i.id).filter(Boolean);
     if (!ids.length) { sbToast("本池暂无需要打标的图片", false); return; }
-    if (!confirm("确认要对本池 " + ids.length + " 张图片批量打上「" + smartTag + "」标签？")) return;
+    if (!(await uiConfirm("确认要对本池 " + ids.length + " 张图片批量打上「" + smartTag + "」标签？"))) return;
     let ok = 0, fail = 0;
     for (const id of ids) {
       const img = smartAll.find(i => i.id === id);
@@ -1311,7 +1311,7 @@ function smartRenderPending() {
     // 注意：用全量清单取图（分批渲染下页面只渲染了一部分）
     const ids = smartFullDone.map(i => i.id).filter(Boolean);
     if (!ids.length) { sbToast("本池暂无需要移除标签的图片", false); return; }
-    if (!confirm("确认要对本池 " + ids.length + " 张图片批量移除「" + smartTag + "」标签？")) return;
+    if (!(await uiConfirm("确认要对本池 " + ids.length + " 张图片批量移除「" + smartTag + "」标签？"))) return;
     let ok = 0, fail = 0;
     for (const id of ids) {
       const img = smartAll.find(i => i.id === id);
