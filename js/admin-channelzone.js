@@ -1306,8 +1306,7 @@
     ZONES.forEach(function (z) {
       var card = document.getElementById(z.key + "-card");
       if (!card) return;
-      /* 逐个专区独立初始化：某一个专区出错时，只影响它自己，
-         不能让后面的专区连外框都没生成（表现为整块空白、且看不出原因）。 */
+      /* 逐个专区独立初始化：某一个出错只影响它自己，不能让后面的专区整块空白 */
       try {
         mount(z);
       } catch (e) {

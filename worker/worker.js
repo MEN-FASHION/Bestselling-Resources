@@ -694,12 +694,7 @@ function genReadKey() {
       const page = await env.IMAGES.list({ cursor, limit: 1000 });
       for (const o of (page.objects || [])) {
         // 只保留视觉专区图片（key 以 images/ 开头），排除趋势/招品/回品等其它专区
-        /* 带上 content-type：转成 WebP 后 key 后缀仍是 .jpg，只靠文件名会认不出，
-           前端刷新后就分不清哪些已经转过了。 */
-        if (o.key && o.key.startsWith("images/")) {
-          const ct = (o.httpMetadata && o.httpMetadata.contentType) || "";
-          items.push({ key: o.key, size: o.size, type: ct });
-        }
+        if (o.key && o.key.startsWith("images/")) items.push({ key: o.key, size: o.size });
       }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
