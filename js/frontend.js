@@ -113,10 +113,28 @@
     try { seen = localStorage.getItem(legalKey) || "0"; } catch (e) {}
     if (seen !== "1") openLegal("force");
   }
+  /* 兜底：脚本一加载就先挂上「一定揭开遮罩」的定时器。
+     原来这行在 DOMContentLoaded 回调内部，只要回调前面任何一句抛错（例如某个元素被改掉），
+     定时器就永远注册不上 → 页面停在加载遮罩上一直转圈，用户完全看不到原因。 */
+  (function () {
+    const hide = () => {
+      const s = document.getElementById("boot-splash");
+      if (s) s.classList.add("hidden");
+    };
+    setTimeout(hide, 3000);
+    setTimeout(hide, 8000);   /* 双保险：即使前一次被异常打断 */
+  })();
+
+  /* 赋值一律先判空：某个标题元素缺失时不该让整页启动流程中断 */
+  function setText(sel, val) {
+    const el = $(sel);
+    if (el) el.textContent = val;
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
-    $("#site-title").textContent = CONFIG.siteTitle;
-    $(".subtitle").textContent = CONFIG.siteSubtitle;
-    $("#top-title").textContent = CONFIG.siteTitle;
+    setText("#site-title", CONFIG.siteTitle);
+    setText(".subtitle", CONFIG.siteSubtitle);
+    setText("#top-title", CONFIG.siteTitle);
     document.title = CONFIG.siteTitle + " · 视觉专区";
 
     initLegal();
