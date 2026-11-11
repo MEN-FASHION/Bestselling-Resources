@@ -1,4 +1,4 @@
-/* 我的收藏 · 导出 PDF / HTML / 长图 按「周度」收窄 —— 20261111L
+/* 我的收藏 · 导出 PDF / HTML / 长图 按「周度」收窄 —— 20261111M
    锁四件事：
      ① 期次能判出周度 / 月度（三种写法都认），认不出的不算任何一类
      ② 收窄只影响本次导出，不影响收藏本身
@@ -18,6 +18,13 @@ ok(/id="fv-export-scope"/.test(FH), "有导出范围下拉");
 ok(/value="week" selected/.test(FH), "默认「仅周度」");
 ok(/value="month"/.test(FH) && /value="all"/.test(FH), "还有「仅月度」「全部期次」");
 ok(!/fv-export-scope"[^>]*disabled/.test(FH), "下拉始终可用（收藏为空时才禁用按钮）");
+
+console.log("一·补、模板没有时脚本自己补出下拉（覆盖漏文件也不至于没入口）");
+ok(/function ensureScopeUI\(\)/.test(FJ), "有补建函数");
+ok(/if \(document\.getElementById\("fv-export-scope"\)\) return;/.test(FJ), "已有则不动，避免出现两个下拉");
+ok(/ensureScopeUI\(\);/.test(FJ), "初始化时调用");
+ok(/host\.insertBefore\(lab, anchor\)/.test(FJ), "插在导出按钮左侧（找得到就插、找不到追加）");
+ok(/\["week", "仅周度"\], \["month", "仅月度"\], \["all", "全部期次"\]/.test(FJ), "补出来的选项与模板一致");
 
 console.log("二、三个导出入口都带上范围");
 ok(/exportPng\(ST\.items, ST\.cats, \{ scale: 2, scope: exportScope\(\)/.test(FJ), "长图导出带范围");

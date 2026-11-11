@@ -581,6 +581,33 @@
    * ============================================================ */
   /* ---------------- 整张导出：收藏周报（所有登录用户可用，不限管理员） ----------------
      导出的是「全部收藏」，不是当前筛选后的一屏——周报要的是完整，筛选只是看的时候方便。 */
+  /* 导出范围控件：模板里没写就自己补一个（旧模板/覆盖漏文件时不至于没有入口）。
+     放在导出按钮左侧，三个导出入口共用。 */
+  function ensureScopeUI() {
+    if (document.getElementById("fv-export-scope")) return;
+    var host = document.querySelector(".fv-bar-r");
+    if (!host) return;
+    var lab = document.createElement("label");
+    lab.className = "fv-scope";
+    lab.title = "导出与发布时按哪种期次收窄：周度（W45 这类）或月度（2026-10 这类）";
+    var sp = document.createElement("span");
+    sp.textContent = "导出范围";
+    var sel = document.createElement("select");
+    sel.id = "fv-export-scope";
+    [["week", "仅周度"], ["month", "仅月度"], ["all", "全部期次"]].forEach(function (o, i) {
+      var op = document.createElement("option");
+      op.value = o[0];
+      op.textContent = o[1];
+      if (i === 0) op.selected = true;
+      sel.appendChild(op);
+    });
+    lab.appendChild(sp);
+    lab.appendChild(sel);
+    var anchor = document.getElementById("fv-export") || document.getElementById("fv-export-html");
+    if (anchor && anchor.parentNode === host) host.insertBefore(lab, anchor);
+    else host.appendChild(lab);
+  }
+
   /* 导出范围（周度 / 月度 / 全部）：三个导出入口共用同一个下拉 */
   function exportScope() {
     var el = $("#fv-export-scope");
@@ -877,6 +904,9 @@
         moveItems(ids.map(String), row.getAttribute("data-cat"));
       });
     }
+
+    /* 导出范围下拉：页面里没有就补上，再绑按钮 */
+    ensureScopeUI();
 
     /* 顶部按钮 */
     var ea = $("#fv-expand-all");

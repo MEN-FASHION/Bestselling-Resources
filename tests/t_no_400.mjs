@@ -1,4 +1,4 @@
-/* 20261111L · 控制台 400：列探测与批次枚举不再制造「必失败」的请求 */
+/* 20261111M · 控制台 400：列探测与批次枚举不再制造「必失败」的请求 */
 import fs from "node:fs";
 import vm from "node:vm";
 let pass = 0, fail = 0;
