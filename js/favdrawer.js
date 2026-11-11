@@ -70,7 +70,8 @@
     var m = document.createElement("div");
     m.className = "fv-d-expmenu";
     m.innerHTML = '<button type="button" data-k="png"><b>整张图片（PNG）</b><span>一张高清长图，2 倍分辨率</span></button>'
-      + '<button type="button" data-k="html"><b>网页（单文件 HTML）</b><span>双击打开，可筛选 / 搜索 / 打印</span></button>';
+      + '<button type="button" data-k="html"><b>网页（单文件 HTML）</b><span>双击打开，可筛选 / 搜索 / 打印</span></button>'
+      + '<button type="button" data-k="pdf"><b>PDF 报告（本地下载）</b><span>连续长页、按卡片分页，只存本地不上传</span></button>';
     document.body.appendChild(m);
     var r = btn.getBoundingClientRect();
     m.style.top = Math.round(r.bottom + 6) + "px";
@@ -92,7 +93,17 @@
     btn.disabled = true;
     var old = "导出";
     try {
-      if (kind === "html") {
+      if (kind === "pdf") {
+        btn.textContent = "排版中";
+        var pr = await FavExport.exportPdfForTrend(ST.items, ST.cats, {
+          scale: 2,
+          publish: false,       /* 只下载，不上传、不登记趋势专区 */
+          onProgress: function (a, b) { btn.textContent = "图 " + a + "/" + b; },
+          onPage: function (m) { btn.textContent = m; }
+        });
+        FavExport.download(pr.pdfBlob, "收藏周报-" + stamp() + ".pdf");
+        toast("已导出 PDF · " + pr.count + " 张 · " + pr.pages + " 页");
+      } else if (kind === "html") {
         btn.textContent = "生成网页";
         var hr = await FavExport.exportHtml(ST.items, ST.cats);
         FavExport.download(hr.blob, FavExport.htmlName(new Date()));
@@ -114,6 +125,83 @@
       btn.disabled = false;
     }
     btn.removeAttribute("data-busy");
+  }
+
+  /* ---------------------------------------------------------------- 单期次导出
+     抽屉里每一期的标题右侧有「导出 PDF」「导出 HTML」：只导这一期的图，
+     不掺别的期次，也不受顶部「导出」那套「全部收藏」口径影响。 */
+  function stamp(d) {
+    var t = d || new Date();
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) + "-" + p(t.getHours()) + p(t.getMinutes());
+  }
+
+  function periodFileName(period, ext, d) {
+    var tag = String(period || "未标注期次").replace(/[\\/:*?"<>|\s]+/g, "-");
+    return "收藏周报-" + tag + "-" + stamp(d) + "." + ext;
+  }
+
+  function periodItems(period) {
+    var p = String(period);
+    return (ST.items || []).filter(function (it) { return String(it.period_label || "未标注期次") === p; });
+  }
+
+  async function doPeriodExport(kind, period, btn) {
+    if (!btn || btn.getAttribute("data-busy") === "1") return;
+    var label = kind === "pdf" ? "导出 PDF" : "导出 HTML";
+    function back(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, ms || 2800);
+      btn.removeAttribute("data-busy");
+    }
+    var FE = window.FavExport;
+    if (!FE) { back("导出组件未加载，请刷新页面", 3200); return; }
+    var list = periodItems(period);
+    if (!list.length) { back("这一期没有收藏", 2600); return; }
+    if (kind === "pdf" && !FE.exportPdfForTrend) { back("导出组件未加载，请刷新页面", 3200); return; }
+    if (kind === "html" && !FE.exportHtml) { back("导出组件未加载，请刷新页面", 3200); return; }
+
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+
+    try {
+      if (kind === "html") {
+        btn.textContent = "生成网页";
+        var hr = await FE.exportHtml(list, ST.cats, { scope: "all" });
+        FE.download(hr.blob, periodFileName(period, "html"));
+        toast("已导出 " + period + " · " + hr.count + " 张 · HTML");
+      } else {
+        btn.textContent = "排版中";
+        var pr = await FE.exportPdfForTrend(list, ST.cats, {
+          scale: 2,
+          scope: "all",
+          publish: false,
+          onProgress: function (a, b) { btn.textContent = "图 " + a + "/" + b; },
+          onPage: function (m) { btn.textContent = "PDF " + m; }
+        });
+        FE.download(pr.pdfBlob, periodFileName(period, "pdf"));
+        toast("已导出 " + period + " · " + pr.count + " 张 · PDF " + pr.pages + " 页");
+      }
+      btn.textContent = "已导出";
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, 2400);
+    } catch (err) {
+      toast((err && err.message) ? err.message : "导出失败，请重试");
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+    btn.removeAttribute("data-busy");
+  }
+
+  /* 期次标题上的按钮是每次渲染重建的，所以用事件委托挂在抽屉主体上 */
+  function onPeriodExpClick(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var b = t.closest("[data-pexp]");
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var sec = b.closest(".fv-d-week");
+    doPeriodExport(b.getAttribute("data-pexp"), sec ? sec.getAttribute("data-period") : "", b);
   }
 
   var COLORS = ["#8b7355", "#c25e5a", "#4a9c6d", "#5b7c9d", "#b08a4f", "#8a6fa8", "#4f8f8a", "#a0685a"];
@@ -207,6 +295,10 @@
         e.stopPropagation();
         showExportMenu(expBtn);
       });
+
+      /* 每一期标题右侧的「导出 PDF / 导出 HTML」：按钮每次渲染重建，统一委托 */
+      var dBodyEl = $("#fv-d-body");
+      if (dBodyEl) dBodyEl.addEventListener("click", onPeriodExpClick);
 
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
@@ -930,9 +1022,14 @@
     var nextI = function () { return Math.min(seq++, 24); };
     var h = subBarHtml(list);
     groupByPeriod(list).forEach(function (g) {
-      h += '<section class="fv-d-week">';
+      h += '<section class="fv-d-week" data-period="' + esc(g.period) + '">';
       h += '<div class="fv-d-week-h"><span class="fv-d-week-t">' + esc(g.period) + '</span>'
-        + '<span class="fv-d-week-n">' + g.items.length + ' 张</span></div>';
+        + '<span class="fv-d-week-n">' + g.items.length + ' 张</span>'
+        /* 每一期自己的导出：只导这一期的图，和工具栏「导出」的「全部收藏」口径分开 */
+        + '<span class="fv-d-week-acts">'
+        +   '<button type="button" class="fv-d-pexp" data-pexp="pdf" title="只导出这一期的收藏，生成 PDF 报告（本地下载，不上传）">导出 PDF</button>'
+        +   '<button type="button" class="fv-d-pexp" data-pexp="html" title="只导出这一期的收藏，生成可直接双击打开的单文件网页">导出 HTML</button>'
+        + '</span></div>';
 
       if (ST.flat) {
         /* 平铺：同类相邻，每组下方一条框横跨该组全部图片；未分类不进平铺 */
