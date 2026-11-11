@@ -1,5 +1,5 @@
 /* ============================================================================
- * compare-front.js —— 渠道对比（多列图片横向对比，20261111R）
+ * compare-front.js —— 渠道对比（多列图片横向对比，20261111U）
  * ----------------------------------------------------------------------------
  * 一屏之内把「同一个类目 · 同一个月」的各个来源的图并排摆开，一眼看差异。
  *
@@ -285,6 +285,39 @@
     names.forEach(function (c) { add(c, cnt[c]); });
   }
 
+  /* ---------- 差异分析：把当前这一屏的数据交给分析模块 ---------- */
+  function visibleList(s) {
+    return sourceItems(s).filter(function (r) {
+      return (!state.month || r.month === state.month) && (state.cat === ALL || r.category === state.cat);
+    });
+  }
+
+  function insightCtx() {
+    var srcs = activeSources().filter(function (s) { return visibleList(s).length > 0; });
+    return {
+      month: state.month, cat: state.cat, tags: state.tags,
+      sources: srcs.map(function (s) {
+        return { key: s.key, label: s.label, type: s.type, list: visibleList(s) };
+      }),
+    };
+  }
+
+  /* 打开分析：key 指定「分析哪个来源」，为空时挑一个渠道列（通常就是用户想问的那个） */
+  function openInsight(key) {
+    if (!window.CmpInsight || typeof window.CmpInsight.open !== "function") {
+      toast("分析组件未加载，请刷新页面后重试", false);
+      return;
+    }
+    var ctx = insightCtx();
+    if (!ctx.sources.length) { toast("这个月份 / 类目下还没有图片，先换一个再看看", false); return; }
+    var focus = key;
+    if (!focus) {
+      var ch = ctx.sources.filter(function (s) { return s.type !== "rank"; })[0] || ctx.sources[0];
+      focus = ch ? ch.key : "";
+    }
+    window.CmpInsight.open(ctx, focus);
+  }
+
   /* ---------- 多列对比池 ---------- */
   function perRowOf(n) {
     var fixed = state.cfg && Number(state.cfg.perRow);
@@ -313,7 +346,8 @@
 
     if (bar) {
       bar.innerHTML = '<span class="rk-bar-info">共 <b>' + total + "</b> 张 · " + srcs.length + " 列" +
-        (state.month ? " · " + esc(state.month) : "") + (cat !== ALL ? " · " + esc(cat) : "") + "</span>";
+        (state.month ? " · " + esc(state.month) : "") + (cat !== ALL ? " · " + esc(cat) : "") + "</span>" +
+        '<button type="button" class="cmi-btn cmi-btn-ghost" id="cmp-insight-all" title="按当前类目与月份，对比各来源的打标结构差异">渠道差异分析</button>';
     }
 
     if (!srcs.length) {
@@ -335,7 +369,10 @@
       html += '<div class="rk-pool-head"><div class="rk-pool-name"><span>' + esc(s.label) +
         '</span><span class="rk-n">' + list.length + " 张</span></div>" +
         '<div class="rk-pool-meta">' + esc(s.type === "rank" ? "月度榜单" : "渠道图") +
-        (state.month ? " · " + esc(state.month) : "") + "</div></div>";
+        (state.month ? " · " + esc(state.month) : "") +
+        (list.length ? ' <button type="button" class="cmi-btn" data-insight="' + esc(s.key) +
+          '" title="看这一列与其它来源的打标结构差异">详细分析</button>' : "") +
+        "</div></div>";
       html += '<div class="rk-pool-grid" style="--rk-r:' + pr + '">';
       if (!list.length) {
         html += '<div class="rk-empty">该列暂无数据</div>';
@@ -360,6 +397,14 @@
     Array.prototype.forEach.call(body.querySelectorAll(".cmp-card"), function (fig) {
       fig.onclick = function () { openModal(fig.getAttribute("data-url")); };
     });
+    Array.prototype.forEach.call(body.querySelectorAll(".cmi-btn[data-insight]"), function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        openInsight(btn.getAttribute("data-insight"));
+      };
+    });
+    var allBtn = $("#cmp-insight-all");
+    if (allBtn) allBtn.onclick = function () { openInsight(""); };
   }
 
   /* ---------- 大图 + 打标 ---------- */

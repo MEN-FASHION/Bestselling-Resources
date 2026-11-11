@@ -773,12 +773,21 @@
     var buf = await file.arrayBuffer();
     var res = parseBook(buf);
 
-    /* 能对上的范围：不传 periodType 就是全部（周度面板的原有行为） */
-    var f = { cols: "image_url" };
-    if (opts.periodType) f.periodType = opts.periodType;
-    var detail = await SB.listRankItems(f);
+    /* 能对上的范围：不传 periodType 就是全部（周度面板的原有行为）。
+       opts.urls 给定时以这份清单为准 —— 渠道图有一部分存在文档里，不在 rank_items，
+       只按 periodType 取会把它们全判成「对不上」，导入结果永远是 0 行。 */
     var exist = {};
-    (detail || []).forEach(function (r) { exist[String(r.image_url || "").trim()] = 1; });
+    if (Array.isArray(opts.urls) && opts.urls.length) {
+      opts.urls.forEach(function (u) {
+        var v = String(u || "").trim();
+        if (v) exist[v] = 1;
+      });
+    } else {
+      var f = { cols: "image_url" };
+      if (opts.periodType) f.periodType = opts.periodType;
+      var detail = await SB.listRankItems(f);
+      (detail || []).forEach(function (r) { exist[String(r.image_url || "").trim()] = 1; });
+    }
 
     var hit = res.rows.filter(function (x) { return exist[x.url]; });
     var hitUrls = hit.map(function (x) { return x.url; });

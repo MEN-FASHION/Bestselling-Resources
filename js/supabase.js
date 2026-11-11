@@ -1193,7 +1193,7 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "保存失败");
     },
 
-    // ============ 渠道对比 · 来源列配置（20261111R） ============
+    // ============ 渠道对比 · 来源列配置（20261111U） ============
     // 存在 site_settings.frontend_dims.compare_sources，不改表结构：
     //   { list:[{key,label,type,channel,month}], showEmpty:bool, perRow:0 }
     //   type = "rank"（上新节奏·月度榜单） | "channel"（某个渠道的图，channel=渠道名）
@@ -4487,7 +4487,7 @@ async removeTrendRecord(id) {
         const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
         const url = base + "/" + path;
         const idx = doc.findIndex((x) => String(x.u || "") === url);
-        const rec = { u: url, ch: it.channel, c: it.category, m };
+        const rec = { u: url, ch: it.channel, c: it.category, m, t: new Date().toISOString().slice(0, 10) };
         if (idx >= 0) doc[idx] = rec; else doc.push(rec);
         changed = true;
         done.push({ name: it.file.name, url, channel: it.channel });
@@ -4546,6 +4546,183 @@ async removeTrendRecord(id) {
     const { error } = await client.from("rank_items").delete().eq("id", id);
     if (error) throw new Error(error.message || "删除失败");
     return true;
+  };
+
+  /* ============================================================
+   * 批量删除渠道图（20261111U）
+   * ------------------------------------------------------------
+   * 渠道图有两种存放位置：文档存储（id 形如 cp:<url>）与 rank_items 表（数字 id）。
+   * 批量删除必须两条都照顾到，否则「勾了 30 张只删掉一半」。
+   *   · 文档存储：一次读出、过滤、一次写回（不逐张写，避免写一半失败）
+   *   · rank_items：按 id 分块删（单次 in 列表过长会被网关截断）
+   * 返回 { ok, failed }，失败逐条给原因，界面据此提示，不假装全成功。
+   * ==========================================================*/
+  API.deleteRankChannelItems = async function (ids) {
+    const list = Array.from(new Set((Array.isArray(ids) ? ids : []).map((v) => String(v || "").trim()).filter(Boolean)));
+    const out = { ok: 0, failed: [] };
+    if (!list.length) return out;
+
+    const urls = [], nums = [];
+    list.forEach((id) => { if (isCpId(id)) urls.push(cpUrl(id)); else nums.push(id); });
+
+    if (urls.length) {
+      try {
+        const doc = await chPicLoad(true);
+        const kill = new Set(urls);
+        const next = doc.filter((x) => !kill.has(String(x.u || "")));
+        const removed = doc.length - next.length;
+        if (removed) await chPicSave(next);
+        out.ok += removed;
+      } catch (e) {
+        urls.forEach((u) => out.failed.push({ id: cpId(u), reason: String((e && e.message) || "删除失败") }));
+      }
+    }
+
+    const CHUNK = 80;
+    for (let i = 0; i < nums.length; i += CHUNK) {
+      const part = nums.slice(i, i + CHUNK);
+      try {
+        const { error, count } = await client.from("rank_items").delete({ count: "exact" }).in("id", part);
+        if (error) throw new Error(error.message || "删除失败");
+        out.ok += (typeof count === "number" ? count : part.length);
+      } catch (e) {
+        part.forEach((id) => out.failed.push({ id, reason: String((e && e.message) || "删除失败") }));
+      }
+    }
+    return out;
+  };
+
+  /* ============================================================
+   * 批量修改渠道图字段（20261111U）
+   * ------------------------------------------------------------
+   * 只改传进来的字段（undefined = 不动），所以「批量只改月份」不会顺手把类目清空。
+   * 可改字段：channel（渠道名）/ category（类目）/ period_label（月份，前台展示的上传期次）。
+   * 文档存储与 rank_items 各走各的写法，文档那一侧一次写回。
+   * ==========================================================*/
+  API.updateRankChannelItems = async function (ids, patch) {
+    const list = Array.from(new Set((Array.isArray(ids) ? ids : []).map((v) => String(v || "").trim()).filter(Boolean)));
+    const out = { ok: 0, failed: [] };
+    const p = patch || {};
+    const has = (k) => p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== "";
+    if (!list.length || (!has("channel") && !has("category") && !has("period_label") && !has("uploaded"))) return out;
+
+    const urls = [], nums = [];
+    list.forEach((id) => { if (isCpId(id)) urls.push(cpUrl(id)); else nums.push(id); });
+
+    if (urls.length) {
+      try {
+        const doc = await chPicLoad(true);
+        const set = new Set(urls);
+        let touched = 0;
+        doc.forEach((x) => {
+          if (!set.has(String(x.u || ""))) return;
+          if (has("channel")) x.ch = String(p.channel).trim();
+          if (has("category")) x.c = String(p.category).trim();
+          if (has("period_label")) x.m = API._normMonth(p.period_label);
+          if (has("uploaded")) x.t = String(p.uploaded).slice(0, 10);
+          touched++;
+        });
+        if (touched) await chPicSave(doc);
+        out.ok += touched;
+        if (touched < urls.length) {
+          out.failed.push({ reason: "有 " + (urls.length - touched) + " 张已不在存储里，请刷新列表" });
+        }
+      } catch (e) {
+        urls.forEach((u) => out.failed.push({ id: cpId(u), reason: String((e && e.message) || "修改失败") }));
+      }
+    }
+
+    if (nums.length) {
+      const colOk = await API.rankChannelColumn();
+      const o2 = {};
+      if (has("channel") && colOk) o2.channel = String(p.channel).trim();
+      if (has("category")) o2.category = String(p.category).trim();
+      if (has("period_label")) o2.period_label = API._normMonth(p.period_label);
+      /* 「上传日期」写 rank_items.created_at：按当天中午换算，避免时区把日期推前一天 */
+      if (has("uploaded")) {
+        const d = String(p.uploaded).slice(0, 10).split("-").map((v) => parseInt(v, 10));
+        if (d.length === 3 && d[0]) o2.created_at = new Date(d[0], d[1] - 1, d[2], 12, 0, 0).toISOString();
+      }
+      if (Object.keys(o2).length) {
+        const CHUNK = 80;
+        for (let i = 0; i < nums.length; i += CHUNK) {
+          const part = nums.slice(i, i + CHUNK);
+          try {
+            const { error, count } = await client.from("rank_items").update(o2, { count: "exact" }).in("id", part);
+            if (error) throw new Error(error.message || "修改失败");
+            out.ok += (typeof count === "number" ? count : part.length);
+          } catch (e) {
+            part.forEach((id) => out.failed.push({ id, reason: String((e && e.message) || "修改失败") }));
+          }
+        }
+      }
+      /* 没有 channel 列时渠道名走归属字典（与单张修改同一套兜底） */
+      if (has("channel") && !colOk) {
+        try {
+          const map = await API._chMapLoad(true);
+          const v = String(p.channel).trim();
+          const { data } = await client.from("rank_items").select("id,image_url").in("id", nums.slice(0, 1000));
+          (data || []).forEach((r) => { const u = String(r.image_url || "").trim(); if (u) map[u] = v; });
+          await API._chMapSave(map);
+        } catch (e) { /* 字典写不进去不影响主字段 */ }
+      }
+    }
+    return out;
+  };
+
+  /* 批量删除（挂到后台图墙的「整行删除 / 批量删除」）
+     一次要删几十上百张，逐条发请求会很慢，而且中途失败会留下半截。
+     口径：
+       1) 两种存储来源都要覆盖——正常行在 rank_items（数字 id），
+          渠道列不可用时图存在设置表文档里（id 形如 cp:<图片地址>），按地址从文档里剔除；
+       2) rank_items 按 100 条一批并发删，单批失败不影响其它批；
+       3) 返回 { ok, failed, errors }，后台据此提示「删了几张、几张没删掉」，
+          不把失败吞掉假装全部成功。 */
+  API.deleteRankChannelItems = async function (ids) {
+    const list = [...new Set((Array.isArray(ids) ? ids : []).map((v) => String(v == null ? "" : v).trim()).filter(Boolean))];
+    const out = { ok: 0, failed: 0, errors: [] };
+    if (!list.length) return out;
+
+    /* ① 文档型（cp: 开头）：一张一次读改写代价太大，整批只做一次读 + 一次写 */
+    const cpUrls = list.filter(isCpId).map(cpUrl);
+    const dbIds = list.filter((v) => !isCpId(v) && /^\d+$/.test(v));
+    const otherIds = list.filter((v) => !isCpId(v) && !/^\d+$/.test(v));
+
+    if (cpUrls.length) {
+      try {
+        const doc = await chPicLoad(true);
+        const drop = new Set(cpUrls);
+        const next = doc.filter((x) => !drop.has(String(x.u || "")));
+        await chPicSave(next);
+        out.ok += cpUrls.length;
+      } catch (e) {
+        out.failed += cpUrls.length;
+        out.errors.push((e && e.message) || "删除失败");
+      }
+    }
+
+    /* ② rank_items：分批并发，单批报错只记错，不中断其余批 */
+    const BATCH = 100;
+    const chunks = [];
+    for (let i = 0; i < dbIds.length; i += BATCH) chunks.push(dbIds.slice(i, i + BATCH));
+    const settled = await Promise.all(chunks.map(async (part) => {
+      try {
+        const { error } = await client.from("rank_items").delete().in("id", part);
+        return error ? { n: part.length, err: error.message || "删除失败" } : { n: part.length, err: "" };
+      } catch (e) {
+        return { n: part.length, err: (e && e.message) || "删除失败" };
+      }
+    }));
+    settled.forEach((r) => {
+      if (r.err) { out.failed += r.n; out.errors.push(r.err); }
+      else out.ok += r.n;
+    });
+
+    if (otherIds.length) {
+      out.failed += otherIds.length;
+      out.errors.push("有 " + otherIds.length + " 条记录无法识别，已跳过");
+    }
+    return out;
   };
 
   API.listRankChannelNames = async function () {

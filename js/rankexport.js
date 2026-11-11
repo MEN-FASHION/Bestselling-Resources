@@ -607,7 +607,10 @@
     dimProgress: dimProgress, ENUM: ENUM, COLS: COLS, DIMS: DIMS, OPT_DIMS: OPT_DIMS, DIM_TOTAL: DIM_TOTAL,
     VISUAL_LEGACY: VISUAL_LEGACY,
     splitArr: splitArr, scopeName: SCOPE_NAME,
-    catStats: catStats, loadCats: loadCats, hitCat: hitCat, hitChannel: hitChannel,
+    /* 20261111U：清单里曾引用一个随「渠道列」下线时一起删掉的函数，浏览器在加载阶段
+       就抛 ReferenceError，导致 window.RankExport 永远不被赋值 —— 表现就是后台点
+       导出提示「导出模块未加载」，强刷也没用。只导出真正还存在的成员。 */
+    catStats: catStats, loadCats: loadCats, hitCat: hitCat,
     CRAFT_GUIDE: CRAFT_GUIDE, CRAFT_HINT: CRAFT_HINT
   };
 

@@ -48,6 +48,7 @@
 | `frontend.js` | 视觉专区（首页） |
 | `channel-zone-front.js` | Pinterest / SHEIN 两个纯图片专区的**共用前台脚本**（页面用 `window.CZONE` 声明是哪个渠道） |
 | `compare-front.js` | 渠道对比页（多列并排看各来源的图；列由后台配置，未配置时自动按渠道发现） |
+| `compare-insight.js` | 渠道对比「差异分析」：按 13 个打标维度算某个来源 vs 其它来源的差异、独有特征与缺口、结构相似度、全景对照表。纯前端只读计算，不写库 |
 | `rank.js` | 趋势上升榜（周度，只读 period_type=week） |
 | `rhythm.js` | 上新节奏（月度版，只读 period_type=month；与 rank.js 同构，改一处要同步另一处） |
 | `rank-enums.js` | 打标的**枚举唯一来源**（v11：风格 / 视觉三组 / 图案类型 / 图案元素 / 结构部件 / 面料 / 工艺 / 拍摄 / 模特 / 版型 / 文化背景 / 消费心理 / 节日）。由 `build/gen_enums.py` 从《打标枚举总表》机械生成，**不要手改**；前后台共用这一份，否则导出、导入、前台展示三处会走样。同时承担 v10→v11 的旧值改写（`normalizeTagSet` / `bgAlias`） |
@@ -81,7 +82,7 @@
 | `admin-rank.js` | 站内趋势上升榜单（Excel 上传 + 导出打标表 + 打标结果回填 + 批次撤回） |
 | `admin-rhythm.js` | 上新节奏 · 月度榜单（同上，但期次锁死月度、只读写 month 数据） |
 | `admin-plus.js` | 大码专区数据（独立上传入口 + 开始匹配） |
-| `admin-channelzone.js` | Pinterest / SHEIN 两个纯图片专区后台（批量传图 → 打标 → 导出；面板 id 带 `cz-<专区>-` 前缀，一个脚本驱动两块面板） |
+| `admin-channelzone.js` | Pinterest / SHEIN 两个纯图片专区后台（批量传图 → 打标 → 导出/导入打标表；图墙支持单张删除、按类目整行删除、勾选批量删除与批量编辑月份/上传日期/类目/渠道名。面板 id 带 `cz-<专区>-` 前缀，一个脚本驱动两块面板） |
 | `admin-compare.js` | 渠道对比的列配置（对比哪几列、列名、顺序、空列是否显示、每列每行张数） |
 | `admin-bestseller.js` | 爆款图库 / 图片管理 |
 | `admin-images.js` | 图片上传与分组 |

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>渠道对比 · TREND BANK</title>
 <link rel="icon" href="favicon.svg">
-<link rel="stylesheet" href="css/style.css?v=20261111R">
+<link rel="stylesheet" href="css/style.css?v=20261111U">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
@@ -77,12 +77,21 @@
     </div>
   </div>
 
-<script src="vendor/supabase.js?v=20261111R"></script>
-<script src="js/config.js?v=20261111R"></script>
-<script src="js/supabase.js?v=20261111R"></script>
-<script src="js/common.js?v=20261111R"></script>
-<script src="js/track-menu.js?v=20261111R"></script>
-<script src="js/rank-enums.js?v=20261111R"></script>
-<script src="js/compare-front.js?v=20261111R"></script>
+  <!-- 渠道差异分析：某个来源 vs 其它来源，按 13 个打标维度给出差异、相似度与全景对照 -->
+  <div id="cmi-modal" class="cmi-modal hidden">
+    <div class="cmi-box">
+      <button type="button" id="cmi-close" class="cmi-close" aria-label="关闭">×</button>
+      <div id="cmi-scroll" class="cmi-scroll"><div class="rk-empty">加载中…</div></div>
+    </div>
+  </div>
+
+<script src="vendor/supabase.js?v=20261111U"></script>
+<script src="js/config.js?v=20261111U"></script>
+<script src="js/supabase.js?v=20261111U"></script>
+<script src="js/common.js?v=20261111U"></script>
+<script src="js/track-menu.js?v=20261111U"></script>
+<script src="js/rank-enums.js?v=20261111U"></script>
+<script src="js/compare-insight.js?v=20261111U"></script>
+<script src="js/compare-front.js?v=20261111U"></script>
 </body>
 </html>

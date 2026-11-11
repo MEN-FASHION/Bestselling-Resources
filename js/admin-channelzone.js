@@ -123,6 +123,12 @@
         '<select id="' + id(k, "filter-month") + '" class="input"><option value="">全部月份</option></select>' +
         '<button id="' + id(k, "refresh") + '" class="btn-ghost" type="button">刷新</button>' +
         '<button id="' + id(k, "export") + '" class="btn-ghost" type="button">导出打标表</button>' +
+        '<button id="' + id(k, "import") + '" class="btn-ghost" type="button">导入打标表</button>' +
+        '<input type="file" id="' + id(k, "imp-file") + '" accept=".xlsx,.xls" hidden>' +
+        '<button id="' + id(k, "sel-all") + '" class="btn-ghost" type="button">全选本屏</button>' +
+        '<button id="' + id(k, "sel-none") + '" class="btn-ghost" type="button" disabled>取消选择</button>' +
+        '<button id="' + id(k, "batch-edit") + '" class="btn-primary" type="button" disabled>批量编辑</button>' +
+        '<button id="' + id(k, "del-sel") + '" class="btn-danger" type="button" disabled>删除选中（0）</button>' +
         '<span id="' + id(k, "msg") + '" class="hint-inline cz-msg"></span>' +
       '</div>' +
 
@@ -154,6 +160,70 @@
             '<button id="' + id(k, "tag-save") + '" class="btn-primary" type="button">保存打标</button>' +
             '<button id="' + id(k, "tag-del") + '" class="btn-danger" type="button">删除这张图</button>' +
             '<button id="' + id(k, "tag-close") + '" class="btn-ghost" type="button">关闭</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function batchModalHtml(z) {
+    var k = z.key;
+    return '' +
+      '<div id="' + id(k, "batch-modal") + '" class="modal-mask hidden">' +
+        '<div class="modal cz-batch-modal">' +
+          '<div class="mv-tag-head">' +
+            '<h3>' + esc(z.label) + ' · 批量编辑</h3>' +
+            '<span id="' + id(k, "batch-title") + '" class="hint-inline"></span>' +
+          '</div>' +
+          '<div class="cz-batch-body">' +
+            '<p class="cz-batch-tip">只改填写的字段，留空的一律不动。别处的图不会被改到。</p>' +
+            '<label class="cz-batch-field"><span>月份（前台展示的上传期次）</span>' +
+              '<input id="' + id(k, "batch-month") + '" class="input" type="month">' +
+            '</label>' +
+            '<label class="cz-batch-field"><span>上传日期（记录日期，可留空）</span>' +
+              '<input id="' + id(k, "batch-date") + '" class="input" type="date">' +
+            '</label>' +
+            '<label class="cz-batch-field"><span>类目</span>' +
+              '<input id="' + id(k, "batch-cat") + '" class="input" list="' + id(k, "batch-cat-list") + '" placeholder="留空不改，也可直接输入新类目">' +
+              '<datalist id="' + id(k, "batch-cat-list") + '"></datalist>' +
+            '</label>' +
+            '<label class="cz-batch-field"><span>渠道名</span>' +
+              '<input id="' + id(k, "batch-ch") + '" class="input" placeholder="留空不改，例如 Pinterest / SHEIN">' +
+            '</label>' +
+          '</div>' +
+          '<div class="mtag-actions">' +
+            '<button id="' + id(k, "batch-apply") + '" class="btn-primary" type="button">应用到选中的图</button>' +
+            '<button id="' + id(k, "batch-cancel") + '" class="btn-ghost" type="button">取消</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function importModalHtml(z) {
+    var k = z.key;
+    return '' +
+      '<div id="' + id(k, "imp-modal") + '" class="modal-mask hidden">' +
+        '<div class="modal cz-batch-modal">' +
+          '<div class="mv-tag-head">' +
+            '<h3>' + esc(z.label) + ' · 导入打标表</h3>' +
+            '<span id="' + id(k, "imp-title") + '" class="hint-inline"></span>' +
+          '</div>' +
+          '<div class="cz-batch-body">' +
+            '<p class="cz-batch-tip">按「图片URL」一列匹配本专区的图；表里其它列按打标维度回填。' +
+              '对不上的行会被跳过，不会新增图片、也不会改到别的专区。</p>' +
+            '<label class="cz-batch-field"><span>选择文件（.xlsx / .xls）</span>' +
+              '<input id="' + id(k, "imp-pick") + '" class="input" type="file" accept=".xlsx,.xls"></label>' +
+            '<label class="cz-batch-field"><span>写入方式</span>' +
+              '<select id="' + id(k, "imp-mode") + '" class="input">' +
+                '<option value="fill">只补空白（推荐，重复导入无副作用）</option>' +
+                '<option value="overwrite">覆盖（表里填的维度直接替换原值）</option>' +
+              '</select></label>' +
+            '<label class="cz-row-all" style="margin-top:2px;">' +
+              '<input id="' + id(k, "imp-clear") + '" type="checkbox"><span> 表里留空的维度也清空原标签（一般不用勾）</span></label>' +
+            '<p id="' + id(k, "imp-msg") + '" class="cz-batch-tip"></p>' +
+          '</div>' +
+          '<div class="mtag-actions">' +
+            '<button id="' + id(k, "imp-run") + '" class="btn-primary" type="button">开始导入</button>' +
+            '<button id="' + id(k, "imp-close") + '" class="btn-ghost" type="button">关闭</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -226,6 +296,7 @@
             category: String(r.category || "").trim(),
             month: normMonth(r.period_label || r.m || ""),
             channel: String(r.channel || "").trim(),
+            uploaded: String(r.created_at || r.t || "").slice(0, 10),
           };
         })
         .filter(function (r) { return r.image_url && r.category; });
@@ -318,6 +389,7 @@
     var box = el(k, "grid");
     var empty = el(k, "empty");
     if (!box) return;
+    box.classList.add("cz-rows");
     box.innerHTML = "";
     var list = filteredItems(k);
     if (!list.length) {
@@ -325,26 +397,262 @@
         empty.classList.remove("hidden");
         empty.textContent = st.items.length ? "当前筛选下没有图片" : "暂无图片，先在上面传一批";
       }
+      syncSel(k);
       return;
     }
     if (empty) empty.classList.add("hidden");
-    list.forEach(function (r) {
-      var t = st.tagMap[r.image_url] || {};
-      var filled = DIMS.filter(function (d) { return (t[d.key] || []).length; }).length;
-      var card = document.createElement("div");
-      card.className = "gcard";
-      card.innerHTML =
-        '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
-        (r.month ? '<span class="mv-season-badge">' + esc(r.month) + "</span>" : "") +
-        "</div>" +
-        '<div class="gmeta">' +
-        '<div class="gname">' + esc(r.category || "未分类") + "</div>" +
-        '<div class="gsub">' + esc(r.channel || st.zone.channel) +
-        '<span class="mv-prog' + (filled >= DIMS.length ? " is-done" : "") + '">' + filled + "/" + DIMS.length + "</span></div>" +
-        "</div>";
-      card.onclick = function () { openTag(k, r.id); };
-      box.appendChild(card);
+
+    /* 按类目成行：一行 = 一个类目，行头带「整行删除」；筛选到某个类目时就是一行 */
+    var groups = [];
+    if (st.curCat) {
+      groups = [{ cat: st.curCat, items: list }];
+    } else {
+      var byCat = {};
+      list.forEach(function (r) {
+        var c = r.category || "未分类";
+        (byCat[c] = byCat[c] || []).push(r);
+      });
+      groups = Object.keys(byCat).sort(function (a, b) { return byCat[b].length - byCat[a].length; })
+        .map(function (c) { return { cat: c, items: byCat[c] }; });
+    }
+
+    groups.forEach(function (g) {
+      var row = document.createElement("div");
+      row.className = "cz-row";
+      row.setAttribute("data-cat", g.cat == null ? "" : g.cat);
+
+      var head = document.createElement("div");
+      head.className = "cz-row-head";
+      var lab = document.createElement("label");
+      lab.className = "cz-row-all";
+      var cbx = document.createElement("input");
+      cbx.type = "checkbox";
+      cbx.className = "cz-row-cbx";
+      cbx.onclick = function (e) {
+        e.stopPropagation();
+        g.items.forEach(function (r) { if (cbx.checked) st.sel[String(r.id)] = 1; else delete st.sel[String(r.id)]; });
+        syncPickUI(k);
+      };
+      lab.appendChild(cbx);
+      var lt = document.createElement("span");
+      lt.textContent = " 全选";
+      lab.appendChild(lt);
+      head.appendChild(lab);
+
+      var nm = document.createElement("b");
+      nm.className = "cz-row-name";
+      nm.textContent = g.cat;
+      head.appendChild(nm);
+      var cnt = document.createElement("span");
+      cnt.className = "cz-row-n";
+      cnt.textContent = g.items.length + " 张";
+      head.appendChild(cnt);
+
+      var delRow = document.createElement("button");
+      delRow.type = "button";
+      delRow.className = "cz-row-del";
+      delRow.textContent = "删除整行（" + g.items.length + "）";
+      delRow.onclick = function (e) {
+        e.stopPropagation();
+        delMany(k, g.items.map(function (r) { return r.id; }), "「" + g.cat + "」这一行的 " + g.items.length + " 张图");
+      };
+      head.appendChild(delRow);
+      row.appendChild(head);
+
+      var gbox = document.createElement("div");
+      gbox.className = "grid";
+      g.items.forEach(function (r) { gbox.appendChild(cardOf(k, r)); });
+      row.appendChild(gbox);
+
+      /* 行内已全选则勾上 */
+      cbx.checked = g.items.every(function (r) { return st.sel[String(r.id)]; });
+      box.appendChild(row);
     });
+    syncSel(k);
+  }
+
+  function cardOf(k, r) {
+    var st = state[k];
+    var t = st.tagMap[r.image_url] || {};
+    var filled = DIMS.filter(function (d) { return (t[d.key] || []).length; }).length;
+    var card = document.createElement("div");
+    card.className = "gcard cz-card" + (st.sel[String(r.id)] ? " is-sel" : "");
+    card.setAttribute("data-id", String(r.id));
+    card.innerHTML =
+      '<label class="cz-pick" title="勾选后可批量编辑 / 批量删除">' +
+        '<input type="checkbox"' + (st.sel[String(r.id)] ? " checked" : "") + "></label>" +
+      '<button type="button" class="cz-card-del" title="删除这张图">×</button>' +
+      '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
+      (r.month ? '<span class="mv-season-badge">' + esc(r.month) + "</span>" : "") +
+      "</div>" +
+      '<div class="gmeta">' +
+      '<div class="gname">' + esc(r.category || "未分类") + "</div>" +
+      '<div class="gsub">' + esc(r.channel || st.zone.channel) +
+      '<span class="mv-prog' + (filled >= DIMS.length ? " is-done" : "") + '">' + filled + "/" + DIMS.length + "</span></div>" +
+      (r.uploaded ? '<div class="cz-up">上传 ' + esc(r.uploaded) + "</div>" : "") +
+      "</div>";
+
+    var pick = card.querySelector(".cz-pick input");
+    pick.onclick = function (e) {
+      e.stopPropagation();
+      if (pick.checked) st.sel[String(r.id)] = 1; else delete st.sel[String(r.id)];
+      card.classList.toggle("is-sel", !!pick.checked);
+      syncPickUI(k);
+    };
+    var del = card.querySelector(".cz-card-del");
+    del.onclick = function (e) {
+      e.stopPropagation();
+      delMany(k, [r.id], "这张图（" + (r.category || "未分类") + (r.month ? " · " + r.month : "") + "）");
+    };
+    card.onclick = function () { openTag(k, r.id); };
+    return card;
+  }
+
+  /* ---------- 选择状态 ---------- */
+  function selIds(k) {
+    var st = state[k];
+    return Object.keys(st.sel || {}).filter(function (id) {
+      return st.items.some(function (r) { return String(r.id) === id; });
+    });
+  }
+
+  function syncSel(k) {
+    var st = state[k];
+    var n = selIds(k).length;
+    var del = el(k, "del-sel");
+    var be = el(k, "batch-edit");
+    var none = el(k, "sel-none");
+    if (del) { del.textContent = "删除选中（" + n + "）"; del.disabled = !n; }
+    if (be) be.disabled = !n;
+    if (none) none.disabled = !n;
+    var cnt = el(k, "count");
+    if (cnt) {
+      /* 先去掉上一次追加的选中计数，再按当前数量补上（取消选择后不能留残字） */
+      var base = cnt.textContent.replace(/　·　已选 \d+ 张/g, "");
+      cnt.textContent = n ? base + "　·　已选 " + n + " 张" : base;
+    }
+  }
+
+  /* 勾选态只做局部同步：几百张图时重建图墙会闪一下，没必要 */
+  function syncPickUI(k) {
+    var st = state[k];
+    var box = el(k, "grid");
+    if (box) {
+      Array.prototype.forEach.call(box.querySelectorAll(".cz-row"), function (row) {
+        var cat = row.getAttribute("data-cat") || "";
+        var items = filteredItems(k).filter(function (r) { return (r.category || "未分类") === cat; });
+        var all = items.length && items.every(function (r) { return st.sel[String(r.id)]; });
+        var cb = row.querySelector(".cz-row-cbx");
+        if (cb) cb.checked = !!all;
+      });
+      Array.prototype.forEach.call(box.querySelectorAll(".cz-card"), function (card) {
+        var on = !!st.sel[card.getAttribute("data-id")];
+        card.classList.toggle("is-sel", on);
+        var p = card.querySelector(".cz-pick input");
+        if (p) p.checked = on;
+      });
+    }
+    syncSel(k);
+  }
+
+  /* ---------- 删除：单张 / 一批 / 整行 ---------- */
+  async function delMany(k, ids, what) {
+    var SB = SBx();
+    var st = state[k];
+    var list = (ids || []).map(String).filter(Boolean);
+    if (!SB || !list.length) return;
+    if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+    if (typeof SB.deleteRankChannelItems !== "function") {
+      toast("数据层版本偏旧，请强刷页面后重试", false);
+      return;
+    }
+    if (!window.confirm("删除" + what + "？\n删掉后前台立即不再展示，打标记录会保留。")) return;
+    say(k, "删除中…");
+    try {
+      var res = await SB.deleteRankChannelItems(list);
+      list.forEach(function (id) { delete st.sel[id]; });
+      await loadAll(k);
+      var msg = "已删除 " + res.ok + " 张";
+      if (res.failed && res.failed.length) msg += "，失败 " + res.failed.length + " 张";
+      say(k, msg);
+      toast(msg, !(res.failed && res.failed.length));
+    } catch (e) {
+      say(k, "删除失败，请重试");
+      toast("删除失败：" + ((e && e.message) || "未知错误"), false);
+    }
+  }
+
+  /* ---------- 批量编辑 ---------- */
+  function openBatch(k) {
+    var st = state[k];
+    var ids = selIds(k);
+    if (!ids.length) { toast("先勾选要修改的图", false); return; }
+    var t = el(k, "batch-title");
+    if (t) t.textContent = "已选 " + ids.length + " 张";
+    var mo = el(k, "batch-month"); if (mo) mo.value = "";
+    var dt = el(k, "batch-date"); if (dt) dt.value = "";
+    var ca = el(k, "batch-cat"); if (ca) ca.value = "";
+    var ch = el(k, "batch-ch"); if (ch) ch.value = "";
+    var dl = el(k, "batch-cat-list");
+    if (dl) {
+      dl.innerHTML = "";
+      catOptions(k).forEach(function (c) {
+        var o = document.createElement("option");
+        o.value = c;
+        dl.appendChild(o);
+      });
+    }
+    var m = el(k, "batch-modal");
+    if (m) m.classList.remove("hidden");
+  }
+
+  function closeBatch(k) {
+    var m = el(k, "batch-modal");
+    if (m) m.classList.add("hidden");
+  }
+
+  async function applyBatch(k) {
+    var SB = SBx();
+    var st = state[k];
+    var ids = selIds(k);
+    if (!SB || !ids.length) return;
+    if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+
+    var patch = {};
+    var mo = normMonth(el(k, "batch-month") ? el(k, "batch-month").value : "");
+    var dt = el(k, "batch-date") ? String(el(k, "batch-date").value || "").trim() : "";
+    var ca = el(k, "batch-cat") ? String(el(k, "batch-cat").value || "").trim() : "";
+    var ch = el(k, "batch-ch") ? String(el(k, "batch-ch").value || "").trim() : "";
+    if (mo) patch.period_label = mo;
+    if (dt) patch.uploaded = dt;
+    if (ca) patch.category = ca;
+    if (ch) patch.channel = ch;
+    if (!Object.keys(patch).length) { toast("没有填写任何要改的字段", false); return; }
+
+    var what = [];
+    if (patch.period_label) what.push("月份 → " + patch.period_label);
+    if (patch.uploaded) what.push("上传日期 → " + patch.uploaded);
+    if (patch.category) what.push("类目 → " + patch.category);
+    if (patch.channel) what.push("渠道 → " + patch.channel);
+    if (!window.confirm("把这 " + ids.length + " 张图改成：\n" + what.join("\n") + "\n\n确认？")) return;
+
+    var btn = el(k, "batch-apply");
+    if (btn) btn.disabled = true;
+    say(k, "修改中…");
+    try {
+      var res = await SB.updateRankChannelItems(ids, patch);
+      closeBatch(k);
+      await loadAll(k);
+      var msg = "已修改 " + res.ok + " 张";
+      if (res.failed && res.failed.length) msg += "，失败 " + res.failed.length + " 张";
+      say(k, msg);
+      toast(msg, !(res.failed && res.failed.length));
+    } catch (e) {
+      say(k, "修改失败，请重试");
+      toast("修改失败：" + ((e && e.message) || "未知错误"), false);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   /* ---------- 上传（只有图） ---------- */
@@ -595,21 +903,103 @@
     }
   }
 
+  /* ---------- 导入打标表（复用「趋势上升榜」「上新节奏」那套解析与写库） ---------- */
+  function openImport(k) {
+    var st = state[k];
+    if (!st.items.length) { toast("本专区还没有图片，先传图再导入", false); return; }
+    if (!window.RankTagImport || typeof window.RankTagImport.importFile !== "function") {
+      toast("导入模块未加载，请强刷页面后重试", false);
+      return;
+    }
+    var t = el(k, "imp-title");
+    if (t) t.textContent = "本专区 " + st.items.length + " 张图";
+    var f = el(k, "imp-pick"); if (f) f.value = "";
+    var m = el(k, "imp-mode"); if (m) m.value = "fill";
+    var c = el(k, "imp-clear"); if (c) c.checked = false;
+    var g = el(k, "imp-msg"); if (g) g.textContent = "";
+    var box = el(k, "imp-modal");
+    if (box) box.classList.remove("hidden");
+  }
+
+  function closeImport(k) {
+    var box = el(k, "imp-modal");
+    if (box) box.classList.add("hidden");
+  }
+
+  async function runImport(k) {
+    var st = state[k];
+    if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+    var R = window.RankTagImport;
+    if (!R || typeof R.importFile !== "function") {
+      toast("导入模块未加载，请强刷页面后重试", false);
+      return;
+    }
+    var fi = el(k, "imp-pick");
+    var file = fi && fi.files && fi.files[0];
+    if (!file) { toast("请先选择要导入的表格", false); return; }
+    var mode = (el(k, "imp-mode") && el(k, "imp-mode").value) || "fill";
+    var clearEmpty = !!(el(k, "imp-clear") && el(k, "imp-clear").checked);
+
+    var btn = el(k, "imp-run");
+    if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
+    var msg = el(k, "imp-msg");
+    if (msg) msg.textContent = "正在解析并写入，请稍等…";
+
+    try {
+      /* 只把本专区的图交给它当白名单：对不上的行跳过，不会串到别的专区 */
+      var res = await R.importFile(file, {
+        urls: st.items.map(function (r) { return r.image_url; }),
+        mode: mode,
+        clearEmpty: clearEmpty,
+      });
+      var line = "写入 " + (res.written || 0) + " 张";
+      if (res.hit != null) line += " · 表内 " + (res.total || 0) + " 行，对上 " + res.hit + " 行";
+      if (res.miss) line += " · 对不上 " + res.miss + " 行（不属于本专区，已跳过）";
+      if (res.unknown && res.unknown.length) line += " · 未识别取值 " + res.unknown.length + " 处";
+      if (res.missing && res.missing.length) line += " · 缺列未写：" + res.missing.join("、");
+      if (res.msg) line += " · " + res.msg;
+      if (msg) msg.textContent = line;
+      say(k, line);
+      await loadAll(k);
+      toast("导入完成：写入 " + (res.written || 0) + " 张", (res.written || 0) > 0);
+    } catch (e) {
+      var why = (e && e.message) || "未知错误";
+      if (msg) msg.textContent = "导入失败：" + why;
+      toast("导入失败：" + why, false);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "开始导入"; }
+    }
+  }
+
   /* ---------- 导出打标表（复用榜单那套列） ---------- */
   async function doExport(k) {
     var st = state[k];
     var RE = window.RankExport;
-    if (!RE || typeof XLSX === "undefined") { toast("导出模块未加载，请强刷页面", false); return; }
-    if (!st.items.length) { toast("当前没有图片", false); return; }
+    if (!RE) { toast("导出模块未加载，请强刷页面（若仍不行，多为脚本缓存）", false); return; }
+    if (typeof XLSX === "undefined") { toast("表格组件未加载，请强刷页面", false); return; }
+    if (!st.items.length) { toast("当前没有图片，先传图再导出", false); return; }
     try {
       say(k, "导出中…");
-      var detail = st.items.map(function (r) {
-        return { image_url: r.image_url, category: r.category || "" };
+      /* 只导本专区当前筛选下的图；scope 必须给 all —— buildBook 的默认范围是
+         「仅未打标」，专区的图多数已经打过标，用默认值会导出一张只有表头的空表。 */
+      var scopeItems = filteredItems(k);
+      var detail = scopeItems.map(function (r) {
+        return {
+          image_url: r.image_url,
+          category: r.category || "",
+          period_label: r.month || r.uploaded || "",
+        };
       });
-      var pack = RE.buildBook(detail, st.tagMap, {});
+      var pack = RE.buildBook(detail, st.tagMap, { scope: "all" });
+      if (!pack.stats || !pack.stats.total) {
+        say(k, "当前筛选下没有可导出的图");
+        toast("当前筛选下没有可导出的图", false);
+        return;
+      }
       XLSX.writeFile(pack.wb, st.zone.label + "-打标表-" +
         new Date().toISOString().slice(0, 10).replace(/-/g, "") + ".xlsx");
-      say(k, "已导出 " + st.items.length + " 张");
+      say(k, "已导出 " + pack.stats.total + " 张（含已打标，导入时只改填写过的维度）");
+      toast("已导出 " + pack.stats.total + " 张", true);
     } catch (e) {
       say(k, "导出失败：" + ((e && e.message) || "未知错误"));
     }
@@ -621,13 +1011,13 @@
     if (!card) return;
     var k = z.key;
     state[k] = {
-      zone: z, items: [], tagMap: {}, pending: [], curCat: "", curMonth: "", curId: null, ready: false,
+      zone: z, items: [], tagMap: {}, pending: [], curCat: "", curMonth: "", curId: null, ready: false, sel: {},
     };
     card.innerHTML = panelHtml(z);
     /* 打标弹窗放到 body，避免被面板隐藏态带走 */
     var holder = document.createElement("div");
-    holder.innerHTML = modalHtml(z);
-    document.body.appendChild(holder.firstChild);
+    holder.innerHTML = modalHtml(z) + batchModalHtml(z) + importModalHtml(z);
+    while (holder.firstChild) document.body.appendChild(holder.firstChild);
 
     fillCatSelects(k);
     bindUpload(k);
@@ -639,6 +1029,46 @@
     if (fm) fm.onchange = function () { state[k].curMonth = fm.value || ""; renderAll(k); };
     var ex = el(k, "export");
     if (ex) ex.onclick = function () { doExport(k); };
+    var im = el(k, "import");
+    if (im) im.onclick = function () { openImport(k); };
+    var ir = el(k, "imp-run");
+    if (ir) ir.onclick = function () { runImport(k); };
+    var ic = el(k, "imp-close");
+    if (ic) ic.onclick = function () { closeImport(k); };
+    var imk = el(k, "imp-modal");
+    if (imk) imk.onclick = function (e) { if (e.target === imk) closeImport(k); };
+    /* 选文件后立刻给个反馈，避免以为没选上 */
+    var ip = el(k, "imp-pick");
+    if (ip) ip.onchange = function () {
+      var g = el(k, "imp-msg");
+      var f0 = ip.files && ip.files[0];
+      if (g) g.textContent = f0 ? "已选择：" + f0.name : "";
+    };
+
+    /* 选择 / 批量删除 / 批量编辑 */
+    var sa = el(k, "sel-all");
+    if (sa) sa.onclick = function () {
+      state[k].sel = {};
+      filteredItems(k).forEach(function (r) { state[k].sel[String(r.id)] = 1; });
+      syncPickUI(k);
+    };
+    var sn = el(k, "sel-none");
+    if (sn) sn.onclick = function () { state[k].sel = {}; syncPickUI(k); };
+    var ds = el(k, "del-sel");
+    if (ds) ds.onclick = function () {
+      var ids = selIds(k);
+      if (!ids.length) { toast("先勾选要删除的图", false); return; }
+      delMany(k, ids, "选中的 " + ids.length + " 张图");
+    };
+    var be = el(k, "batch-edit");
+    if (be) be.onclick = function () { openBatch(k); };
+    var ba = el(k, "batch-apply");
+    if (ba) ba.onclick = function () { applyBatch(k); };
+    var bc = el(k, "batch-cancel");
+    if (bc) bc.onclick = function () { closeBatch(k); };
+    var bm = el(k, "batch-modal");
+    if (bm) bm.onclick = function (e) { if (e.target === bm) closeBatch(k); };
+
     var sv = el(k, "tag-save");
     if (sv) sv.onclick = function () { saveTag(k); };
     var dl = el(k, "tag-del");
