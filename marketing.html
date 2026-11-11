@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TREND BANK · 营销日历</title>
-<link rel="stylesheet" href="css/style.css?v=20261111V">
+<link rel="stylesheet" href="css/style.css?v=20261111AA">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
 
@@ -18,6 +18,30 @@
     <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
   </div>
 
+
+  <!-- 加载兜底（内联）：即使外部脚本文件 404 或执行报错，也不至于永远卡在加载遮罩 -->
+  <script>
+  (function () {
+    var MAX = 8000, WARN = 4000;
+    function splash() { return document.getElementById("boot-splash"); }
+    function say(msg) {
+      var s = splash(); if (!s) return;
+      var t = s.querySelector(".boot-text"); if (t) t.textContent = msg;
+    }
+    window.addEventListener("error", function () {
+      if (!splash() || splash().classList.contains("hidden")) return;
+      say("页面脚本加载出错，请刷新重试");
+    }, true);
+    setTimeout(function () {
+      var s = splash();
+      if (s && !s.classList.contains("hidden")) say("加载较慢，仍在尝试…");
+    }, WARN);
+    setTimeout(function () {
+      var s = splash();
+      if (s) s.classList.add("hidden");
+    }, MAX);
+  })();
+  </script>
   <!-- ================= 登录页 ================= -->
   <section id="login-view" class="auth-wrap hidden">
     <div class="auth-card">
@@ -253,15 +277,15 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261111V"></script>
-  <script src="vendor/qrcode.min.js?v=20261111V"></script>
-  <script src="js/config.js?v=20261111V"></script>
-  <script src="js/supabase.js?v=20261111V"></script>
-  <script src="js/track-menu.js?v=20261111V"></script>
-  <script src="js/common.js?v=20261111V"></script>
-  <script src="js/marketing.js?v=20261111V"></script>
-  <script src="js/marketing-data.js?v=20261111V"></script>
-  <script src="js/marketing-main.js?v=20261111V"></script>
-  <script src="js/marketing-edit.js?v=20261111V"></script>
+  <script src="vendor/supabase.js?v=20261111AA"></script>
+  <script src="vendor/qrcode.min.js?v=20261111AA"></script>
+  <script src="js/config.js?v=20261111AA"></script>
+  <script src="js/supabase.js?v=20261111AA"></script>
+  <script src="js/track-menu.js?v=20261111AA"></script>
+  <script src="js/common.js?v=20261111AA"></script>
+  <script src="js/marketing.js?v=20261111AA"></script>
+  <script src="js/marketing-data.js?v=20261111AA"></script>
+  <script src="js/marketing-main.js?v=20261111AA"></script>
+  <script src="js/marketing-edit.js?v=20261111AA"></script>
 </body>
 </html>

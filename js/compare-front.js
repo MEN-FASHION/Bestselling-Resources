@@ -1,5 +1,5 @@
 /* ============================================================================
- * compare-front.js —— 渠道对比（多列图片横向对比，20261111V）
+ * compare-front.js —— 渠道对比（多列图片横向对比，20261111AA）
  * ----------------------------------------------------------------------------
  * 一屏之内把「同一个类目 · 同一个月」的各个来源的图并排摆开，一眼看差异。
  *
@@ -37,7 +37,16 @@
     gate: "",
     vis: true,
     loading: false,
+    /* 每列已渲染到第几张。一屏动辄上千张图，一次全铺出来浏览器要等很久，
+       先给每列头一批，剩下的点「展开更多」再追加。 */
+    shown: {},
+    /* 已经查过打标的地址，避免切类目/月份时重复请求同一批 URL */
+    tagAsked: {},
   };
+
+  /* 首屏每列先出这么多张：够看出差异，又不用等几百张图的请求排完 */
+  var PAGE = 24;
+  var TAG_BATCH = 200;
 
   function normMonth(v) {
     var SB = SBx();
@@ -101,21 +110,122 @@
   }
 
   /* ---------- 取数 ---------- */
+  /* 渠道对比要读两张表，数据量都不小；原来两件事串着做，总耗时是两者之和。
+     这里做四件事，解决「打开一直在加载中」：
+       ① 两张表并行取（省掉一半等待）；
+       ② 只取用得到的字段（原来 select("*")，每条几十字段）；
+       ③ 结果在本次会话里缓存 5 分钟，来回切页秒开；
+       ④ 单个查询超时也不卡死，用已经拿到的部分先渲染。 */
+  var CACHE_KEY = "cmpCacheV1";
+  var CACHE_TTL = 5 * 60 * 1000;
+  var LOAD_TIMEOUT = 8000;
+
+  function cacheGet() {
+    try {
+      var raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || !o.t || (Date.now() - o.t) > CACHE_TTL) return null;
+      if (!o.ch || !o.rk) return null;
+      return o;
+    } catch (e) { return null; }
+  }
+
+  function cacheSet(chRows, rankRows) {
+    /* 行数太大就不缓存了，免得把会话存储撑爆反而拖慢 */
+    if ((chRows.length + rankRows.length) > 8000) {
+      try { sessionStorage.removeItem(CACHE_KEY); } catch (e) {}
+      return;
+    }
+    try {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), ch: chRows, rk: rankRows }));
+    } catch (e) { /* 配额满就算了，不影响主流程 */ }
+  }
+
+  /* 超时保护：慢的那个查询不再拖着整页一起等 */
+  function withTimeout(p, ms, fallback) {
+    return new Promise(function (resolve) {
+      var done = false;
+      var t = setTimeout(function () { if (!done) { done = true; resolve(fallback); } }, ms);
+      Promise.resolve(p).then(function (v) {
+        if (done) return;
+        done = true; clearTimeout(t); resolve(v);
+      }, function () {
+        if (done) return;
+        done = true; clearTimeout(t); resolve(fallback);
+      });
+    });
+  }
+
+  function loadingSay(text) {
+    var body = $("#cmp-body");
+    if (body) body.innerHTML = '<div class="rk-empty">' + esc(text) + "</div>";
+  }
+
   async function load() {
     var SB = SBx();
     if (!SB || state.loading) return;
     state.loading = true;
-    $("#cmp-body").innerHTML = '<div class="rk-empty">加载中…</div>';
+    loadingSay("正在读取数据…");
     try {
-      /* ① 渠道图（Pinterest / SHEIN / 其它渠道传图） */
-      var chRows = [];
-      if (typeof SB.listRankChannelPics === "function") {
-        chRows = (await SB.listRankChannelPics({ periodType: "month" })) || [];
+      var cached = cacheGet();
+
+      /* ① 渠道图（Pinterest / SHEIN / 其它渠道传图）+ ② 后台列配置 —— 与榜单一起并行 */
+      var chPromise = (typeof SB.listRankChannelPics === "function")
+        ? SB.listRankChannelPics({
+            periodType: "month",
+            /* 只取渲染与筛选要用的字段（原来拉全表所有字段，是最大的一笔开销） */
+            cols: "id,image_url,category,period_label,period_type,channel,title",
+          })
+        : Promise.resolve([]);
+      var cfgPromise = (typeof SB.getCompareSources === "function")
+        ? SB.getCompareSources().catch(function () { return null; })
+        : Promise.resolve(null);
+
+      var chRows = cached ? cached.ch : [];
+      var rankRows = cached ? cached.rk : [];
+      var rankNeed = false;
+
+      if (!cached) {
+        /* 榜单是否要用，取决于列配置里有没有「上新节奏」列：先等配置（很快），再决定要不要取榜单 */
+        var cfgPre = await withTimeout(cfgPromise, LOAD_TIMEOUT, null);
+        var preList = cfgPre && Array.isArray(cfgPre.list) ? cfgPre.list : null;
+        /* 没有配置时默认带「上新节奏」列，所以也要取 */
+        rankNeed = !preList || preList.some(function (x) { return x.type === "rank"; });
+
+        loadingSay("正在读取渠道图…");
+        var rankPromise = (rankNeed && typeof SB.listRankItems === "function")
+          ? SB.listRankItems({
+              periodType: "month",
+              cols: "id,image_url,category,period_label,period_type,site,channel,title",
+            })
+          : Promise.resolve([]);
+
+        /* 两张表同时跑 */
+        var both = await Promise.all([
+          withTimeout(chPromise, LOAD_TIMEOUT, []),
+          withTimeout(rankPromise, LOAD_TIMEOUT, []),
+        ]);
+        chRows = both[0] || [];
+        rankRows = both[1] || [];
+        state.cfg = cfgPre;
+        if (chRows.length || rankRows.length) cacheSet(chRows, rankRows);
+      } else {
+        state.cfg = await withTimeout(cfgPromise, LOAD_TIMEOUT, null);
+        /* 缓存里没有榜单数据、但这次配置要求有「上新节奏」列：补取一次，
+           否则会出现「配了榜单列却一直是该列暂无数据」。 */
+        var c2 = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
+        var needRank = !c2 || c2.some(function (x) { return x.type === "rank"; });
+        if (needRank && !rankRows.length && typeof SB.listRankItems === "function") {
+          loadingSay("正在读取榜单…");
+          rankRows = await withTimeout(SB.listRankItems({
+            periodType: "month",
+            cols: "id,image_url,category,period_label,period_type,site,channel,title",
+          }), LOAD_TIMEOUT, []) || [];
+          if (rankRows.length) cacheSet(chRows, rankRows);
+        }
       }
 
-      /* ② 后台配置；没有配置就按实际渠道自动生成 */
-      try { state.cfg = (typeof SB.getCompareSources === "function") ? await SB.getCompareSources() : null; }
-      catch (e) { state.cfg = null; }
       var conf = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
       if (conf && conf.length) {
         /* 配置里的渠道列，名字以配置为准；没有 channel 字段的渠道列补上名字 */
@@ -129,19 +239,6 @@
         });
       } else {
         state.sources = defaultSources(chRows);
-      }
-
-      /* ③ 月度榜单（上新节奏）：按当前可见类目取；只保留没有渠道归属的行，
-            渠道图另有列，混进来会重复 */
-      var rankRows = [];
-      var rankSrc = state.sources.filter(function (s) { return s.type === "rank"; })[0];
-      if (rankSrc && typeof SB.listRankItems === "function") {
-        try {
-          rankRows = (await SB.listRankItems({
-            periodType: "month",
-            cols: "id,image_url,category,period_label,period_type,site,channel,title",
-          })) || [];
-        } catch (e) { rankRows = []; }
       }
 
       /* 渠道图 URL 集合：榜单行里与渠道图重复的地址不再进「上新节奏」列 */
@@ -194,15 +291,11 @@
       state.months = Object.keys(ms).sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
       if (!state.month || state.months.indexOf(state.month) < 0) state.month = state.months[0] || "";
 
-      /* 打标结果：按图片地址（与榜单 / 各专区共用一张表） */
+      /* 打标结果：不在这里一次性拉全量（上千地址要几十个请求，页面会一直等），
+         改成渲染时按「当前要显示的图」增量查，见 ensureTags。 */
       state.tags = {};
-      var urls = all.map(function (r) { return r.image_url; });
-      if (urls.length) {
-        try {
-          if (typeof SB.listMovementTags === "function") state.tags = (await SB.listMovementTags(urls)) || {};
-          else if (typeof SB.listImageTags === "function") state.tags = (await SB.listImageTags(urls)) || {};
-        } catch (e) { state.tags = {}; }
-      }
+      state.tagAsked = {};
+      state.shown = {};
 
       renderFilter();
       renderCats();
@@ -211,6 +304,16 @@
       $("#cmp-body").innerHTML = '<div class="rk-empty">读取失败，请刷新重试</div>';
     } finally {
       state.loading = false;
+      /* 数据一条都没拿到：说清楚是「还没读到」，别让人对着空白猜 */
+      if (!state.items.length) {
+        var b = $("#cmp-body");
+        if (b && !b.querySelector(".rk-pools")) {
+          b.innerHTML = '<div class="rk-empty">暂时没读到数据（可能网络较慢）。<br>' +
+            '稍等几秒点这里重试：<button type="button" class="cmi-btn" id="cmp-retry">重新加载</button></div>';
+          var r = $("#cmp-retry");
+          if (r) r.onclick = function () { try { sessionStorage.removeItem(CACHE_KEY); } catch (e2) {} load(); };
+        }
+      }
     }
   }
 
@@ -231,7 +334,7 @@
       b.type = "button";
       b.className = "tag-chip" + (state.month === v ? " active" : "");
       b.textContent = text;
-      b.onclick = function () { state.month = v; renderFilter(); renderCats(); renderPools(); };
+      b.onclick = function () { state.month = v; state.shown = {}; renderFilter(); renderCats(); renderPools(); };
       return b;
     }
     if (!state.months.length) {
@@ -271,7 +374,7 @@
       b.type = "button";
       b.className = "cat-menu-item" + (state.cat === name ? " active" : "");
       b.innerHTML = esc(name) + (count != null ? ' <span class="cvi-state">' + count + "</span>" : "");
-      b.onclick = function () { state.cat = name; renderCats(); renderPools(); };
+      b.onclick = function () { state.cat = name; state.shown = {}; renderCats(); renderPools(); };
       nav.appendChild(b);
     }
     add(ALL, list.length);
@@ -286,10 +389,49 @@
   }
 
   /* ---------- 差异分析：把当前这一屏的数据交给分析模块 ---------- */
+  /* ---------- 打标按需读取 ----------
+     原来是把全站所有图片地址一次性丢进查询（上千个 URL、几十个请求），
+     页面要等它们全部回来才肯渲染，所以「打开很慢」。
+     现在只查当前要显示的这些地址，并记下来，翻回来时不再重复查。 */
+  async function ensureTags(urls) {
+    var SB = SBx();
+    if (!SB) return;
+    var need = [], seen = {};
+    (urls || []).forEach(function (u) {
+      var k = String(u || "").trim();
+      if (!k || state.tagAsked[k] || seen[k]) return;
+      seen[k] = 1;
+      need.push(k);
+    });
+    if (!need.length) return;
+    need.forEach(function (k) { state.tagAsked[k] = 1; });
+    for (var i = 0; i < need.length; i += TAG_BATCH) {
+      var part = need.slice(i, i + TAG_BATCH);
+      try {
+        var map = null;
+        /* 打标查询也要有时限：它挂着不动时，整列渲染会一起卡在「加载中」。
+           超时就先按「未打标」渲染，标签下次再补，页面不能因此打不开。 */
+        var pTag = (typeof SB.listMovementTags === "function") ? SB.listMovementTags(part)
+          : (typeof SB.listImageTags === "function" ? SB.listImageTags(part) : null);
+        if (pTag) map = await withTimeout(pTag, 6000, null);
+        Object.keys(map || {}).forEach(function (k) { state.tags[k] = map[k]; });
+      } catch (e) {
+        /* 查不到就当没打标：不能因为一次请求失败整页不显示 */
+        part.forEach(function (k) { delete state.tagAsked[k]; });
+      }
+    }
+  }
+
+  /* 当前月份 / 类目下，某一列应该显示的全部图片 */
   function visibleList(s) {
     return sourceItems(s).filter(function (r) {
       return (!state.month || r.month === state.month) && (state.cat === ALL || r.category === state.cat);
     });
+  }
+
+  function shownOf(key) {
+    var n = state.shown[key];
+    return n > 0 ? n : PAGE;
   }
 
   function insightCtx() {
@@ -303,10 +445,20 @@
   }
 
   /* 打开分析：key 指定「分析哪个来源」，为空时挑一个渠道列（通常就是用户想问的那个） */
-  function openInsight(key) {
+  async function openInsight(key) {
     if (!window.CmpInsight || typeof window.CmpInsight.open !== "function") {
       toast("分析组件未加载，请刷新页面后重试", false);
       return;
+    }
+    /* 分析要覆盖整列（不只屏幕上那几张），先把这一层的打标补齐；
+       屏幕上只查了首批，缺的标签会让差异结论偏掉。 */
+    var all = [];
+    activeSources().forEach(function (s) {
+      visibleList(s).forEach(function (it) { all.push(it.image_url); });
+    });
+    if (all.length) {
+      toast("正在准备打标数据…", true);
+      await ensureTags(all);
     }
     var ctx = insightCtx();
     if (!ctx.sources.length) { toast("这个月份 / 类目下还没有图片，先换一个再看看", false); return; }
@@ -330,19 +482,18 @@
     return 2;
   }
 
-  function renderPools() {
+  async function renderPools() {
     var body = $("#cmp-body");
     var bar = $("#cmp-bar");
     if (!body) return;
+    /* 连续切类目时会有多次渲染重叠：打标是异步的，晚发出的那次可能先返回，
+       用序号只让最后一次真正落 DOM，避免「点 A 显示 B」。 */
+    var seq = (state.renderSeq = (state.renderSeq || 0) + 1);
     var srcs = activeSources();
     var cat = state.cat;
 
     var total = 0;
-    srcs.forEach(function (s) {
-      total += sourceItems(s).filter(function (r) {
-        return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
-      }).length;
-    });
+    srcs.forEach(function (s) { total += visibleList(s).length; });
 
     if (bar) {
       bar.innerHTML = '<span class="rk-bar-info">共 <b>' + total + "</b> 张 · " + srcs.length + " 列" +
@@ -360,17 +511,29 @@
     }
 
     var pr = perRowOf(srcs.length);
+
+    /* 只查即将显示的那部分打标（首屏每列 PAGE 张），不等全量 */
+    var want = [];
+    srcs.forEach(function (s) {
+      var list = visibleList(s).slice(0, shownOf(s.key) + PAGE);
+      list.forEach(function (it) { want.push(it.image_url); });
+    });
+    await ensureTags(want);
+    if (seq !== state.renderSeq) return;      /* 期间又切了类目/月份，这次结果作废 */
+
     var html = '<div class="rk-pools">';
     srcs.forEach(function (s) {
-      var list = sourceItems(s).filter(function (r) {
-        return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
-      });
+      var listAll = visibleList(s);
+      var lim = shownOf(s.key);
+      var list = listAll.slice(0, lim);
       html += '<section class="rk-pool" data-src="' + esc(s.key) + '">';
       html += '<div class="rk-pool-head"><div class="rk-pool-name"><span>' + esc(s.label) +
-        '</span><span class="rk-n">' + list.length + " 张</span></div>" +
+        '</span><span class="rk-n">' +
+        (listAll.length > list.length ? list.length + "/" + listAll.length : listAll.length) +
+        " 张</span></div>" +
         '<div class="rk-pool-meta">' + esc(s.type === "rank" ? "月度榜单" : "渠道图") +
         (state.month ? " · " + esc(state.month) : "") +
-        (list.length ? ' <button type="button" class="cmi-btn" data-insight="' + esc(s.key) +
+        (listAll.length ? ' <button type="button" class="cmi-btn" data-insight="' + esc(s.key) +
           '" title="看这一列与其它来源的打标结构差异">详细分析</button>' : "") +
         "</div></div>";
       html += '<div class="rk-pool-grid" style="--rk-r:' + pr + '">';
@@ -389,13 +552,35 @@
             "</figure>";
         });
       }
-      html += "</div></section>";
+      html += "</div>";
+      if (listAll.length > list.length) {
+        html += '<div class="rk-more-wrap"><button type="button" class="cmi-btn" data-more="' + esc(s.key) +
+          '">展开更多（已显示 ' + list.length + " / " + listAll.length + "）</button></div>";
+      }
+      html += "</section>";
     });
     html += "</div>";
     body.innerHTML = html;
 
     Array.prototype.forEach.call(body.querySelectorAll(".cmp-card"), function (fig) {
       fig.onclick = function () { openModal(fig.getAttribute("data-url")); };
+      /* 榜单图是外部链接，随时可能挂掉；失败就换一个占位，别留一块一直转的空白 */
+      var im = fig.querySelector("img");
+      if (im) {
+        im.onerror = function () {
+          im.onerror = null;
+          im.removeAttribute("src");
+          fig.classList.add("cmp-broken");
+        };
+      }
+    });
+    Array.prototype.forEach.call(body.querySelectorAll("[data-more]"), function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var key = btn.getAttribute("data-more");
+        state.shown[key] = shownOf(key) + PAGE;
+        renderPools();
+      };
     });
     Array.prototype.forEach.call(body.querySelectorAll(".cmi-btn[data-insight]"), function (btn) {
       btn.onclick = function (e) {

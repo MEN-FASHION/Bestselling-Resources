@@ -45,6 +45,8 @@
 
 | 文件 | 对应页面 |
 |---|---|
+| `admin-pool.js` | 存量图片压缩池：按目标 KB 压缩（200/100/40K）+ 独立「转 WebP」（只换格式、加载更快） |
+| `imagesearch.js` | 大图「找相似款」：任意前台页面放大图片后，右下角按钮一键跳 Google/Bing/Yandex/TinEye 以图搜图（纯前端跳转，不落库） |
 | `frontend.js` | 视觉专区（首页） |
 | `channel-zone-front.js` | Pinterest / SHEIN 两个纯图片专区的**共用前台脚本**（页面用 `window.CZONE` 声明是哪个渠道） |
 | `compare-front.js` | 渠道对比页（多列并排看各来源的图；列由后台配置，未配置时自动按渠道发现） |
