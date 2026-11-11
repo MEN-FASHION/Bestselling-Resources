@@ -247,6 +247,9 @@
       + '<button type="button" class="fv-wtog" data-wtog="1" title="收起 / 展开这一周">' + (folded ? "▸" : "▾") + '</button>'
       + '<span class="fv-week-t">' + esc(wd.week) + '</span>'
       + '<span class="fv-week-n">' + st.total + ' 张 · ' + st.catN + ' 个分类' + (st.uncategorized ? ' · 未分类 ' + st.uncategorized : "") + '</span>'
+      /* 单期次导出：只导这一期的图，不掺别的期次（工具栏那两个按钮是「全部收藏」口径） */
+      + '<button type="button" class="fv-btn fv-weekexp" data-weekexp="pdf" title="只导出这一期的收藏，生成一份 PDF 报告（本地下载）">导出 PDF</button>'
+      + '<button type="button" class="fv-btn fv-weekexp" data-weekexp="html" title="只导出这一期的收藏，生成可直接双击打开的单文件网页">导出 HTML</button>'
       + '<button type="button" class="fv-btn fv-weekflat' + (flatOn ? " is-on" : "") + '" data-weekflat="1">'
       +   (flatOn ? "收起平铺" : "一键展开") + '</button>'
       + '</div>';
@@ -755,6 +758,78 @@
       });
   }
 
+  /* ---------------- 单期次导出：某一周（或某一月）自己的 PDF / HTML ----------------
+     与工具栏的「导出周报」不同：这里只导这一期的图，其它期次一张都不进，
+     所以不套「导出范围」下拉（那一期是周度还是月度本来就已确定）。 */
+  function itemsOfPeriod(week) {
+    var w = String(week);
+    return ST.items.filter(function (it) { return String(it.period_label || "未标注期次") === w; });
+  }
+
+  function periodFileName(week, ext, now) {
+    var d = now || new Date();
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    var tag = String(week || "未标注期次").replace(/[\\/:*?"<>|\s]+/g, "-");
+    return "收藏周报-" + tag + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + "-" + p(d.getHours()) + p(d.getMinutes()) + "." + ext;
+  }
+
+  function doWeekExport(kind, week, btn) {
+    if (!btn || btn.getAttribute("data-busy") === "1") return;
+    var label = kind === "pdf" ? "导出 PDF" : "导出 HTML";
+    function back(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function () { btn.textContent = label; btn.disabled = false; }, ms || 2800);
+      btn.removeAttribute("data-busy");
+    }
+    var FE = window.FavExport;
+    if (!FE) { back("导出组件未加载，请刷新页面", 3200); return; }
+    var list = itemsOfPeriod(week);
+    if (!list.length) { back("这一期没有收藏", 2600); return; }
+    if (kind === "pdf" && !FE.exportPdfForTrend) { back("导出组件未加载，请刷新页面", 3200); return; }
+    if (kind === "html" && !FE.exportHtml) { back("导出组件未加载，请刷新页面", 3200); return; }
+
+    btn.setAttribute("data-busy", "1");
+    btn.disabled = true;
+
+    if (kind === "html") {
+      btn.textContent = "正在生成网页…";
+      FE.exportHtml(list, ST.cats, { scope: "all" })
+        .then(function (res) {
+          FE.download(res.blob, periodFileName(week, "html"));
+          btn.textContent = "已导出 · " + res.count + " 张";
+          btn.disabled = false;
+          setTimeout(function () { btn.textContent = label; }, 3000);
+          btn.removeAttribute("data-busy");
+          toast("已导出 " + week + " · " + res.count + " 张 · HTML");
+        })
+        .catch(function (err) {
+          back((err && err.message) ? err.message : "导出失败，请重试", 3600);
+        });
+      return;
+    }
+
+    btn.textContent = "正在排版…";
+    FE.exportPdfForTrend(list, ST.cats, {
+      scale: 2,
+      scope: "all",
+      publish: false,          /* 只下载，不发布：封面脚注也据此换文案 */
+      onProgress: function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; },
+      onPage: function (m) { btn.textContent = m; }
+    })
+      .then(function (res) {
+        FE.download(res.pdfBlob, periodFileName(week, "pdf"));
+        btn.textContent = "已导出 · " + res.count + " 张";
+        btn.disabled = false;
+        setTimeout(function () { btn.textContent = label; }, 3000);
+        btn.removeAttribute("data-busy");
+        toast("已导出 " + week + " · " + res.count + " 张 · PDF " + res.pages + " 页");
+      })
+      .catch(function (err) {
+        back((err && err.message) ? err.message : "导出失败，请重试", 3600);
+      });
+  }
+
   function bind() {
     var body = $("#fv-body");
     if (!body) return;
@@ -778,6 +853,14 @@
         var wk2 = wf.closest(".fv-week").getAttribute("data-week");
         ST.flat[wk2] = !ST.flat[wk2];
         render(); return;
+      }
+      /* 单期次导出：导出 PDF / HTML（只导这一期） */
+      var wxp = t.closest("[data-weekexp]");
+      if (wxp) {
+        e.preventDefault(); e.stopPropagation();
+        var wk4 = wxp.closest(".fv-week").getAttribute("data-week");
+        doWeekExport(wxp.getAttribute("data-weekexp"), wk4, wxp);
+        return;
       }
       var nt = t.closest("[data-nonetog]");
       if (nt) {

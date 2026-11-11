@@ -68,7 +68,7 @@
     return m2 ? Number(m2[1]) : -1;
   }
 
-  /* 期次是「周度」还是「月度」（20261111N）：
+  /* 期次是「周度」还是「月度」（20261111O）：
        周度 → 2026-W45 / W45 / 45周
        月度 → 2026-10 / 2026年10月 / 202610
        其他 → 认不出来的一律算 other（选择「全部」时照常导出，选周度/月度时不进） */
@@ -571,7 +571,7 @@
   }
 
   /* 封面：与长图页头同一套配色，单独成页，同时用作趋势专区的卡片图 */
-  function buildCover(p, now, scope) {
+  function buildCover(p, now, scope, opts) {
     var W = 1600, H = Math.round(1600 * PDF_H_MM / PDF_W_MM);
     var cv = document.createElement("canvas");
     cv.width = W; cv.height = H;
@@ -619,7 +619,11 @@
 
     c.fillStyle = C.ink3;
     c.font = "400 22px " + FONT;
-    c.fillText("由「我的收藏」导出并发布至趋势专区 · 仅供内部使用 · 请勿外传", 96, H - 68);
+    /* 封面脚注：发布到专区与「只导出本地 PDF」用词不同 —— 后者并没有发布，不能写成已发布 */
+    var foot = (opts && opts.publish === false)
+      ? "由「我的收藏」导出 · 仅供内部使用 · 请勿外传"
+      : "由「我的收藏」导出并发布至趋势专区 · 仅供内部使用 · 请勿外传";
+    c.fillText(foot, 96, H - 68);
 
     c.fillStyle = "rgba(176,137,72,.16)";
     c.font = "700 " + Math.round(H * 0.42) + "px " + FONT;
@@ -736,7 +740,7 @@
     var now = opts.now || new Date();
     if (opts.onPage) opts.onPage("正在拼装长页…");
 
-    var cover = buildCover(p, now, opts.scope);
+    var cover = buildCover(p, now, opts.scope, opts);
     var src = res.canvas;
 
     /* 20261102C：贴图宽度从 2200 降到 1600、JPEG 质量 0.85 → 0.72。
