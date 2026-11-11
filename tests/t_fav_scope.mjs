@@ -1,4 +1,4 @@
-/* 我的收藏 · 导出 PDF / HTML / 长图 按「周度」收窄 —— 20261111M
+/* 我的收藏 · 导出 PDF / HTML / 长图 按「周度」收窄 —— 20261111N
    锁四件事：
      ① 期次能判出周度 / 月度（三种写法都认），认不出的不算任何一类
      ② 收窄只影响本次导出，不影响收藏本身
@@ -23,7 +23,10 @@ console.log("一·补、模板没有时脚本自己补出下拉（覆盖漏文�
 ok(/function ensureScopeUI\(\)/.test(FJ), "有补建函数");
 ok(/if \(document\.getElementById\("fv-export-scope"\)\) return;/.test(FJ), "已有则不动，避免出现两个下拉");
 ok(/ensureScopeUI\(\);/.test(FJ), "初始化时调用");
-ok(/host\.insertBefore\(lab, anchor\)/.test(FJ), "插在导出按钮左侧（找得到就插、找不到追加）");
+ok(/document\.getElementById\("fv-export"\)\s*\n?\s*\|\| document\.getElementById\("fv-export-html"\)/.test(FJ), "先找导出按钮本身当锚点（工具栏结构变了也能定位）");
+ok(/var host = anchor \? anchor\.parentNode/.test(FJ), "插到按钮所在的容器里，而不是写死某个工具栏类名");
+ok(/if \(anchor && anchor\.parentNode === host\) host\.insertBefore\(lab, anchor\)/.test(FJ), "有按钮就插在它左侧，没有就追加到容器末尾");
+ok(/lab\.style\.cssText/.test(FJ), "带内联兜底样式（样式表没更新也不歪）");
 ok(/\["week", "仅周度"\], \["month", "仅月度"\], \["all", "全部期次"\]/.test(FJ), "补出来的选项与模板一致");
 
 console.log("二、三个导出入口都带上范围");

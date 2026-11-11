@@ -585,15 +585,26 @@
      放在导出按钮左侧，三个导出入口共用。 */
   function ensureScopeUI() {
     if (document.getElementById("fv-export-scope")) return;
-    var host = document.querySelector(".fv-bar-r");
+
+    /* 锚点优先级：先找导出按钮本身，跟着它走 —— 这样不管工具栏长什么样都能出现在按钮旁边 */
+    var anchor = document.getElementById("fv-export")
+      || document.getElementById("fv-export-html")
+      || document.getElementById("fv-export-pdf");
+    var host = anchor ? anchor.parentNode : document.querySelector(".fv-bar-r");
     if (!host) return;
+
     var lab = document.createElement("label");
     lab.className = "fv-scope";
     lab.title = "导出与发布时按哪种期次收窄：周度（W45 这类）或月度（2026-10 这类）";
+    /* 内联兜底样式：样式表没更新时也排得整齐 */
+    lab.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-right:4px;font-size:12.5px;white-space:nowrap";
+
     var sp = document.createElement("span");
     sp.textContent = "导出范围";
+
     var sel = document.createElement("select");
     sel.id = "fv-export-scope";
+    sel.style.cssText = "height:30px;padding:0 8px;border:1px solid #e6ddcd;border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer";
     [["week", "仅周度"], ["month", "仅月度"], ["all", "全部期次"]].forEach(function (o, i) {
       var op = document.createElement("option");
       op.value = o[0];
@@ -601,9 +612,10 @@
       if (i === 0) op.selected = true;
       sel.appendChild(op);
     });
+
     lab.appendChild(sp);
     lab.appendChild(sel);
-    var anchor = document.getElementById("fv-export") || document.getElementById("fv-export-html");
+
     if (anchor && anchor.parentNode === host) host.insertBefore(lab, anchor);
     else host.appendChild(lab);
   }

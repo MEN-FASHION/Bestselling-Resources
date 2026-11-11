@@ -39,7 +39,7 @@ ok(!/key:\s*"channel",\s*label:\s*"/.test(perm), "可勾选专区不应再出现
 
 /* ---------- 3. 版本号 ---------- */
 const admin = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
-ok(/admin-perm\.js\?v=20261111M/.test(admin), "admin.html 里 admin-perm.js 版本号应随本次发布统一升级");
+ok(/admin-perm\.js\?v=20261111N/.test(admin), "admin.html 里 admin-perm.js 版本号应随本次发布统一升级");
 
 /* ---------- 4. 保存失败要能看见（不能被静默吞掉） ---------- */
 ok(/保存失败/.test(perm), "保存失败应有明确提示文案");
