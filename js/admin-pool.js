@@ -36,25 +36,12 @@ function imgPoolStat() {
     const done = imgPoolItems.filter(i => i.size <= IMG_POOL_TARGET).length;
     const todo = imgPoolItems.length - done;
     const totalBytes = imgPoolItems.reduce((s, i) => s + (i.size || 0), 0);
-    const webp = imgPoolItems.filter(i => poolIsWebp(i)).length;
-    $("#imgpool-stat").textContent = "共 " + imgPoolItems.length + " 张 · 已压缩 " + done + " · 待压缩 " + todo +
-      " · 已转 WebP " + webp + " · 合计 " + fmtSize(totalBytes);
+    $("#imgpool-stat").textContent = "共 " + imgPoolItems.length + " 张 · 已压缩 " + done + " · 待压缩 " + todo + " · 合计 " + fmtSize(totalBytes);
     $("#imgpool-cnt-done").textContent = done;
     $("#imgpool-cnt-todo").textContent = todo;
     $("#imgpool-compress").textContent = "压缩选中(" + imgPoolSelected.size + ")";
-    const wb = $("#imgpool-webp");
-    if (wb) { wb.textContent = "转WebP选中(" + imgPoolSelected.size + ")"; wb.disabled = imgPoolBusy || imgPoolSelected.size === 0; }
     $("#imgpool-compress").disabled = imgPoolBusy || imgPoolSelected.size === 0;
     $("#imgpool-compress-all").disabled = imgPoolBusy || todo === 0;
-  }
-
-/* 是否已经是 WebP：①本次会话转过 ②后缀是 .webp ③存储里的 content-type 是 webp
-   第 ③ 条是关键：转换不改文件名，刷新后只能靠它认出来。 */
-function poolIsWebp(it) {
-    if (!it) return false;
-    if (it.webp) return true;
-    if (/\.webp$/i.test(it.key || "")) return true;
-    return /webp/i.test(it.type || "");
   }
 
 function poolFormatOf(key) {
@@ -96,8 +83,7 @@ async function imgPoolRender() {
       tags.className = "smart-card-tags";
       tags.innerHTML =
         '<div class="smart-tag-row size"><b>大小</b><span>' + fmtSize(it.size) + '</span></div>' +
-        '<div class="smart-tag-row fmt"><b>格式</b><span>' +
-          (poolIsWebp(it) ? escHtml(fmt) + ' → WEBP' : escHtml(fmt)) + '</span></div>' +
+        '<div class="smart-tag-row fmt"><b>格式</b><span>' + escHtml(fmt) + '</span></div>' +
         (isDone ? '<div class="smart-tag-row none"><b>态</b><span>已压缩</span></div>' : '<div class="smart-tag-row ch"><b>态</b><span>待压缩</span></div>');
       card.appendChild(tags);
       // 未压缩卡片：右下角档位下拉（200K/100K/40K）+ 预览按钮
@@ -107,8 +93,7 @@ async function imgPoolRender() {
         '<select class="imgpool-target" data-key="' + escAttr(it.key) + '" title="压缩目标">' +
         IMG_POOL_TARGETS.map(o => '<option value="' + o.v + '"' + (curTarget === o.v ? " selected" : "") + '>' + o.label + '</option>').join("") +
         "</select>" +
-        '<button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>' +
-        (poolIsWebp(it) ? '' : '<button class="imgpool-webp" data-key="' + escAttr(it.key) + '" type="button" title="只换格式：转成 WebP，加载更快">转WebP</button>');
+        '<button class="imgpool-prev" data-key="' + escAttr(it.key) + '" data-url="' + escAttr(url) + '" type="button">预览</button>';
       card.appendChild(acts);
       // 勾选：未压缩卡片复选框，用于"压缩选中"批量压缩
       const pick = document.createElement("div");
@@ -129,7 +114,7 @@ async function imgPoolRender() {
       card.appendChild(pick);
       // click 预览
       card.addEventListener("click", (e) => {
-        if (e.target.closest(".imgpool-target") || e.target.closest(".imgpool-prev") || e.target.closest(".imgpool-webp")) return;
+        if (e.target.closest(".imgpool-target") || e.target.closest(".imgpool-prev")) return;
         openImgZoom(url, it.key + " · " + fmtSize(it.size));
       });
       (isDone ? doneGrid : todoGrid).appendChild(card);
@@ -143,14 +128,6 @@ async function imgPoolRender() {
 function imgPoolRenderCheck() {
     document.querySelectorAll(".imgpool-prev").forEach(btn => {
       btn.onclick = (e) => { e.stopPropagation(); openImgZoom(btn.getAttribute("data-url"), btn.getAttribute("data-key") + " · 预览"); };
-    });
-    document.querySelectorAll(".imgpool-webp").forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const key = btn.getAttribute("data-key");
-        if (!confirm("把这张图转成 WebP 并覆盖原文件？\n（地址不变，前台无需改动；建议先备份）")) return;
-        imgPoolConvertOne(key);
-      };
     });
     document.querySelectorAll("#imgpool-grid-todo .imgpool-target").forEach(sel => {
       sel.onchange = (e) => {
@@ -241,109 +218,19 @@ async function imgPoolConvertOne(key) {
     imgPoolBusy = true;
     $("#imgpool-progress").classList.remove("hidden");
     const txt = $("#imgpool-progress-text");
-    txt.textContent = "正在转 WebP：" + key;
+    txt.textContent = "正在转换：" + key;
     try {
-      const r = await imgPoolWebpOne(it);
+      await imgPoolCompressOne(it);
+      imgPoolSelected.delete(key);
       await imgPoolRender();
-      const msg = r === "done" ? "已转 WebP：" + key + " → " + fmtSize(it.size)
-        : r === "skip" ? "本来就是 WebP：" + key
-        : "已转码但体积未减小，保留原图：" + key;
-      txt.textContent = msg;
-      sbToast(msg, true);
+      txt.textContent = "已转换：" + key + " → " + fmtSize(it.size);
+      sbToast("已转换：" + key, true);
     } catch (e) {
-      txt.textContent = "转 WebP 失败：" + key;
-      sbToast("转 WebP 失败：" + key, false);
-      /* 具体原因去控制台看，界面上不铺原始报错 */
-      try { console.warn(e); } catch (err) {}
+      txt.textContent = "转换失败：" + key + "（" + (e.message || "") + "）";
+      sbToast("转换失败：" + key, false);
     } finally {
       imgPoolBusy = false;
     }
-  }
-
-/* ---------- 只换格式：转成 WebP ----------
-   和「压缩」的区别：压缩是为了把体积压到 200K/100K/40K 以下；
-   转 WebP 是为了让浏览器加载更快（同画质下 WebP 通常比 JPG/PNG 小很多），
-   不强求命中某个 KB 目标，所以原图本来就不大也照样可以转。 */
-function encodeWebp(blob, quality) {
-    return new Promise((resolve) => {
-      const done = (out) => resolve(out);
-      const toCanvas = (src, w, h) => {
-        const cv = document.createElement("canvas");
-        cv.width = w; cv.height = h;
-        const ctx = cv.getContext("2d");
-        ctx.fillStyle = "#ffffff";           /* 铺白底：透明图直接转 WebP 会变黑块 */
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(src, 0, 0, w, h);
-        cv.toBlob((b) => done(b), "image/webp", quality);
-      };
-      if (typeof createImageBitmap === "function") {
-        createImageBitmap(blob).then((bmp) => {
-          toCanvas(bmp, bmp.width, bmp.height);
-          if (bmp.close) bmp.close();
-        }).catch(() => done(null));
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const im = new Image();
-      im.onload = () => { toCanvas(im, im.naturalWidth, im.naturalHeight); URL.revokeObjectURL(url); };
-      im.onerror = () => { URL.revokeObjectURL(url); done(null); };
-      im.src = url;
-    });
-  }
-
-  /* 单张转 WebP：返回 "done"（已转换并覆盖）| "skip"（本来就是 WebP）| "bigger"（转完更大，保留原图） */
-  async function imgPoolWebpOne(it) {
-    let tok = "";
-    try { tok = await SB.currentToken(); } catch (e) { tok = ""; }
-    const url = urlOfPath(it.key, tok);
-    const r = await fetch(url, { headers: { Authorization: "Bearer " + tok } });
-    if (!r.ok) throw new Error("拉图失败 " + r.status);
-    const blob = await r.blob();
-    if (/image\/webp/i.test(blob.type || "")) { it.webp = true; return "skip"; }
-
-    /* 质量阶梯：先用高画质，体积没降再逐级降；都不比原图小就保留原图 */
-    const steps = [0.92, 0.86, 0.78];
-    let best = null;
-    for (let i = 0; i < steps.length; i++) {
-      const out = await encodeWebp(blob, steps[i]);
-      if (!out) continue;
-      if (!best || out.size < best.size) best = out;
-      if (out.size < blob.size) { best = out; break; }
-    }
-    if (!best) throw new Error("当前浏览器不支持编码 WebP");
-    if (best.size >= blob.size) { it.webp = true; return "bigger"; }
-
-    const f = new File([best], "img.webp", { type: "image/webp" });
-    await SB.overwriteStoredImg(it.key, f);
-    it.size = best.size;
-    it.webp = true;
-    return "done";
-  }
-
-  async function imgPoolWebpBatch(keys) {
-    if (imgPoolBusy) return;
-    if (!keys.length) { sbToast("请先勾选要转换的图片", false); return; }
-    imgPoolBusy = true;
-    $("#imgpool-progress").classList.remove("hidden");
-    const bar = $("#imgpool-progress-bar"), txt = $("#imgpool-progress-text");
-    let ok = 0, fail = 0, skip = 0;
-    bar.style.width = "0%";
-    for (let i = 0; i < keys.length; i++) {
-      const it = imgPoolItems.find(x => x.key === keys[i]);
-      if (!it) continue;
-      txt.textContent = "转 WebP 中…（" + (i + 1) + "/" + keys.length + "）" + keys[i];
-      bar.style.width = Math.round((i / keys.length) * 100) + "%";
-      try {
-        const r = await imgPoolWebpOne(it);
-        if (r === "done") ok++; else skip++;
-      } catch (e) { fail++; }
-      if (i % 8 === 7) { await imgPoolRender(); }
-    }
-    bar.style.width = "100%";
-    txt.textContent = "转 WebP 完成：成功 " + ok + " 张，已是/无需转 " + skip + " 张，失败 " + fail + " 张";
-    await imgPoolRender();
-    imgPoolBusy = false;
-    sbToast("转 WebP：成功 " + ok + "，无需转 " + skip + "，失败 " + fail, fail === 0);
   }
 
 async function imgPoolCompressBatch(keys) {
@@ -393,20 +280,6 @@ function bindImagePool() {
       imgPoolStat();
     });
     if (compress) compress.addEventListener("click", () => imgPoolCompressBatch([...imgPoolSelected]));
-    const webpSel = $("#imgpool-webp");
-    if (webpSel) webpSel.addEventListener("click", () => {
-      const keys = [...imgPoolSelected];
-      if (!keys.length) { sbToast("请先勾选要转换的图片", false); return; }
-      if (!confirm("把选中的 " + keys.length + " 张图转成 WebP 并覆盖原文件？\n（地址不变，前台无需改动；建议先备份）")) return;
-      imgPoolWebpBatch(keys);
-    });
-    const webpAll = $("#imgpool-webp-all");
-    if (webpAll) webpAll.addEventListener("click", () => {
-      const todo = imgPoolItems.filter(i => !poolIsWebp(i)).map(i => i.key);
-      if (!todo.length) { sbToast("所有图都已经是 WebP 了", false); return; }
-      if (!confirm("把全部 " + todo.length + " 张图转成 WebP？\n（地址不变，前台无需改动；建议先备份）")) return;
-      imgPoolWebpBatch(todo);
-    });
     const gtar = $("#imgpool-global-target");
     if (gtar) gtar.addEventListener("change", () => {
       const v = parseInt(gtar.value, 10) || 200;
@@ -426,8 +299,7 @@ function bindImagePool() {
 
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    imgPoolImgUrl, imgPoolStat, poolFormatOf, imgPoolRender, imgPoolRenderCheck, bindImgPoolDrag, imgPoolLoad, imgPoolCompressOne, imgPoolConvertOne, imgPoolCompressBatch, bindImagePool,
-    imgPoolWebpOne: imgPoolWebpOne, imgPoolWebpBatch: imgPoolWebpBatch, encodeWebp: encodeWebp, poolIsWebp: poolIsWebp
+    imgPoolImgUrl, imgPoolStat, poolFormatOf, imgPoolRender, imgPoolRenderCheck, bindImgPoolDrag, imgPoolLoad, imgPoolCompressOne, imgPoolConvertOne, imgPoolCompressBatch, bindImagePool
   });
 
 })();

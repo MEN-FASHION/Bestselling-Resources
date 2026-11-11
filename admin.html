@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261111Y">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261111Y">
+<link rel="stylesheet" href="css/style.css?v=20261111V">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261111V">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -66,30 +66,6 @@
     <div class="boot-inner"><span class="boot-text">TREND BANK</span></div>
   </div>
 
-
-  <!-- 加载兜底（内联）：即使外部脚本文件 404 或执行报错，也不至于永远卡在加载遮罩 -->
-  <script>
-  (function () {
-    var MAX = 8000, WARN = 4000;
-    function splash() { return document.getElementById("boot-splash"); }
-    function say(msg) {
-      var s = splash(); if (!s) return;
-      var t = s.querySelector(".boot-text"); if (t) t.textContent = msg;
-    }
-    window.addEventListener("error", function () {
-      if (!splash() || splash().classList.contains("hidden")) return;
-      say("页面脚本加载出错，请刷新重试");
-    }, true);
-    setTimeout(function () {
-      var s = splash();
-      if (s && !s.classList.contains("hidden")) say("加载较慢，仍在尝试…");
-    }, WARN);
-    setTimeout(function () {
-      var s = splash();
-      if (s) s.classList.add("hidden");
-    }, MAX);
-  })();
-  </script>
   <!-- ================= 登录页 ================= -->
   <section id="admin-login" class="auth-wrap hidden">
     <div class="auth-card">
@@ -663,16 +639,9 @@
               <button id="imgpool-selnone" class="btn-ghost" type="button">取消全选</button>
               <button id="imgpool-compress" class="btn-primary" type="button" disabled>压缩选中(0)</button>
               <button id="imgpool-compress-all" class="btn-primary" type="button" disabled>压全部</button>
-              <button id="imgpool-webp" class="btn-ghost" type="button" disabled>转WebP选中(0)</button>
-              <button id="imgpool-webp-all" class="btn-ghost" type="button">全部转WebP</button>
             </span>
             <span id="imgpool-stat" class="imgpool-stat">-</span>
           </div>
-          <p class="hint-inline" style="margin:6px 0 2px;line-height:1.7">
-            本池只统计<strong>本站存储里</strong>的图（视觉专区图 + 各专区/Pinterest/SHEIN 上传的图）。
-            榜单里带的是<strong>外部图片链接</strong>（第三方平台的首图地址），文件不在本站存储，因此不出现在这里、也无法压缩——
-            如果想让它加载更快，只能重新上传成本站图片。
-          </p>
           <div id="imgpool-progress" class="progress hidden imgpool-progress"><div id="imgpool-progress-bar" class="progress-bar"></div><span id="imgpool-progress-text" class="imgpool-progress-text"></span></div>
           <div class="imgpool-pools" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="smart-pool" id="imgpool-pool-done" style="min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
@@ -1887,43 +1856,43 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261111Y"></script>
-  <script src="vendor/quill.js?v=20261111Y"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261111Y"></script>
-  <script src="vendor/jszip.min.js?v=20261111Y"></script>
-  <script src="vendor/qrcode.min.js?v=20261111Y"></script>
-  <script src="js/config.js?v=20261111Y"></script>
-  <script src="js/supabase.js?v=20261111Y"></script>
-  <script src="js/track-menu.js?v=20261111Y"></script>
+  <script src="vendor/supabase.js?v=20261111V"></script>
+  <script src="vendor/quill.js?v=20261111V"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261111V"></script>
+  <script src="vendor/jszip.min.js?v=20261111V"></script>
+  <script src="vendor/qrcode.min.js?v=20261111V"></script>
+  <script src="js/config.js?v=20261111V"></script>
+  <script src="js/supabase.js?v=20261111V"></script>
+  <script src="js/track-menu.js?v=20261111V"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261111Y"></script>
-  <script src="js/admin.js?v=20261111Y"></script>
-  <script src="js/admin-images.js?v=20261111Y"></script>
-  <script src="js/rank-enums.js?v=20261111Y"></script>
-  <script src="js/imageexport.js?v=20261111Y"></script>
-  <script src="js/admin-imageimport.js?v=20261111Y"></script>
-  <script src="js/admin-movement.js?v=20261111Y"></script>
-  <script src="js/admin-smart.js?v=20261111Y"></script>
-  <script src="js/admin-trend.js?v=20261111Y"></script>
-  <script src="js/admin-notice.js?v=20261111Y"></script>
-  <script src="js/marketing-data.js?v=20261111Y"></script>
-  <script src="js/admin-festival.js?v=20261111Y"></script>
-  <script src="js/admin-tasks.js?v=20261111Y"></script>
-  <script src="js/admin-bestseller.js?v=20261111Y"></script>
-  <script src="js/ipgeo.js?v=20261111Y"></script>
-  <script src="js/admin-perm.js?v=20261111Y"></script>
-  <script src="js/admin-pool.js?v=20261111Y"></script>
-  <script src="js/rankexport.js?v=20261111Y"></script>
-  <script src="js/admin-rankimport.js?v=20261111Y"></script>
-<script src="js/admin-channelzone.js?v=20261111Y"></script>
-<script src="js/admin-compare.js?v=20261111Y"></script>
-  <script src="js/admin-rank.js?v=20261111Y"></script>
-  <script src="js/admin-rhythm.js?v=20261111Y"></script>
-  <script src="js/plus-sb.js?v=20261111Y"></script>
-  <script src="js/plus-match.js?v=20261111Y"></script>
-  <script src="js/admin-plus.js?v=20261111Y"></script>
-  <script src="js/admin-insight.js?v=20261111Y"></script>
-  <script src="js/admin-backup.js?v=20261111Y"></script>
+  <script src="js/admin-dialog.js?v=20261111V"></script>
+  <script src="js/admin.js?v=20261111V"></script>
+  <script src="js/admin-images.js?v=20261111V"></script>
+  <script src="js/rank-enums.js?v=20261111V"></script>
+  <script src="js/imageexport.js?v=20261111V"></script>
+  <script src="js/admin-imageimport.js?v=20261111V"></script>
+  <script src="js/admin-movement.js?v=20261111V"></script>
+  <script src="js/admin-smart.js?v=20261111V"></script>
+  <script src="js/admin-trend.js?v=20261111V"></script>
+  <script src="js/admin-notice.js?v=20261111V"></script>
+  <script src="js/marketing-data.js?v=20261111V"></script>
+  <script src="js/admin-festival.js?v=20261111V"></script>
+  <script src="js/admin-tasks.js?v=20261111V"></script>
+  <script src="js/admin-bestseller.js?v=20261111V"></script>
+  <script src="js/ipgeo.js?v=20261111V"></script>
+  <script src="js/admin-perm.js?v=20261111V"></script>
+  <script src="js/admin-pool.js?v=20261111V"></script>
+  <script src="js/rankexport.js?v=20261111V"></script>
+  <script src="js/admin-rankimport.js?v=20261111V"></script>
+<script src="js/admin-channelzone.js?v=20261111V"></script>
+<script src="js/admin-compare.js?v=20261111V"></script>
+  <script src="js/admin-rank.js?v=20261111V"></script>
+  <script src="js/admin-rhythm.js?v=20261111V"></script>
+  <script src="js/plus-sb.js?v=20261111V"></script>
+  <script src="js/plus-match.js?v=20261111V"></script>
+  <script src="js/admin-plus.js?v=20261111V"></script>
+  <script src="js/admin-insight.js?v=20261111V"></script>
+  <script src="js/admin-backup.js?v=20261111V"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">

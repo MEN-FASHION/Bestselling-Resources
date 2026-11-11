@@ -69,19 +69,8 @@
     b.classList.toggle("hidden", !visible || !!window.__loggedIn);
   }
 
-  /* 兜底：脚本一加载就挂上揭开遮罩的定时器，别把页面卡在加载态 */
-  (function () {
-    const hide = () => {
-      const s = document.getElementById("boot-splash");
-      if (s) s.classList.add("hidden");
-    };
-    setTimeout(hide, 3000);
-    setTimeout(hide, 8000);
-  })();
-
   document.addEventListener("DOMContentLoaded", () => {
-    const _st = $("#site-title");
-    if (_st) _st.textContent = CONFIG.siteTitle || "TREND BANK";
+    $("#site-title").textContent = CONFIG.siteTitle || "TREND BANK";
     document.title = (CONFIG.siteTitle || "TREND BANK") + " · 趋势专区";
     if (window.pdfjsLib) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
