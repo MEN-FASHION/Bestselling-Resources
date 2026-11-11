@@ -1,4 +1,4 @@
-/* 20261111AB · 渠道对比加载提速 + 压缩池「转 WebP」自检
+/* 20261111AC · 渠道对比加载提速 + 压缩池「转 WebP」自检
  *
  * 这里盯两个容易「看着做完、其实没用」的点：
  *  1. 对比页的分批渲染：如果 renderPools 仍然一次铺全量、或者打标还在 load() 里全量查，
@@ -38,7 +38,10 @@ ok(/cmp-broken/.test(renderFn), "外链图失效应有占位处理，不能留�
 ok(!/state\.tags = \(await SB\.listMovementTags\(urls\)\)/.test(CF), "load() 仍在一次性全量查打标（页面会被拖慢）");
 ok(/async function ensureTags\(urls\)/.test(CF), "缺少按需查打标的 ensureTags");
 ok(/TAG_BATCH/.test(CF) && /part = need\.slice/.test(CF), "按需查询应分批，避免一次塞上千个地址");
-ok(/delete state\.tagAsked\[k\]/.test(CF), "查询失败应回滚缓存标记，否则这张图永远不再重试");
+/* 20261111AC 起有意改为「失败不重试」：
+   原先失败会放回队列，于是同一批地址每渲染一次就再等 6 秒，
+   叠加起来正是用户看到的「一直加载中」。标签缺失只影响圆点标记，下次刷新会重查。 */
+ok(CF.indexOf("delete state.tagAsked[k]") < 0, "打标失败不应放回队列（会导致反复各等 6 秒，表现为一直加载中）");
 
 /* 分析要覆盖整列，不能只看屏幕上那几张 */
 const insightFn = CF.slice(CF.indexOf("async function openInsight"), CF.indexOf("async function openInsight") + 1400);
@@ -52,7 +55,7 @@ ok(/state\.cat = name; state\.shown = \{\}/.test(CF), "切类目时未重置分�
 ok(/\.rk-pool\s*\{[^}]*content-visibility:\s*auto/.test(CSS), "缺少列级 content-visibility（几列并排时会白等）");
 ok(/\.cmp-card\.cmp-broken/.test(CSS), "缺少图片失效占位样式");
 
-/* ================= 一·补、20261111AB 取数提速 ================= */
+/* ================= 一·补、20261111AC 取数提速 ================= */
 ok(/var CACHE_TTL = 5 \* 60 \* 1000;/.test(CF), "缺少会话级数据缓存（每次打开都重新全量取，必然慢）");
 ok(/var LOAD_TIMEOUT = 8000;/.test(CF), "取数缺少超时（超过 8 秒必须先出东西，不能一直加载中）");
 ok(/function withTimeout\(p, ms, fallback\)/.test(CF), "缺少超时包装器");

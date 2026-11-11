@@ -1193,7 +1193,7 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "保存失败");
     },
 
-    // ============ 渠道对比 · 来源列配置（20261111AB） ============
+    // ============ 渠道对比 · 来源列配置（20261111AC） ============
     // 存在 site_settings.frontend_dims.compare_sources，不改表结构：
     //   { list:[{key,label,type,channel,month}], showEmpty:bool, perRow:0 }
     //   type = "rank"（上新节奏·月度榜单） | "channel"（某个渠道的图，channel=渠道名）
@@ -2839,7 +2839,7 @@ async removeTrendRecord(id) {
       const o = opts || {};
       const PT = o.periodType || "month";
       const PAGE = 1000, HARD = 60000;
-      /* 20261111AB：允许只取需要的列。
+      /* 20261111AC：允许只取需要的列。
          渠道对比页原来 select("*")，每条记录几十个字段，上万行就是几 MB JSON，
          光传输和解析就要好几秒——而它真正只用得到 6 个字段。 */
       const COLS = o.cols || null;
@@ -4563,7 +4563,7 @@ async removeTrendRecord(id) {
   };
 
   /* ============================================================
-   * 批量删除渠道图（20261111AB）
+   * 批量删除渠道图（20261111AC）
    * ------------------------------------------------------------
    * 渠道图有两种存放位置：文档存储（id 形如 cp:<url>）与 rank_items 表（数字 id）。
    * 批量删除必须两条都照顾到，否则「勾了 30 张只删掉一半」。
@@ -4607,7 +4607,7 @@ async removeTrendRecord(id) {
   };
 
   /* ============================================================
-   * 批量修改渠道图字段（20261111AB）
+   * 批量修改渠道图字段（20261111AC）
    * ------------------------------------------------------------
    * 只改传进来的字段（undefined = 不动），所以「批量只改月份」不会顺手把类目清空。
    * 可改字段：channel（渠道名）/ category（类目）/ period_label（月份，前台展示的上传期次）。

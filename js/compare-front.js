@@ -1,5 +1,5 @@
 /* ============================================================================
- * compare-front.js —— 渠道对比（多列图片横向对比，20261111AB）
+ * compare-front.js —— 渠道对比（多列图片横向对比，20261111AC）
  * ----------------------------------------------------------------------------
  * 一屏之内把「同一个类目 · 同一个月」的各个来源的图并排摆开，一眼看差异。
  *
@@ -157,6 +157,20 @@
     });
   }
 
+  /* 没读到数据时的统一提示（带重试）。绝不把「读取失败」说成「还没有图片」。 */
+  function showRetry() {
+    var body = $("#cmp-body");
+    if (!body) return;
+    body.innerHTML = '<div class="rk-empty">暂时没读到数据（可能是网络较慢）。<br>' +
+      '稍等几秒点这里重试：<button type="button" class="cmi-btn" id="cmp-retry">重新加载</button></div>';
+    var b = $("#cmp-retry");
+    if (b) b.onclick = function () {
+      try { sessionStorage.removeItem(CACHE_KEY); } catch (e) {}
+      state.fetchFailed = false;
+      load();
+    };
+  }
+
   function loadingSay(text) {
     var body = $("#cmp-body");
     if (body) body.innerHTML = '<div class="rk-empty">' + esc(text) + "</div>";
@@ -167,6 +181,12 @@
     if (!SB || state.loading) return;
     state.loading = true;
     loadingSay("正在读取数据…");
+    /* 每秒刷新一次已等待秒数：慢的时候能看出在动，不会以为卡死 */
+    var waited = 0;
+    var tick = setInterval(function () {
+      waited += 1;
+      loadingSay("正在读取数据…已等待 " + waited + " 秒");
+    }, 1000);
     try {
       var cached = cacheGet();
 
@@ -182,49 +202,51 @@
         ? SB.getCompareSources().catch(function () { return null; })
         : Promise.resolve(null);
 
-      var chRows = cached ? cached.ch : [];
-      var rankRows = cached ? cached.rk : [];
-      var rankNeed = false;
-
-      if (!cached) {
-        /* 榜单是否要用，取决于列配置里有没有「上新节奏」列：先等配置（很快），再决定要不要取榜单 */
-        var cfgPre = await withTimeout(cfgPromise, LOAD_TIMEOUT, null);
-        var preList = cfgPre && Array.isArray(cfgPre.list) ? cfgPre.list : null;
-        /* 没有配置时默认带「上新节奏」列，所以也要取 */
-        rankNeed = !preList || preList.some(function (x) { return x.type === "rank"; });
-
-        loadingSay("正在读取渠道图…");
-        var rankPromise = (rankNeed && typeof SB.listRankItems === "function")
-          ? SB.listRankItems({
-              periodType: "month",
-              cols: "id,image_url,category,period_label,period_type,site,channel,title",
-            })
-          : Promise.resolve([]);
-
-        /* 两张表同时跑 */
-        var both = await Promise.all([
-          withTimeout(chPromise, LOAD_TIMEOUT, []),
-          withTimeout(rankPromise, LOAD_TIMEOUT, []),
-        ]);
-        chRows = both[0] || [];
-        rankRows = both[1] || [];
-        state.cfg = cfgPre;
-        if (chRows.length || rankRows.length) cacheSet(chRows, rankRows);
-      } else {
-        state.cfg = await withTimeout(cfgPromise, LOAD_TIMEOUT, null);
-        /* 缓存里没有榜单数据、但这次配置要求有「上新节奏」列：补取一次，
-           否则会出现「配了榜单列却一直是该列暂无数据」。 */
-        var c2 = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
-        var needRank = !c2 || c2.some(function (x) { return x.type === "rank"; });
-        if (needRank && !rankRows.length && typeof SB.listRankItems === "function") {
-          loadingSay("正在读取榜单…");
-          rankRows = await withTimeout(SB.listRankItems({
+      /* 【20261111AC 重写】上一版的错：先等配置、再并行、再补取榜单 ——
+         三段各自带超时，最坏要等 8+8+8 秒，用户看到的就是「一直在转圈」。
+         现在改成：三个请求一开始就同时发出，只等一层 Promise.all，
+         总耗时封顶 LOAD_TIMEOUT，不再有任何二次等待。 */
+      var chPromise = (typeof SB.listRankChannelPics === "function")
+        ? SB.listRankChannelPics({
+            periodType: "month",
+            /* 只取渲染与筛选要用的字段（原来拉全表所有字段，是最大的一笔开销） */
+            cols: "id,image_url,category,period_label,period_type,channel,title",
+          })
+        : Promise.resolve([]);
+      var rankPromise = (typeof SB.listRankItems === "function")
+        ? SB.listRankItems({
             periodType: "month",
             cols: "id,image_url,category,period_label,period_type,site,channel,title",
-          }), LOAD_TIMEOUT, []) || [];
-          if (rankRows.length) cacheSet(chRows, rankRows);
-        }
+          })
+        : Promise.resolve([]);
+      var cfgPromise = (typeof SB.getCompareSources === "function")
+        ? SB.getCompareSources()
+        : Promise.resolve(null);
+
+      var chRows = [], rankRows = [], cfg = null;
+      /* 哨兵：区分「请求超时/失败」和「库里确实没有图」——两者提示语必须不一样，
+         否则取数失败时会说成「这个类目还没有图片」，把人误导到数据层面。 */
+      var TIMEOUT = { __timeout: 1 };
+      state.fetchFailed = false;
+
+      if (cached) {
+        chRows = cached.ch;
+        rankRows = cached.rk;
+        cfg = await withTimeout(cfgPromise, LOAD_TIMEOUT, null);
+      } else {
+        /* 同时发出，只等这一层；任何一个慢或失败都不影响其它两个 */
+        var all3 = await Promise.all([
+          withTimeout(chPromise, LOAD_TIMEOUT, TIMEOUT),
+          withTimeout(rankPromise, LOAD_TIMEOUT, TIMEOUT),
+          withTimeout(cfgPromise, LOAD_TIMEOUT, null),
+        ]);
+        state.fetchFailed = (all3[0] === TIMEOUT) || (all3[1] === TIMEOUT);
+        chRows = (all3[0] === TIMEOUT) ? [] : (all3[0] || []);
+        rankRows = (all3[1] === TIMEOUT) ? [] : (all3[1] || []);
+        cfg = all3[2];
+        if (chRows.length || rankRows.length) cacheSet(chRows, rankRows);
       }
+      state.cfg = cfg;
 
       var conf = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
       if (conf && conf.length) {
@@ -303,17 +325,10 @@
     } catch (e) {
       $("#cmp-body").innerHTML = '<div class="rk-empty">读取失败，请刷新重试</div>';
     } finally {
+      clearInterval(tick);
       state.loading = false;
-      /* 数据一条都没拿到：说清楚是「还没读到」，别让人对着空白猜 */
-      if (!state.items.length) {
-        var b = $("#cmp-body");
-        if (b && !b.querySelector(".rk-pools")) {
-          b.innerHTML = '<div class="rk-empty">暂时没读到数据（可能网络较慢）。<br>' +
-            '稍等几秒点这里重试：<button type="button" class="cmi-btn" id="cmp-retry">重新加载</button></div>';
-          var r = $("#cmp-retry");
-          if (r) r.onclick = function () { try { sessionStorage.removeItem(CACHE_KEY); } catch (e2) {} load(); };
-        }
-      }
+      /* 数据一条都没拿到、且是取数失败：明确说「还没读到」，别让人对着空白猜 */
+      if (!state.items.length && state.fetchFailed) showRetry();
     }
   }
 
@@ -416,8 +431,9 @@
         if (pTag) map = await withTimeout(pTag, 6000, null);
         Object.keys(map || {}).forEach(function (k) { state.tags[k] = map[k]; });
       } catch (e) {
-        /* 查不到就当没打标：不能因为一次请求失败整页不显示 */
-        part.forEach(function (k) { delete state.tagAsked[k]; });
+        /* 查不到就当没打标：不能因为一次请求失败整页不显示。
+           也不再把这批地址放回待查队列——否则每次重试都要再等 6 秒，
+           叠加起来就是「一直加载中」。下次刷新页面自然会重新查。 */
       }
     }
   }
@@ -506,6 +522,7 @@
       return;
     }
     if (!total) {
+      if (state.fetchFailed) { showRetry(); return; }
       body.innerHTML = '<div class="rk-empty">这个月份 / 类目下还没有图片，换个月份或类目试试。</div>';
       return;
     }
