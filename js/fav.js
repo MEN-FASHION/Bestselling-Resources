@@ -581,6 +581,13 @@
    * ============================================================ */
   /* ---------------- 整张导出：收藏周报（所有登录用户可用，不限管理员） ----------------
      导出的是「全部收藏」，不是当前筛选后的一屏——周报要的是完整，筛选只是看的时候方便。 */
+  /* 导出范围（周度 / 月度 / 全部）：三个导出入口共用同一个下拉 */
+  function exportScope() {
+    var el = $("#fv-export-scope");
+    var v = el ? String(el.value || "week") : "week";
+    return (v === "month" || v === "all") ? v : "week";
+  }
+
   function doExport() {
     var btn = $("#fv-export");
     if (!btn || btn.getAttribute("data-busy") === "1") return;
@@ -597,9 +604,9 @@
     btn.disabled = true;
     btn.textContent = "正在排版…";
 
-    FavExport.exportPng(ST.items, ST.cats, { scale: 2, onProgress: function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; } })
+    FavExport.exportPng(ST.items, ST.cats, { scale: 2, scope: exportScope(), onProgress: function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; } })
       .then(function (res) {
-        FavExport.download(res.blob, FavExport.fileName(new Date()));
+        FavExport.download(res.blob, FavExport.fileName(new Date(), exportScope()));
         btn.textContent = "已导出 " + res.count + " 张" + (res.failed ? " · " + res.failed + " 张未取到" : "");
         btn.disabled = false;
         setTimeout(function () { btn.textContent = label; }, 3000);
@@ -633,7 +640,7 @@
     var onProg = function (a, b) { btn.textContent = "准备图片 " + a + "/" + b; };
     var onPage = function (m) { btn.textContent = m; };
 
-    FavExport.exportPdfForTrend(ST.items, ST.cats, { scale: 2, onProgress: onProg, onPage: onPage })
+    FavExport.exportPdfForTrend(ST.items, ST.cats, { scale: 2, scope: exportScope(), onProgress: onProg, onPage: onPage })
       .then(function (res) {
         var m = res.meta;
         var fname = m.title.replace(/[\\/:*?"<>|\s]+/g, "-") + ".pdf";
@@ -696,9 +703,9 @@
     btn.disabled = true;
     btn.textContent = "正在生成网页…";
 
-    FavExport.exportHtml(ST.items, ST.cats)
+    FavExport.exportHtml(ST.items, ST.cats, { scope: exportScope() })
       .then(function (res) {
-        FavExport.download(res.blob, FavExport.htmlName(new Date()));
+        FavExport.download(res.blob, FavExport.htmlName(new Date(), exportScope()));
         btn.textContent = "已导出网页 · " + res.count + " 张";
         btn.disabled = false;
         setTimeout(function () { btn.textContent = label; }, 3000);

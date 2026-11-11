@@ -52,12 +52,46 @@
   function str(v) { return v == null ? "" : String(v); }
   function esc(s) { return str(s); }
 
+  /* 空内容提示：选了「仅周度」却一张都没有时，要让人知道是范围问题而不是收藏丢了 */
+  function emptyHint(scope) {
+    var sc = str(scope || "all");
+    if (sc === "week") return "当前范围「仅周度」里没有收藏（可能是这些图属于月度期次），改成「全部期次」再导一次。";
+    if (sc === "month") return "当前范围「仅月度」里没有收藏（可能是这些图属于周度期次），改成「全部期次」再导一次。";
+    return "没有收藏内容，先把图拖进收藏再导出。";
+  }
+
   /* 期次排序：W42 / 2026-09 这类都能比，取不到数字的排最后 */
   function periodKey(p) {
     var m = str(p).match(/(\d{4})\s*[-/]?\s*W?(\d{1,2})/);
     if (m) return Number(m[1]) * 100 + Number(m[2]);
     var m2 = str(p).match(/(\d{1,3})/);
     return m2 ? Number(m2[1]) : -1;
+  }
+
+  /* 期次是「周度」还是「月度」（20261111L）：
+       周度 → 2026-W45 / W45 / 45周
+       月度 → 2026-10 / 2026年10月 / 202610
+       其他 → 认不出来的一律算 other（选择「全部」时照常导出，选周度/月度时不进） */
+  function periodTypeOf(label) {
+    var s = str(label).trim();
+    if (!s) return "other";
+    if (/W\s*\d{1,2}/i.test(s)) return "week";
+    if (/\d{1,2}\s*周/.test(s)) return "week";
+    if (/^\d{4}\s*[-/年.]\s*\d{1,2}\s*月?$/.test(s)) return "month";
+    if (/^\d{6}$/.test(s)) return "month";
+    return "other";
+  }
+
+  /* 按「周度 / 月度」收窄（opts.scope：all | week | month） */
+  function scopeItems(items, scope) {
+    var sc = str(scope || "all");
+    if (sc !== "week" && sc !== "month") return (items || []).slice();
+    return (items || []).filter(function (it) { return periodTypeOf(it && it.period_label) === sc; });
+  }
+
+  function scopeName(scope) {
+    var sc = str(scope || "all");
+    return sc === "week" ? "仅周度" : (sc === "month" ? "仅月度" : "全部期次");
   }
 
   function subOf(it) {
@@ -67,8 +101,9 @@
 
   /* ---------------------------------------------------------------- ① 分组 */
   /* 返回：{ weeks: [{ period, total, cats: [{ name,color,count, subs:[{key,name,count,items}] }], others }], totals } */
-  function plan(items, cats) {
-    var list = (items || []).slice();
+  function plan(items, cats, opts) {
+    opts = opts || {};
+    var list = scopeItems(items, opts.scope);
     var catOrder = [], catMap = {};
     (cats || []).forEach(function (c, i) {
       var id = Number(c.id);
@@ -260,8 +295,8 @@
   /* 真正的导出：onProgress(loaded,total) */
   async function exportPng(items, cats, opts) {
     opts = opts || {};
-    var p = plan(items, cats);
-    if (!p.totals.items) throw new Error("没有收藏内容，先把图拖进收藏再导出。");
+    var p = plan(items, cats, opts);
+    if (!p.totals.items) throw new Error(emptyHint(opts.scope));
 
     var box = layout(p, opts);
     var scale = num(opts.scale) || 2;
@@ -287,7 +322,8 @@
     var rangeTxt = p.weeks.length
       ? p.weeks.map(function (w) { return w.period; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).slice(0, 6).join(" · ")
       : "";
-    ctx.fillText("期次：" + (rangeTxt || "—") + "　　导出：" + fmtDate(opts.now || new Date()), x0, 118);
+    ctx.fillText("期次：" + (rangeTxt || "—") + "　　" + scopeName(opts.scope)
+      + "　　导出：" + fmtDate(opts.now || new Date()), x0, 118);
 
     /* 统计胶囊 */
     var stats = [
@@ -535,7 +571,7 @@
   }
 
   /* 封面：与长图页头同一套配色，单独成页，同时用作趋势专区的卡片图 */
-  function buildCover(p, now) {
+  function buildCover(p, now, scope) {
     var W = 1600, H = Math.round(1600 * PDF_H_MM / PDF_W_MM);
     var cv = document.createElement("canvas");
     cv.width = W; cv.height = H;
@@ -559,7 +595,7 @@
     var rangeTxt = range.slice(0, 5).join("　·　") + (range.length > 5 ? "　等 " + range.length + " 个期次" : "");
     c.fillStyle = C.ink2;
     c.font = "400 34px " + FONT;
-    c.fillText(rangeTxt || "全部期次", 96, 342);
+    c.fillText((rangeTxt || "全部期次") + "　·　" + scopeName(scope), 96, 342);
 
     c.fillStyle = C.ink3;
     c.font = "400 24px " + FONT;
@@ -684,8 +720,8 @@
   /* 收藏 → PDF（一张连续长页）。返回 { pdfBlob, coverBlob, meta, pages, count, failed } */
   async function exportPdfForTrend(items, cats, opts) {
     opts = opts || {};
-    var p = plan(items, cats);
-    if (!p.totals.items) throw new Error("没有收藏内容，先把图拖进收藏再导出。");
+    var p = plan(items, cats, opts);
+    if (!p.totals.items) throw new Error(emptyHint(opts.scope));
 
     var okPdf = await loadJsPdf();
     if (!okPdf) throw new Error("PDF 组件加载失败，请刷新页面重试。");
@@ -694,12 +730,13 @@
     var res = await exportPng(items, cats, {
       scale: num(opts.scale) || 2,
       now: opts.now,
+      scope: opts.scope,
       onProgress: opts.onProgress,
     });
     var now = opts.now || new Date();
     if (opts.onPage) opts.onPage("正在拼装长页…");
 
-    var cover = buildCover(p, now);
+    var cover = buildCover(p, now, opts.scope);
     var src = res.canvas;
 
     /* 20261102C：贴图宽度从 2200 降到 1600、JPEG 质量 0.85 → 0.72。
@@ -786,10 +823,16 @@
     }, 1500);
   }
 
-  function fileName(now) {
+  /* 文件名带口径：选了「仅周度」导出来的就是 收藏周报-周度-…，一眼能对上范围 */
+  function scopeTag(scope) {
+    var sc = str(scope || "all");
+    return sc === "week" ? "-周度" : (sc === "month" ? "-月度" : "");
+  }
+
+  function fileName(now, scope) {
     var d = now || new Date();
     function p(n) { return (n < 10 ? "0" : "") + n; }
-    return "收藏周报-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".png";
+    return "收藏周报" + scopeTag(scope) + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".png";
   }
 
   /* ---------------------------------------------------------------- ⑦ 网页（单文件 HTML） */
@@ -951,7 +994,8 @@
       '<header class="top"><div class="wrap">',
       '<div class="brand">Trend Bank</div>',
       "<h1>收藏周报</h1>",
-      '<div class="meta">导出时间 ' + h(fmtDate(now)) + " · 共 " + s.items + " 张图 · " + p.weeks.length + " 个期次</div>",
+      '<div class="meta">导出时间 ' + h(fmtDate(now)) + " · 共 " + s.items + " 张图 · " + p.weeks.length + " 个期次"
+        + " · " + h(scopeName(opts.scope)) + "</div>",
       '<div class="chips">',
       '<span class="chip">期次 <b>' + p.weeks.length + "</b></span>",
       '<span class="chip">类目 <b>' + s.cats + "</b></span>",
@@ -981,8 +1025,8 @@
 
   async function exportHtml(items, cats, opts) {
     opts = opts || {};
-    var p = plan(items, cats);
-    if (!p.totals.items) throw new Error("没有收藏内容，先把图拖进收藏再导出。");
+    var p = plan(items, cats, opts);
+    if (!p.totals.items) throw new Error(emptyHint(opts.scope));
     var html = buildHtml(p, opts);
     var blob = new Blob([html], { type: "text/html;charset=utf-8" });
     return {
@@ -994,14 +1038,18 @@
     };
   }
 
-  function htmlName(now) {
+  function htmlName(now, scope) {
     var d = now || new Date();
     function p(n) { return (n < 10 ? "0" : "") + n; }
-    return "收藏周报-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".html";
+    return "收藏周报" + scopeTag(scope) + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + ".html";
   }
 
   /* ---------------------------------------------------------------- 对外 */
   NS.plan = plan;
+  NS.periodTypeOf = periodTypeOf;
+  NS.scopeItems = scopeItems;
+  NS.scopeName = scopeName;
+  NS.scopeTag = scopeTag;
   NS.exportHtml = exportHtml;
   NS.buildHtml = buildHtml;
   NS.htmlName = htmlName;

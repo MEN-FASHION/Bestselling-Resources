@@ -3881,6 +3881,10 @@ body.light input.cat-search::placeholder { color: #8b90a0; }
   font-size: 12px; font-family: inherit;
 }
 .fv-btn { border: 1px solid var(--line); background: #fff; color: var(--sub); }
+.fv-scope { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sub); }
+.fv-scope select { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--txt); font-size: 12.5px; }
+.fv-scope select:focus { outline: none; border-color: var(--gold2); }
+
 .fv-btn:hover { border-color: var(--gold2); color: var(--txt); }
 .fv-btn:disabled { opacity: .45; cursor: default; }
 .fv-btn.is-on { border-color: var(--gold); background: var(--gold); color: #fff; }
