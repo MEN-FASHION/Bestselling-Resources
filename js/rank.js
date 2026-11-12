@@ -38,6 +38,23 @@
     return v;
   }
 
+  /* 类目名归一：库里可能残留平台全路径名
+     （「服装，鞋靴和珠宝饰品，男士时尚，男装，男士休闲运动服，男士休闲运动套装，男士运动服」），
+     前台菜单不能照原样一条条列出来 —— 合并成标准类目显示，
+     查询时再用映射把标准名展开成它包含的所有原始类目名。 */
+  function normCatName(x) {
+    var raw = String(x == null ? "" : x).trim();
+    if (!raw) return "";
+    if (typeof window !== "undefined" && window.RankCatNorm) return window.RankCatNorm.normalize(raw);
+    return raw;
+  }
+  var RAW_CATS = [];      /* 库里真实的类目名（可能很脏） */
+  var CAT_MAP = {};       /* 标准名 → 原始类目名数组 */
+  function catsOf(label) {
+    var k = String(label || "");
+    return (CAT_MAP && CAT_MAP[k] && CAT_MAP[k].length) ? CAT_MAP[k].slice() : (k ? [k] : []);
+  }
+
   var ALL = "全部";
   var CAP_STEP = 48;         // 每列初始展示张数（先小，避免一次拉太多图片）
   var CAP_MAX = 288;         // 每列上限
@@ -614,9 +631,13 @@
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
     var filter = { sites: sites, periods: needPeriods, cols: REL_COLS };
-    if (MODE === "c") filter.categories = cats;
-    else if (CAT && CAT !== ALL) filter.category = CAT;
-    else if (FACETS.categories.length) filter.categories = FACETS.categories;
+    if (MODE === "c") {
+      var _exp = [];
+      cats.forEach(function (c) { _exp = _exp.concat(catsOf(c)); });
+      filter.categories = _exp;
+    }
+    else if (CAT && CAT !== ALL) filter.categories = catsOf(CAT);
+    else if (FACETS.categories.length) filter.categories = RAW_CATS.slice();
 
     var items = [];
     /* 20261104G：取数失败不能静默变成「暂无数据」——那会让人以为数据被删了。
@@ -3500,7 +3521,8 @@
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
     if (LOAD_ERR && (!CACHE || !CACHE.items.length)) {
       box.innerHTML = '<div class="rk-empty">数据加载失败，本次没有取到榜单数据（不是数据被删除）。'
-        + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；若刷新后仍然如此，多半是这一期的数据还没上传完整。</div>';
+        + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；'
+        + '若刷新后仍然如此，请把这次选中的类目 / 期次 / 站点截图发我，并让管理员在后台点一次「数据自检」，就能定位是没写进去还是读不到。</div>';
       return;
     }
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
@@ -4136,9 +4158,13 @@
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
     var cats = sc.cats || (MODE === "c" ? activeCats() : []);
     var filter = { sites: sites, periods: needPeriods };
-    if (MODE === "c") filter.categories = cats;
-    else if (CAT && CAT !== ALL) filter.category = CAT;
-    else if (FACETS.categories.length) filter.categories = FACETS.categories;
+    if (MODE === "c") {
+      var _exp2 = [];
+      cats.forEach(function (c) { _exp2 = _exp2.concat(catsOf(c)); });
+      filter.categories = _exp2;
+    }
+    else if (CAT && CAT !== ALL) filter.categories = catsOf(CAT);
+    else if (FACETS.categories.length) filter.categories = RAW_CATS.slice();
     var items = [];
     try { items = await SBX.listRankItems(filter); } catch (e) { items = []; }
     items = (items || []).map(function (it) {
@@ -4633,6 +4659,18 @@
         ? await SBX.rankFacetsByType("week")
         : await SBX.rankFacets();
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
+    /* 类目菜单只显示标准名：把平台全路径名合并到同一类，菜单不再出现一堆长名字 */
+    RAW_CATS = (FACETS.categories || []).slice();
+    CAT_MAP = {};
+    (function () {
+      var merged = [];
+      RAW_CATS.forEach(function (c) {
+        var n = normCatName(c) || "其他";
+        if (!CAT_MAP[n]) { CAT_MAP[n] = []; merged.push(n); }
+        if (CAT_MAP[n].indexOf(c) < 0) CAT_MAP[n].push(c);
+      });
+      FACETS.categories = merged;
+    })();
     /* 后台可以控制哪些国家站点 / 周次在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */
     /* 图案印花款前台展示开关：关掉时含印花图案的款不参与榜单、统计与报告 */
     try {

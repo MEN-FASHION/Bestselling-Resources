@@ -57,10 +57,18 @@
     const iRatio = find(h => h.indexOf("环比比例") >= 0 || (h.indexOf("比例") >= 0 && h.indexOf("绝对值") < 0));
     const iSite = find(h => h.indexOf("销量站点") >= 0 || h.indexOf("站点") >= 0 || h === "国家" || h.indexOf("国家") === 0);
     const iUrl = find(h => (h.indexOf("首图") >= 0 && h.indexOf("url") >= 0) || h === "首图url" || h.indexOf("首图") >= 0);
+    /* 标题列（20261112N）：组词台要吃 rank_items.title，但原先导入完全不读这一列，
+       导致「榜单导进去了、组词台却是空的」。货品名称 / 商品名称 / 标题 都认。 */
+    const iTitle = find(h => h.indexOf("货品名称") >= 0 || h.indexOf("商品名称") >= 0
+      || h.indexOf("商品标题") >= 0 || h === "标题" || h.indexOf("货品标题") >= 0);
     const iLeaf = find(h => h.indexOf("叶子类目") >= 0 && !isIdHead(h));
     const iCat = find(h => h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0 && !isIdHead(h));
+    /* 期次列（一次导入多周用）：期次 / 周次 / 周期 / 周 */
+    const iPeriod = find(h => h.indexOf("期次") >= 0 || h.indexOf("周次") >= 0
+      || h.indexOf("周期") >= 0 || h === "周" || h === "week" || h === "period");
     if (iAbs < 0 && iRatio < 0 && iSite < 0 && iUrl < 0) return null;
-    return { abs: iAbs, ratio: iRatio, site: iSite, url: iUrl, leaf: iLeaf >= 0 ? iLeaf : iCat };
+    return { abs: iAbs, ratio: iRatio, site: iSite, url: iUrl,
+             leaf: iLeaf >= 0 ? iLeaf : iCat, title: iTitle, period: iPeriod };
   }
   /* 表头行识别：在前几行里挑「识别到的列最多」的那一行。
      有些整理表在表头之上还有标题行、说明行，说明文字里常出现「环比比例」「环比绝对值」这些字样，
@@ -463,46 +471,64 @@
     try {
       const buf = await readFileBuf(f);
       const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      // raw:false → 取「显示值」，这样百分比格式的单元格拿到的是 "52220%" 而不是小数
-      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      const head = pickHeaderRow(aoa);
-      if (!head) {
+      /* 读取「所有能识别出表头的工作表」：
+         一份工作簿常按周 / 按类目分成多个 sheet，原先只读第一个，
+         结果是「一次导入」只能进一部分数据，其余 sheet 被静默丢掉。 */
+      const rows = [];
+      let noLink = 0, placeholderOnly = 0, resolvedFromLink = 0;
+      const usedSheets = [];
+      let firstHead = null;
+      for (const sn of wb.SheetNames) {
+        const ws = wb.Sheets[sn];
+        if (!ws || !ws["!ref"]) continue;
+        // raw:false → 取「显示值」，这样百分比格式的单元格拿到的是 "52220%" 而不是小数
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+        const head = pickHeaderRow(aoa);
+        if (!head) continue;                       // 说明页 / 空页：没有表头就跳过
+        usedSheets.push(sn);
+        if (!firstHead) firstHead = aoa[head.idx] || [];
+        const rng = XLSX.utils.decode_range(ws["!ref"] || "A1");
+        for (let i = head.idx + 1; i < aoa.length; i++) {
+          const c = aoa[i] || [];
+          const ci = head.map.url;
+          let url = "";
+          if (ci >= 0) {
+            const cell = ws[XLSX.utils.encode_cell({ r: rng.s.r + i, c: rng.s.c + ci })];
+            url = pickUrlFromCell(cell);
+            if (url) resolvedFromLink++;
+            const shown = String(c[ci] || "").trim();
+            if (!url && URL_PLACEHOLDER.test(shown)) placeholderOnly++;
+          }
+          if (!url) { noLink++; continue; }
+          rows.push({
+            title: String(head.map.title >= 0 ? (c[head.map.title] || "") : "").trim(),
+            period: String(head.map.period >= 0 ? (c[head.map.period] || "") : "").trim(),
+            leaf_category: String(head.map.leaf >= 0 ? (c[head.map.leaf] || "") : "").trim(),
+            site: String(head.map.site >= 0 ? (c[head.map.site] || "") : "").trim(),
+            image_url: url,
+            abs_delta: toNum(head.map.abs >= 0 ? c[head.map.abs] : null),
+            ratio: toRatio(head.map.ratio >= 0 ? c[head.map.ratio] : null),
+            hasSiteCol: head.map.site >= 0,
+          });
+        }
+      }
+      if (!usedSheets.length) {
         if (tip) tip.textContent = "❌ 未识别到表头，请确认表格含：销量站点 / 首图url / 环比绝对值 / 环比比例";
         return;
-      }
-      const rows = [];
-      const rng = XLSX.utils.decode_range(ws["!ref"] || "A1");
-      let noLink = 0, placeholderOnly = 0, resolvedFromLink = 0;
-      for (let i = head.idx + 1; i < aoa.length; i++) {
-        const c = aoa[i] || [];
-        const ci = head.map.url;
-        let url = "";
-        if (ci >= 0) {
-          const cell = ws[XLSX.utils.encode_cell({ r: rng.s.r + i, c: rng.s.c + ci })];
-          url = pickUrlFromCell(cell);
-          if (url) { resolvedFromLink++; }
-          const shown = String(c[ci] || "").trim();
-          if (!url && URL_PLACEHOLDER.test(shown)) placeholderOnly++;
-        }
-        if (!url) { noLink++; continue; }                   // 没图的行跳过
-        rows.push({
-          leaf_category: String(head.map.leaf >= 0 ? (c[head.map.leaf] || "") : "").trim(),
-          site: String(head.map.site >= 0 ? (c[head.map.site] || "") : "").trim(),
-          image_url: url,
-          abs_delta: toNum(head.map.abs >= 0 ? c[head.map.abs] : null),
-          ratio: toRatio(head.map.ratio >= 0 ? c[head.map.ratio] : null),
-          hasSiteCol: head.map.site >= 0,
-        });
       }
       // 同一张图重复出现 → 合并后只留一条（与入库去重口径一致），提前告知
       const urlSeen = {};
       rows.forEach(r => { urlSeen[r.image_url] = (urlSeen[r.image_url] || 0) + 1; });
       const dupUrls = Object.keys(urlSeen).filter(u => urlSeen[u] > 1).length;
       const missing = [];
-      if (head.map.abs < 0) missing.push("环比绝对值");
-      if (head.map.ratio < 0) missing.push("环比比例");
-      if (head.map.site < 0) missing.push("销量站点（勾选上方站点即可）");
+      /* 表头映射改从 firstHead 重新算（多 sheet 时 head 是循环内变量，出了循环不可见） */
+      const hm = mapHeaderRow(firstHead || []) || {};
+      const hasCol = (k) => typeof hm[k] === "number" && hm[k] >= 0;
+      if (!hasCol("title")) missing.push("货品名称（标题组词台需要，缺这一列时组词台没有词可用）");
+      if (!hasCol("abs")) missing.push("环比绝对值");
+      if (!hasCol("ratio")) missing.push("环比比例");
+      if (!hasCol("site")) missing.push("销量站点（勾选上方站点即可）");
+      if (!hasCol("leaf")) missing.push("叶子类目名称（一次导入多个类目时需要）");
       const distinctSites = Object.keys(rows.reduce((m, r) => (r.site && (m[r.site] = 1), m), {}));
       const siteWarn = distinctSites.length > 1
         ? "⚠️ 表格里出现了 " + distinctSites.length + " 个站点（" + distinctSites.slice(0, 6).join("、") + (distinctSites.length > 6 ? "…" : "") + "）。若这是合计表（如欧盟），请在上方勾选目标站点，导入时会统一归入该站点。"
@@ -512,7 +538,8 @@
         : (noLink > 0
           ? "⚠️ 有 " + noLink + " 行没读到图片网址，已跳过（这些行的「首图URL」既不是网址、也没有超链接）。"
           : "");
-      rankParsed = { rows, headers: aoa[head.idx] || [], missing, siteWarn, urlWarn, dupUrls, resolvedFromLink, fileName: f.name };
+      rankParsed = { rows, headers: firstHead || [], missing, siteWarn, urlWarn, dupUrls, resolvedFromLink,
+        fileName: f.name, sheets: usedSheets };
       renderRankPreview();
     } catch (e) {
       if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx/.xls）文件";
@@ -530,7 +557,41 @@
     const upAbs = rows.filter(r => r.abs_delta != null && r.abs_delta > 0).length;
     const dual = rows.filter(r => r.ratio > 0 && r.abs_delta > 0).length;
     const surgeN = dual ? Math.max(1, Math.round(dual * RANK_SURGE_PCT)) : 0;
-    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行";
+    /* 表里同时带「期次」「叶子类目名称」时，可以一次导入多周多类目：
+       预览里先算清楚会拆成几组，避免导完才发现类目对不上。 */
+    const catSet = {}, perSet = {};
+    rows.forEach(r => {
+      if (r.leaf_category) catSet[r.leaf_category] = 1;
+      if (r.period) perSet[r.period] = 1;
+    });
+    const nCats = Object.keys(catSet).length;
+    const nPers = Object.keys(perSet).length;
+    /* 界面选没选类目，说法完全不一样：选了就全部归到那一个类目，
+       没选才会按表格里的类目各建一批（这也是类目菜单变多的唯一原因）。 */
+    const pickedCat = ($("#rank-cat").value || "").trim();
+    let groupNote = "";
+    if (pickedCat) {
+      groupNote = "全部归入类目「" + pickedCat + "」"
+        + (nPers > 1 ? "，按期次拆成 " + nPers + " 批" : "")
+        + (nCats > 1 ? "（表格里的 " + nCats + " 个类目只作为叶子类目记录，不会新建类目）" : "");
+    } else if (nPers > 1) {
+      groupNote = "未选类目 → 全部归入「其他」，按期次拆成 " + nPers + " 批"
+        + "（表格里的 " + (nCats || 0) + " 个类目只存为叶子类目，不会出现在类目菜单）";
+    } else if (nCats > 1) {
+      groupNote = "未选类目 → 全部归入「其他」"
+        + "（表格里的 " + nCats + " 个类目只存为叶子类目，不会出现在类目菜单；想归到某个正式类目，请先在上方选好类目）";
+    }
+    /* 期次取值的来源必须写在脸上：上方那个日历是「表格没带期次列」时的兜底，
+       表格自带期次时日历可以留空。不写清楚，用户会以为必须先挑一周才能导。 */
+    const perList = Object.keys(perSet);
+    const periodNote = perList.length
+      ? "表格自带期次：" + perList.slice(0, 6).join("、")
+        + (perList.length > 6 ? " ……（共 " + perList.length + " 个）" : "")
+        + " —— 上方日历可以留空"
+      : "";
+    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行"
+      + (groupNote ? " · " + groupNote : "")
+      + (periodNote ? " · " + periodNote : "");
     if (box) {
       box.innerHTML =
         '<div class="rank-kv">' +
@@ -547,6 +608,8 @@
         (rankParsed.urlWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.urlWarn) + '</div>' : '') +
         (rankParsed.dupUrls ? '<div class="hint rank-warn">表格里有 ' + rankParsed.dupUrls + ' 张图重复出现，同一个地区下会合并为一条（保留环比更强的那条）。</div>' : '') +
         (rankParsed.siteWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.siteWarn) + '</div>' : '') +
+        (groupNote ? '<div class="hint"><b>' + groupNote + '</b> —— 表格自带「期次」列时，上方日历可以留空；<b>类目只认上方所选</b>，表格里的类目只作为叶子类目记录，不会新增菜类目。</div>' : '') +
+        (periodNote ? '<div class="hint"><b>' + escHtml(periodNote) + '</b>。导入后前台就按这些期次名显示，若与「已上传记录」里已有的写法不同（例如旧的写 W41），会变成两个不同期次 —— 想让旧数据被覆盖，就把表格这一列改成旧写法。</div>' : '') +
         '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准 —— 整张表都算这个地区，表格里的「销量站点」列不生效" : "未勾选站点 → 按表格「销量站点」列逐行取（合计表请务必先勾选，如欧盟）") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
     }
     const btn = $("#rank-import");
@@ -634,6 +697,7 @@
           site: s,
           leaf_category: r.leaf_category,
           image_url: r.image_url,
+          title: r.title || "",
           ratio: r.ratio,
           abs_delta: r.abs_delta,
         });
@@ -667,87 +731,263 @@
     return { rows: list, skipped: skipped };
   }
 
+  /* 一次导入多期次 / 多类目：按「期次 + 类目」把行分组，每组各建一个上传批次。
+     以前只能「一个批次 = 一个期次 + 一个类目」，所以一周 200 个类目要传 200 次；
+     现在表里带「期次」「叶子类目名称」列，一次上传就能全部分好组。
+     组内仍然走原来的口径（覆盖 / 追加、站点归属、同图合并），行为一致。 */
+  /* 类目名归一：表格里的「叶子类目名称」常是平台全路径
+     （服装、鞋靴和珠宝饰品，男士时尚，…，男士休闲运动套装），
+     直接建类目会把后台菜单撑爆。统一清洗成标准类目名。 */
+  function normCat(x) {
+    const raw = String(x == null ? "" : x).trim();
+    if (!raw) return "";
+    if (typeof window !== "undefined" && window.RankCatNorm) return window.RankCatNorm.normalize(raw);
+    return raw;
+  }
+
+  function groupRankRows(rows, opt) {
+    const o = opt || {};
+    const periodType = o.periodType || "week";
+    const defPeriod = String(o.periodLabel || "").trim();
+    const defCat = normCat(o.category);
+    const useMine = !!o.useMine && (o.sites || []).length > 0;
+    const groups = new Map();
+    let noSite = 0, noCat = 0, noPeriod = 0, tableCatOverrode = 0;
+    (rows || []).forEach(r => {
+      const period = String(r.period || "").trim() || defPeriod;
+      /* 类目归属：界面选了类目，就一律归到所选类目 —— 这一点必须优先于表格。
+         以前是表格里的「叶子类目名称」优先，于是「后台明明选了类目」也没用，
+         每张表里的几十个类目照样各建一批，后台类目菜单被越堆越多。
+         表里的类目原文仍会存进条目的「叶子类目」字段，只是不再用来新建类目。 */
+      /* 类目只来自后台选择：
+         表格里的「叶子类目名称」绝不进类目 —— 否则每导一张表，平台原始类目
+         （几十上百个长名字、纯数字 ID）都会变成前台菜单项，菜单越堆越多。
+         原文仍写进条目的 leaf_category 便于追溯，只是不再用来建类目。
+         后台一个都没选时，统一归到「其他」，绝不拿表格的值顶替。 */
+      const cat = defCat || "其他";
+      if (!defCat) noCat++;
+      if (!period) noPeriod++;
+      if (!period) return;
+      if (r.leaf_category && !defCat) tableCatOverrode++;
+      const targets = useMine ? o.sites : (r.site ? [r.site] : []);
+      if (!targets.length) { noSite++; return; }
+      const key = period + "\u0000" + cat;
+      let g = groups.get(key);
+      if (!g) { g = { period: period, category: cat, rows: [], siteSet: {} }; groups.set(key, g); }
+      targets.forEach(site => {
+        g.rows.push({
+          period_type: periodType, period_label: period, category: cat, site: site,
+          leaf_category: r.leaf_category, image_url: r.image_url, title: r.title || "",
+          ratio: r.ratio, abs_delta: r.abs_delta,
+        });
+        g.siteSet[site] = 1;
+      });
+    });
+    const list = Array.from(groups.values());
+    list.forEach(g => { g.slotSites = Object.keys(g.siteSet); });
+    return { groups: list, noSite: noSite, noCat: noCat, noPeriod: noPeriod, tableCatOverrode: tableCatOverrode };
+  }
+
   async function doRankImport() {
     if (!rankParsed || !rankParsed.rows.length) { sbToast("请先上传并解析 Excel", false); return; }
     const periodType = (document.querySelector('input[name="rank-period"]:checked') || {}).value || "week";
     const periodLabel = ($("#rank-period-label").value || "").trim();
     const category = ($("#rank-cat").value || "").trim();
-    if (!periodLabel) { sbToast(periodType === "month" ? "请先用日历选择月份" : "请先用日历选择某一周", false); return; }
-    if (!category) { sbToast("请选择类目", false); return; }
     const defaults = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
 
-    /* 安全网：整批网址全都一样，说明「首图URL」列里的不是真网址（例如整列都写着「查看首图」）。
-       这种情况直接拦下并说清原因，避免导入后只进去一条、看起来像"识别不出来"。 */
+    /* 安全网：整批网址全都一样，说明「首图URL」列里的不是真网址（例如整列都写着「查看首图」）。 */
     const uniqUrl = Object.keys(rankParsed.rows.reduce((m, r) => (m[r.image_url] = 1, m), {})).length;
     if (rankParsed.rows.length > 1 && uniqUrl === 1) {
       sbToast("「首图URL」列里 200 行都是同一个内容（不是图片网址），无法导入。请把该列改成真实网址文本、或给单元格加超链接后再上传。", false);
       return;
     }
 
-    /* 站点归属：以「我定义的站点」为准。
-       勾选了任何站点 → 全部行都归入我勾的站点（忽略表格里「销量站点」列的逐行取值，
-       这样欧盟这类合计表里写满各国名字时，前台就只出现「欧盟」一个地区）。
-       一个都没勾 → 才退回按表格里每行自带的「销量站点」取值。 */
     const useMine = defaults.length > 0;
-    const built = buildRankImportRows(rankParsed.rows, {
+    const gf = groupRankRows(rankParsed.rows, {
       periodType: periodType, periodLabel: periodLabel, category: category, sites: defaults, useMine: useMine,
     });
-    if (!built.rows.length) {
-      sbToast(built.noSite ? "表格没有「销量站点」列，且未选择默认站点" : "没有可导入的有效行", false);
+    if (!gf.groups.length) {
+      if (gf.noCat) sbToast("表格没有「叶子类目」列，且未选择类目 —— 请选一个类目，或让表格带上类目列", false);
+      else if (gf.noPeriod) sbToast(periodType === "month" ? "请先用日历选择月份，或让表格带上「期次」列" : "请先用日历选择某一周，或让表格带上「期次」列", false);
+      else if (gf.noSite) sbToast("表格没有「销量站点」列，且未选择默认站点", false);
+      else sbToast("没有可导入的有效行", false);
       return;
     }
-    const rowsOut = built.rows;
-    const mergedInFile = built.mergedInFile;
-    const ignoredList = Object.keys(built.tableSites);
-    const slotSites = built.slotSites;
-    const batchSite = useMine ? defaults.join(",") : slotSites.join(",");
-    computeFlags(rowsOut);
 
     const mode = (document.querySelector('input[name="rank-mode"]:checked') || {}).value === "append" ? "append" : "replace";
     const btn = $("#rank-import");
     if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
+    const multi = gf.groups.length > 1;
     try {
-      const slot = { periodType: periodType, periodLabel: periodLabel, category: category, sites: slotSites };
-      let cleared = { items: 0, batches: 0 };
-      let skippedExisting = 0;
-      let list = rowsOut;
+      let inserted = 0, clearedItems = 0, skippedExisting = 0, mergedInFile = 0;
+      let done = 0;
+      const failed = [];
+      /* 回撤用：本次动过的槽位 + 覆盖前读到的旧数据（留底） */
+      const undoGroups = [];
+      const backupRows = [];
+      let backupFail = false;
+      const periodSet = {}, catSet = {};
 
-      if (mode === "replace") {
-        // 覆盖：先清掉「本期次 · 本类目 · 本次站点」下的旧数据，再整表写入 → 不与以往上传查重
-        cleared = await SB.clearRankSlot(slot);
-      } else {
-        // 追加：保留旧数据，只补库里还没有的图
-        const exist = await SB.listRankSlotUrls(slot);
-        const f = filterNotExisting(rowsOut, exist);
-        list = f.rows;
-        skippedExisting = f.skipped;
+      /* 串行导入在「一周上百个类目」时等于几百次串行网络往返，界面只显示「导入中…」
+         一直不动，用户会以为卡死。改成固定并发的小池子，并把进度打到按钮上。 */
+      const TOTAL = gf.groups.length;
+      const CONC = 4;
+      const GROUP_TIMEOUT_MS = 90000;
+      let cursor = 0;
+      if (btn && TOTAL > 4) btn.textContent = "导入中 0/" + TOTAL;
+      if (TOTAL > 4) {
+        sbToast("共 " + TOTAL + " 组，正在导入（每批同时进行 4 组）。按钮上会显示进度，导完前请不要关闭页面。", true);
+      }
+      const runGroup = async (g) => {
+        try {
+          const seen = {};
+          const list = [];
+          let merged = 0;
+          g.rows.forEach(r => {
+            const k = r.site + "\u0000" + r.image_url;
+            if (seen[k]) { merged++; return; }
+            seen[k] = 1; list.push(r);
+          });
+          computeFlags(list);
+
+          const slot = { periodType: periodType, periodLabel: g.period, category: g.category, sites: g.slotSites };
+          let cleared = { items: 0, batches: 0 };
+          let skipped = 0;
+          let rows = list;
+          if (mode === "replace") {
+            /* 先留底再清空：读不到旧数据时宁可不留底也要继续，
+               但会标记出来，导入完成后明确提示「这次没有留底」。 */
+            try {
+              const old = await SB.listRankItems({
+                periodType: periodType, periods: [g.period], category: g.category,
+                sites: g.slotSites, max: 60000,
+              });
+              for (const r of (old || [])) backupRows.push(r);
+            } catch (e) { backupFail = true; }
+            cleared = await SB.clearRankSlot(slot);
+          } else {
+            const exist = await SB.listRankSlotUrls(slot);
+            const f = filterNotExisting(list, exist);
+            rows = f.rows;
+            skipped = f.skipped;
+          }
+          const batchSite = useMine ? defaults.join(",") : g.slotSites.join(",");
+          const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: g.period, category: g.category, site: batchSite });
+          const payload = rows.map(r => {
+            const o = Object.assign({}, r, { batch_id: batchId });
+            o.flag_opportunity = !!r.flag_opportunity;
+            o.flag_hot = !!r.flag_hot;
+            o.flag_surge = !!r.flag_surge;
+            o.rank_ratio = r.rank_ratio || null;
+            o.rank_abs = r.rank_abs || null;
+            return o;
+          });
+          const res = payload.length ? await SB.insertRankItems(payload) : { inserted: 0 };
+          const ins = (res && res.inserted) || 0;
+          try { await SB.updateRankBatch(batchId, { rows: ins, skipped: skipped + merged }); } catch (e) { /* 统计失败不影响数据 */ }
+
+          inserted += ins;
+          clearedItems += (cleared && cleared.items) || 0;
+          skippedExisting += skipped;
+          mergedInFile += merged;
+          done++;
+          periodSet[g.period] = 1;
+          catSet[g.category] = 1;
+          if (ins > 0) undoGroups.push({ period: g.period, category: g.category, sites: g.slotSites });
+          if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入");
+        } catch (e) {
+          failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
+        }
+      };
+      /* 光靠按钮文字不够显眼（按钮在很下面，用户视线往往停在页面上方），
+         这里再挂一条常驻进度：每秒刷新一次「已运行 / 完成组数 / 已写入条数」，
+         即使某一组很慢，也能看到秒数在动，不会误以为卡死。 */
+      const t0 = Date.now();
+      let progEl = null;
+      try {
+        progEl = document.getElementById("rank-import-progress");
+        if (!progEl && btn && btn.parentNode) {
+          progEl = document.createElement("div");
+          progEl.id = "rank-import-progress";
+          progEl.className = "hint rank-progress";
+          btn.parentNode.insertBefore(progEl, btn);
+        }
+      } catch (e) { progEl = null; }
+      const paintBar = () => {
+        if (!progEl) return;
+        const sec = Math.max(0, Math.round((Date.now() - t0) / 1000));
+        progEl.textContent = "⏳ 导入中 · 已运行 " + sec + " 秒 · 已完成 " + done + "/" + TOTAL
+          + " 组 · 已写入 " + inserted + " 条" + (failed.length ? " · 失败 " + failed.length + " 组" : "");
+      };
+      paintBar();
+      const ticker = setInterval(paintBar, 1000);
+      try { window.__rankImportTicker = ticker; } catch (e) { /* 忽略 */ }
+
+      const paintProgress = () => {
+        if (!btn) return;
+        btn.textContent = TOTAL > 4
+          ? ("导入中 " + done + "/" + TOTAL + "（已写入 " + inserted + " 条）")
+          : "导入中…";
+      };
+      await Promise.all(Array.from({ length: Math.min(CONC, TOTAL) }, async () => {
+        for (;;) {
+          const i = cursor++;
+          if (i >= TOTAL) return;
+          const g = gf.groups[i];
+          /* 单组卡住也要有个上限：超时记为失败，继续下一组，不至于整批永远转。
+             超时的组可能已经在服务端写入，所以文案要说明「可能已部分写入」。 */
+          await Promise.race([
+            runGroup(g),
+            new Promise(resolve => setTimeout(() => {
+              failed.push(g.period + " · " + g.category + "：等待超时（可能已部分写入，导完请核对）");
+              resolve();
+            }, GROUP_TIMEOUT_MS)),
+          ]);
+          paintProgress();
+          paintBar();
+        }
+      }));
+      clearInterval(ticker);
+      try { window.__rankImportTicker = null; } catch (e) { /* 忽略 */ }
+      if (progEl) { progEl.textContent = "✅ " + TOTAL + " 组已处理完 · 共 " + Math.round((Date.now() - t0) / 1000) + " 秒"; }
+
+      const nPeriod = Object.keys(periodSet).length;
+      const nCat = Object.keys(catSet).length;
+      const head = multi
+        ? "已按时段与类目拆成 " + gf.groups.length + " 组（期次 " + nPeriod + " 个 · 类目 " + nCat + " 个）导入："
+        : "导入完成：";
+      let msg = head
+        + (useMine ? "按我定义的站点归入「" + defaults.join("、") + "」" : "按表格站点列归入")
+        + "，写入 " + inserted + " 条";
+      if (mode === "replace" && clearedItems > 0) msg += "（已替换旧数据 " + clearedItems + " 条）";
+      if (mode === "append" && skippedExisting > 0) msg += "（库里已存在 " + skippedExisting + " 条未重复写入）";
+      if (mergedInFile > 0) msg += "（表内同图重复 " + mergedInFile + " 次，已合并）";
+      if (failed.length) msg += " · 失败 " + failed.length + " 组：" + failed.slice(0, 3).join("；") + (failed.length > 3 ? "…" : "");
+      sbToast(msg, failed.length === 0 && inserted > 0);
+
+      /* 记录下一次可撤销的导入，并在有旧数据时自动下载留底表 */
+      if (undoGroups.length) {
+        const info = {
+          at: Date.now(), periodType: periodType, inserted: inserted,
+          groups: undoGroups, backupRows: backupRows.length, mode: mode,
+        };
+        setRankUndoInfo(info);
+        renderRankUndo();
+        if (backupRows.length) {
+          try {
+            const saved = exportRankBackup(backupRows, info);
+            if (saved) {
+              sbToast("导入前原有 " + backupRows.length + " 条数据已留底：已下载「榜单原数据留底」表。"
+                + "若要还原，把这张表原样导回来即可；也可以先点「撤销本次导入」。", true);
+            }
+          } catch (e) {
+            sbToast("留底表生成失败，但数据已记录，可点「撤销本次导入」回退。", false);
+          }
+        } else if (backupFail) {
+          sbToast("提示：这次覆盖前未能读到旧数据，没有生成留底表。若发现数据不对，请立刻点「撤销本次导入」并停止继续导入。", false);
+        }
       }
 
-      const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: periodLabel, category: category, site: batchSite });
-      const rows = list.map(r => {
-        const o = Object.assign({}, r, { batch_id: batchId });
-        o.flag_opportunity = !!r.flag_opportunity;
-        o.flag_hot = !!r.flag_hot;
-        o.flag_surge = !!r.flag_surge;
-        o.rank_ratio = r.rank_ratio || null;
-        o.rank_abs = r.rank_abs || null;
-        return o;
-      });
-      const res = rows.length ? await SB.insertRankItems(rows) : { inserted: 0 };
-      const inserted = (res && res.inserted) || 0;
-      try { await SB.updateRankBatch(batchId, { rows: inserted, skipped: skippedExisting + mergedInFile }); } catch (e) { /* 统计失败不影响数据 */ }
-
-      if (rows.length > 0 && inserted === 0) {
-        /* 安全网：一条都没写进去，必须说清楚，不能静默 */
-        sbToast("导入失败：0 条写入（有效行 " + rowsOut.length + " 条）。请刷新页面后重试；若仍为 0，请把这张表发给开发者排查。", false);
-      } else {
-        sbToast("导入完成：" + (useMine ? "已按我定义的站点归入「" + defaults.join("、") + "」" : "已按表格站点列归入")
-          + "，写入 " + inserted + " 条"
-          + (mode === "replace" && cleared.items > 0 ? "（已替换该期次该类目下的旧数据 " + cleared.items + " 条）" : "")
-          + (mode === "append" && skippedExisting > 0 ? "（库里已存在的 " + skippedExisting + " 条未重复写入）" : "")
-          + (mergedInFile > 0 ? "（表格里同一张图重复 " + mergedInFile + " 次，已合并为 1 条）" : "")
-          + (ignoredList.length ? "（已忽略表格里的 " + ignoredList.length + " 个站点取值：" + ignoredList.slice(0, 4).join("、") + (ignoredList.length > 4 ? "…" : "") + "）" : ""), true);
-      }
       rankParsed = null;
       $("#rank-file").value = "";
       $("#rank-file-tip").textContent = "";
@@ -756,6 +996,8 @@
     } catch (e) {
       sbToast("导入失败：" + ((e && e.message) || "请重试"), false);
     } finally {
+      /* 异常路径也要停掉进度计时器，否则文字会一直跳 */
+      try { if (window.__rankImportTicker) { clearInterval(window.__rankImportTicker); window.__rankImportTicker = null; } } catch (e) { /* 忽略 */ }
       if (btn) { btn.disabled = false; btn.textContent = "导入榜单"; }
     }
   }
@@ -766,6 +1008,134 @@
      榜单数据一多就被截断，于是上传记录显示的条数会凭空变少（几个/几十个），
      而前台是按槽位分次查的、看到的是完整的 200 条 —— 两边就会对不上。
      精确计数失败时退回批次自带条数，绝不当成 0。 */
+  /* ---------- 回撤：导入前自动留底 + 一键撤销 ----------
+     用户担心的场景：一次批量导入（一次可能几百组）中途失败或把类目/站点认错，
+     旧数据已经被「覆盖」清掉，就再也找不回来。
+     两道保护：
+       ① 覆盖前先把该槽位的原有数据整份读出来，导入结束自动下载成「留底表」；
+          留底表的列与导入表完全一致，原样再导入一遍即可还原。
+       ② 「撤销本次导入」按钮：把本次写入的槽位整体清空，回到导入前的空状态，
+          再导留底表即可回到原样。撤销不碰其它期次与类目。 */
+  const RANK_UNDO_KEY = "sb.rank.lastImport";
+
+  function rankUndoInfo() {
+    try { return JSON.parse(localStorage.getItem(RANK_UNDO_KEY) || "null"); } catch (e) { return null; }
+  }
+  function setRankUndoInfo(o) {
+    try {
+      if (o) localStorage.setItem(RANK_UNDO_KEY, JSON.stringify(o));
+      else localStorage.removeItem(RANK_UNDO_KEY);
+    } catch (e) { /* 无痕模式等不可写时忽略 */ }
+  }
+  function rankUndoText(info) {
+    if (!info) return "";
+    let when = "";
+    try {
+      const t = new Date(info.at);
+      const p2 = (n) => String(n).padStart(2, "0");
+      when = (t.getMonth() + 1) + "-" + t.getDate() + " " + p2(t.getHours()) + ":" + p2(t.getMinutes());
+    } catch (e) { when = ""; }
+    return "最近一次导入：" + (when ? when + " · " : "")
+      + (info.groups || []).length + " 组 · 写入 " + info.inserted + " 条"
+      + (info.backupRows > 0
+        ? " · 原数据 " + info.backupRows + " 条已随留底表下载"
+        : " · 这些槽位导入前没有数据");
+  }
+  function renderRankUndo() {
+    const btn = $("#rank-undo"), tip = $("#rank-undo-tip");
+    const info = rankUndoInfo();
+    if (btn) {
+      if (info && (info.groups || []).length) {
+        btn.style.display = "";
+        btn.textContent = "撤销本次导入（" + info.inserted + " 条）";
+      } else {
+        btn.style.display = "none";
+      }
+    }
+    if (tip) tip.textContent = info ? rankUndoText(info) : "";
+  }
+
+  /* 把导入前读到的旧数据写成与导入表同结构的表格，供还原时原样导入 */
+  function exportRankBackup(rows, info) {
+    if (!window.XLSX) return false;
+    const header = ["期次", "叶子类目名称", "销量站点", "首图url", "货品名称", "环比比例", "环比绝对值"];
+    const body = (rows || []).map((r) => [
+      r.period_label || "", r.category || "", r.site || "", r.image_url || "", r.title || "",
+      (r.rank_ratio === null || r.rank_ratio === undefined || r.rank_ratio === "") ? "" : (String(r.rank_ratio) + "%"),
+      (r.rank_abs === null || r.rank_abs === undefined) ? "" : r.rank_abs,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header].concat(body));
+    const note = XLSX.utils.aoa_to_sheet([
+      ["导入前留底（原样可再导入）"],
+      [""],
+      ["用途", "这张表是「本次导入之前」库里的原有数据，覆盖前的快照。"],
+      ["还原方法", "到「趋势上升榜」导入区，用这张表按原样导入：期次与类目列已带，站点一个都不勾，模式选覆盖。"],
+      ["导入时间", info && info.at ? new Date(info.at).toLocaleString() : new Date().toLocaleString()],
+      ["本次写入", info ? info.inserted : ""],
+      ["留底条数", body.length],
+      ["涉及槽位", (info && info.groups ? info.groups.map((g) => g.period + " · " + g.category).join("；") : "")],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "原数据");
+    XLSX.utils.book_append_sheet(wb, note, "说明");
+    const d = new Date();
+    const stamp = "" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0")
+      + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+    XLSX.writeFile(wb, "榜单原数据留底_" + stamp + ".xlsx");
+    return true;
+  }
+
+  async function doRankUndo() {
+    const info = rankUndoInfo();
+    const groups = (info && info.groups) || [];
+    if (!groups.length) { sbToast("没有可撤销的导入记录", false); return; }
+    const ask = "撤销这次导入？\n\n"
+      + "将清空本次写入的 " + info.inserted + " 条（" + groups.length + " 组）。"
+      + (info.backupRows > 0
+        ? "\n\n导入前的原数据已留底在那份「榜单原数据留底」表里 —— 撤销后把那张表原样导入，就能还原。"
+        : "\n\n这些槽位导入前本来就没有数据，撤销后即为空。")
+      + "\n\n不会影响其它期次与类目。";
+    /* 只用站内确认弹窗：原生 confirm 会被浏览器拦成「阻止此页面创建更多对话框」，
+       并且在部分环境里直接返回 false，看起来就像按钮点了没反应。 */
+    if (typeof uiConfirm !== "function") {
+      sbToast("确认弹窗未加载，请强刷页面后重试（未做任何删除）", false);
+      return;
+    }
+    let ok = false;
+    try { ok = await uiConfirm(ask); } catch (e) { ok = false; }
+    if (!ok) return;
+
+    const btn = $("#rank-undo");
+    if (btn) { btn.disabled = true; btn.textContent = "撤销中…"; }
+    try {
+      let removed = 0;
+      const failed = [];
+      for (const g of groups) {
+        try {
+          const n = await SB.deleteRankItemsByScope({
+            periodType: info.periodType || "week",
+            periodLabel: g.period, category: g.category, sites: g.sites || [],
+          });
+          removed += n;
+        } catch (e) {
+          failed.push(g.period + " · " + g.category);
+        }
+      }
+      setRankUndoInfo(null);
+      renderRankUndo();
+      try { await loadRankBatches(); } catch (e) { /* 列表刷新失败不影响撤销结果 */ }
+      const msg = "已撤销：清空 " + removed + " 条"
+        + (failed.length ? " · " + failed.length + " 组失败（" + failed.slice(0, 3).join("；") + "）" : "")
+        + (removed > 0 ? " · 如需还原，导入留底表即可" : "");
+      sbToast(msg, failed.length === 0);
+    } catch (e) {
+      sbToast("撤销失败：" + ((e && e.message) || "请重试"), false);
+    } finally {
+      if (btn) btn.disabled = false;
+      renderRankUndo();
+    }
+  }
+
   function batchSites(b) {
     return String((b && b.site) || "").split(",").map(s => s.trim()).filter(Boolean);
   }
@@ -776,41 +1146,306 @@
   function batchPeriodKey(b) {
     return ((b && b.period_type) || "week") + "\u0001" + ((b && b.period_label) || "");
   }
-  /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求） */
+  /* 限并发执行：串行发几百个计数请求会让「已上传记录」一直转圈 */
+  async function rankPool(tasks, size) {
+    const list = tasks || [];
+    const out = new Array(list.length);
+    let idx = 0;
+    const worker = async () => {
+      while (idx < list.length) {
+        const i = idx++;
+        try { out[i] = await list[i](); } catch (e) { out[i] = null; }
+      }
+    };
+    const n = Math.max(1, Math.min(size || 6, list.length || 1));
+    await Promise.all(Array.from({ length: n }, worker));
+    return out;
+  }
+
+  /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求）
+     注意：必须并发。类目多时（一次批量导入能建出两百多个槽位）串行等于把
+     几百次往返排成一列，界面上就是一直「正在加载…」。 */
   async function computeRankCounts(list, opt) {
     const countFn = (opt && opt.countFn) || ((o) => SB.countRankSlot(o));
     const bySlot = {}, byPeriod = {};
-    const slotDone = {}, periodDone = {};
-    for (const b of (list || [])) {
+    const slotSeen = new Map(), periodSeen = new Map();
+    (list || []).forEach((b) => {
       const sk = batchSlotKey(b);
-      if (!slotDone[sk]) {
-        slotDone[sk] = true;
-        let n = null;
-        try {
-          n = await countFn({
-            periodType: b.period_type || "week", periodLabel: b.period_label || "",
-            category: b.category || "", sites: batchSites(b),
-          });
-        } catch (e) { n = null; }
-        bySlot[sk] = (typeof n === "number" && isFinite(n)) ? n : null;
-      }
+      if (!slotSeen.has(sk)) slotSeen.set(sk, {
+        periodType: b.period_type || "week", periodLabel: b.period_label || "",
+        category: b.category || "", sites: batchSites(b),
+      });
       const pk = batchPeriodKey(b);
-      if (!periodDone[pk]) {
-        periodDone[pk] = true;
-        let n = null;
-        try {
-          n = await countFn({
-            periodType: b.period_type || "week", periodLabel: b.period_label || "",
-            category: "", sites: [],
-          });
-        } catch (e) { n = null; }
-        byPeriod[pk] = (typeof n === "number" && isFinite(n)) ? n : null;
-      }
-    }
+      if (!periodSeen.has(pk)) periodSeen.set(pk, {
+        periodType: b.period_type || "week", periodLabel: b.period_label || "",
+        category: "", sites: [],
+      });
+    });
+    const tasks = [];
+    /* 槽位太多时（批量导入能建出两百多个）改用量级兜底：期次仍然精确查，
+       槽位沿用上传记录里的条数（界面标 ≈）。否则光计数就要发两百多次请求。 */
+    const slotBudget = 80;
+    const doSlot = slotSeen.size <= slotBudget;
+    if (doSlot) slotSeen.forEach((o, k) => tasks.push(async () => {
+      let n = null;
+      try { n = await countFn(o); } catch (e) { n = null; }
+      bySlot[k] = (typeof n === "number" && isFinite(n)) ? n : null;
+    }));
+    periodSeen.forEach((o, k) => tasks.push(async () => {
+      let n = null;
+      try { n = await countFn(o); } catch (e) { n = null; }
+      byPeriod[k] = (typeof n === "number" && isFinite(n)) ? n : null;
+    }));
+    await rankPool(tasks, 8);
     return { bySlot: bySlot, byPeriod: byPeriod };
   }
 
   /* ---------- 已上传记录 ---------- */
+  let rankTitleWarned = false;
+  /* 缺 title 列时接口会刷 400、标题写不进去 —— 这里主动查一次并说清楚 */
+  async function checkRankTitleColumn(box) {
+    if (!box || rankTitleWarned) return;
+    let r = null;
+    try { r = await SB.probeRankTitleColumn(); } catch (e) { r = null; }
+    if (!r || r.ok || !r.missing) return;
+    rankTitleWarned = true;
+    const tip = document.createElement("div");
+    tip.className = "rkadm-warn";
+    tip.innerHTML = "⚠️ 榜单表缺少「标题」列：导入时标题写不进去，标题组词台会一直没词。"
+      + "处理办法——在数据库 rank_items 表里新增一列 <b>title</b>（text，可空），刷新本页后重新导入。"
+      + "控制台里那些 400 就是这条缺列报出来的。";
+    const host = box.parentNode;
+    if (host) host.insertBefore(tip, box);
+  }
+
+  /* 勾选删除：一次批量导入会建出上百个批次，逐条删太慢 */
+  function ensureBatchToolbar(box) {
+    const host = box && box.parentNode;
+    if (!host) return null;
+    let bar = host.querySelector("#rank-batch-toolbar");
+    if (bar) return bar;
+    bar = document.createElement("div");
+    bar.id = "rank-batch-toolbar";
+    bar.className = "rank-batch-toolbar";
+    const selAll = document.createElement("button");
+    selAll.type = "button"; selAll.className = "btn-ghost small"; selAll.textContent = "全选";
+    const delSel = document.createElement("button");
+    delSel.type = "button"; delSel.className = "btn-ghost small"; delSel.textContent = "删除选中（0）";
+    delSel.disabled = true;
+    const catBtn = document.createElement("button");
+    catBtn.type = "button"; catBtn.className = "btn-ghost small"; catBtn.textContent = "类目清理…";
+    const chkBtn = document.createElement("button");
+    chkBtn.type = "button"; chkBtn.className = "btn-ghost small"; chkBtn.textContent = "数据自检…";
+    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(catBtn); bar.appendChild(chkBtn);
+    host.insertBefore(bar, box);
+
+    const picked = () => Array.from(box.querySelectorAll(".rank-batch-pick:checked")).map((el) => el.value);
+    const refresh = () => {
+      const n = picked().length;
+      delSel.textContent = "删除选中（" + n + "）";
+      delSel.disabled = n === 0;
+      const boxes = box ? box.querySelectorAll(".rank-batch-pick") : [];
+      selAll.disabled = !boxes.length;
+      if (!boxes.length) selAll.textContent = "全选";
+    };
+    bar._refresh = refresh;
+    /* 导入看起来成功、前台却看不到数据时，先跑这个：说清「库里有多少条」和「前台筛选读到什么」 */
+    chkBtn.onclick = async () => {
+      if (chkBtn.disabled) return;
+      chkBtn.disabled = true;
+      chkBtn.textContent = "自检中…";
+      try {
+        const r = await SB.rankSelfCheck();
+        const L = [];
+        L.push("【库里】榜单条目 " + (r.items || 0) + " 条");
+        const types = Object.keys(r.byType || {});
+        if (types.length) L.push("　　按类型：" + types.map((k) => (k === "month" ? "月度" : "周度") + " " + r.byType[k] + " 条").join("、"));
+        if ((r.byPeriod || []).length) L.push("　　期次：" + r.byPeriod.slice(0, 6).map((p) => (p.period_label || "(空)") + " " + p.n + " 条").join("、"));
+        L.push("");
+        L.push("【前台能筛选到的】期次 " + (r.periods || []).length + " 个 · 类目 " + (r.categories || []).length + " 个 · 站点 " + (r.sites || []).length + " 个");
+        if ((r.periods || []).length) L.push("　　期次：" + r.periods.slice(0, 6).join("、"));
+        if ((r.categories || []).length) L.push("　　类目：" + r.categories.slice(0, 6).join("、"));
+        L.push("");
+        if (!r.items) {
+          L.push("结论：库里一条都没有，导入没真正写进去。请重导一次，并看导入结束时列出的失败组。");
+        } else if (!(r.periods || []).length) {
+          L.push("结论：条目在，但前台筛选清单是空的 —— 前台读不到。请重新导一次（会重建汇总），或联系我处理。");
+        } else {
+          L.push("结论：数据与前台筛选都正常。若前台页面仍空白，多半是页面上的类目/期次/站点筛选没选对，或还没强刷。");
+        }
+        if (r.error) L.push("（附带提示：" + r.error + "）");
+        await uiAlert(L.join("\n"), { title: "榜单数据自检" });
+      } catch (e) {
+        sbToast("自检失败：" + ((e && e.message) || "请重试"), false);
+      } finally {
+        chkBtn.disabled = false;
+        chkBtn.textContent = "数据自检…";
+      }
+    };
+    selAll.onclick = () => {
+      const boxes = Array.from(box.querySelectorAll(".rank-batch-pick"));
+      const allOn = boxes.length && boxes.every((el) => el.checked);
+      boxes.forEach((el) => { el.checked = !allOn; });
+      selAll.textContent = allOn ? "全选" : "取消全选";
+      refresh();
+    };
+    delSel.onclick = async () => {
+      const ids = picked();
+      if (!ids.length) return;
+      if (!(await uiConfirm("删除选中的 " + ids.length + " 个批次，并清空它们所在槽位（期次+类目+站点）的全部榜单条目？\n若同一槽位还有别的批次，那些数据也会一起被清掉。图片标签不受影响。\n删掉后不会自动回来。"))) return;
+      delSel.disabled = true;
+      let done = 0, bad = 0;
+      for (const id of ids) {
+        try { await SB.deleteRankBatch(id); done += 1; } catch (e) { bad += 1; }
+        delSel.textContent = "删除中 " + (done + bad) + "/" + ids.length;
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已删除 " + done + " 个批次" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+    };
+    catBtn.onclick = () => openRankCategoryTools(bar);
+    return bar;
+  }
+
+  /* 类目清理：一次导入按表格里的类目名建批次，很容易冒出「POLO / Polo 衫 / T 恤 / T恤」这类重复 */
+  async function openRankCategoryTools(bar) {
+    let panel = document.getElementById("rank-cat-tools");
+    if (panel && panel.dataset.open === "1") { panel.dataset.open = "0"; panel.innerHTML = ""; return; }
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "rank-cat-tools";
+      panel.className = "rank-cat-tools";
+      bar.parentNode.insertBefore(panel, bar.nextSibling);
+    }
+    panel.dataset.open = "1";
+    panel.innerHTML = '<div class="hint">正在读取类目…</div>';
+    let cats = [];
+    try { cats = await SB.listRankCategories(); } catch (e) { cats = null; }
+    if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
+    if (!cats.length) { panel.innerHTML = '<div class="hint">还没有类目。</div>'; return; }
+    panel.innerHTML = '<div class="hint">共 ' + cats.length + ' 个类目。可疑重复（同音/大小写/空格/全半角不同）可直接合并，多余的整类删除。</div>';
+
+    /* 批量清理：一次导入可能带进几十上百个类目，逐个点不现实 */
+    const cbar = document.createElement("div");
+    cbar.className = "rank-cat-bar";
+    const cAll = document.createElement("button");
+    cAll.type = "button"; cAll.className = "btn-ghost small"; cAll.textContent = "全选";
+    const cNum = document.createElement("button");
+    cNum.type = "button"; cNum.className = "btn-ghost small"; cNum.textContent = "只选数字类目";
+    const cDel = document.createElement("button");
+    cDel.type = "button"; cDel.className = "btn-ghost small danger"; cDel.textContent = "删除选中";
+    /* 一堆「服装、鞋靴和珠宝饰品，…，男士休闲运动套装」这类长路径名，逐个改名不现实，
+       按词典一次性归并到标准类目 */
+    const cNorm = document.createElement("button");
+    cNorm.type = "button"; cNorm.className = "btn-ghost small";
+    const cNote = document.createElement("span");
+    cNote.className = "rank-cat-meta";
+    const pickedCats = () => Array.from(panel.querySelectorAll(".rank-cat-pick:checked")).map((x) => x.dataset.cat);
+    const refreshCbar = () => {
+      const n = pickedCats().length;
+      cDel.textContent = "删除选中" + (n ? "（" + n + "）" : "");
+      cDel.disabled = n === 0;
+      const allOn = panel.querySelectorAll(".rank-cat-pick").length === n && n > 0;
+      cAll.textContent = allOn ? "取消全选" : "全选";
+    };
+    cAll.onclick = () => {
+      const allOn = cAll.textContent === "取消全选";
+      panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = !allOn; });
+      refreshCbar();
+    };
+    cNum.onclick = () => {
+      panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = /^\d+$/.test(x.dataset.cat); });
+      refreshCbar();
+    };
+    cDel.onclick = async () => {
+      const cats_ = pickedCats();
+      if (!cats_.length) return;
+      if (!(await uiConfirm("删除选中的 " + cats_.length + " 个类目？\n这些类目在所有期次下的全部条目都会被删掉，删了不会自动回来。"))) return;
+      cDel.disabled = true;
+      let done = 0, bad = 0, rows = 0;
+      for (const c of cats_) {
+        try { const r = await SB.deleteRankCategory(c); rows += (r && r.items) || 0; done += 1; }
+        catch (e) { bad += 1; }
+        cNote.textContent = "清理中 " + (done + bad) + "/" + cats_.length + " · 已删 " + rows + " 条";
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已删除 " + done + " 个类目（" + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+      openRankCategoryTools(bar);
+    };
+    const fixable = () => cats.filter((c) => {
+      const raw = String(c.category || "").trim();
+      return raw && typeof window !== "undefined" && window.RankCatNorm
+        && window.RankCatNorm.normalize(raw) !== raw;
+    });
+    const refreshNorm = () => {
+      const n = fixable().length;
+      cNorm.textContent = "按标准名归并" + (n ? "（" + n + "）" : "");
+      cNorm.disabled = n === 0;
+    };
+    cNorm.onclick = async () => {
+      const list = fixable();
+      if (!list.length) return;
+      const preview = list.slice(0, 6).map((c) => "「" + String(c.category).slice(0, 24) + "」→「" + window.RankCatNorm.normalize(c.category) + "」").join("\n");
+      if (!(await uiConfirm("把 " + list.length + " 个类目按标准名归并？\n\n" + preview + (list.length > 6 ? "\n…" : "") + "\n\n重复的图会自动跳过，源类目随后删除。"))) return;
+      cNorm.disabled = true;
+      let done = 0, bad = 0, rows = 0;
+      for (const c of list) {
+        const target = window.RankCatNorm.normalize(c.category);
+        try { rows += await SB.renameRankCategory(c.category, target); done += 1; }
+        catch (e) { bad += 1; }
+        cNote.textContent = "归并中 " + (done + bad) + "/" + list.length + " · 已迁移 " + rows + " 条";
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已归并 " + done + " 个类目（迁移 " + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+      panel.dataset.open = "0"; openRankCategoryTools(bar);
+    };
+    cbar.appendChild(cAll); cbar.appendChild(cNum); cbar.appendChild(cNorm); cbar.appendChild(cDel); cbar.appendChild(cNote);
+    panel.appendChild(cbar);
+    refreshNorm();
+
+    cats.forEach((c) => {
+      const row = document.createElement("div");
+      row.className = "rank-cat-row";
+      const pick = document.createElement("input");
+      pick.type = "checkbox"; pick.className = "rank-cat-pick";
+      pick.dataset.cat = c.category || "";
+      pick.onchange = refreshCbar;
+      row.appendChild(pick);
+      const name = document.createElement("span");
+      name.className = "rank-cat-name";
+      name.textContent = c.category || "(未填类目)";
+      const meta = document.createElement("span");
+      meta.className = "rank-cat-meta";
+      meta.textContent = (c.batches || 0) + " 批 · " + (c.exact ? "" : "约 ") + c.rows + " 条 · " + c.periods + " 个期次" + (c.batches ? "" : " · 无台账");
+      const merge = document.createElement("button");
+      merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
+      merge.onclick = async () => {
+        const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的全部条目并入哪个类目？\n填目标类目名（不存在会新建）：", c.category) || "").trim();
+        if (!v || v === c.category) return;
+        if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
+        try {
+          const n = await SB.renameRankCategory(c.category, v);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("已并入「" + v + "」（迁移 " + n + " 条）", true);
+          panel.dataset.open = "0"; openRankCategoryTools(bar);
+        } catch (e) { sbToast((e && e.message) || "合并失败", false); }
+      };
+      const wipe = document.createElement("button");
+      wipe.type = "button"; wipe.className = "btn-ghost small"; wipe.textContent = "整类删除";
+      wipe.onclick = async () => {
+        if (!(await uiConfirm("删除类目「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + c.batches + " 个批次、约 " + c.rows + " 条，所有期次都会删。"))) return;
+        try {
+          const r = await SB.deleteRankCategory(c.category);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("已删除该类目（" + r.items + " 条 / " + r.batches + " 批）", true);
+          panel.dataset.open = "0"; openRankCategoryTools(bar);
+        } catch (e) { sbToast((e && e.message) || "删除失败", false); }
+      };
+      row.appendChild(name); row.appendChild(meta); row.appendChild(merge); row.appendChild(wipe);
+      panel.appendChild(row);
+    });
+    refreshCbar();
+  }
+
   async function loadRankBatches() {
     const box = $("#rank-batch-list");
     let list = [];
@@ -847,11 +1482,27 @@
     loadRankPrintSwitch();          /* 图案印花款开关：每次进面板按库里最新值渲染 */
 
     if (!box) return;
-    if (!list.length) { box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>'; return; }
+    checkRankTitleColumn(box);
+    if (!list.length) {
+      box.innerHTML = '<div class="rkadm-empty">还没有上传记录。若类目仍存在，点上方「类目清理…」查看并删除。</div>';
+      const tb = document.getElementById("rank-batch-toolbar");
+      if (tb) { tb.style.display = ""; if (tb._refresh) tb._refresh(); }
+      else {
+        const fresh = ensureBatchToolbar(box);
+        if (fresh) { fresh.style.display = ""; if (fresh._refresh) fresh._refresh(); }
+      }
+      return;
+    }
+    const bar = ensureBatchToolbar(box);
+    if (bar) bar.style.display = "";
     box.innerHTML = "";
     list.forEach((b) => {
       const row = document.createElement("div");
       row.className = "rank-batch-row";
+
+      const pick = document.createElement("input");
+      pick.type = "checkbox"; pick.className = "rank-batch-pick"; pick.value = b.id;
+      pick.onchange = () => { if (bar && bar._refresh) bar._refresh(); };
 
       const main = document.createElement("span");
       main.className = "rank-batch-main";
@@ -882,9 +1533,10 @@
       };
 
       act.appendChild(ren); act.appendChild(del);
-      row.appendChild(main); row.appendChild(act);
+      row.appendChild(pick); row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });
+    if (bar && bar._refresh) bar._refresh();
   }
 
   /* ---------- 期次 / 周度频次管理 ---------- */
@@ -1094,6 +1746,10 @@
 
     const file = $("#rank-file");
     if (file) file.onchange = onRankFileChange;
+    const undoBtn = $("#rank-undo");
+    if (undoBtn) undoBtn.onclick = doRankUndo;
+    renderRankUndo();
+
     const imp = $("#rank-import");
     if (imp) imp.onclick = doRankImport;
 
