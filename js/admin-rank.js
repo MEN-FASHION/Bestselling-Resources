@@ -1150,6 +1150,128 @@
   }
 
   /* ---------- 已上传记录 ---------- */
+  let rankTitleWarned = false;
+  /* 缺 title 列时接口会刷 400、标题写不进去 —— 这里主动查一次并说清楚 */
+  async function checkRankTitleColumn(box) {
+    if (!box || rankTitleWarned) return;
+    let r = null;
+    try { r = await SB.probeRankTitleColumn(); } catch (e) { r = null; }
+    if (!r || r.ok || !r.missing) return;
+    rankTitleWarned = true;
+    const tip = document.createElement("div");
+    tip.className = "rkadm-warn";
+    tip.innerHTML = "⚠️ 榜单表缺少「标题」列：导入时标题写不进去，标题组词台会一直没词。"
+      + "处理办法——在数据库 rank_items 表里新增一列 <b>title</b>（text，可空），刷新本页后重新导入。"
+      + "控制台里那些 400 就是这条缺列报出来的。";
+    const host = box.parentNode;
+    if (host) host.insertBefore(tip, box);
+  }
+
+  /* 勾选删除：一次批量导入会建出上百个批次，逐条删太慢 */
+  function ensureBatchToolbar(box) {
+    const host = box && box.parentNode;
+    if (!host) return null;
+    let bar = host.querySelector("#rank-batch-toolbar");
+    if (bar) return bar;
+    bar = document.createElement("div");
+    bar.id = "rank-batch-toolbar";
+    bar.className = "rank-batch-toolbar";
+    const selAll = document.createElement("button");
+    selAll.type = "button"; selAll.className = "btn-ghost small"; selAll.textContent = "全选";
+    const delSel = document.createElement("button");
+    delSel.type = "button"; delSel.className = "btn-ghost small"; delSel.textContent = "删除选中（0）";
+    delSel.disabled = true;
+    const catBtn = document.createElement("button");
+    catBtn.type = "button"; catBtn.className = "btn-ghost small"; catBtn.textContent = "类目清理…";
+    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(catBtn);
+    host.insertBefore(bar, box);
+
+    const picked = () => Array.from(box.querySelectorAll(".rank-batch-pick:checked")).map((el) => el.value);
+    const refresh = () => {
+      const n = picked().length;
+      delSel.textContent = "删除选中（" + n + "）";
+      delSel.disabled = n === 0;
+    };
+    bar._refresh = refresh;
+    selAll.onclick = () => {
+      const boxes = Array.from(box.querySelectorAll(".rank-batch-pick"));
+      const allOn = boxes.length && boxes.every((el) => el.checked);
+      boxes.forEach((el) => { el.checked = !allOn; });
+      selAll.textContent = allOn ? "全选" : "取消全选";
+      refresh();
+    };
+    delSel.onclick = async () => {
+      const ids = picked();
+      if (!ids.length) return;
+      if (!(await uiConfirm("删除选中的 " + ids.length + " 个批次及其全部条目？\n删掉后这些图不会自动回来。"))) return;
+      delSel.disabled = true;
+      let done = 0, bad = 0;
+      for (const id of ids) {
+        try { await SB.deleteRankBatch(id); done += 1; } catch (e) { bad += 1; }
+        delSel.textContent = "删除中 " + (done + bad) + "/" + ids.length;
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已删除 " + done + " 个批次" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+    };
+    catBtn.onclick = () => openRankCategoryTools(bar);
+    return bar;
+  }
+
+  /* 类目清理：一次导入按表格里的类目名建批次，很容易冒出「POLO / Polo 衫 / T 恤 / T恤」这类重复 */
+  async function openRankCategoryTools(bar) {
+    let panel = document.getElementById("rank-cat-tools");
+    if (panel && panel.dataset.open === "1") { panel.dataset.open = "0"; panel.innerHTML = ""; return; }
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "rank-cat-tools";
+      panel.className = "rank-cat-tools";
+      bar.parentNode.insertBefore(panel, bar.nextSibling);
+    }
+    panel.dataset.open = "1";
+    panel.innerHTML = '<div class="hint">正在读取类目…</div>';
+    let cats = [];
+    try { cats = await SB.listRankCategories(); } catch (e) { cats = null; }
+    if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
+    if (!cats.length) { panel.innerHTML = '<div class="hint">还没有类目。</div>'; return; }
+    panel.innerHTML = '<div class="hint">共 ' + cats.length + ' 个类目。可疑重复（同音/大小写/空格/全半角不同）可直接合并，多余的整类删除。</div>';
+    cats.forEach((c) => {
+      const row = document.createElement("div");
+      row.className = "rank-cat-row";
+      const name = document.createElement("span");
+      name.className = "rank-cat-name";
+      name.textContent = c.category || "(未填类目)";
+      const meta = document.createElement("span");
+      meta.className = "rank-cat-meta";
+      meta.textContent = c.batches + " 批 · 约 " + c.rows + " 条 · " + c.periods + " 个期次";
+      const merge = document.createElement("button");
+      merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
+      merge.onclick = async () => {
+        const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的全部条目并入哪个类目？\n填目标类目名（不存在会新建）：", c.category) || "").trim();
+        if (!v || v === c.category) return;
+        if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
+        try {
+          const n = await SB.renameRankCategory(c.category, v);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("已并入「" + v + "」（迁移 " + n + " 条）", true);
+          panel.dataset.open = "0"; openRankCategoryTools(bar);
+        } catch (e) { sbToast((e && e.message) || "合并失败", false); }
+      };
+      const wipe = document.createElement("button");
+      wipe.type = "button"; wipe.className = "btn-ghost small"; wipe.textContent = "整类删除";
+      wipe.onclick = async () => {
+        if (!(await uiConfirm("删除类目「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + c.batches + " 个批次、约 " + c.rows + " 条，所有期次都会删。"))) return;
+        try {
+          const r = await SB.deleteRankCategory(c.category);
+          await loadRankBatches(); rankPreviewRefresh();
+          sbToast("已删除该类目（" + r.items + " 条 / " + r.batches + " 批）", true);
+          panel.dataset.open = "0"; openRankCategoryTools(bar);
+        } catch (e) { sbToast((e && e.message) || "删除失败", false); }
+      };
+      row.appendChild(name); row.appendChild(meta); row.appendChild(merge); row.appendChild(wipe);
+      panel.appendChild(row);
+    });
+  }
+
   async function loadRankBatches() {
     const box = $("#rank-batch-list");
     let list = [];
@@ -1186,11 +1308,22 @@
     loadRankPrintSwitch();          /* 图案印花款开关：每次进面板按库里最新值渲染 */
 
     if (!box) return;
-    if (!list.length) { box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>'; return; }
+    checkRankTitleColumn(box);
+    if (!list.length) {
+      box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>';
+      const tb = document.getElementById("rank-batch-toolbar"); if (tb) tb.style.display = "none";
+      return;
+    }
+    const bar = ensureBatchToolbar(box);
+    if (bar) bar.style.display = "";
     box.innerHTML = "";
     list.forEach((b) => {
       const row = document.createElement("div");
       row.className = "rank-batch-row";
+
+      const pick = document.createElement("input");
+      pick.type = "checkbox"; pick.className = "rank-batch-pick"; pick.value = b.id;
+      pick.onchange = () => { if (bar && bar._refresh) bar._refresh(); };
 
       const main = document.createElement("span");
       main.className = "rank-batch-main";
@@ -1221,9 +1354,10 @@
       };
 
       act.appendChild(ren); act.appendChild(del);
-      row.appendChild(main); row.appendChild(act);
+      row.appendChild(pick); row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });
+    if (bar && bar._refresh) bar._refresh();
   }
 
   /* ---------- 期次 / 周度频次管理 ---------- */

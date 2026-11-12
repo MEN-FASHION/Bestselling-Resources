@@ -2764,6 +2764,107 @@ async removeTrendRecord(id) {
       const { error } = await client.from("rank_batches").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除失败");
     },
+    /* ===== 类目清理（一次导入可能按表格里的类目名建出一堆重复/多余类目） ===== */
+    // 类目清单：按类目聚合批次数量、条数、涉及期次数
+    async listRankCategories() {
+      const { data, error } = await client.from("rank_batches")
+        .select("id, period_label, category, rows").limit(2000);
+      if (error) throw new Error(error.message || "读取类目失败");
+      const map = new Map();
+      (data || []).forEach((b) => {
+        const c = String(b.category || "").trim();
+        const k = c || "(未填类目)";
+        if (!map.has(k)) map.set(k, { category: c, batches: 0, rows: 0, periods: new Set() });
+        const e = map.get(k);
+        e.batches += 1;
+        e.rows += (typeof b.rows === "number" ? b.rows : 0);
+        if (b.period_label) e.periods.add(b.period_label);
+      });
+      return Array.from(map.values())
+        .map((e) => ({ category: e.category, batches: e.batches, rows: e.rows, periods: e.periods.size }))
+        .sort((a, b) => (b.rows - a.rows) || String(a.category).localeCompare(String(b.category)));
+    },
+    // 删除某个类目的全部条目与批次（所有期次、所有站点）
+    async deleteRankCategory(category) {
+      const cat = String(category || "").trim();
+      if (!cat) throw new Error("类目名称不能为空。");
+      let items = 0;
+      for (let round = 0; round < 400; round++) {
+        const { data, error } = await client.from("rank_items").select("id").eq("category", cat).limit(500);
+        if (error) throw new Error(error.message || "读取该类目条目失败");
+        const rows = data || [];
+        if (!rows.length) break;
+        await this.deleteRankItemsByIds(rows.map((r) => r.id));
+        items += rows.length;
+        if (rows.length < 500) break;
+      }
+      let batches = 0;
+      const { data: bs, error: be } = await client.from("rank_batches").select("id").eq("category", cat);
+      if (be) throw new Error(be.message || "读取该类目批次失败");
+      for (const b of (bs || [])) { await this.deleteRankBatch(b.id); batches++; }
+      return { items: items, batches: batches };
+    },
+    // 取某类目已存在的图片地址（合并时用于跳过重复）
+    async listRankCategoryUrls(category) {
+      const cat = String(category || "").trim();
+      const urls = [];
+      if (!cat) return urls;
+      for (let page = 0; page < 100; page++) {
+        const { data, error } = await client.from("rank_items").select("image_url").eq("category", cat)
+          .order("id", { ascending: true }).range(page * 1000, page * 1000 + 999);
+        if (error) break;
+        const rows = data || [];
+        rows.forEach((r) => { if (r.image_url) urls.push(r.image_url); });
+        if (rows.length < 1000) break;
+      }
+      return urls;
+    },
+    // 类目改名 / 合并：把 from 并入 to（rank_items 无 update 策略 → 先复制成功、再删原数据）
+    async renameRankCategory(from, to) {
+      const a = String(from || "").trim(), b = String(to || "").trim();
+      if (!a || !b) throw new Error("类目名称不能为空。");
+      if (a === b) return 0;
+      const exist = new Set(await this.listRankCategoryUrls(b));
+      let moved = 0;
+      for (let round = 0; round < 400; round++) {
+        const { data: rows, error } = await client.from("rank_items").select("*").eq("category", a).limit(500);
+        if (error) throw new Error(error.message || "读取待迁移条目失败");
+        const list = rows || [];
+        if (!list.length) break;
+        const news = list.filter((r) => !exist.has(String(r.image_url || ""))).map((r) => {
+          const o = Object.assign({}, r, { category: b });
+          delete o.id; delete o.created_at; return o;
+        });
+        if (news.length) {
+          const ids = await this._insertRankItemsStrict(news);
+          if (ids.length !== news.length) {
+            if (ids.length) await this.deleteRankItemsByIds(ids);
+            throw new Error("合并中止：新数据未完整写入（预期 " + news.length + " 条，实际 " + ids.length + " 条），原数据已保留。");
+          }
+          news.forEach((r) => exist.add(String(r.image_url || "")));
+        }
+        await this.deleteRankItemsByIds(list.map((r) => r.id));
+        moved += news.length;
+        if (list.length < 500) break;
+      }
+      const { data: bs } = await client.from("rank_batches").select("id").eq("category", a);
+      for (const x of (bs || [])) { await this.deleteRankBatch(x.id); }
+      return moved;
+    },
+    /* 检查 rank_items 有没有 title 列：缺列时标题写入会被静默丢弃，并刷出一堆 400 */
+    async probeRankTitleColumn() {
+      try {
+        const { error } = await client.from("rank_items").select("title").limit(1);
+        if (!error) return { ok: true, missing: false, message: "" };
+        const msg = String((error && error.message) || "");
+        if (/title/i.test(msg) && /(column|does not exist|schema|字段|列)/i.test(msg)) {
+          return { ok: false, missing: true, message: msg };
+        }
+        return { ok: false, missing: false, message: msg };
+      } catch (e) {
+        return { ok: false, missing: false, message: (e && e.message) || "" };
+      }
+    },
     /* 按「期次 + 类目 + 站点」整体删除条目（撤销一次导入用：把本次写入的槽位清空）。
        返回实际删除条数。分批进行，避免一次性请求过大被接口拒绝。 */
     async deleteRankItemsByScope(o) {
