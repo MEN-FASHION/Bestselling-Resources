@@ -40,7 +40,7 @@ ok(/const clean = \[\.\.\.new Set\(\(zones \|\| \[\]\)\.filter\(Boolean\)\)\]/.t
 ok(/async setUserFrontendZones/.test(S), "写入方法仍在");
 
 console.log("六、前台守卫按「有内容且不含本专区」判拒绝");
-const guards = ["js/rank.js", "js/rhythm.js", "js/plus.js", "js/fav.js", "js/frontend.js"];
+const guards = ["js/rank.js", "js/rhythm.js", "js/fav.js", "js/frontend.js"];
 guards.forEach((f) => {
   const t = fs.readFileSync(path.join(ROOT, f), "utf8");
   const bad = /my[zZ]ones\.length === 0/.test(t);
@@ -52,7 +52,7 @@ ok(/Array\.isArray\(myz\) && myz\.length && myz\.indexOf\("rank"\) === -1/.test(
 
 console.log("七、版本号");
 const admin = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
-ok(/admin-perm\.js\?v=20261111AF/.test(admin), "admin.html 里 admin-perm.js 版本号应随本次发布统一升级");
+ok(/admin-perm\.js\?v=20261112B/.test(admin), "admin.html 里 admin-perm.js 版本号应随本次发布统一升级");
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

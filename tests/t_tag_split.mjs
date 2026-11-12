@@ -49,7 +49,7 @@ if (!/style_tags|element_tags|scene_tags/.test(up)) ok("上传不涉及标签字
 else no("上传仍在写标签字段");
 
 // 9. 版本号统一
-const pages = ["admin.html","index.html","rank.html","trends.html","marketing.html","plus.html","fav.html"];
+const pages = ["admin.html","index.html","rank.html","trends.html","marketing.html","fav.html"];
 const stale = pages.filter(p => fs.readFileSync(p,"utf8").includes("20261028G"));
 if (!stale.length) ok("全部页面版本号已统一");
 else no("版本号未统一：" + stale.join(","));

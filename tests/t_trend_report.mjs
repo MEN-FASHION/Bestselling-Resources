@@ -50,7 +50,7 @@ console.log("六、版本一致性");
 /* 版本号是缓存戳，每版都会变；这里只要求「引了 report.js 且带版本戳」，
    别再写死某一天的版本号——写死之后每次发版这条都会假失败。 */
 ok("rank.html 引入 report.js 且带版本戳", /js\/report\.js\?v=\d{8}[A-Z]/.test(H));
-const allHtml = ["admin.html","rank.html","trends.html","index.html","movement.html","plus.html","marketing.html","fav.html"];
+const allHtml = ["admin.html","rank.html","trends.html","index.html","movement.html","marketing.html","fav.html"];
 ok("八个页面的资源引用版本号统一", allHtml.every(f => !/\?v=20261030[ABC]/.test(fs.readFileSync(f, "utf8"))));
 
 console.log("\n结果：" + pass + " 通过 / " + fail + " 失败");

@@ -81,7 +81,7 @@ ok(/key:\s*"shein",\s*label:\s*"SHEIN 专区"/.test(perm), "权限勾选应含 S
 ok(/Pinterest 专区 \(pinterest\.html\)/.test(perm), "专区管理的前台链接预设应含 Pinterest");
 
 /* ---------- 5. 各前台页面导航 ---------- */
-const navPages = ["index.html", "rank.html", "rhythm.html", "plus.html", "trends.html", "marketing.html", "fav.html", "movement.html"];
+const navPages = ["index.html", "rank.html", "rhythm.html", "trends.html", "marketing.html", "fav.html", "movement.html"];
 for (const f of navPages) {
   const h = read(f);
   ok(h.includes('href="pinterest.html"'), `${f} 顶部菜单缺少 Pinterest 专区入口`);

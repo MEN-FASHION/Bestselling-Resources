@@ -8,7 +8,7 @@
  *
  * 数据来源不另起一套（传图在后台这两个专区里做）：
  *   图片本体 → SB.listRankChannelPics({ periodType:"month" }) 里 channel = 本专区渠道的那批
- *   打标结果 → rank_image_tags（按图片地址，与榜单 / 趋势动向共用）
+ *   打标结果 → rank_image_tags（按图片地址，与榜单 / 品牌动向共用）
  * 页面只读，不提供任何写操作。
  *
  * 由页面声明 window.CZONE = { key, label, channel } 决定展示哪个渠道。

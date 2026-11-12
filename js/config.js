@@ -129,7 +129,6 @@ window.CONFIG = {
 window.ZONE_DEFS_DEFAULT = [
   { key: "rank",          label: "趋势上升榜",     href: "rank.html" },
   { key: "rhythm",        label: "上新节奏",       href: "rhythm.html" },
-  { key: "plus",          label: "大码专区",      href: "plus.html" },
   { key: "pinterest",     label: "Pinterest 专区", href: "pinterest.html" },
   { key: "shein",         label: "SHEIN 专区",    href: "shein.html" },
   { key: "compare",       label: "渠道对比",      href: "compare.html" },
@@ -139,7 +138,7 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "recruit",       label: "招品回品",      href: "trends.html#recruit" },
   { key: "bestseller",    label: "BESTSELLER",  href: "trends.html#bestseller" },
   { key: "fav",           label: "我的收藏",     href: "fav.html" },
-  { key: "movement",      label: "趋势动向",     href: "movement.html" },
+  { key: "movement",      label: "品牌动向",     href: "movement.html" },
   { key: "notice",        label: "公告",        href: "" }
 ];
 

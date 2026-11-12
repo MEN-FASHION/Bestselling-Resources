@@ -736,9 +736,9 @@ const SB = (() => {
      * ============================================================ */
     _urlOfId: {},
     /* 把图片记录还原成「可打标的图片地址」。
-       20261102E：老上传入口（含趋势动向早期版本、历史导入）只写了 path，url 字段是空，
+       20261102E：老上传入口（含品牌动向早期版本、历史导入）只写了 path，url 字段是空，
        而打标要按 image_url 唯一键写入，于是拖图时直接报「这张图没有可用的图片地址」。
-       path 本来就是 R2 里的真实位置，拼上 Worker 前缀就是可用地址，与趋势动向/榜单
+       path 本来就是 R2 里的真实位置，拼上 Worker 前缀就是可用地址，与品牌动向/榜单
        上传时写的 URL 完全同一口径，不会出现同一张图两行标签。 */
     _urlOfImageRow(r) {
       if (!r) return "";
@@ -1152,13 +1152,20 @@ async removeTrendRecord(id) {
         const raw = await this._zoneRaw();
         /* 20261109A：「渠道雷达」专区已整体下线（前台页 / 后台面板 / 权限项都删了）。
            历史保存的 __defs 里可能还留着这个 key，若原样返回，前台导航会出现一个
-           点进去 404 的死链。这里直接过滤掉，不用让用户去「专区管理」里手动删。 */
-        const GONE = { channel: 1 };
+           点进去 404 的死链。这里直接过滤掉，不用让用户去「专区管理」里手动删。
+           20261112B：同一处理适用于「大码专区」(plus) —— 前后台入口已下线，
+           库里如果还存着这个 key，也必须过滤，否则导航会复活一个打不开的入口。 */
+        const GONE = { channel: 1, plus: 1 };
         const saved = (Array.isArray(raw.__defs) ? raw.__defs : [])
           .filter(d => d && d.key && !GONE[String(d.key)]);
         // 内置专区始终存在：历史保存的 __defs 可能早于某个内置专区（如「趋势上升榜」）上线，
         // 若直接用保存值覆盖，会导致该专区在「专区管理 / 权限勾选 / 前台导航」里整体消失。
         // 因此以「内置清单」为底，用保存值覆盖同 key 的名称与链接，再追加超管新增的专区。
+        /* 20261112B：专区「改名」以代码为准。
+           「趋势动向」改名为「品牌动向」时，库里 __defs 还存着旧名字；因为下面是以保存值
+           覆盖内置名称，不改这一层的话，前台导航 / 权限勾选 / 专区管理里显示的还是旧名。
+           这里列出「代码已改名」的 key，强制使用内置名称（只影响这几个 key，其余仍可自定义）。 */
+        const RENAMED = { movement: 1 };
         const out = (window.ZONE_DEFS_DEFAULT || []).map(d => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
         const idx = {};
         out.forEach((d, i) => { idx[d.key] = i; });
@@ -1167,7 +1174,7 @@ async removeTrendRecord(id) {
           const k = String(d.key);
           if (idx[k] != null) {
             const t = out[idx[k]];
-            if (d.label) t.label = String(d.label);
+            if (d.label && !RENAMED[k]) t.label = String(d.label);
             if (d.href != null && d.href !== "") t.href = String(d.href);
           } else {
             idx[k] = out.length;
@@ -1193,7 +1200,7 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "保存失败");
     },
 
-    // ============ 渠道对比 · 来源列配置（20261111AF） ============
+    // ============ 渠道对比 · 来源列配置（20261112B） ============
     // 存在 site_settings.frontend_dims.compare_sources，不改表结构：
     //   { list:[{key,label,type,channel,month}], showEmpty:bool, perRow:0 }
     //   type = "rank"（上新节奏·月度榜单） | "channel"（某个渠道的图，channel=渠道名）
@@ -1228,6 +1235,42 @@ async removeTrendRecord(id) {
         .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw new Error(errHint(error, "保存渠道对比配置失败"));
       return dims.compare_sources;
+    },
+
+    // ============ 实用工具 · 思维导图（20261112C） ============
+    // 存在 site_settings.frontend_dims.tools_mindmaps，不改表结构：
+    //   { list:[{ id, title, updated, root:{...} }] }
+    // root 是一棵树：{ id, text, note, color, collapsed, children:[...] }
+    // 只存结构化的节点数据，不存图片，所以体积很小（几十 KB 级）。
+    async getMindmaps() {
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        const raw = d.tools_mindmaps;
+        const list = (raw && Array.isArray(raw.list)) ? raw.list : [];
+        return list.filter((m) => m && m.id && m.root).map((m) => ({
+          id: String(m.id),
+          title: String(m.title || "未命名导图"),
+          updated: String(m.updated || ""),
+          root: m.root,
+        }));
+      } catch (e) { return []; }
+    },
+    async setMindmaps(list) {
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.tools_mindmaps = {
+        list: (Array.isArray(list) ? list : []).filter((m) => m && m.id && m.root).map((m) => ({
+          id: String(m.id),
+          title: String(m.title || "未命名导图"),
+          updated: m.updated || new Date().toISOString(),
+          root: m.root,
+        })),
+      };
+      const { error } = await client.from("site_settings")
+        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(errHint(error, "保存思维导图失败"));
+      return dims.tools_mindmaps.list;
     },
 
     // ============ 新用户默认权限设置（超管） ============
@@ -1992,7 +2035,7 @@ async removeTrendRecord(id) {
       const { data, error } = await client.from("profiles").select("frontend_zones, role").eq("user_id", uid).maybeSingle();
       if (error) return null;
       // 超级管理员不受用户级白名单约束：始终可见全部专区。
-      // 否则老账号的 frontend_zones 是早年存的数组，里面没有后加的专区（如「趋势动向」），
+      // 否则老账号的 frontend_zones 是早年存的数组，里面没有后加的专区（如「品牌动向」），
       // 超管登录前台就会看不到这些新专区的入口。
       // 注意角色字符串是 super_admin（与 profiles.role 的取值一致），不是 super。
       if (data && String(data.role || "") === "super_admin") return null;
@@ -3441,7 +3484,7 @@ async removeTrendRecord(id) {
     },
 
     /* ============================================================
-     * 趋势动向专区（20261030A）
+     * 品牌动向专区（20261030A）
      * ------------------------------------------------------------
      * 结构与趋势上升榜一致，两者共用同一张打标表 rank_image_tags：
      *   图片本体 → movement_items（图片地址唯一）
@@ -3457,7 +3500,7 @@ async removeTrendRecord(id) {
           .order("id", { ascending: false }).range(from, from + PAGE - 1);
         if (category) q = q.eq("category", category);
         const { data, error } = await q;
-        if (error) throw new Error(error.message || "读取趋势动向图片失败");
+        if (error) throw new Error(error.message || "读取品牌动向图片失败");
         const rows = data || [];
         rows.forEach((r) => out.push(r));
         if (rows.length < PAGE) break;
@@ -3476,7 +3519,7 @@ async removeTrendRecord(id) {
       for (let i = 0; i < list.length; i++) {
         const f = list[i];
         try {
-          const path = await this.uploadImage(f, category || "趋势动向");
+          const path = await this.uploadImage(f, category || "品牌动向");
           const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
           const { error } = await client.from("movement_items").insert({
             image_url: url, path: path, category: category || "", title: (f.name || "").replace(/\.[^.]+$/, ""),
@@ -4350,7 +4393,7 @@ async removeTrendRecord(id) {
       if (error) return [];   // 星标是装饰性状态，读不到不该让榜单白屏
       return data || [];
     },
-    /* 只读出口：供同级模块（大码专区数据层 plus-sb.js）复用同一个已登录客户端。
+    /* 只读出口：供同级模块复用同一个已登录客户端。
        不新建第二个 createClient —— 两个客户端各自维护会话，会出现"一边登录一边未登录"。 */
     _client() { return client; },
   };
@@ -4549,7 +4592,7 @@ async removeTrendRecord(id) {
   };
 
   /* ============================================================
-   * 批量删除渠道图（20261111AF）
+   * 批量删除渠道图（20261112B）
    * ------------------------------------------------------------
    * 渠道图有两种存放位置：文档存储（id 形如 cp:<url>）与 rank_items 表（数字 id）。
    * 批量删除必须两条都照顾到，否则「勾了 30 张只删掉一半」。
@@ -4593,7 +4636,7 @@ async removeTrendRecord(id) {
   };
 
   /* ============================================================
-   * 批量修改渠道图字段（20261111AF）
+   * 批量修改渠道图字段（20261112B）
    * ------------------------------------------------------------
    * 只改传进来的字段（undefined = 不动），所以「批量只改月份」不会顺手把类目清空。
    * 可改字段：channel（渠道名）/ category（类目）/ period_label（月份，前台展示的上传期次）。

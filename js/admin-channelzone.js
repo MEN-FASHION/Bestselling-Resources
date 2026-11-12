@@ -7,7 +7,7 @@
  *
  * 数据存放不另建表（与「其他渠道传图」同一套，后台两者互通）：
  *   图片本体 → 渠道图清单（channel = Pinterest / SHEIN，period_type = month）
- *   打标结果 → rank_image_tags（按图片地址，与榜单 / 趋势动向共用同一张表）
+ *   打标结果 → rank_image_tags（按图片地址，与榜单 / 品牌动向共用同一张表）
  *
  * 一个文件驱动两个面板：面板里带 data-cz="pinterest" / data-cz="shein"，
  * 所有 DOM id 都以 cz-<key>- 开头，互不干扰。
@@ -74,7 +74,7 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
   }
 
-  /* ---------- 打标枚举（与榜单 / 趋势动向同一份） ---------- */
+  /* ---------- 打标枚举（与榜单 / 品牌动向同一份） ---------- */
   function enumValues(d) {
     var E = window.APP_ENUM || {};
     if (d.key === "visual_tags") {
@@ -736,12 +736,113 @@
     }
   }
 
-  /* ---------- 上传（只有图） ---------- */
-  function addFiles(k, list) {
+  /* ---------- 上传去重 ----------
+     同一张图不要再传第二次。三层判断（命中任一层就跳过）：
+       1) 本批内部重复（同一文件被选了两次 / 同一张图存了两个名字）
+       2) 本浏览器传过的（按内容指纹记在本地，改名也认得出）
+       3) 库里已有的（上传后的地址里保留了原文件名，按文件名比对；跨浏览器也有效）
+     全部在前端完成：不改上传接口、不加表字段。 */
+  var FP_KEY = "cz_img_fp_v1";
+  var FP_MAX = 6000;
+
+  function fpLoad() {
+    try { return JSON.parse(localStorage.getItem(FP_KEY) || "{}") || {}; } catch (e) { return {}; }
+  }
+  function fpSave(map) {
+    try {
+      var keys = Object.keys(map);
+      if (keys.length > FP_MAX) {
+        keys.sort(function (a, b) { return (map[a] && map[a].at || 0) - (map[b] && map[b].at || 0); });
+        keys.slice(0, keys.length - FP_MAX).forEach(function (x) { delete map[x]; });
+      }
+      localStorage.setItem(FP_KEY, JSON.stringify(map));
+    } catch (e) { /* 存不下就算了，不影响上传 */ }
+  }
+
+  /* 内容指纹：文件大小 + 前 64KB 的 SHA-256。浏览器不支持摘要时退化为「名字+大小+改时间」 */
+  async function fingerprint(file) {
+    var head = file.slice(0, Math.min(65536, file.size));
+    try {
+      if (window.crypto && window.crypto.subtle && head.arrayBuffer) {
+        var buf = await head.arrayBuffer();
+        var h = await window.crypto.subtle.digest("SHA-256", buf);
+        var arr = Array.prototype.slice.call(new Uint8Array(h));
+        var hex = arr.map(function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+        return "h" + file.size + "_" + hex.slice(0, 40);
+      }
+    } catch (e) { /* 退化 */ }
+    return "f" + normName(file.name) + "_" + file.size + "_" + (file.lastModified || 0);
+  }
+
+  /* 上传后的地址形如 <时间戳>_<随机>_<原文件名>，去掉前缀即可还原原文件名 */
+  function normName(n) {
+    return String(n || "").toLowerCase().replace(/\s+/g, "");
+  }
+  function nameFromUrl(u) {
+    var s = String(u || "").split("?")[0].split("/").pop() || "";
+    try { s = decodeURIComponent(s); } catch (e) { /* 保留原样 */ }
+    s = s.replace(/^\d+_\d+_/, "").replace(/^\d+_/, "");
+    return normName(s);
+  }
+
+  function existingNames(k) {
+    var st = state[k];
+    var set = {};
+    (st.items || []).forEach(function (r) { var n = nameFromUrl(r.image_url); if (n) set[n] = 1; });
+    return set;
+  }
+
+  async function addFiles(k, list) {
     var imgs = Array.prototype.slice.call(list || []).filter(function (f) { return /^image\//.test(f.type); });
     if (!imgs.length) { toast("请选择图片文件", false); return; }
-    state[k].pending = state[k].pending.concat(imgs);
-    renderPending(k);
+
+    var st = state[k];
+    var have = fpLoad();
+    var names = existingNames(k);
+
+    /* 本批已排队的也参与比对 */
+    var seen = {};
+    (st.pending || []).forEach(function (f) { if (f.__fp) seen[f.__fp] = 1; });
+
+    var add = [], dupLocal = 0, dupCloud = 0, dupBatch = 0;
+    for (var i = 0; i < imgs.length; i++) {
+      var f = imgs[i];
+      var fp = await fingerprint(f);
+      f.__fp = fp;
+      var nm = normName(f.name);
+
+      if (seen[fp]) { dupBatch++; continue; }
+      if (have[fp]) { dupLocal++; continue; }
+      if (nm && names[nm]) { dupCloud++; continue; }
+
+      seen[fp] = 1;
+      if (nm) names[nm] = 1;
+      add.push(f);
+    }
+
+    if (add.length) {
+      st.pending = st.pending.concat(add);
+      renderPending(k);
+    }
+
+    var skip = dupBatch + dupLocal + dupCloud;
+    if (skip) {
+      var why = [];
+      if (dupBatch) why.push("本批重复 " + dupBatch);
+      if (dupLocal) why.push("之前传过 " + dupLocal);
+      if (dupCloud) why.push("库里已有 " + dupCloud);
+      toast("已跳过 " + skip + " 张重复图片（" + why.join("、") + "）", true);
+    } else if (add.length) {
+      toast("已加入 " + add.length + " 张", true);
+    }
+  }
+
+  /* 上传成功后登记指纹，下次同一张图（哪怕改名）也能认出来 */
+  function rememberFps(files) {
+    var map = fpLoad();
+    var now = Date.now();
+    (files || []).forEach(function (f) { if (f && f.__fp) map[f.__fp] = { at: now, n: String(f.name || "") }; });
+    fpSave(map);
   }
 
   function renderPending(k) {
@@ -808,6 +909,10 @@
           if (bar) bar.style.width = Math.round(done / total * 100) + "%";
           say(k, "上传中 " + done + "/" + total);
         });
+      /* 只登记真正传成功的，避免失败的那些以后被当成"已传" */
+      var okNames = {};
+      (res.ok || []).forEach(function (x) { if (x && x.name) okNames[normName(x.name)] = 1; });
+      rememberFps(st.pending.filter(function (f) { return okNames[normName(f.name)]; }));
       st.pending = [];
       renderPending(k);
       say(k, "已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));

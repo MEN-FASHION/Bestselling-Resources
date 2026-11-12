@@ -42,11 +42,11 @@ const PANEL_ZONE = {
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
-  "movement-card": "movement", // 趋势动向：独立专区，按「后台可管理专区」授权管控
-  "plus-card": "plus",      // 大码专区：大码数据上传 + 同款匹配（按「大码专区」授权管控）
+  "movement-card": "movement", // 品牌动向：独立专区，按「后台可管理专区」授权管控
   "pinterest-card": "pinterest", // Pinterest 专区：纯图片专区（只传图 + 打标），按专区授权管控
   "shein-card": "shein",         // SHEIN 专区：同上
   "compare-card": "compare",     // 渠道对比：只读聚合页的列配置（按专区授权管控）
+  "tools-card": "",          // 实用工具（思维导图等）：不属于任何专区，任一管理员可用
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
   "trend-card": "trend",
   "recruit-card": "recruit",
@@ -79,7 +79,6 @@ const CAT_VIS_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
-  { key: "plus", label: "大码专区" },
   { key: "pinterest", label: "Pinterest 专区", href: "pinterest.html" },
   { key: "shein", label: "SHEIN 专区", href: "shein.html" },
   { key: "compare", label: "渠道对比", href: "compare.html" }
@@ -113,7 +112,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "rhythm-card") return true;
+    if (target === "rank-card" || target === "rhythm-card" || target === "tools-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -230,17 +229,20 @@ function switchPanel(target) {
     // 视觉专区：合并了「图片管理 + 数据看板」，进入时回到上次的子页签
     if (target === "manage-card") { setVisualTab(visualTab); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
-    if (target === "plus-card" && window.PLUSADMIN && typeof window.PLUSADMIN.refresh === "function") { window.PLUSADMIN.refresh(); }
     /* 渠道图片专区（Pinterest / SHEIN）：首次进入才拉数据 */
     if ((target === "pinterest-card" || target === "shein-card") && window.ChannelZoneAdmin && typeof window.ChannelZoneAdmin.reload === "function") {
       window.ChannelZoneAdmin.reload(target === "shein-card" ? "shein" : "pinterest");
+    }
+    /* 实用工具（思维导图）：首次进入才挂载与读库，避免一进后台就多一次请求 */
+    if (target === "tools-card" && window.ToolsAdmin && typeof window.ToolsAdmin.enter === "function") {
+      window.ToolsAdmin.enter();
     }
     if (target === "compare-card" && window.CompareAdmin && typeof window.CompareAdmin.reload === "function") {
       window.CompareAdmin.reload();
     }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); if (typeof window.loadRecruitDashStats === "function") window.loadRecruitDashStats(); }
-    /* 趋势动向：首次进入才拉数据，避免进后台就多发一次请求 */
+    /* 品牌动向：首次进入才拉数据，避免进后台就多发一次请求 */
     if (target === "movement-card" && window.MovementAdmin && typeof window.MovementAdmin.reload === "function") {
       window.MovementAdmin.reload();
     }
@@ -492,7 +494,7 @@ function bindChangepwd() {
     const firstPanel = document.querySelector("#admin-panel .nav-item:not(.hidden)");
     const fallback = firstPanel ? firstPanel.dataset.target : "manage-card";
     /* 刷新记忆：上次停在哪个面板就回哪个面板（前提：该菜单对当前角色可见且有权访问），
-       否则才回落到默认第一项。这是在「写权限 / 大码专区」里干活时最省事的一步。 */
+       否则才回落到默认第一项。这是在「写权限 / 各专区」里干活时最省事的一步。 */
     const memo = recallPanel();
     let defaultTarget = fallback;
     if (memo && memo.target) {
@@ -611,7 +613,7 @@ async function loadAccess() {
       const cats = zoneCats[zi] || [];
       const visMap = catVisCfg[z.key] || {};
       const hiddenCnt = cats.filter(c => visMap[c] === false).length;
-      // 多个专区共用同一份前台类目表（视觉/趋势/榜单/大码/趋势动向），
+      // 多个专区共用同一份前台类目表（视觉/趋势/榜单/大码/品牌动向），
       // 全展开会得到几百个同样的开关，故默认折叠，只显示统计；
       // 已有隐藏项的专区默认展开，便于查看被关掉的有哪些。
       let open = hiddenCnt > 0;

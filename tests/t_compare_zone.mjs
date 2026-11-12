@@ -1,4 +1,4 @@
-/* 20261111AF · 渠道对比（多渠道图片多列并排）
+/* 20261112B · 渠道对比（多渠道图片多列并排）
  * 覆盖：
  *  1) 前台页存在：左侧类目与趋势上升榜一致，上方只筛月度
  *  2) 多列布局复用趋势上升榜的池子结构（不另起一套）
@@ -68,7 +68,7 @@ ok(/渠道对比 \(compare\.html\)/.test(perm), "专区管理的前台链接预�
 ok(/"compare-card":\s*"compare"/.test(read("js/admin.js")), "PANEL_ZONE 未绑定 compare");
 ok(/key:\s*"compare",\s*label:\s*"渠道对比",\s*href:\s*"compare\.html"/.test(read("js/admin.js")), "前台访问设置应可开关渠道对比");
 
-const navPages = ["index.html", "rank.html", "rhythm.html", "plus.html", "trends.html", "marketing.html", "fav.html", "movement.html", "pinterest.html", "shein.html"];
+const navPages = ["index.html", "rank.html", "rhythm.html", "trends.html", "marketing.html", "fav.html", "movement.html", "pinterest.html", "shein.html"];
 for (const f of navPages) ok(read(f).includes('href="compare.html"'), `${f} 顶部菜单缺少渠道对比入口`);
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
