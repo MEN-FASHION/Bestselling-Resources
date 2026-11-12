@@ -161,6 +161,12 @@ ok(/ctrlKey \|\| e\.metaKey/.test(SRC) && /zoomAt\(/.test(SRC), "应支持 Ctrl+
 ok(/case "Tab"|e\.key === "Tab"/.test(SRC), "应支持 Tab 加子主题");
 ok(/e\.key === "Enter"/.test(SRC) && /e\.key === "Delete"/.test(SRC), "应支持 Enter 加同级、Delete 删除");
 ok(/moveNode\(state\.root, d\.id, targetId\)/.test(SRC), "应支持拖拽换父级");
+ok(/document\.addEventListener\("keydown", onKey\)/.test(SRC), "键盘应监听在 document 上（面板容器不可聚焦，挂在容器上会完全收不到按键）");
+ok(!/host\.addEventListener\("keydown"/.test(SRC), "不得把键盘监听挂在不可聚焦的容器上");
+ok(/svg\.focus\(/.test(SRC), "点击节点后应把焦点交给画布");
+ok(/function panelVisible\(\)/.test(SRC) && /if \(!panelVisible\(\)\) return;/.test(SRC), "全局键盘处理应限定在面板可见时");
+ok(/destroy\(\) \{ document\.removeEventListener\("keydown", state\._onKey\); \}/.test(SRC), "应能解绑全局监听（切换面板不重复绑定）");
+ok(SRC.indexOf("api.destroy =") < 0, "不能在 api 定义前给它挂属性（会抛未初始化错误）");
 
 console.log("");
 console.log("通过 " + pass + " 项，失败 " + fail + " 项");

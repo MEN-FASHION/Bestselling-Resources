@@ -653,6 +653,7 @@
         e.preventDefault();
         return;
       }
+      if (svg.focus) { try { svg.focus({ preventScroll: true }); } catch (err) { svg.focus(); } }
       const g = e.target.closest ? e.target.closest(".mm-node") : null;
       if (g) {
         const id = g.getAttribute("data-id");
@@ -711,8 +712,9 @@
     svg.addEventListener("dblclick", (e) => {
       const g = e.target.closest ? e.target.closest(".mm-node") : null;
       if (!g) return;
-      beginEdit(g.getAttribute("data-id"));
       e.preventDefault();
+      state.selected = g.getAttribute("data-id");
+      beginEdit(g.getAttribute("data-id"));
     });
 
     /* 滚轮：普通=上下平移，Ctrl/⌘=缩放 */
@@ -729,8 +731,18 @@
       }
     }, { passive: false });
 
-    /* ---- 键盘 ---- */
-    host.addEventListener("keydown", (e) => {
+    /* ---- 键盘 ----
+     * 早期把监听挂在 host 上，但 host 是普通 div、不可聚焦，
+     * 点击节点后焦点仍在 body，keydown 不会冒泡到 host —— 表现就是"快捷键全都没反应、改不了名"。
+     * 改为监听 document，并用「面板是否可见」+「是否正在输入」两道闸门，避免影响后台其它输入框。
+     */
+    function panelVisible() {
+      if (state.editing) return false;
+      if (host.offsetParent === null && host.getClientRects().length === 0) return false;
+      return true;
+    }
+    function onKey(e) {
+      if (!panelVisible()) return;
       if (state.editing) return;
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea") {
@@ -772,7 +784,9 @@
         if ((cur.children || []).length) { state.selected = cur.children[0].id; render(); focusNode(state.selected); }
         return;
       }
-    });
+    }
+    document.addEventListener("keydown", onKey);
+    state._onKey = onKey;
 
     /* ---- 工具栏 ---- */
     host.addEventListener("click", (e) => {
@@ -964,7 +978,8 @@
       undo: undo,
       redo: redo,
       exportAs: handleExport,
-      stats() { return { nodes: countNodes(state.root) }; }
+      stats() { return { nodes: countNodes(state.root) }; },
+      destroy() { document.removeEventListener("keydown", state._onKey); }
     };
     state.root = newNode("中心主题");
     state.selected = state.root.id;
