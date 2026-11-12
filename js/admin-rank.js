@@ -1234,9 +1234,61 @@
     if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
     if (!cats.length) { panel.innerHTML = '<div class="hint">还没有类目。</div>'; return; }
     panel.innerHTML = '<div class="hint">共 ' + cats.length + ' 个类目。可疑重复（同音/大小写/空格/全半角不同）可直接合并，多余的整类删除。</div>';
+
+    /* 批量清理：一次导入可能带进几十上百个类目，逐个点不现实 */
+    const cbar = document.createElement("div");
+    cbar.className = "rank-cat-bar";
+    const cAll = document.createElement("button");
+    cAll.type = "button"; cAll.className = "btn-ghost small"; cAll.textContent = "全选";
+    const cNum = document.createElement("button");
+    cNum.type = "button"; cNum.className = "btn-ghost small"; cNum.textContent = "只选数字类目";
+    const cDel = document.createElement("button");
+    cDel.type = "button"; cDel.className = "btn-ghost small danger"; cDel.textContent = "删除选中";
+    const cNote = document.createElement("span");
+    cNote.className = "rank-cat-meta";
+    const pickedCats = () => Array.from(panel.querySelectorAll(".rank-cat-pick:checked")).map((x) => x.dataset.cat);
+    const refreshCbar = () => {
+      const n = pickedCats().length;
+      cDel.textContent = "删除选中" + (n ? "（" + n + "）" : "");
+      cDel.disabled = n === 0;
+      const allOn = panel.querySelectorAll(".rank-cat-pick").length === n && n > 0;
+      cAll.textContent = allOn ? "取消全选" : "全选";
+    };
+    cAll.onclick = () => {
+      const allOn = cAll.textContent === "取消全选";
+      panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = !allOn; });
+      refreshCbar();
+    };
+    cNum.onclick = () => {
+      panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = /^\d+$/.test(x.dataset.cat); });
+      refreshCbar();
+    };
+    cDel.onclick = async () => {
+      const cats_ = pickedCats();
+      if (!cats_.length) return;
+      if (!(await uiConfirm("删除选中的 " + cats_.length + " 个类目？\n这些类目在所有期次下的全部条目都会被删掉，删了不会自动回来。"))) return;
+      cDel.disabled = true;
+      let done = 0, bad = 0, rows = 0;
+      for (const c of cats_) {
+        try { const r = await SB.deleteRankCategory(c); rows += (r && r.items) || 0; done += 1; }
+        catch (e) { bad += 1; }
+        cNote.textContent = "清理中 " + (done + bad) + "/" + cats_.length + " · 已删 " + rows + " 条";
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已删除 " + done + " 个类目（" + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+      openRankCategoryTools(bar);
+    };
+    cbar.appendChild(cAll); cbar.appendChild(cNum); cbar.appendChild(cDel); cbar.appendChild(cNote);
+    panel.appendChild(cbar);
+
     cats.forEach((c) => {
       const row = document.createElement("div");
       row.className = "rank-cat-row";
+      const pick = document.createElement("input");
+      pick.type = "checkbox"; pick.className = "rank-cat-pick";
+      pick.dataset.cat = c.category || "";
+      pick.onchange = refreshCbar;
+      row.appendChild(pick);
       const name = document.createElement("span");
       name.className = "rank-cat-name";
       name.textContent = c.category || "(未填类目)";
@@ -1270,6 +1322,7 @@
       row.appendChild(name); row.appendChild(meta); row.appendChild(merge); row.appendChild(wipe);
       panel.appendChild(row);
     });
+    refreshCbar();
   }
 
   async function loadRankBatches() {
