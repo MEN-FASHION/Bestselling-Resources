@@ -569,7 +569,17 @@
     const groupNote = (nCats > 1 || nPers > 1)
       ? "将自动拆成 " + (nCats * (nPers || 1)) + " 组导入（期次 " + (nPers || 1) + " 个 · 类目 " + (nCats || 1) + " 个）"
       : "";
-    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行" + (groupNote ? " · " + groupNote : "");
+    /* 期次取值的来源必须写在脸上：上方那个日历是「表格没带期次列」时的兜底，
+       表格自带期次时日历可以留空。不写清楚，用户会以为必须先挑一周才能导。 */
+    const perList = Object.keys(perSet);
+    const periodNote = perList.length
+      ? "表格自带期次：" + perList.slice(0, 6).join("、")
+        + (perList.length > 6 ? " ……（共 " + perList.length + " 个）" : "")
+        + " —— 上方日历可以留空"
+      : "";
+    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行"
+      + (groupNote ? " · " + groupNote : "")
+      + (periodNote ? " · " + periodNote : "");
     if (box) {
       box.innerHTML =
         '<div class="rank-kv">' +
@@ -587,6 +597,7 @@
         (rankParsed.dupUrls ? '<div class="hint rank-warn">表格里有 ' + rankParsed.dupUrls + ' 张图重复出现，同一个地区下会合并为一条（保留环比更强的那条）。</div>' : '') +
         (rankParsed.siteWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.siteWarn) + '</div>' : '') +
         (groupNote ? '<div class="hint"><b>' + groupNote + '</b> —— 表格自带「期次」/「叶子类目名称」列时，上方不用选期次和类目也可以导入（选了也不影响分组）。</div>' : '') +
+        (periodNote ? '<div class="hint"><b>' + escHtml(periodNote) + '</b>。导入后前台就按这些期次名显示，若与「已上传记录」里已有的写法不同（例如旧的写 W41），会变成两个不同期次 —— 想让旧数据被覆盖，就把表格这一列改成旧写法。</div>' : '') +
         '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准 —— 整张表都算这个地区，表格里的「销量站点」列不生效" : "未勾选站点 → 按表格「销量站点」列逐行取（合计表请务必先勾选，如欧盟）") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
     }
     const btn = $("#rank-import");
@@ -786,7 +797,17 @@
       let backupFail = false;
       const periodSet = {}, catSet = {};
 
-      for (const g of gf.groups) {
+      /* 串行导入在「一周上百个类目」时等于几百次串行网络往返，界面只显示「导入中…」
+         一直不动，用户会以为卡死。改成固定并发的小池子，并把进度打到按钮上。 */
+      const TOTAL = gf.groups.length;
+      const CONC = 4;
+      const GROUP_TIMEOUT_MS = 90000;
+      let cursor = 0;
+      if (btn && TOTAL > 4) btn.textContent = "导入中 0/" + TOTAL;
+      if (TOTAL > 4) {
+        sbToast("共 " + TOTAL + " 组，正在导入（每批同时进行 4 组）。按钮上会显示进度，导完前请不要关闭页面。", true);
+      }
+      const runGroup = async (g) => {
         try {
           const seen = {};
           const list = [];
@@ -846,7 +867,58 @@
         } catch (e) {
           failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
         }
-      }
+      };
+      /* 光靠按钮文字不够显眼（按钮在很下面，用户视线往往停在页面上方），
+         这里再挂一条常驻进度：每秒刷新一次「已运行 / 完成组数 / 已写入条数」，
+         即使某一组很慢，也能看到秒数在动，不会误以为卡死。 */
+      const t0 = Date.now();
+      let progEl = null;
+      try {
+        progEl = document.getElementById("rank-import-progress");
+        if (!progEl && btn && btn.parentNode) {
+          progEl = document.createElement("div");
+          progEl.id = "rank-import-progress";
+          progEl.className = "hint rank-progress";
+          btn.parentNode.insertBefore(progEl, btn);
+        }
+      } catch (e) { progEl = null; }
+      const paintBar = () => {
+        if (!progEl) return;
+        const sec = Math.max(0, Math.round((Date.now() - t0) / 1000));
+        progEl.textContent = "⏳ 导入中 · 已运行 " + sec + " 秒 · 已完成 " + done + "/" + TOTAL
+          + " 组 · 已写入 " + inserted + " 条" + (failed.length ? " · 失败 " + failed.length + " 组" : "");
+      };
+      paintBar();
+      const ticker = setInterval(paintBar, 1000);
+      try { window.__rankImportTicker = ticker; } catch (e) { /* 忽略 */ }
+
+      const paintProgress = () => {
+        if (!btn) return;
+        btn.textContent = TOTAL > 4
+          ? ("导入中 " + done + "/" + TOTAL + "（已写入 " + inserted + " 条）")
+          : "导入中…";
+      };
+      await Promise.all(Array.from({ length: Math.min(CONC, TOTAL) }, async () => {
+        for (;;) {
+          const i = cursor++;
+          if (i >= TOTAL) return;
+          const g = gf.groups[i];
+          /* 单组卡住也要有个上限：超时记为失败，继续下一组，不至于整批永远转。
+             超时的组可能已经在服务端写入，所以文案要说明「可能已部分写入」。 */
+          await Promise.race([
+            runGroup(g),
+            new Promise(resolve => setTimeout(() => {
+              failed.push(g.period + " · " + g.category + "：等待超时（可能已部分写入，导完请核对）");
+              resolve();
+            }, GROUP_TIMEOUT_MS)),
+          ]);
+          paintProgress();
+          paintBar();
+        }
+      }));
+      clearInterval(ticker);
+      try { window.__rankImportTicker = null; } catch (e) { /* 忽略 */ }
+      if (progEl) { progEl.textContent = "✅ " + TOTAL + " 组已处理完 · 共 " + Math.round((Date.now() - t0) / 1000) + " 秒"; }
 
       const nPeriod = Object.keys(periodSet).length;
       const nCat = Object.keys(catSet).length;
@@ -893,6 +965,8 @@
     } catch (e) {
       sbToast("导入失败：" + ((e && e.message) || "请重试"), false);
     } finally {
+      /* 异常路径也要停掉进度计时器，否则文字会一直跳 */
+      try { if (window.__rankImportTicker) { clearInterval(window.__rankImportTicker); window.__rankImportTicker = null; } } catch (e) { /* 忽略 */ }
       if (btn) { btn.disabled = false; btn.textContent = "导入榜单"; }
     }
   }
