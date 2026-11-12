@@ -733,10 +733,13 @@
     let noSite = 0, noCat = 0, noPeriod = 0, tableCatOverrode = 0;
     (rows || []).forEach(r => {
       const period = String(r.period || "").trim() || defPeriod;
-      const cat = String(r.leaf_category || "").trim() || defCat;
+      /* 类目为空不再丢行：先落到界面选的类目，再落到「其他」。
+         以前这里直接 return，导致原表类目栏为空的整批行被静默丢掉
+         （一次导入少几千条，看着像导入失败）。 */
+      let cat = String(r.leaf_category || "").trim() || defCat;
+      if (!cat) { cat = "其他"; noCat++; }
       if (!period) noPeriod++;
-      if (!cat) noCat++;
-      if (!period || !cat) return;
+      if (!period) return;
       if (r.leaf_category && defCat && String(r.leaf_category).trim() !== defCat) tableCatOverrode++;
       const targets = useMine ? o.sites : (r.site ? [r.site] : []);
       if (!targets.length) { noSite++; return; }
@@ -1203,7 +1206,9 @@
     delSel.disabled = true;
     const catBtn = document.createElement("button");
     catBtn.type = "button"; catBtn.className = "btn-ghost small"; catBtn.textContent = "类目清理…";
-    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(catBtn);
+    const chkBtn = document.createElement("button");
+    chkBtn.type = "button"; chkBtn.className = "btn-ghost small"; chkBtn.textContent = "数据自检…";
+    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(catBtn); bar.appendChild(chkBtn);
     host.insertBefore(bar, box);
 
     const picked = () => Array.from(box.querySelectorAll(".rank-batch-pick:checked")).map((el) => el.value);
@@ -1216,6 +1221,39 @@
       if (!boxes.length) selAll.textContent = "全选";
     };
     bar._refresh = refresh;
+    /* 导入看起来成功、前台却看不到数据时，先跑这个：说清「库里有多少条」和「前台筛选读到什么」 */
+    chkBtn.onclick = async () => {
+      if (chkBtn.disabled) return;
+      chkBtn.disabled = true;
+      chkBtn.textContent = "自检中…";
+      try {
+        const r = await SB.rankSelfCheck();
+        const L = [];
+        L.push("【库里】榜单条目 " + (r.items || 0) + " 条");
+        const types = Object.keys(r.byType || {});
+        if (types.length) L.push("　　按类型：" + types.map((k) => (k === "month" ? "月度" : "周度") + " " + r.byType[k] + " 条").join("、"));
+        if ((r.byPeriod || []).length) L.push("　　期次：" + r.byPeriod.slice(0, 6).map((p) => (p.period_label || "(空)") + " " + p.n + " 条").join("、"));
+        L.push("");
+        L.push("【前台能筛选到的】期次 " + (r.periods || []).length + " 个 · 类目 " + (r.categories || []).length + " 个 · 站点 " + (r.sites || []).length + " 个");
+        if ((r.periods || []).length) L.push("　　期次：" + r.periods.slice(0, 6).join("、"));
+        if ((r.categories || []).length) L.push("　　类目：" + r.categories.slice(0, 6).join("、"));
+        L.push("");
+        if (!r.items) {
+          L.push("结论：库里一条都没有，导入没真正写进去。请重导一次，并看导入结束时列出的失败组。");
+        } else if (!(r.periods || []).length) {
+          L.push("结论：条目在，但前台筛选清单是空的 —— 前台读不到。请重新导一次（会重建汇总），或联系我处理。");
+        } else {
+          L.push("结论：数据与前台筛选都正常。若前台页面仍空白，多半是页面上的类目/期次/站点筛选没选对，或还没强刷。");
+        }
+        if (r.error) L.push("（附带提示：" + r.error + "）");
+        await uiAlert(L.join("\n"), { title: "榜单数据自检" });
+      } catch (e) {
+        sbToast("自检失败：" + ((e && e.message) || "请重试"), false);
+      } finally {
+        chkBtn.disabled = false;
+        chkBtn.textContent = "数据自检…";
+      }
+    };
     selAll.onclick = () => {
       const boxes = Array.from(box.querySelectorAll(".rank-batch-pick"));
       const allOn = boxes.length && boxes.every((el) => el.checked);

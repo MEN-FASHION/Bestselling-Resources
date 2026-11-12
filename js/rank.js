@@ -3500,7 +3500,8 @@
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
     if (LOAD_ERR && (!CACHE || !CACHE.items.length)) {
       box.innerHTML = '<div class="rk-empty">数据加载失败，本次没有取到榜单数据（不是数据被删除）。'
-        + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；若刷新后仍然如此，多半是这一期的数据还没上传完整。</div>';
+        + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；'
+        + '若刷新后仍然如此，请把这次选中的类目 / 期次 / 站点截图发我，并让管理员在后台点一次「数据自检」，就能定位是没写进去还是读不到。</div>';
       return;
     }
     if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }

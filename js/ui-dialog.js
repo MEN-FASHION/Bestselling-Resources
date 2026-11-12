@@ -82,6 +82,7 @@
 
       var body = document.createElement("div");
       body.className = "uid-body";
+      body.style.whiteSpace = "pre-line";
       body.textContent = msg == null ? "" : String(msg);
       box.appendChild(body);
 

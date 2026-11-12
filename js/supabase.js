@@ -2452,6 +2452,44 @@ async removeTrendRecord(id) {
       return out;
     },
 
+    /* 榜单数据自检：导出「库里到底有什么」+「前台筛选到底读到什么」。
+       导入看似成功却看不到数据时，靠它一次分清是没写进去、还是前台读不到。 */
+    async rankSelfCheck() {
+      const out = { items: 0, byType: {}, byPeriod: [], byCategory: [], sites: [], categories: [], periods: [], error: "" };
+      try {
+        const { count } = await client.from("rank_items")
+          .select("id", { count: "exact", head: true });
+        out.items = count || 0;
+      } catch (e) { out.error = "读取条目总数失败"; }
+      try {
+        const agg = {};
+        for (let page = 0; page < 60; page++) {
+          const { data, error } = await client.from("rank_items")
+            .select("period_type, period_label, category, site").order("id", { ascending: true })
+            .range(page * 1000, page * 1000 + 999);
+          if (error) break;
+          const rows = data || [];
+          rows.forEach((r) => {
+            const tp = r.period_type || "week";
+            out.byType[tp] = (out.byType[tp] || 0) + 1;
+            const pk = tp + "|" + (r.period_label || "");
+            agg[pk] = agg[pk] || { period_type: tp, period_label: r.period_label || "", n: 0 };
+            agg[pk].n += 1;
+            if (r.category) out.byCategory[r.category] = (out.byCategory[r.category] || 0) + 1;
+          });
+          if (rows.length < 1000) break;
+        }
+        out.byPeriod = Object.values(agg).sort((a, b) => b.n - a.n).slice(0, 30);
+      } catch (e) { /* 明细统计失败不影响总数 */ }
+      try {
+        const f = await this.rankFacets();
+        out.sites = (f && f.sites) || [];
+        out.categories = (f && f.categories) || [];
+        out.periods = (f && f.periods) || [];
+      } catch (e) { out.error = out.error || "前台筛选清单读取失败"; }
+      return out;
+    },
+
     // 国家站点清单（后台自定义维护）
     async listRankSites() {
       const { data, error } = await client.from("rank_sites").select("id, name, sort_order").order("sort_order").order("name");
@@ -2903,6 +2941,9 @@ async removeTrendRecord(id) {
         if (!error) return { ok: true, missing: false, message: "" };
         const msg = String((error && error.message) || "");
         if (/title/i.test(msg) && /(column|does not exist|schema|字段|列)/i.test(msg)) {
+          /* 记进「已知缺列」：此后所有按白名单取数的查询都会自动摘掉 title，
+             不再每次先撞一次 400 再重试。 */
+          try { this._missMark("rank_items", "title"); } catch (e) {}
           return { ok: false, missing: true, message: msg };
         }
         return { ok: false, missing: false, message: msg };
@@ -3599,8 +3640,14 @@ async removeTrendRecord(id) {
             res = await build(from, to, "*");
           }
         }
-        const { data, error } = res;
-        if (error) throw new Error(error.message || "读取榜单数据失败");
+        let { data, error } = res;
+        /* 最后一层兜底：白名单、排序、筛选参数任一被接口拒绝时，用最朴素的
+           「全列 + 只按范围取」再试一次。宁可这一页慢一点，也不要让整个专区打不开。 */
+        if (error) {
+          const plain = await client.from("rank_items").select("*").range(from, to);
+          if (!plain.error) { data = plain.data; error = null; }
+        }
+        if (error) throw new Error("读取榜单数据失败，请刷新重试");
         const rows = data || [];
         for (const r of rows) out.push(r);
         if (rows.length < PAGE) break;                  /* 已取完 */
