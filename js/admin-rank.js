@@ -780,6 +780,10 @@
       let inserted = 0, clearedItems = 0, skippedExisting = 0, mergedInFile = 0;
       let done = 0;
       const failed = [];
+      /* 回撤用：本次动过的槽位 + 覆盖前读到的旧数据（留底） */
+      const undoGroups = [];
+      const backupRows = [];
+      let backupFail = false;
       const periodSet = {}, catSet = {};
 
       for (const g of gf.groups) {
@@ -799,6 +803,15 @@
           let skipped = 0;
           let rows = list;
           if (mode === "replace") {
+            /* 先留底再清空：读不到旧数据时宁可不留底也要继续，
+               但会标记出来，导入完成后明确提示「这次没有留底」。 */
+            try {
+              const old = await SB.listRankItems({
+                periodType: periodType, periods: [g.period], category: g.category,
+                sites: g.slotSites, max: 60000,
+              });
+              for (const r of (old || [])) backupRows.push(r);
+            } catch (e) { backupFail = true; }
             cleared = await SB.clearRankSlot(slot);
           } else {
             const exist = await SB.listRankSlotUrls(slot);
@@ -828,6 +841,7 @@
           done++;
           periodSet[g.period] = 1;
           catSet[g.category] = 1;
+          if (ins > 0) undoGroups.push({ period: g.period, category: g.category, sites: g.slotSites });
           if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入");
         } catch (e) {
           failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
@@ -848,6 +862,29 @@
       if (failed.length) msg += " · 失败 " + failed.length + " 组：" + failed.slice(0, 3).join("；") + (failed.length > 3 ? "…" : "");
       sbToast(msg, failed.length === 0 && inserted > 0);
 
+      /* 记录下一次可撤销的导入，并在有旧数据时自动下载留底表 */
+      if (undoGroups.length) {
+        const info = {
+          at: Date.now(), periodType: periodType, inserted: inserted,
+          groups: undoGroups, backupRows: backupRows.length, mode: mode,
+        };
+        setRankUndoInfo(info);
+        renderRankUndo();
+        if (backupRows.length) {
+          try {
+            const saved = exportRankBackup(backupRows, info);
+            if (saved) {
+              sbToast("导入前原有 " + backupRows.length + " 条数据已留底：已下载「榜单原数据留底」表。"
+                + "若要还原，把这张表原样导回来即可；也可以先点「撤销本次导入」。", true);
+            }
+          } catch (e) {
+            sbToast("留底表生成失败，但数据已记录，可点「撤销本次导入」回退。", false);
+          }
+        } else if (backupFail) {
+          sbToast("提示：这次覆盖前未能读到旧数据，没有生成留底表。若发现数据不对，请立刻点「撤销本次导入」并停止继续导入。", false);
+        }
+      }
+
       rankParsed = null;
       $("#rank-file").value = "";
       $("#rank-file-tip").textContent = "";
@@ -866,6 +903,134 @@
      榜单数据一多就被截断，于是上传记录显示的条数会凭空变少（几个/几十个），
      而前台是按槽位分次查的、看到的是完整的 200 条 —— 两边就会对不上。
      精确计数失败时退回批次自带条数，绝不当成 0。 */
+  /* ---------- 回撤：导入前自动留底 + 一键撤销 ----------
+     用户担心的场景：一次批量导入（一次可能几百组）中途失败或把类目/站点认错，
+     旧数据已经被「覆盖」清掉，就再也找不回来。
+     两道保护：
+       ① 覆盖前先把该槽位的原有数据整份读出来，导入结束自动下载成「留底表」；
+          留底表的列与导入表完全一致，原样再导入一遍即可还原。
+       ② 「撤销本次导入」按钮：把本次写入的槽位整体清空，回到导入前的空状态，
+          再导留底表即可回到原样。撤销不碰其它期次与类目。 */
+  const RANK_UNDO_KEY = "sb.rank.lastImport";
+
+  function rankUndoInfo() {
+    try { return JSON.parse(localStorage.getItem(RANK_UNDO_KEY) || "null"); } catch (e) { return null; }
+  }
+  function setRankUndoInfo(o) {
+    try {
+      if (o) localStorage.setItem(RANK_UNDO_KEY, JSON.stringify(o));
+      else localStorage.removeItem(RANK_UNDO_KEY);
+    } catch (e) { /* 无痕模式等不可写时忽略 */ }
+  }
+  function rankUndoText(info) {
+    if (!info) return "";
+    let when = "";
+    try {
+      const t = new Date(info.at);
+      const p2 = (n) => String(n).padStart(2, "0");
+      when = (t.getMonth() + 1) + "-" + t.getDate() + " " + p2(t.getHours()) + ":" + p2(t.getMinutes());
+    } catch (e) { when = ""; }
+    return "最近一次导入：" + (when ? when + " · " : "")
+      + (info.groups || []).length + " 组 · 写入 " + info.inserted + " 条"
+      + (info.backupRows > 0
+        ? " · 原数据 " + info.backupRows + " 条已随留底表下载"
+        : " · 这些槽位导入前没有数据");
+  }
+  function renderRankUndo() {
+    const btn = $("#rank-undo"), tip = $("#rank-undo-tip");
+    const info = rankUndoInfo();
+    if (btn) {
+      if (info && (info.groups || []).length) {
+        btn.style.display = "";
+        btn.textContent = "撤销本次导入（" + info.inserted + " 条）";
+      } else {
+        btn.style.display = "none";
+      }
+    }
+    if (tip) tip.textContent = info ? rankUndoText(info) : "";
+  }
+
+  /* 把导入前读到的旧数据写成与导入表同结构的表格，供还原时原样导入 */
+  function exportRankBackup(rows, info) {
+    if (!window.XLSX) return false;
+    const header = ["期次", "叶子类目名称", "销量站点", "首图url", "货品名称", "环比比例", "环比绝对值"];
+    const body = (rows || []).map((r) => [
+      r.period_label || "", r.category || "", r.site || "", r.image_url || "", r.title || "",
+      (r.rank_ratio === null || r.rank_ratio === undefined || r.rank_ratio === "") ? "" : (String(r.rank_ratio) + "%"),
+      (r.rank_abs === null || r.rank_abs === undefined) ? "" : r.rank_abs,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header].concat(body));
+    const note = XLSX.utils.aoa_to_sheet([
+      ["导入前留底（原样可再导入）"],
+      [""],
+      ["用途", "这张表是「本次导入之前」库里的原有数据，覆盖前的快照。"],
+      ["还原方法", "到「趋势上升榜」导入区，用这张表按原样导入：期次与类目列已带，站点一个都不勾，模式选覆盖。"],
+      ["导入时间", info && info.at ? new Date(info.at).toLocaleString() : new Date().toLocaleString()],
+      ["本次写入", info ? info.inserted : ""],
+      ["留底条数", body.length],
+      ["涉及槽位", (info && info.groups ? info.groups.map((g) => g.period + " · " + g.category).join("；") : "")],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "原数据");
+    XLSX.utils.book_append_sheet(wb, note, "说明");
+    const d = new Date();
+    const stamp = "" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0")
+      + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+    XLSX.writeFile(wb, "榜单原数据留底_" + stamp + ".xlsx");
+    return true;
+  }
+
+  async function doRankUndo() {
+    const info = rankUndoInfo();
+    const groups = (info && info.groups) || [];
+    if (!groups.length) { sbToast("没有可撤销的导入记录", false); return; }
+    const ask = "撤销这次导入？\n\n"
+      + "将清空本次写入的 " + info.inserted + " 条（" + groups.length + " 组）。"
+      + (info.backupRows > 0
+        ? "\n\n导入前的原数据已留底在那份「榜单原数据留底」表里 —— 撤销后把那张表原样导入，就能还原。"
+        : "\n\n这些槽位导入前本来就没有数据，撤销后即为空。")
+      + "\n\n不会影响其它期次与类目。";
+    /* 只用站内确认弹窗：原生 confirm 会被浏览器拦成「阻止此页面创建更多对话框」，
+       并且在部分环境里直接返回 false，看起来就像按钮点了没反应。 */
+    if (typeof uiConfirm !== "function") {
+      sbToast("确认弹窗未加载，请强刷页面后重试（未做任何删除）", false);
+      return;
+    }
+    let ok = false;
+    try { ok = await uiConfirm(ask); } catch (e) { ok = false; }
+    if (!ok) return;
+
+    const btn = $("#rank-undo");
+    if (btn) { btn.disabled = true; btn.textContent = "撤销中…"; }
+    try {
+      let removed = 0;
+      const failed = [];
+      for (const g of groups) {
+        try {
+          const n = await SB.deleteRankItemsByScope({
+            periodType: info.periodType || "week",
+            periodLabel: g.period, category: g.category, sites: g.sites || [],
+          });
+          removed += n;
+        } catch (e) {
+          failed.push(g.period + " · " + g.category);
+        }
+      }
+      setRankUndoInfo(null);
+      renderRankUndo();
+      try { await loadRankBatches(); } catch (e) { /* 列表刷新失败不影响撤销结果 */ }
+      const msg = "已撤销：清空 " + removed + " 条"
+        + (failed.length ? " · " + failed.length + " 组失败（" + failed.slice(0, 3).join("；") + "）" : "")
+        + (removed > 0 ? " · 如需还原，导入留底表即可" : "");
+      sbToast(msg, failed.length === 0);
+    } catch (e) {
+      sbToast("撤销失败：" + ((e && e.message) || "请重试"), false);
+    } finally {
+      if (btn) btn.disabled = false;
+      renderRankUndo();
+    }
+  }
+
   function batchSites(b) {
     return String((b && b.site) || "").split(",").map(s => s.trim()).filter(Boolean);
   }
@@ -1194,6 +1359,10 @@
 
     const file = $("#rank-file");
     if (file) file.onchange = onRankFileChange;
+    const undoBtn = $("#rank-undo");
+    if (undoBtn) undoBtn.onclick = doRankUndo;
+    renderRankUndo();
+
     const imp = $("#rank-import");
     if (imp) imp.onclick = doRankImport;
 

@@ -2764,6 +2764,29 @@ async removeTrendRecord(id) {
       const { error } = await client.from("rank_batches").delete().eq("id", id);
       if (error) throw new Error(error.message || "删除失败");
     },
+    /* 按「期次 + 类目 + 站点」整体删除条目（撤销一次导入用：把本次写入的槽位清空）。
+       返回实际删除条数。分批进行，避免一次性请求过大被接口拒绝。 */
+    async deleteRankItemsByScope(o) {
+      const periodType = (o && o.periodType) || "week";
+      const periodLabel = (o && o.periodLabel) || "";
+      const category = (o && o.category) || "";
+      const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      let removed = 0;
+      for (let round = 0; round < 400; round++) {
+        let q = client.from("rank_items").select("id")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        if (sites.length) q = q.in("site", sites);
+        const { data, error } = await q.limit(500);
+        if (error) throw new Error(error.message || "读取待撤销数据失败");
+        const rows = (data || []).map(r => r.id).filter(v => v != null);
+        if (!rows.length) break;
+        const del = await client.from("rank_items").delete().in("id", rows);
+        if (del.error) throw new Error(del.error.message || "撤销失败");
+        removed += rows.length;
+        if (rows.length < 500) break;
+      }
+      return removed;
+    },
     async deleteRankItemsByIds(ids) {
       const list = (ids || []).filter(v => v != null);
       if (!list.length) return;
