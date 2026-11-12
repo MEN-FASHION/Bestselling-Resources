@@ -63,9 +63,12 @@
       || h.indexOf("商品标题") >= 0 || h === "标题" || h.indexOf("货品标题") >= 0);
     const iLeaf = find(h => h.indexOf("叶子类目") >= 0 && !isIdHead(h));
     const iCat = find(h => h.indexOf("类目") >= 0 && h.indexOf("叶子") < 0 && !isIdHead(h));
+    /* 期次列（一次导入多周用）：期次 / 周次 / 周期 / 周 */
+    const iPeriod = find(h => h.indexOf("期次") >= 0 || h.indexOf("周次") >= 0
+      || h.indexOf("周期") >= 0 || h === "周" || h === "week" || h === "period");
     if (iAbs < 0 && iRatio < 0 && iSite < 0 && iUrl < 0) return null;
     return { abs: iAbs, ratio: iRatio, site: iSite, url: iUrl,
-             leaf: iLeaf >= 0 ? iLeaf : iCat, title: iTitle };
+             leaf: iLeaf >= 0 ? iLeaf : iCat, title: iTitle, period: iPeriod };
   }
   /* 表头行识别：在前几行里挑「识别到的列最多」的那一行。
      有些整理表在表头之上还有标题行、说明行，说明文字里常出现「环比比例」「环比绝对值」这些字样，
@@ -468,48 +471,64 @@
     try {
       const buf = await readFileBuf(f);
       const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      // raw:false → 取「显示值」，这样百分比格式的单元格拿到的是 "52220%" 而不是小数
-      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-      const head = pickHeaderRow(aoa);
-      if (!head) {
+      /* 读取「所有能识别出表头的工作表」：
+         一份工作簿常按周 / 按类目分成多个 sheet，原先只读第一个，
+         结果是「一次导入」只能进一部分数据，其余 sheet 被静默丢掉。 */
+      const rows = [];
+      let noLink = 0, placeholderOnly = 0, resolvedFromLink = 0;
+      const usedSheets = [];
+      let firstHead = null;
+      for (const sn of wb.SheetNames) {
+        const ws = wb.Sheets[sn];
+        if (!ws || !ws["!ref"]) continue;
+        // raw:false → 取「显示值」，这样百分比格式的单元格拿到的是 "52220%" 而不是小数
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+        const head = pickHeaderRow(aoa);
+        if (!head) continue;                       // 说明页 / 空页：没有表头就跳过
+        usedSheets.push(sn);
+        if (!firstHead) firstHead = aoa[head.idx] || [];
+        const rng = XLSX.utils.decode_range(ws["!ref"] || "A1");
+        for (let i = head.idx + 1; i < aoa.length; i++) {
+          const c = aoa[i] || [];
+          const ci = head.map.url;
+          let url = "";
+          if (ci >= 0) {
+            const cell = ws[XLSX.utils.encode_cell({ r: rng.s.r + i, c: rng.s.c + ci })];
+            url = pickUrlFromCell(cell);
+            if (url) resolvedFromLink++;
+            const shown = String(c[ci] || "").trim();
+            if (!url && URL_PLACEHOLDER.test(shown)) placeholderOnly++;
+          }
+          if (!url) { noLink++; continue; }
+          rows.push({
+            title: String(head.map.title >= 0 ? (c[head.map.title] || "") : "").trim(),
+            period: String(head.map.period >= 0 ? (c[head.map.period] || "") : "").trim(),
+            leaf_category: String(head.map.leaf >= 0 ? (c[head.map.leaf] || "") : "").trim(),
+            site: String(head.map.site >= 0 ? (c[head.map.site] || "") : "").trim(),
+            image_url: url,
+            abs_delta: toNum(head.map.abs >= 0 ? c[head.map.abs] : null),
+            ratio: toRatio(head.map.ratio >= 0 ? c[head.map.ratio] : null),
+            hasSiteCol: head.map.site >= 0,
+          });
+        }
+      }
+      if (!usedSheets.length) {
         if (tip) tip.textContent = "❌ 未识别到表头，请确认表格含：销量站点 / 首图url / 环比绝对值 / 环比比例";
         return;
-      }
-      const rows = [];
-      const rng = XLSX.utils.decode_range(ws["!ref"] || "A1");
-      let noLink = 0, placeholderOnly = 0, resolvedFromLink = 0;
-      for (let i = head.idx + 1; i < aoa.length; i++) {
-        const c = aoa[i] || [];
-        const ci = head.map.url;
-        let url = "";
-        if (ci >= 0) {
-          const cell = ws[XLSX.utils.encode_cell({ r: rng.s.r + i, c: rng.s.c + ci })];
-          url = pickUrlFromCell(cell);
-          if (url) { resolvedFromLink++; }
-          const shown = String(c[ci] || "").trim();
-          if (!url && URL_PLACEHOLDER.test(shown)) placeholderOnly++;
-        }
-        if (!url) { noLink++; continue; }                   // 没图的行跳过
-        rows.push({
-          title: String(head.map.title >= 0 ? (c[head.map.title] || "") : "").trim(),
-          leaf_category: String(head.map.leaf >= 0 ? (c[head.map.leaf] || "") : "").trim(),
-          site: String(head.map.site >= 0 ? (c[head.map.site] || "") : "").trim(),
-          image_url: url,
-          abs_delta: toNum(head.map.abs >= 0 ? c[head.map.abs] : null),
-          ratio: toRatio(head.map.ratio >= 0 ? c[head.map.ratio] : null),
-          hasSiteCol: head.map.site >= 0,
-        });
       }
       // 同一张图重复出现 → 合并后只留一条（与入库去重口径一致），提前告知
       const urlSeen = {};
       rows.forEach(r => { urlSeen[r.image_url] = (urlSeen[r.image_url] || 0) + 1; });
       const dupUrls = Object.keys(urlSeen).filter(u => urlSeen[u] > 1).length;
       const missing = [];
-      if (head.map.title < 0) missing.push("货品名称（标题组词台需要，缺这一列时组词台没有词可用）");
-      if (head.map.abs < 0) missing.push("环比绝对值");
-      if (head.map.ratio < 0) missing.push("环比比例");
-      if (head.map.site < 0) missing.push("销量站点（勾选上方站点即可）");
+      /* 表头映射改从 firstHead 重新算（多 sheet 时 head 是循环内变量，出了循环不可见） */
+      const hm = mapHeaderRow(firstHead || []) || {};
+      const hasCol = (k) => typeof hm[k] === "number" && hm[k] >= 0;
+      if (!hasCol("title")) missing.push("货品名称（标题组词台需要，缺这一列时组词台没有词可用）");
+      if (!hasCol("abs")) missing.push("环比绝对值");
+      if (!hasCol("ratio")) missing.push("环比比例");
+      if (!hasCol("site")) missing.push("销量站点（勾选上方站点即可）");
+      if (!hasCol("leaf")) missing.push("叶子类目名称（一次导入多个类目时需要）");
       const distinctSites = Object.keys(rows.reduce((m, r) => (r.site && (m[r.site] = 1), m), {}));
       const siteWarn = distinctSites.length > 1
         ? "⚠️ 表格里出现了 " + distinctSites.length + " 个站点（" + distinctSites.slice(0, 6).join("、") + (distinctSites.length > 6 ? "…" : "") + "）。若这是合计表（如欧盟），请在上方勾选目标站点，导入时会统一归入该站点。"
@@ -519,7 +538,8 @@
         : (noLink > 0
           ? "⚠️ 有 " + noLink + " 行没读到图片网址，已跳过（这些行的「首图URL」既不是网址、也没有超链接）。"
           : "");
-      rankParsed = { rows, headers: aoa[head.idx] || [], missing, siteWarn, urlWarn, dupUrls, resolvedFromLink, fileName: f.name };
+      rankParsed = { rows, headers: firstHead || [], missing, siteWarn, urlWarn, dupUrls, resolvedFromLink,
+        fileName: f.name, sheets: usedSheets };
       renderRankPreview();
     } catch (e) {
       if (tip) tip.textContent = "❌ 解析失败：请确认是有效的 Excel（.xlsx/.xls）文件";
@@ -537,7 +557,19 @@
     const upAbs = rows.filter(r => r.abs_delta != null && r.abs_delta > 0).length;
     const dual = rows.filter(r => r.ratio > 0 && r.abs_delta > 0).length;
     const surgeN = dual ? Math.max(1, Math.round(dual * RANK_SURGE_PCT)) : 0;
-    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行";
+    /* 表里同时带「期次」「叶子类目名称」时，可以一次导入多周多类目：
+       预览里先算清楚会拆成几组，避免导完才发现类目对不上。 */
+    const catSet = {}, perSet = {};
+    rows.forEach(r => {
+      if (r.leaf_category) catSet[r.leaf_category] = 1;
+      if (r.period) perSet[r.period] = 1;
+    });
+    const nCats = Object.keys(catSet).length;
+    const nPers = Object.keys(perSet).length;
+    const groupNote = (nCats > 1 || nPers > 1)
+      ? "将自动拆成 " + (nCats * (nPers || 1)) + " 组导入（期次 " + (nPers || 1) + " 个 · 类目 " + (nCats || 1) + " 个）"
+      : "";
+    if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行" + (groupNote ? " · " + groupNote : "");
     if (box) {
       box.innerHTML =
         '<div class="rank-kv">' +
@@ -554,6 +586,7 @@
         (rankParsed.urlWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.urlWarn) + '</div>' : '') +
         (rankParsed.dupUrls ? '<div class="hint rank-warn">表格里有 ' + rankParsed.dupUrls + ' 张图重复出现，同一个地区下会合并为一条（保留环比更强的那条）。</div>' : '') +
         (rankParsed.siteWarn ? '<div class="hint rank-warn">' + escHtml(rankParsed.siteWarn) + '</div>' : '') +
+        (groupNote ? '<div class="hint"><b>' + groupNote + '</b> —— 表格自带「期次」/「叶子类目名称」列时，上方不用选期次和类目也可以导入（选了也不影响分组）。</div>' : '') +
         '<div class="hint">站点归属：<b>' + (document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked').length ? "以「国家站点」勾选的为准 —— 整张表都算这个地区，表格里的「销量站点」列不生效" : "未勾选站点 → 按表格「销量站点」列逐行取（合计表请务必先勾选，如欧盟）") + '</b>；标签按「站点 + 期次 + 类目」分池计算（每个国家各自排名）。</div>';
     }
     const btn = $("#rank-import");
@@ -675,87 +708,146 @@
     return { rows: list, skipped: skipped };
   }
 
+  /* 一次导入多期次 / 多类目：按「期次 + 类目」把行分组，每组各建一个上传批次。
+     以前只能「一个批次 = 一个期次 + 一个类目」，所以一周 200 个类目要传 200 次；
+     现在表里带「期次」「叶子类目名称」列，一次上传就能全部分好组。
+     组内仍然走原来的口径（覆盖 / 追加、站点归属、同图合并），行为一致。 */
+  function groupRankRows(rows, opt) {
+    const o = opt || {};
+    const periodType = o.periodType || "week";
+    const defPeriod = String(o.periodLabel || "").trim();
+    const defCat = String(o.category || "").trim();
+    const useMine = !!o.useMine && (o.sites || []).length > 0;
+    const groups = new Map();
+    let noSite = 0, noCat = 0, noPeriod = 0, tableCatOverrode = 0;
+    (rows || []).forEach(r => {
+      const period = String(r.period || "").trim() || defPeriod;
+      const cat = String(r.leaf_category || "").trim() || defCat;
+      if (!period) noPeriod++;
+      if (!cat) noCat++;
+      if (!period || !cat) return;
+      if (r.leaf_category && defCat && String(r.leaf_category).trim() !== defCat) tableCatOverrode++;
+      const targets = useMine ? o.sites : (r.site ? [r.site] : []);
+      if (!targets.length) { noSite++; return; }
+      const key = period + "\u0000" + cat;
+      let g = groups.get(key);
+      if (!g) { g = { period: period, category: cat, rows: [], siteSet: {} }; groups.set(key, g); }
+      targets.forEach(site => {
+        g.rows.push({
+          period_type: periodType, period_label: period, category: cat, site: site,
+          leaf_category: r.leaf_category, image_url: r.image_url, title: r.title || "",
+          ratio: r.ratio, abs_delta: r.abs_delta,
+        });
+        g.siteSet[site] = 1;
+      });
+    });
+    const list = Array.from(groups.values());
+    list.forEach(g => { g.slotSites = Object.keys(g.siteSet); });
+    return { groups: list, noSite: noSite, noCat: noCat, noPeriod: noPeriod, tableCatOverrode: tableCatOverrode };
+  }
+
   async function doRankImport() {
     if (!rankParsed || !rankParsed.rows.length) { sbToast("请先上传并解析 Excel", false); return; }
     const periodType = (document.querySelector('input[name="rank-period"]:checked') || {}).value || "week";
     const periodLabel = ($("#rank-period-label").value || "").trim();
     const category = ($("#rank-cat").value || "").trim();
-    if (!periodLabel) { sbToast(periodType === "month" ? "请先用日历选择月份" : "请先用日历选择某一周", false); return; }
-    if (!category) { sbToast("请选择类目", false); return; }
     const defaults = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
 
-    /* 安全网：整批网址全都一样，说明「首图URL」列里的不是真网址（例如整列都写着「查看首图」）。
-       这种情况直接拦下并说清原因，避免导入后只进去一条、看起来像"识别不出来"。 */
+    /* 安全网：整批网址全都一样，说明「首图URL」列里的不是真网址（例如整列都写着「查看首图」）。 */
     const uniqUrl = Object.keys(rankParsed.rows.reduce((m, r) => (m[r.image_url] = 1, m), {})).length;
     if (rankParsed.rows.length > 1 && uniqUrl === 1) {
       sbToast("「首图URL」列里 200 行都是同一个内容（不是图片网址），无法导入。请把该列改成真实网址文本、或给单元格加超链接后再上传。", false);
       return;
     }
 
-    /* 站点归属：以「我定义的站点」为准。
-       勾选了任何站点 → 全部行都归入我勾的站点（忽略表格里「销量站点」列的逐行取值，
-       这样欧盟这类合计表里写满各国名字时，前台就只出现「欧盟」一个地区）。
-       一个都没勾 → 才退回按表格里每行自带的「销量站点」取值。 */
     const useMine = defaults.length > 0;
-    const built = buildRankImportRows(rankParsed.rows, {
+    const gf = groupRankRows(rankParsed.rows, {
       periodType: periodType, periodLabel: periodLabel, category: category, sites: defaults, useMine: useMine,
     });
-    if (!built.rows.length) {
-      sbToast(built.noSite ? "表格没有「销量站点」列，且未选择默认站点" : "没有可导入的有效行", false);
+    if (!gf.groups.length) {
+      if (gf.noCat) sbToast("表格没有「叶子类目」列，且未选择类目 —— 请选一个类目，或让表格带上类目列", false);
+      else if (gf.noPeriod) sbToast(periodType === "month" ? "请先用日历选择月份，或让表格带上「期次」列" : "请先用日历选择某一周，或让表格带上「期次」列", false);
+      else if (gf.noSite) sbToast("表格没有「销量站点」列，且未选择默认站点", false);
+      else sbToast("没有可导入的有效行", false);
       return;
     }
-    const rowsOut = built.rows;
-    const mergedInFile = built.mergedInFile;
-    const ignoredList = Object.keys(built.tableSites);
-    const slotSites = built.slotSites;
-    const batchSite = useMine ? defaults.join(",") : slotSites.join(",");
-    computeFlags(rowsOut);
 
     const mode = (document.querySelector('input[name="rank-mode"]:checked') || {}).value === "append" ? "append" : "replace";
     const btn = $("#rank-import");
     if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
+    const multi = gf.groups.length > 1;
     try {
-      const slot = { periodType: periodType, periodLabel: periodLabel, category: category, sites: slotSites };
-      let cleared = { items: 0, batches: 0 };
-      let skippedExisting = 0;
-      let list = rowsOut;
+      let inserted = 0, clearedItems = 0, skippedExisting = 0, mergedInFile = 0;
+      let done = 0;
+      const failed = [];
+      const periodSet = {}, catSet = {};
 
-      if (mode === "replace") {
-        // 覆盖：先清掉「本期次 · 本类目 · 本次站点」下的旧数据，再整表写入 → 不与以往上传查重
-        cleared = await SB.clearRankSlot(slot);
-      } else {
-        // 追加：保留旧数据，只补库里还没有的图
-        const exist = await SB.listRankSlotUrls(slot);
-        const f = filterNotExisting(rowsOut, exist);
-        list = f.rows;
-        skippedExisting = f.skipped;
+      for (const g of gf.groups) {
+        try {
+          const seen = {};
+          const list = [];
+          let merged = 0;
+          g.rows.forEach(r => {
+            const k = r.site + "\u0000" + r.image_url;
+            if (seen[k]) { merged++; return; }
+            seen[k] = 1; list.push(r);
+          });
+          computeFlags(list);
+
+          const slot = { periodType: periodType, periodLabel: g.period, category: g.category, sites: g.slotSites };
+          let cleared = { items: 0, batches: 0 };
+          let skipped = 0;
+          let rows = list;
+          if (mode === "replace") {
+            cleared = await SB.clearRankSlot(slot);
+          } else {
+            const exist = await SB.listRankSlotUrls(slot);
+            const f = filterNotExisting(list, exist);
+            rows = f.rows;
+            skipped = f.skipped;
+          }
+          const batchSite = useMine ? defaults.join(",") : g.slotSites.join(",");
+          const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: g.period, category: g.category, site: batchSite });
+          const payload = rows.map(r => {
+            const o = Object.assign({}, r, { batch_id: batchId });
+            o.flag_opportunity = !!r.flag_opportunity;
+            o.flag_hot = !!r.flag_hot;
+            o.flag_surge = !!r.flag_surge;
+            o.rank_ratio = r.rank_ratio || null;
+            o.rank_abs = r.rank_abs || null;
+            return o;
+          });
+          const res = payload.length ? await SB.insertRankItems(payload) : { inserted: 0 };
+          const ins = (res && res.inserted) || 0;
+          try { await SB.updateRankBatch(batchId, { rows: ins, skipped: skipped + merged }); } catch (e) { /* 统计失败不影响数据 */ }
+
+          inserted += ins;
+          clearedItems += (cleared && cleared.items) || 0;
+          skippedExisting += skipped;
+          mergedInFile += merged;
+          done++;
+          periodSet[g.period] = 1;
+          catSet[g.category] = 1;
+          if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入");
+        } catch (e) {
+          failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
+        }
       }
 
-      const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: periodLabel, category: category, site: batchSite });
-      const rows = list.map(r => {
-        const o = Object.assign({}, r, { batch_id: batchId });
-        o.flag_opportunity = !!r.flag_opportunity;
-        o.flag_hot = !!r.flag_hot;
-        o.flag_surge = !!r.flag_surge;
-        o.rank_ratio = r.rank_ratio || null;
-        o.rank_abs = r.rank_abs || null;
-        return o;
-      });
-      const res = rows.length ? await SB.insertRankItems(rows) : { inserted: 0 };
-      const inserted = (res && res.inserted) || 0;
-      try { await SB.updateRankBatch(batchId, { rows: inserted, skipped: skippedExisting + mergedInFile }); } catch (e) { /* 统计失败不影响数据 */ }
+      const nPeriod = Object.keys(periodSet).length;
+      const nCat = Object.keys(catSet).length;
+      const head = multi
+        ? "已按时段与类目拆成 " + gf.groups.length + " 组（期次 " + nPeriod + " 个 · 类目 " + nCat + " 个）导入："
+        : "导入完成：";
+      let msg = head
+        + (useMine ? "按我定义的站点归入「" + defaults.join("、") + "」" : "按表格站点列归入")
+        + "，写入 " + inserted + " 条";
+      if (mode === "replace" && clearedItems > 0) msg += "（已替换旧数据 " + clearedItems + " 条）";
+      if (mode === "append" && skippedExisting > 0) msg += "（库里已存在 " + skippedExisting + " 条未重复写入）";
+      if (mergedInFile > 0) msg += "（表内同图重复 " + mergedInFile + " 次，已合并）";
+      if (failed.length) msg += " · 失败 " + failed.length + " 组：" + failed.slice(0, 3).join("；") + (failed.length > 3 ? "…" : "");
+      sbToast(msg, failed.length === 0 && inserted > 0);
 
-      if (rows.length > 0 && inserted === 0) {
-        /* 安全网：一条都没写进去，必须说清楚，不能静默 */
-        sbToast("导入失败：0 条写入（有效行 " + rowsOut.length + " 条）。请刷新页面后重试；若仍为 0，请把这张表发给开发者排查。", false);
-      } else {
-        sbToast("导入完成：" + (useMine ? "已按我定义的站点归入「" + defaults.join("、") + "」" : "已按表格站点列归入")
-          + "，写入 " + inserted + " 条"
-          + (mode === "replace" && cleared.items > 0 ? "（已替换该期次该类目下的旧数据 " + cleared.items + " 条）" : "")
-          + (mode === "append" && skippedExisting > 0 ? "（库里已存在的 " + skippedExisting + " 条未重复写入）" : "")
-          + (mergedInFile > 0 ? "（表格里同一张图重复 " + mergedInFile + " 次，已合并为 1 条）" : "")
-          + (ignoredList.length ? "（已忽略表格里的 " + ignoredList.length + " 个站点取值：" + ignoredList.slice(0, 4).join("、") + (ignoredList.length > 4 ? "…" : "") + "）" : ""), true);
-      }
       rankParsed = null;
       $("#rank-file").value = "";
       $("#rank-file-tip").textContent = "";
