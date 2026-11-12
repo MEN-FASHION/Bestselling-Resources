@@ -128,7 +128,6 @@ window.CONFIG = {
  * ============================================================ */
 window.ZONE_DEFS_DEFAULT = [
   { key: "rank",          label: "趋势上升榜",     href: "rank.html" },
-  { key: "titlebank",     label: "标题组词台",     href: "titlelab.html" },
   { key: "rhythm",        label: "上新节奏",       href: "rhythm.html" },
   { key: "pinterest",     label: "Pinterest 专区", href: "pinterest.html" },
   { key: "shein",         label: "SHEIN 专区",    href: "shein.html" },

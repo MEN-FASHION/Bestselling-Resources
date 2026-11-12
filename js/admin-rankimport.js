@@ -437,39 +437,10 @@
       var craftIss = checkCraft(hit);
       parsed.craftIssues = craftIss;
 
-      /* 传错文件是最常见的一种「解析成功但一张都不动」：
-         把榜单导入表（期次 / 类目 / 站点 / 首图url / 货品名称 / 环比…）传到「打标结果回填」，
-         表头里没有打标列，只有一堆商品信息 —— 结果就是有效 0 张，页面上没有任何解释，
-         看起来像功能坏了。这里按表头特征识别出来，直接告诉他该去哪儿导。 */
-      var RANK_HEADS = ["期次", "周次", "周期", "货品名称", "商品名称", "环比比例", "环比绝对值", "销量站点", "叶子类目名称"];
-      var looksLikeRank = (res.headers || []).some(function (h) {
-        var t = String(h || "").trim();
-        return RANK_HEADS.indexOf(t) >= 0;
-      }) && !(res.rows || []).length;
-
-      var msg;
-      if (looksLikeRank) {
-        msg = "这份表看起来是「榜单导入表」，不是打标结果表 —— 请到页面最上方的「导入榜单」区域上传它（那里会写入标题、类目、站点与榜单数据）。"
-            + "「打标结果回填」只认两类列：「图片URL」+ 打标维度列（风格 / 图案 / 工艺 / 版型 / 面料 …）。";
-        setTip(null, msg, false);
-        refreshPlan();
-        $("#rank-tag-import").disabled = true;
-        return;
-      }
-
-      msg = "解析完成：" + res.sheet + " · 有效 " + res.rows.length + " 张图 · 能对上榜单 " + hit.length + " 张"
+      var msg = "解析完成：" + res.sheet + " · 有效 " + res.rows.length + " 张图 · 能对上榜单 " + hit.length + " 张"
         + (miss ? " · 对不上 " + miss + " 张（不会写入）" : "")
         + (already ? " · 其中 " + already + " 张已有标签（补齐模式下会跳过）" : "")
         + (res.unknown.length ? " · 枚举外标签 " + res.unknown.length + " 个（不会写入）" : "");
-      /* 「有效 0 张」必须给出原因：多数是图片地址列写成了超链接、显示文字不是网址 */
-      if (res.bad && res.bad.length) {
-        var b0 = res.bad[0];
-        msg += " · " + res.bad.length + " 行图片地址不合法被跳过（如第 " + b0.row + " 行："
-             + b0.why + "）。若该列是超链接，请导出时保留真实网址。";
-      }
-      if (!res.rows.length && !(res.bad && res.bad.length)) {
-        msg += " · 表里没有任何带图片地址的行，确认是否选错了工作表。";
-      }
       if (conflicts.length) {
         var s0 = conflicts[0];
         msg += " ⚠ " + conflicts.length + " 张存在维度矛盾，例如「" + s0.subject + "」却填了「" + s0.shoot
