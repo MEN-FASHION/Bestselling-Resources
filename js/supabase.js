@@ -2698,7 +2698,8 @@ async removeTrendRecord(id) {
         for (const b of (data || [])) {
           const bs = String(b.site || "").split(",").map(s => s.trim()).filter(Boolean);
           const covered = bs.length && bs.every(s => sites.indexOf(s) >= 0);
-          if (covered) { await this.deleteRankBatch(b.id); batches++; }
+          /* 直接删台账，不回调 deleteRankBatch：后者会再进本函数，造成递归 */
+          if (covered) { await client.from("rank_batches").delete().eq("id", b.id); batches++; }
         }
       } catch (e) { /* 批次仅作展示，失败忽略 */ }
       return { items: items, batches: batches };
@@ -2759,29 +2760,73 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "读取上传记录失败");
       return data || [];
     },
-    // 删除批次（其下条目级联删除）
+    // 删除批次：同时清掉该批次所在槽位（期次+类目+站点）的榜单条目。
+    // 不能只删台账——库里若没有配置级联删除，条目会留在表中继续被前台读到，
+    // 用户以为删了数据、其实没删，再导一次就变成重复。
     async deleteRankBatch(id) {
-      const { error } = await client.from("rank_batches").delete().eq("id", id);
+      const bid = String(id || "").trim();
+      if (!bid) return false;
+      let b = null;
+      try {
+        const { data } = await client.from("rank_batches")
+          .select("period_type,period_label,category,site").eq("id", bid).limit(1);
+        b = (data || [])[0] || null;
+      } catch (e) { b = null; }
+      if (b) {
+        const sites = String(b.site || "").split(",").map((v) => v.trim()).filter(Boolean);
+        try {
+          await this.clearRankSlot({
+            periodType: b.period_type || "week",
+            periodLabel: b.period_label || "",
+            category: b.category || "",
+            sites: sites,
+          });
+        } catch (e) { /* 条目清空失败仍继续删台账，由调用方提示 */ }
+      }
+      const { error } = await client.from("rank_batches").delete().eq("id", bid);
       if (error) throw new Error(error.message || "删除失败");
+      return true;
     },
     /* ===== 类目清理（一次导入可能按表格里的类目名建出一堆重复/多余类目） ===== */
-    // 类目清单：按类目聚合批次数量、条数、涉及期次数
+    // 类目清单：批次台账 + 条目表 两处合并
+    // 只看台账会漏两种情况：①台账被删光但条目还在（旧版删除只删台账）②孤儿条目
+    // 这时「类目清理」会显示「还没有类目」，用户以为没数据可清，实际库里还有一堆。
     async listRankCategories() {
+      const map = new Map();
+      const touch = (c) => {
+        const name = String(c || "").trim();
+        const k = name || "(未填类目)";
+        if (!map.has(k)) map.set(k, { category: name, batches: 0, est: 0, rows: 0, periods: new Set() });
+        return map.get(k);
+      };
       const { data, error } = await client.from("rank_batches")
         .select("id, period_label, category, rows").limit(2000);
       if (error) throw new Error(error.message || "读取类目失败");
-      const map = new Map();
       (data || []).forEach((b) => {
-        const c = String(b.category || "").trim();
-        const k = c || "(未填类目)";
-        if (!map.has(k)) map.set(k, { category: c, batches: 0, rows: 0, periods: new Set() });
-        const e = map.get(k);
+        const e = touch(b.category);
         e.batches += 1;
-        e.rows += (typeof b.rows === "number" ? b.rows : 0);
+        e.est += (typeof b.rows === "number" ? b.rows : 0);
         if (b.period_label) e.periods.add(b.period_label);
       });
+      // 兜底：台账全空时才扫条目表（旧版删除只删台账，条目会残留）。
+      // 台账有数据时不再全表扫描——几万行会把面板拖成一直「正在读取类目…」。
+      try {
+        for (let page = 0; map.size === 0 && page < 8; page++) {
+          const { data: rows, error: e2 } = await client.from("rank_items")
+            .select("category, period_label").order("id", { ascending: true })
+            .range(page * 1000, page * 1000 + 999);
+          if (e2) break;
+          const list = rows || [];
+          list.forEach((r) => {
+            const e = touch(r.category);
+            e.rows += 1;
+            if (r.period_label) e.periods.add(r.period_label);
+          });
+          if (list.length < 1000) break;
+        }
+      } catch (e) { /* 条目统计失败时退回台账估算口径 */ }
       return Array.from(map.values())
-        .map((e) => ({ category: e.category, batches: e.batches, rows: e.rows, periods: e.periods.size }))
+        .map((e) => ({ category: e.category, batches: e.batches, rows: e.rows || e.est, exact: e.rows > 0, periods: e.periods.size }))
         .sort((a, b) => (b.rows - a.rows) || String(a.category).localeCompare(String(b.category)));
     },
     // 删除某个类目的全部条目与批次（所有期次、所有站点）

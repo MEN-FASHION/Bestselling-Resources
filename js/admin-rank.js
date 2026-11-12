@@ -1115,37 +1115,57 @@
   function batchPeriodKey(b) {
     return ((b && b.period_type) || "week") + "\u0001" + ((b && b.period_label) || "");
   }
-  /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求） */
+  /* 限并发执行：串行发几百个计数请求会让「已上传记录」一直转圈 */
+  async function rankPool(tasks, size) {
+    const list = tasks || [];
+    const out = new Array(list.length);
+    let idx = 0;
+    const worker = async () => {
+      while (idx < list.length) {
+        const i = idx++;
+        try { out[i] = await list[i](); } catch (e) { out[i] = null; }
+      }
+    };
+    const n = Math.max(1, Math.min(size || 6, list.length || 1));
+    await Promise.all(Array.from({ length: n }, worker));
+    return out;
+  }
+
+  /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求）
+     注意：必须并发。类目多时（一次批量导入能建出两百多个槽位）串行等于把
+     几百次往返排成一列，界面上就是一直「正在加载…」。 */
   async function computeRankCounts(list, opt) {
     const countFn = (opt && opt.countFn) || ((o) => SB.countRankSlot(o));
     const bySlot = {}, byPeriod = {};
-    const slotDone = {}, periodDone = {};
-    for (const b of (list || [])) {
+    const slotSeen = new Map(), periodSeen = new Map();
+    (list || []).forEach((b) => {
       const sk = batchSlotKey(b);
-      if (!slotDone[sk]) {
-        slotDone[sk] = true;
-        let n = null;
-        try {
-          n = await countFn({
-            periodType: b.period_type || "week", periodLabel: b.period_label || "",
-            category: b.category || "", sites: batchSites(b),
-          });
-        } catch (e) { n = null; }
-        bySlot[sk] = (typeof n === "number" && isFinite(n)) ? n : null;
-      }
+      if (!slotSeen.has(sk)) slotSeen.set(sk, {
+        periodType: b.period_type || "week", periodLabel: b.period_label || "",
+        category: b.category || "", sites: batchSites(b),
+      });
       const pk = batchPeriodKey(b);
-      if (!periodDone[pk]) {
-        periodDone[pk] = true;
-        let n = null;
-        try {
-          n = await countFn({
-            periodType: b.period_type || "week", periodLabel: b.period_label || "",
-            category: "", sites: [],
-          });
-        } catch (e) { n = null; }
-        byPeriod[pk] = (typeof n === "number" && isFinite(n)) ? n : null;
-      }
-    }
+      if (!periodSeen.has(pk)) periodSeen.set(pk, {
+        periodType: b.period_type || "week", periodLabel: b.period_label || "",
+        category: "", sites: [],
+      });
+    });
+    const tasks = [];
+    /* 槽位太多时（批量导入能建出两百多个）改用量级兜底：期次仍然精确查，
+       槽位沿用上传记录里的条数（界面标 ≈）。否则光计数就要发两百多次请求。 */
+    const slotBudget = 80;
+    const doSlot = slotSeen.size <= slotBudget;
+    if (doSlot) slotSeen.forEach((o, k) => tasks.push(async () => {
+      let n = null;
+      try { n = await countFn(o); } catch (e) { n = null; }
+      bySlot[k] = (typeof n === "number" && isFinite(n)) ? n : null;
+    }));
+    periodSeen.forEach((o, k) => tasks.push(async () => {
+      let n = null;
+      try { n = await countFn(o); } catch (e) { n = null; }
+      byPeriod[k] = (typeof n === "number" && isFinite(n)) ? n : null;
+    }));
+    await rankPool(tasks, 8);
     return { bySlot: bySlot, byPeriod: byPeriod };
   }
 
@@ -1191,6 +1211,9 @@
       const n = picked().length;
       delSel.textContent = "删除选中（" + n + "）";
       delSel.disabled = n === 0;
+      const boxes = box ? box.querySelectorAll(".rank-batch-pick") : [];
+      selAll.disabled = !boxes.length;
+      if (!boxes.length) selAll.textContent = "全选";
     };
     bar._refresh = refresh;
     selAll.onclick = () => {
@@ -1203,7 +1226,7 @@
     delSel.onclick = async () => {
       const ids = picked();
       if (!ids.length) return;
-      if (!(await uiConfirm("删除选中的 " + ids.length + " 个批次及其全部条目？\n删掉后这些图不会自动回来。"))) return;
+      if (!(await uiConfirm("删除选中的 " + ids.length + " 个批次，并清空它们所在槽位（期次+类目+站点）的全部榜单条目？\n若同一槽位还有别的批次，那些数据也会一起被清掉。图片标签不受影响。\n删掉后不会自动回来。"))) return;
       delSel.disabled = true;
       let done = 0, bad = 0;
       for (const id of ids) {
@@ -1294,7 +1317,7 @@
       name.textContent = c.category || "(未填类目)";
       const meta = document.createElement("span");
       meta.className = "rank-cat-meta";
-      meta.textContent = c.batches + " 批 · 约 " + c.rows + " 条 · " + c.periods + " 个期次";
+      meta.textContent = (c.batches || 0) + " 批 · " + (c.exact ? "" : "约 ") + c.rows + " 条 · " + c.periods + " 个期次" + (c.batches ? "" : " · 无台账");
       const merge = document.createElement("button");
       merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
       merge.onclick = async () => {
@@ -1363,8 +1386,13 @@
     if (!box) return;
     checkRankTitleColumn(box);
     if (!list.length) {
-      box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>';
-      const tb = document.getElementById("rank-batch-toolbar"); if (tb) tb.style.display = "none";
+      box.innerHTML = '<div class="rkadm-empty">还没有上传记录。若类目仍存在，点上方「类目清理…」查看并删除。</div>';
+      const tb = document.getElementById("rank-batch-toolbar");
+      if (tb) { tb.style.display = ""; if (tb._refresh) tb._refresh(); }
+      else {
+        const fresh = ensureBatchToolbar(box);
+        if (fresh) { fresh.style.display = ""; if (fresh._refresh) fresh._refresh(); }
+      }
       return;
     }
     const bar = ensureBatchToolbar(box);

@@ -7391,7 +7391,7 @@ html, body{
 /* 榜单批量导入的常驻进度行（导入中每秒刷新） */
 .rank-progress{font-weight:600;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 10px;margin:8px 0;font-variant-numeric:tabular-nums}
 
-/* 20261112V · 榜单批次批量删除 + 类目清理 */
+/* 20261112X · 榜单批次批量删除 + 类目清理 */
 .rkadm-warn { margin: 10px 0; padding: 11px 13px; border-radius: 10px; background: #fff1f0; border: 1px solid #ffccc7; color: #a8071a; font-size: 12.5px; line-height: 1.75; }
 .rkadm-warn b { color: #a8071a; }
 .rank-batch-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 10px; }
@@ -7404,7 +7404,7 @@ html, body{
 .rank-cat-name { flex: 1 1 180px; font-weight: 600; word-break: break-all; }
 .rank-cat-meta { color: var(--muted, #888); font-size: 12px; flex: 0 0 auto; }
 
-/* 20261112V · 类目清理面板批量勾选 */
+/* 20261112X · 类目清理面板批量勾选 */
 .rank-cat-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 2px 8px; border-bottom: 1px solid var(--line, #e6e6e6); margin-bottom: 4px; }
 .rank-cat-bar .danger { color: #a8452f; border-color: #d9b8ae; }
 .rank-cat-bar .danger:disabled { opacity: .45; }
