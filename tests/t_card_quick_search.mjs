@@ -1,4 +1,4 @@
-/* 20261113J · 卡片「悬停一键搜同款」
+/* 20261113K · 卡片「悬停一键搜同款」
  *
  * 需求：凡是有图片的专区（视觉专区 / 趋势上升榜 / 上新节奏 / Pinterest / SHEIN /
  *      渠道对比 / 品牌动向 / 收藏夹），鼠标放到图上就能一键以图搜图，不用先点开大图。
@@ -36,7 +36,7 @@ PAGES.forEach((f) => {
   const h = fs.readFileSync(f, "utf8");
   ok(h.indexOf("find-similar.js") >= 0, f + " 未接入悬停搜同款脚本");
 });
-ok(/v=20261113J/.test(fs.readFileSync("rank.html", "utf8")), "资源版本戳应已升级（否则浏览器仍用旧缓存）");
+ok(/v=20261113K/.test(fs.readFileSync("rank.html", "utf8")), "资源版本戳应已升级（否则浏览器仍用旧缓存）");
 
 /* ================= 二、假 DOM ================= */
 function mkEl(tag, cls, rect) {
@@ -160,8 +160,8 @@ console.log("二、悬停出按钮 → 点一下直接搜");
   const pill = pills[0];
   ok(pill.classList.contains("on"), "悬停在卡片图上应显示「搜同款」");
   const L = parseFloat(pill.style.left), T = parseFloat(pill.style.top);
-  ok(L >= 100 && L <= 280, "横向应落在图片范围内（不飘到卡片外）");
-  ok(T >= 300 && T <= 340, "纵向应贴在图片上沿附近，避开四角角标");
+  ok(Math.abs(L - (100 + 180 / 2)) <= 6, "横向应落在图片正中（左右居中）");
+  ok(Math.abs(T - (300 + 240 / 2)) <= 6, "纵向应落在图片正中（上下居中），而不是贴在上沿");
 
   /* 点它：应打开 Google 以图搜图，且不触发卡片点击 */
   S.opened.length = 0;
