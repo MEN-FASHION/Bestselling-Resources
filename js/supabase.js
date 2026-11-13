@@ -2193,6 +2193,62 @@ async removeTrendRecord(id) {
       const { error } = await client.from("profiles").update({ frontend_zones: clean }).eq("user_id", userId);
       if (error) throw new Error(error.message || "更新前端可见专区失败");
     },
+
+    // ============ 前台「导出本页」权限（site_settings.frontend_dims.export_zones） ============
+    /* 20261113N
+       口径：前台默认谁都看不到导出按钮；超管始终可导出；管理员需被逐个专区勾选。
+       为什么不复用 zone_permissions：那张表是按「类目」授权的（一个专区一堆类目行），
+       导出是「这个人在这个专区能不能下载」，与类目无关，混进同一张表会变成
+       「只授权了衬衫 → 导出按钮没了」这种莫名其妙的结果。所以单独一个字典，
+       不建表、不改结构、不用跑 SQL。 */
+    _exportDict: null,
+    _exportDictAt: 0,
+    async _exportDictLoad(force) {
+      if (!force && this._exportDict && Date.now() - this._exportDictAt < 30000) return this._exportDict;
+      let m = {};
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        if (d.export_zones && typeof d.export_zones === "object" && !Array.isArray(d.export_zones)) m = d.export_zones;
+      } catch (e) { m = {}; }
+      this._exportDict = m; this._exportDictAt = Date.now();
+      return m;
+    },
+    // 前台：当前登录用户的导出专区清单。返回 ["*"] = 超管（全部）；[] = 没有
+    async myExportZones() {
+      const s = await client.auth.getSession();
+      const uid = s?.data?.session?.user?.id;
+      if (!uid) return [];
+      try {
+        const { data } = await client.from("profiles").select("role").eq("user_id", uid).maybeSingle();
+        if (data && String(data.role || "") === "super_admin") return ["*"];
+      } catch (e) { /* 读不到角色就按普通用户处理 */ }
+      const dict = await this._exportDictLoad();
+      const z = dict[uid];
+      return Array.isArray(z) ? z.slice() : [];
+    },
+    // 超管：读取某用户的导出专区清单
+    async getUserExportZones(userId) {
+      const dict = await this._exportDictLoad(true);
+      const z = dict[userId];
+      return Array.isArray(z) ? z.slice() : [];
+    },
+    // 超管：写入某用户的导出专区清单（空数组 = 收回权限）
+    async setUserExportZones(userId, zones) {
+      const clean = [...new Set((zones || []).filter(Boolean))];
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      const m = Object.assign({}, dims.export_zones || {});
+      // 只改这一个用户的键，别人的原样保留（两个超管同时编辑不会互相覆盖）
+      if (clean.length) m[userId] = clean;
+      else delete m[userId];
+      dims.export_zones = m;
+      const { error } = await client.from("site_settings")
+        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(error.message || "保存导出权限失败");
+      this._exportDict = m; this._exportDictAt = Date.now();
+      return clean;
+    },
     // 超管：写入某管理员在某专区的类目授权（按专区独立存储，不再跨专区共享）
     /* 20261113M 重写：
        旧写法是「先删该用户该专区全部行，再插入」。一旦插入被数据库拒绝

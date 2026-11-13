@@ -7436,3 +7436,37 @@ html, body{
 .cz-card.is-locked .cz-pick input { cursor: not-allowed; opacity: .5; }
 .cz-owner-tip { margin-left: 8px; }
 .cz-owner-tip.is-readonly { color: #b45309; }
+
+/* ============================================================================
+ * 20261113N · 前台「导出本页」悬浮入口
+ * 固定在右下角：页面顶栏与筛选条会被各专区反复重绘，塞进工具条里会被冲掉；
+ * 左下角是搜同款的分屏状态条，右下角一直空着，不挡任何卡片角标。
+ * ==========================================================================*/
+.vx-dock {
+  position: fixed; right: 18px; bottom: 20px; z-index: 60;
+  display: none; align-items: center; gap: 10px;
+}
+.vx-dock.on { display: flex; }
+.vx-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid #2b364a; background: rgba(20, 26, 36, .94);
+  color: #e6eefc; font-size: 13px; padding: 9px 15px; border-radius: 999px;
+  cursor: pointer; box-shadow: 0 6px 22px rgba(0, 0, 0, .28);
+  backdrop-filter: blur(6px); transition: border-color .15s, transform .15s;
+}
+.vx-btn:hover { border-color: #4a6a9c; transform: translateY(-1px); }
+.vx-btn:disabled { opacity: .72; cursor: default; transform: none; }
+.vx-ico { font-size: 14px; line-height: 1; }
+.vx-spin { display: inline-block; animation: vxspin 1s linear infinite; }
+@keyframes vxspin { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+.vx-tip {
+  font-size: 12px; color: #9fb0c6; background: rgba(16, 21, 29, .92);
+  border: 1px solid #222c3a; border-radius: 999px; padding: 5px 11px;
+  white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis;
+}
+.vx-tip:empty { display: none; }
+@media (max-width: 640px) {
+  .vx-dock { right: 10px; bottom: 12px; }
+  .vx-btn { padding: 8px 13px; font-size: 12.5px; }
+  .vx-tip { display: none; }
+}

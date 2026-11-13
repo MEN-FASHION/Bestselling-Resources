@@ -33,6 +33,18 @@ function syncPermZones() {
   if (Array.isArray(defs) && defs.length) PERM_ZONES = defs.map(z => ({ key: z.key, label: z.label || z.key }));
 }
 
+// 前台可导出的专区（与 js/view-export.js 里的 LABELS 一一对应）
+// 只有真正实现了「按当前所见导出」的专区才出现在这里 —— 没实现的不要放进勾选框，
+// 否则超管勾了却在前台找不到按钮，又是一次「后台配了、前台不生效」。
+const PERM_EXPORT_ZONES = [
+  { key: "rank", label: "趋势上升榜" },
+  { key: "rhythm", label: "上新节奏" },
+  { key: "pinterest", label: "Pinterest 专区" },
+  { key: "shein", label: "SHEIN 专区" },
+  { key: "compare", label: "渠道对比" },
+  { key: "movement", label: "品牌动向" },
+];
+
 // 跟随全局 = 显示全局 frontend_zone_visibility 中可见的专区；供权限表「已授权专区」列直接列出
 let permGlobalZones = [];
 
@@ -457,17 +469,35 @@ async function loadPermForUser(user) {
     if (noteInp) noteInp.value = u.user_note || "";
     const modal = $("#perm-edit-modal");
     if (modal) modal.classList.remove("hidden");
-    // 异步加载类目池 + 当前授权 + 前端可见专区(frontend_zones) + 后台可管理专区(manage_zones)
+    // 异步加载类目池 + 当前授权 + 前端可见专区(frontend_zones) + 后台可管理专区(manage_zones) + 前台导出专区
     Promise.all([
       SB.listZoneCats("recruit").catch(() => []),
       SB.listUserPermissions(u.user_id).catch(() => []),
       SB.getUserFrontendZones(u.user_id).catch(() => []),
       SB.getUserManageZones(u.user_id).catch(() => []),
-    ]).then(([allCats, perm, frontZones, manageZones]) => {
+      (typeof SB.getUserExportZones === "function" ? SB.getUserExportZones(u.user_id) : Promise.resolve([])).catch(() => []),
+    ]).then(([allCats, perm, frontZones, manageZones, exportZones]) => {
       permEditAllCats = allCats;
       renderPermEditCats(allCats, perm);
       renderPermEditZones((frontZones || []).filter(z => z !== ZONE_NONE), "#perm-edit-zones");
       renderPermEditZones(manageZones, "#perm-edit-manage-zones");
+      renderPermEditExport(exportZones, "#perm-edit-export-zones");
+    });
+  }
+
+// 前台导出权限：勾选框（只列已实现导出的专区）
+function renderPermEditExport(checked, containerId) {
+    const box = $(containerId || "#perm-edit-export-zones");
+    if (!box) return;
+    box.innerHTML = "";
+    const set = new Set((checked || []));
+    PERM_EXPORT_ZONES.forEach(z => {
+      const lab = document.createElement("label");
+      lab.className = "perm-zone-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = z.key; cb.checked = set.has(z.key);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
+      box.appendChild(lab);
     });
   }
 
@@ -529,6 +559,7 @@ function updatePermEditCatCount() {
     const cats = [...document.querySelectorAll("#perm-edit-cats input:checked")].map(i => i.value);
     const frontZones = [...document.querySelectorAll("#perm-edit-zones input:checked")].map(i => i.value);
     const manageZones = [...document.querySelectorAll("#perm-edit-manage-zones input:checked")].map(i => i.value);
+    const exportZones = [...document.querySelectorAll("#perm-edit-export-zones input:checked")].map(i => i.value);
     try {
       /* 逐项写库：备注 / 标签 / 角色 / 可见专区 / 可管专区各自独立。
          这几处对应 profiles 表的不同列，历史上加过好几轮列；某一张库少了其中一列，
@@ -547,6 +578,8 @@ function updatePermEditCatCount() {
       await step("前台可见专区", () => SB.setUserFrontendZones(uid, frontZones.length ? frontZones : [ZONE_NONE]));
       // 后台可管理专区（manage_zones）
       await step("后台可管理专区", () => SB.setUserManageZones(uid, manageZones));
+      // 前台导出权限（site_settings.frontend_dims.export_zones）
+      await step("前台导出权限", () => SB.setUserExportZones(uid, exportZones));
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
       // 注意：已下线的专区不要再写入；新增专区若要卡类目，在这里补 key
