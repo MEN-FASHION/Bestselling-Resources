@@ -31,8 +31,9 @@
     data: {},           // sourceKey -> [item]
     items: [],          // 全部（用于类目 / 月份清单）
     tags: {},           // url -> 打标记录
+    tagTried: {},       // url -> 已经问过库（避免重复请求）
     months: [],
-    month: "",          // 当前月份（默认最新）
+    month: null,        // 当前月份（null = 还没选，默认最新月；"" = 全部月份）
     cat: ALL,
     gate: "",
     vis: true,
@@ -74,16 +75,33 @@
     var out = [{ key: "rank:month", label: "上新节奏", type: "rank" }];
     var seen = {};
     (channelRows || []).forEach(function (r) {
-      var c = String(r.channel || "").trim();
-      if (!c || seen[c]) return;
-      seen[c] = 1;
-      out.push({ key: "ch:" + c, label: c, type: "channel", channel: c });
+      var raw = String(r.channel || "").trim();
+      var k = chKey(raw);
+      if (!k || seen[k]) return;
+      seen[k] = 1;
+      out.push({ key: "ch:" + k, label: raw, type: "channel", channel: raw });
     });
     return out;
   }
 
   function sourceItems(s) {
     return state.data[s.key] || [];
+  }
+
+  /* 某一列在当前「类目 + 月份」下到底摆哪些图：
+     · 本月有图 → 只摆本月的；
+     · 本月一张都没有、但这个类目下别处有图 → 摆这一列自己的全部，并在页面上注明月份，
+       绝不再出现「明明传了图，这一列却是空的」；
+     · 连类目下都没有图 → 空。 */
+  function colItems(s) {
+    var cat = state.cat;
+    var list = sourceItems(s).filter(function (r) { return cat === ALL || r.category === cat; });
+    if (!state.month || !list.length) return { list: list, monthFallback: false };
+    var inMonth = list.filter(function (r) { return r.month === state.month; });
+    if (inMonth.length) return { list: inMonth, monthFallback: false };
+    var ms = {};
+    list.forEach(function (r) { if (r.month) ms[r.month] = 1; });
+    return { list: list, monthFallback: true, months: Object.keys(ms).sort() };
   }
 
   /* 三个月内没图的列：默认隐藏（免得一屏全空列），后台可强制显示 */
@@ -120,75 +138,120 @@
     });
   }
 
-  /* ---------- 取数 ---------- */
+  /* ---------- 归一（渠道名 / 类目名） ----------
+     · 渠道名：库里可能同时存在 SHEIN / Shein / shein / SHE-IN。严格按原文分组，
+       同一个渠道会裂成几列；而「SHEIN 专区」那边是忽略大小写和分隔符比较的，
+       于是会出现「专区里有图，对比页这一列却空」。这里跟专区对齐。
+     · 类目名：与趋势上升榜 / 上新节奏同一套归一（RankCatNorm）。
+       否则同一个「套装」一边是标准名、一边是平台全路径，选中类目后渠道列就空了。 */
+  function chKey(v) {
+    return String(v == null ? "" : v).replace(/[\s_\-]/g, "").toLowerCase();
+  }
+  function normCat(v) {
+    var s = String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    var N = (typeof window !== "undefined") ? window.RankCatNorm : null;
+    if (N && typeof N.normalize === "function") {
+      try { return N.normalize(s) || s; } catch (e) { /* 归一失败就用原文，绝不把数据改成认不出的样子 */ }
+    }
+    return s;
+  }
+
+  /* 加载提示：每秒报一次已等待秒数，绝不出现「永远是加载中」的观感 */
+  var _tickTimer = null;
+  function showLoading() {
+    var body = $("#cmp-body");
+    if (body) body.innerHTML = '<div class="rk-empty" id="cmp-loading">加载中…</div>';
+    var t0 = Date.now();
+    if (_tickTimer) clearTimeout(_tickTimer);
+    (function tick() {
+      var el = $("#cmp-loading");
+      if (!el) { _tickTimer = null; return; }
+      var s = Math.round((Date.now() - t0) / 1000);
+      el.innerHTML = "加载中…" + (s >= 2 ? "（已 " + s + " 秒）" : "");
+      _tickTimer = setTimeout(tick, 1000);
+    })();
+  }
+  function stopLoading() {
+    if (_tickTimer) clearTimeout(_tickTimer);
+    _tickTimer = null;
+  }
+
+  /* ---------- 取数 ----------
+     三条取数一开始就同时发出，只等最慢的一条；打标结果不挡首屏（见 loadTags）。
+     之前是「先取渠道图 → 再取配置 → 再取榜单 → 最后取打标」，四段串行，
+     每段都等上一次返回，叠起来就是「一直加载中」。 */
   async function load() {
     var SB = SBx();
     if (!SB || state.loading) return;
     state.loading = true;
-    $("#cmp-body").innerHTML = '<div class="rk-empty">加载中…</div>';
+    showLoading();
     try {
-      /* ① 渠道图（Pinterest / SHEIN / 其它渠道传图） */
-      var chRows = [];
-      if (typeof SB.listRankChannelPics === "function") {
-        chRows = (await SB.listRankChannelPics({ periodType: "month" })) || [];
-      }
+      var pCh = (typeof SB.listRankChannelPics === "function")
+        ? Promise.resolve(SB.listRankChannelPics({ periodType: "month" })).catch(function () { return []; })
+        : Promise.resolve([]);
+      var pCfg = (typeof SB.getCompareSources === "function")
+        ? Promise.resolve(SB.getCompareSources()).catch(function () { return null; })
+        : Promise.resolve(null);
+      var pRk = (typeof SB.listRankItems === "function")
+        ? Promise.resolve(SB.listRankItems({
+          periodType: "month",
+          cols: "id,image_url,category,period_label,period_type,site,channel,title",
+        })).catch(function () { return []; })
+        : Promise.resolve([]);
 
-      /* ② 后台配置；没有配置就按实际渠道自动生成 */
-      try { state.cfg = (typeof SB.getCompareSources === "function") ? await SB.getCompareSources() : null; }
-      catch (e) { state.cfg = null; }
+      var got = await Promise.all([pCh, pCfg, pRk]);
+      var chRows = got[0] || [];
+      state.cfg = got[1] || null;
+      var rankRows = got[2] || [];
+
+      /* ① 列（来源）：后台配了就以配置为准，没配就按实际渠道自动生成 */
       var conf = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
       if (conf && conf.length) {
-        /* 配置里的渠道列，名字以配置为准；没有 channel 字段的渠道列补上名字 */
+        var seenSrc = {};
         state.sources = conf.map(function (x) {
           var t = x.type === "rank" ? "rank" : "channel";
+          /* 配置里存的是渠道原文；这里按归一键对齐，写法差异不会把一列变成空列 */
+          var k = t === "rank" ? "rank:month" : "ch:" + chKey(x.channel || x.label || x.key);
           return {
-            key: x.key || (t === "rank" ? "rank:month" : "ch:" + x.channel),
+            key: k,
             label: x.label || (t === "rank" ? "上新节奏" : x.channel),
             type: t, channel: x.channel || "",
           };
+        }).filter(function (s) {
+          if (!s.key || s.key === "ch:" || seenSrc[s.key]) return false;
+          seenSrc[s.key] = 1;
+          return true;
         });
       } else {
         state.sources = defaultSources(chRows);
       }
 
-      /* ③ 月度榜单（上新节奏）：按当前可见类目取；只保留没有渠道归属的行，
-            渠道图另有列，混进来会重复 */
-      var rankRows = [];
-      var rankSrc = state.sources.filter(function (s) { return s.type === "rank"; })[0];
-      if (rankSrc && typeof SB.listRankItems === "function") {
-        try {
-          rankRows = (await SB.listRankItems({
-            periodType: "month",
-            cols: "id,image_url,category,period_label,period_type,site,channel,title",
-          })) || [];
-        } catch (e) { rankRows = []; }
-      }
-
-      /* 渠道图 URL 集合：榜单行里与渠道图重复的地址不再进「上新节奏」列 */
+      /* ② 渠道图 URL 集合：榜单行里与渠道图重复的地址不再进「上新节奏」列 */
       var chUrls = {};
       var byKey = {};
       var all = [];
       chRows.forEach(function (r) {
         var u = imgUrl(r.image_url);
         if (!u) return;
-        var c = String(r.channel || "").trim();
-        if (!c) return;
+        var k = chKey(r.channel);
+        if (!k) return;
         chUrls[u] = 1;
-        var k = "ch:" + c;
+        var cat = normCat(r.category);
+        if (!cat) return;
         var it = {
-          image_url: u, category: String(r.category || "").trim(),
+          image_url: u, category: cat,
           month: normMonth(r.period_label || r.m || ""),
-          site: "", source: k, title: String(r.title || ""),
+          site: "", source: "ch:" + k, title: String(r.title || ""),
         };
-        if (!it.category) return;
-        (byKey[k] = byKey[k] || []).push(it);
+        (byKey[it.source] = byKey[it.source] || []).push(it);
         all.push(it);
       });
       rankRows.forEach(function (r) {
         var u = imgUrl(r.image_url);
         if (!u || chUrls[u]) return;
         if (String(r.channel || "").trim()) return;      /* 有渠道归属的行归到渠道列 */
-        var cat = String(r.category || "").trim();
+        var cat = normCat(r.category);
         if (!cat) return;
         var it = {
           image_url: u, category: cat,
@@ -207,31 +270,84 @@
       });
       state.data = byKey;
       state.items = all;
+      state.tags = {};
+      state.tagTried = {};
 
       /* 月份清单：两处并集，倒序 */
       var ms = {};
       all.forEach(function (r) { if (r.month) ms[r.month] = 1; });
       state.months = Object.keys(ms).sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
-      if (!state.month || state.months.indexOf(state.month) < 0) state.month = state.months[0] || "";
+      /* null = 用户还没选过 → 默认落到最新月份；"" = 用户主动选了「全部月份」，不要覆盖他 */
+      if (state.month === null || state.month === undefined) state.month = state.months[0] || "";
+      else if (state.month && state.months.indexOf(state.month) < 0) state.month = state.months[0] || "";
 
-      /* 打标结果：按图片地址（与榜单 / 各专区共用一张表） */
-      state.tags = {};
-      var urls = all.map(function (r) { return r.image_url; });
-      if (urls.length) {
-        try {
-          if (typeof SB.listMovementTags === "function") state.tags = (await SB.listMovementTags(urls)) || {};
-          else if (typeof SB.listImageTags === "function") state.tags = (await SB.listImageTags(urls)) || {};
-        } catch (e) { state.tags = {}; }
-      }
-
+      /* 首屏立刻画出来：打标结果在后台补，不再让它挡住列表 */
       renderFilter();
       renderCats();
       renderPools();
+      loadTags();
     } catch (e) {
       $("#cmp-body").innerHTML = '<div class="rk-empty">读取失败，请刷新重试</div>';
     } finally {
+      stopLoading();
       state.loading = false;
     }
+  }
+
+  /* ---------- 打标结果：只取当前屏幕上真正会显示的图，取到后补小圆点 ---------- */
+  function visibleUrls() {
+    var out = [], seen = {};
+    activeSources().forEach(function (s) {
+      colItems(s).list.forEach(function (r) {
+        if (out.length >= 1200 || seen[r.image_url]) return;
+        seen[r.image_url] = 1;
+        out.push(r.image_url);
+      });
+    });
+    return out;
+  }
+
+  async function fetchTags(urls) {
+    var SB = SBx();
+    var list = (urls || []).filter(function (u) { return u && !state.tagTried[u]; });
+    if (!SB || !list.length) return;
+    list.forEach(function (u) { state.tagTried[u] = 1; });
+    try {
+      var got = null;
+      if (typeof SB.listMovementTags === "function") got = await SB.listMovementTags(list);
+      else if (typeof SB.listImageTags === "function") got = await SB.listImageTags(list);
+      if (got) Object.keys(got).forEach(function (u) { state.tags[u] = got[u]; });
+    } catch (e) { /* 打标读不到不该让页面白屏，图标不显示即可 */ }
+  }
+
+  function taggedOf(url) {
+    var t = state.tags[url] || {};
+    var KEYS = ["style_tags", "visual_tags", "pattern_tags", "element_tags", "struct_tags",
+      "fabric_tags", "craft_tags", "shoot_tags", "skin_tags", "fit_tags",
+      "culture_tags", "psych_tags", "festival_tags"];
+    for (var i = 0; i < KEYS.length; i++) { if ((t[KEYS[i]] || []).length) return true; }
+    return false;
+  }
+
+  function patchTaggedDots() {
+    var body = $("#cmp-body");
+    if (!body || typeof body.querySelectorAll !== "function") return;
+    Array.prototype.forEach.call(body.querySelectorAll(".cmp-card"), function (fig) {
+      var u = fig.getAttribute("data-url");
+      if (!taggedOf(u) || fig.querySelector(".cmp-tagged")) return;
+      var dot = document.createElement("span");
+      dot.className = "cmp-tagged";
+      dot.title = "已打标";
+      dot.textContent = "●";
+      fig.appendChild(dot);
+    });
+  }
+
+  async function loadTags() {
+    var urls = visibleUrls();
+    if (!urls.length) return;
+    await fetchTags(urls);
+    patchTaggedDots();
   }
 
   /* ---------- 上方筛选：月度（列的选择在后台，不在这里） ---------- */
@@ -251,7 +367,7 @@
       b.type = "button";
       b.className = "tag-chip" + (state.month === v ? " active" : "");
       b.textContent = text;
-      b.onclick = function () { state.month = v; renderFilter(); renderCats(); renderPools(); };
+      b.onclick = function () { state.month = v; renderFilter(); renderCats(); renderPools(); loadTags(); };
       return b;
     }
     if (!state.months.length) {
@@ -261,6 +377,9 @@
       t.textContent = "暂无月份";
       chips.appendChild(t);
     }
+    /* 「全部月份」：各来源的月份写法不一致时（例如一边 2026-11、一边 第45周），
+       只有选全部才能把它们摆在一起看 */
+    chips.appendChild(chip("", "全部月份"));
     state.months.forEach(function (m) { chips.appendChild(chip(m, m)); });
     g.appendChild(name);
     g.appendChild(chips);
@@ -297,20 +416,23 @@
     allBtn.onclick = function () {
       state.srcOn = {};
       state.srcOff = {};
-      renderFilter(); renderCats(); renderPools();
+      renderFilter(); renderCats(); renderPools(); loadTags();
     };
     chips.appendChild(allBtn);
 
     state.sources.forEach(function (s) {
-      var n = sourceItems(s).filter(function (r) {
+      var every = sourceItems(s);
+      var n = every.filter(function (r) {
         return !state.month || r.month === state.month;
       }).length;
+      var other = every.length - n;
       var on = !!shownKey[s.key];
       var b = document.createElement("button");
       b.type = "button";
       b.className = "tag-chip" + (on ? " active" : "");
       b.title = on ? "点一下隐藏这一列" : (n ? "点一下显示这一列" : "这个月份下没有图，点一下仍可显示");
-      b.textContent = s.label + (n ? " " + n : " 无图");
+      /* 本月没图但别的月份有图 —— 必须写出来，否则看起来就像「传了图却没了」 */
+      b.textContent = s.label + (n ? " " + n : " 无图") + (other > 0 ? "（其它月份 " + other + "）" : "");
       if (!n) b.style.opacity = on ? ".85" : ".5";
       b.onclick = function () {
         var willHide = !!shownKey[s.key];
@@ -323,7 +445,7 @@
           delete state.srcOff[s.key];
           state.srcOn[s.key] = 1;
         }
-        renderFilter(); renderCats(); renderPools();
+        renderFilter(); renderCats(); renderPools(); loadTags();
       };
       chips.appendChild(b);
     });
@@ -337,9 +459,16 @@
     var sum = $("#cmp-summary");
     if (!sum) return;
     var n = activeSources().length;
-    var hid = hiddenByEmpty().length;
+    var hid = hiddenByEmpty();
+    /* 被隐藏的列里，有多少只是在「别的月份」有图 —— 这一句能直接解释「传了图却没显示」 */
+    var other = 0, otherN = 0;
+    hid.forEach(function (s) {
+      var tot = sourceItems(s).length;
+      if (tot > 0) { other++; otherN += tot; }
+    });
     sum.textContent = (state.month || "全部月份") + " · " + n + " 列对比" +
-      (hid ? "（已隐藏 " + hid + " 个无图渠道）" : "");
+      (hid.length ? "（已隐藏 " + hid.length + " 个无图渠道" +
+        (other ? "，其中 " + other + " 个在其它月份有 " + otherN + " 张，点它即可查看" : "") + "）" : "");
   }
 
   /* ---------- 左侧：服装类目 ---------- */
@@ -353,14 +482,20 @@
     var list = monthItems();
     var cnt = {};
     list.forEach(function (r) { cnt[r.category] = (cnt[r.category] || 0) + 1; });
-    var names = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; });
+    /* 当前月没有、但别的月份有的类目也要列出来：
+       否则「其它月份传的图」在左侧找不到类目，等于看不见。 */
+    var allCnt = {};
+    state.items.forEach(function (r) { if (r.category) allCnt[r.category] = (allCnt[r.category] || 0) + 1; });
+    var names = Object.keys(allCnt).sort(function (a, b) {
+      return ((cnt[b] || 0) - (cnt[a] || 0)) || (allCnt[b] - allCnt[a]);
+    });
     nav.innerHTML = "";
     function add(name, count) {
       var b = document.createElement("button");
       b.type = "button";
       b.className = "cat-menu-item" + (state.cat === name ? " active" : "");
       b.innerHTML = esc(name) + (count != null ? ' <span class="cvi-state">' + count + "</span>" : "");
-      b.onclick = function () { state.cat = name; renderCats(); renderPools(); };
+      b.onclick = function () { state.cat = name; renderCats(); renderPools(); loadTags(); };
       nav.appendChild(b);
     }
     add(ALL, list.length);
@@ -371,14 +506,12 @@
       nav.appendChild(t);
       return;
     }
-    names.forEach(function (c) { add(c, cnt[c]); });
+    names.forEach(function (c) { add(c, cnt[c] || null); });
   }
 
   /* ---------- 差异分析：把当前这一屏的数据交给分析模块 ---------- */
   function visibleList(s) {
-    return sourceItems(s).filter(function (r) {
-      return (!state.month || r.month === state.month) && (state.cat === ALL || r.category === state.cat);
-    });
+    return colItems(s).list;
   }
 
   function insightCtx() {
@@ -392,13 +525,23 @@
   }
 
   /* 打开分析：key 指定「分析哪个来源」，为空时挑一个渠道列（通常就是用户想问的那个） */
-  function openInsight(key) {
+  async function openInsight(key) {
     if (!window.CmpInsight || typeof window.CmpInsight.open !== "function") {
       toast("分析组件未加载，请刷新页面后重试", false);
       return;
     }
     var ctx = insightCtx();
     if (!ctx.sources.length) { toast("这个月份 / 类目下还没有图片，先换一个再看看", false); return; }
+    var need = [];
+    ctx.sources.forEach(function (s) {
+      s.list.forEach(function (r) {
+        if (need.length < 1500 && r.image_url && !state.tagTried[r.image_url]) need.push(r.image_url);
+      });
+    });
+    if (need.length) {
+      toast("正在准备打标数据…");
+      await fetchTags(need);
+    }
     var focus = key;
     if (!focus) {
       var ch = ctx.sources.filter(function (s) { return s.type !== "rank"; })[0] || ctx.sources[0];
@@ -428,14 +571,12 @@
 
     var total = 0;
     srcs.forEach(function (s) {
-      total += sourceItems(s).filter(function (r) {
-        return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
-      }).length;
+      total += colItems(s).list.length;
     });
 
     if (bar) {
       bar.innerHTML = '<span class="rk-bar-info">共 <b>' + total + "</b> 张 · " + srcs.length + " 列" +
-        (state.month ? " · " + esc(state.month) : "") + (cat !== ALL ? " · " + esc(cat) : "") + "</span>" +
+        (state.month ? " · " + esc(state.month) : " · 全部月份") + (cat !== ALL ? " · " + esc(cat) : "") + "</span>" +
         '<button type="button" class="cmi-btn cmi-btn-ghost" id="cmp-insight-all" title="按当前类目与月份，对比各来源的打标结构差异">渠道差异分析</button>';
     }
 
@@ -445,11 +586,7 @@
     }
     if (!total) {
       /* 分清两种情况：真的没图 vs 被渠道筛选筛空了 */
-      var hasAny = state.sources.some(function (s) {
-        return sourceItems(s).some(function (r) {
-          return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
-        });
-      });
+      var hasAny = state.sources.some(function (s) { return colItems(s).list.length > 0; });
       body.innerHTML = hasAny
         ? '<div class="rk-empty">当前显示的 ' + srcs.length + ' 列在这个月份 / 类目下都没有图片。<br>点上方「筛选 → 渠道」打开其它渠道再看看。</div>'
         : '<div class="rk-empty">这个月份 / 类目下还没有图片，换个月份或类目试试。</div>';
@@ -459,9 +596,8 @@
     var pr = perRowOf(srcs.length);
     var html = '<div class="rk-pools">';
     srcs.forEach(function (s) {
-      var list = sourceItems(s).filter(function (r) {
-        return (!state.month || r.month === state.month) && (cat === ALL || r.category === cat);
-      });
+      var got = colItems(s);
+      var list = got.list;
       html += '<section class="rk-pool" data-src="' + esc(s.key) + '">';
       html += '<div class="rk-pool-head"><div class="rk-pool-name"><span>' + esc(s.label) +
         '</span><span class="rk-n">' + list.length + " 张</span></div>" +
@@ -470,19 +606,20 @@
         (list.length ? ' <button type="button" class="cmi-btn" data-insight="' + esc(s.key) +
           '" title="看这一列与其它来源的打标结构差异">详细分析</button>' : "") +
         "</div></div>";
+      if (got.monthFallback) {
+        html += '<div class="rk-pool-note">这一列在 ' + esc(state.month) + " 没有图，下面是它全部的 " +
+          list.length + " 张（月份：" + esc((got.months || []).join(" / ") || "未标注") +
+          "）。点上方「全部月份」可以把各列放在同一个月里看。</div>";
+      }
       html += '<div class="rk-pool-grid" style="--rk-r:' + pr + '">';
       if (!list.length) {
         html += '<div class="rk-empty">该列暂无数据</div>';
       } else {
         list.forEach(function (it) {
-          var t = state.tags[it.image_url] || {};
-          var tagged = ["style_tags", "visual_tags", "pattern_tags", "element_tags", "struct_tags",
-            "fabric_tags", "craft_tags", "shoot_tags", "skin_tags", "fit_tags",
-            "culture_tags", "psych_tags", "festival_tags"].some(function (k) { return (t[k] || []).length; });
           html += '<figure class="rk-card cmp-card" data-url="' + esc(it.image_url) + '" title="' +
             esc([it.category, it.month, it.site].filter(Boolean).join(" · ")) + '">' +
             '<img loading="lazy" decoding="async" src="' + esc(it.image_url) + '" alt="' + esc(it.category) + '">' +
-            (tagged ? '<span class="cmp-tagged" title="已打标">●</span>' : "") +
+            (taggedOf(it.image_url) ? '<span class="cmp-tagged" title="已打标">●</span>' : "") +
             "</figure>";
         });
       }
@@ -515,6 +652,13 @@
 
   function openModal(url) {
     if (!url) return;
+    /* 打标结果改成按需取：点开哪张只查那一张，首屏不再为上万张图排队等标签 */
+    if (state.tagTried[url]) { paintModal(url); return; }
+    paintModal(url);
+    fetchTags([url]).then(function () { paintModal(url); });
+  }
+
+  function paintModal(url) {
     var t = state.tags[url] || {};
     var big = $("#cmp-big");
     if (big) big.src = url;

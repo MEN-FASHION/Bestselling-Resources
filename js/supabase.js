@@ -5162,7 +5162,9 @@ async removeTrendRecord(id) {
 
     const out = [];
     const seen = {};
-    (await chPicLoad()).forEach((x) => {
+    /* 文档存储与「有没有 channel 列」的探测同时进行，少一次串行等待 */
+    const [docArr, colOk] = await Promise.all([chPicLoad(), API.rankChannelColumn().catch(() => false)]);
+    docArr.forEach((x) => {
       const u = String(x.u || "");
       if (!u || seen[u]) return;
       const m = API._normMonth(x.m || "");
@@ -5177,12 +5179,17 @@ async removeTrendRecord(id) {
       });
     });
 
-    /* 有 channel 列时把库里已有的渠道行也并进来（历史数据不丢） */
+    /* 有 channel 列时把库里已有的渠道行也并进来（历史数据不丢）。
+       20261113T：这里以前是 select("*") 把整张榜单表按 1000 行一页串行扫到底
+       （最多 20 页、上万行、每行几十个字段），只为了挑出「有渠道归属」的少数几行。
+       这是渠道对比慢的主因。现在直接让数据库只返回 channel 非空的行、只取要用的列，
+       通常一两页就结束。 */
     try {
-      if (await API.rankChannelColumn()) {
+      if (colOk) {
         const PAGE = 1000, HARD = 20000;
+        const COLS = "id,image_url,category,period_label,period_type,channel,site,title,created_at";
         for (let from = 0; from < HARD; from += PAGE) {
-          let q = client.from("rank_items").select("*").eq("period_type", PT);
+          let q = client.from("rank_items").select(COLS).eq("period_type", PT).not("channel", "is", null);
           if (o.category) q = q.eq("category", o.category);
           else if (o.categories && o.categories.length) q = q.in("category", o.categories);
           const { data, error } = await q.order("id", { ascending: true }).range(from, from + PAGE - 1);
