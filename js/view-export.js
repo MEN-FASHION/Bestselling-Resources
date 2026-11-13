@@ -1,5 +1,5 @@
 /* ============================================================================
- * view-export.js —— 前台「把当前所见一键带走」（20261113Q）
+ * view-export.js —— 前台「把当前所见一键带走」（20261113S）
  * ----------------------------------------------------------------------------
  * 两种成品，都是一步到手、不需要再解压、不需要配任何文件夹：
  *
@@ -37,7 +37,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261113Q";
+  var BUILD = "20261113S";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -176,7 +176,9 @@
         var nameEl = p.querySelector(".rk-pool-name > span");
         var metaEl = p.querySelector(".rk-pool-meta");
         var cards = pickCards(p);
-        if (!cards.length) return;   // 空列不出现，跟页面一致
+        /* 并排看板：空列也要留着（页面上它就是一根写着「该列暂无数据」的空列，
+           丢掉它列数就和页面对不上了）；堆叠模式：空组不出现。 */
+        if (!cards.length && !state.board) return;
         secs.push({
           name: nameEl ? trim(nameEl.textContent) : "",
           meta: cleanMeta(metaEl ? metaEl.textContent : ""),
@@ -188,10 +190,31 @@
     if (!secs.length) {
       var cards = pickCards(document);
       if (cards.length) {
-        secs.push({ name: activeCat() || state.label, meta: "", cards: cards });
+        secs.push({
+          name: filterCatName() || state.label,
+          meta: pageFilterSummary(),
+          cards: cards
+        });
       }
     }
     return secs;
+  }
+
+  /* 纯图墙（Pinterest / SHEIN）左侧菜单的当前类目 */
+  function filterCatName() {
+    var c = activeCat();
+    if (!c || c === "全部" || c === "全部图片") return "";
+    return c;
+  }
+
+  /* 纯图墙顶部筛选条的摘要（页面上写着「月度：2025-01」），导出要照抄，
+     否则拿走一份只剩图的网页，谁也说不清这是哪个月的数据。 */
+  function pageFilterSummary() {
+    var el = document.querySelector("#cz-summary, .tf-trigger .tf-s");
+    var t = el ? trim(el.textContent) : "";
+    var bar = document.querySelector("#cz-bar .rk-bar-info");
+    var b = bar ? trim(bar.textContent) : "";
+    return dedupe([t, b].filter(Boolean)).join(" · ");
   }
 
   /* 「详细分析」这类按钮是操作入口，不属于展示信息，导出时剔掉 */
@@ -221,11 +244,11 @@
     Array.prototype.forEach.call(mvs, function (c) {
       if (closest(c, "#vx-dock, .modal-mask")) return;
       var img = c.querySelector("img");
-      if (!img) return;
-      var url = trim(img.getAttribute("src") || img.getAttribute("data-src"));
+      var dUrl = trim(c.getAttribute ? c.getAttribute("data-url") : "");
+      var url = dUrl || (img ? trim(img.getAttribute("src") || img.getAttribute("data-src")) : "");
       if (!url || seen[url]) return;
       seen[url] = 1;
-      out.push(cardOfMv(c, url, img));
+      out.push(cardOfMv(c, url, img || { getAttribute: function () { return ""; } }));
     });
     return out;
   }
@@ -268,15 +291,24 @@
   function cardOfMv(c, url, img) {
     var catEl = c.querySelector(".mv-card-cat");
     var badge = c.querySelector(".mv-season-badge");
+    /* 图墙卡片（Pinterest / SHEIN / 品牌动向）在页面上显示的是「类目 + 月度角标」，
+       导出必须跟着显示，否则拿到的是一堆没有说明的图。
+       优先读卡片上挂的属性（页面渲染时写入，最准），没有再从 DOM 里取。 */
+    var a = function (k) { return trim(c.getAttribute ? c.getAttribute(k) : ""); };
+    var cat = a("data-cat") || (catEl ? trim(catEl.textContent) : "");
+    var period = a("data-period") || (badge ? trim(badge.textContent) : "");
+    var alt = trim(img.getAttribute("alt"));
+    var title = a("data-title") || alt || cat;
+    if (a("data-url")) url = a("data-url");
     return {
       url: url,
-      title: trim(img.getAttribute("alt")),
-      cat: catEl ? trim(catEl.textContent) : "",
+      title: title,
+      cat: cat,
       site: "",
-      period: badge ? trim(badge.textContent) : "",
-      /* 卡片右下角的「3/13」是打标进度，属于后台编辑信息，不是展示内容，导出时不要 */
-      tags: [],
-      alt: trim(img.getAttribute("alt"))
+      period: period,
+      /* 月度角标在图上是「看得见的信息」，导出成标签跟着卡片走 */
+      tags: period ? [period] : [],
+      alt: alt
     };
   }
 
@@ -433,9 +465,17 @@
   }
 
   /* 一张图卡（网页里的最小单元）：图片 + 悬停搜同款 + 可选标题/标签 */
+  /* 并排（compact）时，渠道对比那种「只有图、没有字」的列保持干净；
+     但榜单/上新节奏的列，图上本来就压着「上升 12 位 / 趋势爆款」这类字，
+     这些字就是页面上看得见的信息，导出必须跟上，不能丢。 */
   function cardFigure(c, s, compact) {
     var src = c.data || c.url;
     var tip = [c.title, c.cat, c.period].filter(Boolean).join(" · ");
+    var cap = (c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
+      (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
+        return "<span>" + esc(x) + "</span>";
+      }).join("") + "</span>" : "");
+    var hasCap = !compact || !!cap;
     return '<figure class="c">' +
       '<div class="ph">' +
       '<img loading="lazy" class="z" src="' + esc(src) + '" data-full="' + esc(src) + '"' +
@@ -444,12 +484,8 @@
       (c.data ? "" : '<span class="miss">未内嵌 · 原地址</span>') +
       '<button type="button" class="q" data-orig="' + esc(c.url) + '">⌕ 搜同款</button>' +
       "</div>" +
-      (compact ? "" : "<figcaption>" +
-        (c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
-        (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
-          return "<span>" + esc(x) + "</span>";
-        }).join("") + "</span>" : "") +
-        "</figcaption>") + "</figure>";
+      (hasCap && cap ? "<figcaption>" + cap + "</figcaption>" : "") +
+      "</figure>";
   }
 
   /* 排版 A：每个分组一个区块，纵向堆叠（榜单 / 上新节奏 / 纯图墙） */
@@ -477,6 +513,9 @@
         '<span class="col-c">' + s.cards.length + " 张</span></div>" +
         (s.meta ? '<div class="col-m">' + esc(s.meta) + "</div>" : "") +
         '<div class="cgrid" style="grid-template-columns:repeat(' + r + ',minmax(0,1fr))">';
+      if (!s.cards.length) {
+        body += '<div class="col-e">该列暂无数据</div>';
+      }
       s.cards.forEach(function (c) { body += cardFigure(c, s, true); });
       body += "</div></section>";
     });
@@ -521,6 +560,7 @@
       ".col-c{flex:0 0 auto;font-size:11.5px;font-weight:400;color:#8b96a8}",
       ".col-m{margin:-2px 0 8px;font-size:11.5px;color:#7f8b9d;line-height:1.5}",
       ".cgrid{display:grid;gap:6px;align-content:start}",
+      ".col-e{grid-column:1/-1;padding:26px 8px;text-align:center;color:#7f8b9d;font-size:12.5px;border:1px dashed #26303f;border-radius:8px}",
       ".cols .c{border-radius:8px}",
       ".cols .ph{cursor:zoom-in}",
       "@media(max-width:820px){.cols{gap:8px;padding:12px}.col{min-width:140px;padding:7px}}",
@@ -647,7 +687,14 @@
     var C = Math.max(1, secs.length);
     var colW = (POSTER.W - POSTER.M * 2 - (C - 1) * POSTER.GAP) / C;
     var imgH = Math.round(colW * 4 / 3);
-    var capH = 0;                          // 与页面一致：渠道对比的列里只有图，没有文字
+    /* 渠道对比的列里只有图；榜单 / 上新节奏的列，图上本来就压着「上升 12 位」这类字，
+       这些字要跟着画出来，所以按是否真有字决定卡片下方留不留文字区。 */
+    var anyText = secs.some(function (s) {
+      return (s.cards || []).some(function (c) {
+        return !!(c.title || (c.tags && c.tags.length));
+      });
+    });
+    var capH = anyText ? 62 : 0;
     var cardH = imgH + capH;
 
     var idx = secs.map(function () { return 0; });
@@ -1014,14 +1061,17 @@
     if (state.busy) return null;
     if (!state.allowed) { toast("你没有导出权限，请联系超级管理员开通", false); return null; }
     var secs = collectSections();
-    if (!secs.length) { toast("当前页面没有可导出的图片", false); return null; }
+    var n = 0;
+    secs.forEach(function (s) { n += s.cards.length; });
+    if (!secs.length || !n) { toast("当前页面没有可导出的图片", false); return null; }
     return secs;
   }
 
-  /* 是否按「多列并排」导出：渠道对比这一页本身就是几列并排对比，
-     导出必须保持同样几列、同样顺序，而不是一列一列拆成上下两段。 */
+  /* 是否按「多列并排」导出：只要页面上这些分组是横向并排画的列
+     （渠道对比、趋势上升榜的对比池、上新节奏的对比池都是 .rk-pools 横排），
+     导出就必须保持同样几列、同样顺序，而不是一列一列拆成上下两段。 */
   function isBoard() {
-    return state.zone === "compare" && state.board;
+    return !!state.board;
   }
 
   /* ---------- ① 单页网页 ---------- */
@@ -1140,20 +1190,50 @@
    * ============================================================ */
   function boot(zoneKey) {
     var key = trim(zoneKey);
-    if (!key || !LABELS[key]) return Promise.resolve(false);
+    if (!key) return Promise.resolve(false);
     state.zone = key;
-    state.label = LABELS[key];
+    /* 专区名不再写死在 LABELS 里才有救：漏登记新专区时用页面标题兜底，
+       否则新开的专区永远拿不到导出按钮（以前就是这个坑）。 */
+    state.label = labelOf(key);
     return loadPerm().then(function (ok) {
       state.allowed = !!ok;
       state.booted = true;
       if (ok) showDock(true);
+      else scheduleRecheck();
       return ok;
+    });
+  }
+
+  function labelOf(key) {
+    if (LABELS[key]) return LABELS[key];
+    var t = trim(String((document.title || "")).split("·")[0]);
+    return t || key;
+  }
+
+  /* 实测中最常见的一种「看不到按钮」：页面刚打开时登录态还没恢复好，
+     权限查询回了空数组，而这一步以前只跑一次、再也不补。这里补两次复查，
+     授权到了就把入口显示出来（没有权限时依旧不显示，不放开任何权限）。 */
+  var RECHECK_AT = [700, 1800];
+  function scheduleRecheck() {
+    RECHECK_AT.forEach(function (ms) {
+      try {
+        setTimeout(function () { recheck(); }, ms);
+      } catch (e) {}
+    });
+  }
+
+  function recheck() {
+    if (!state.zone || state.allowed) return Promise.resolve(state.allowed);
+    return loadPerm().then(function (ok) {
+      if (ok) { state.allowed = true; showDock(true); }
+      return !!ok;
     });
   }
 
   window.VX = {
     BUILD: BUILD,
     boot: boot,
+    recheck: recheck,
     runHtml: runHtml,
     runPoster: runPoster,
     available: function () { return state.allowed; },

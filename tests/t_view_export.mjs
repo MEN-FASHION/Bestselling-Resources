@@ -183,10 +183,11 @@ function mkPage(opts) {
     const grid = mkEl("div", {}, "grid");
     body.appendChild(grid);
     opts.mvs.forEach((m) => {
-      const card = mkEl("div", {}, "mv-card");
+      const card = mkEl("div", m.attrs || {}, "mv-card");
       const box = mkEl("div", {}, "mv-card-img");
       const im = mkEl("img"); im.setAttribute("src", m.url); im.setAttribute("alt", m.alt || "");
       box.appendChild(im);
+      if (m.period) { const b = mkEl("span", {}, "mv-season-badge"); b.textContent = m.period; box.appendChild(b); }
       const meta = mkEl("div", {}, "mv-card-meta");
       const cat = mkEl("span", {}, "mv-card-cat"); cat.textContent = m.cat || "";
       meta.appendChild(cat);
@@ -200,6 +201,11 @@ function mkPage(opts) {
     it.textContent = opts.activeCat + " 12";
     menu.appendChild(it);
     body.appendChild(menu);
+  }
+  if (opts.summary) {
+    const s = mkEl("span", { id: "cz-summary" }, "tf-s");
+    s.textContent = opts.summary;
+    body.appendChild(s);
   }
   return { doc, body, toast };
 }
@@ -306,13 +312,14 @@ console.log("二、收集当前所见");
     ] },
   ] });
   const secs = S.VX._collect();
-  ok(secs.length === 2, "空列不应出现在导出里（与页面一致）");
+  ok(secs.length === 3, "多列看板里的空列也要留着（页面上它占一列），实际 " + secs.length);
+  ok(secs[1].cards.length === 0, "空列就是 0 张，不能凭空造图");
   ok(secs[0].name === "男装休闲衬衫", "分组名取页面上那一列的名字");
   ok(secs[0].meta.indexOf("第43周") >= 0, "分组副信息要带上期次");
   ok(secs[0].cards.length === 2, "同一列里重复的图只收一次");
   ok(secs[0].cards[0].title === "纯棉长袖衬衫", "卡片标题要带过来");
   ok(secs[0].cards[0].tags.indexOf("趋势爆款") >= 0, "卡片上的标签要带过来");
-  ok(secs[1].name === "女装连衣裙", "第二列独立成组");
+  ok(secs[2].name === "女装连衣裙", "第二列独立成组");
 }
 
 /* 纯图墙（Pinterest / SHEIN / 品牌动向）：没有分组列，整页一节 */
@@ -326,6 +333,69 @@ console.log("二、收集当前所见");
   ok(secs[0].cards.length === 2, "纯图墙应收集到全部图片卡");
   ok(secs[0].cards[0].title === "针织开衫", "纯图墙用 alt 当标题");
   ok(secs[0].cards[0].cat === "针织衫", "纯图墙要带上类目");
+}
+
+/* 20261113S · SHEIN / Pinterest 专区（图墙）导出专项
+   这两页在页面上显示「类目 + 月度角标 + 共 N 张」，导出必须一样带着。 */
+console.log("二·补 SHEIN / Pinterest 图墙");
+{
+  const page = () => boot({
+    activeCat: "全部",
+    summary: "月度：2025-01",
+    mvs: [
+      { url: "http://img/s1.jpg", alt: "", cat: "女装连衣裙", period: "2025-01",
+        attrs: { "data-url": "http://img/s1.jpg", "data-cat": "女装连衣裙", "data-period": "2025-01" } },
+      { url: "http://img/s2.jpg", alt: "", cat: "女装连衣裙", period: "2025-01",
+        attrs: { "data-url": "http://img/s2.jpg", "data-cat": "女装连衣裙", "data-period": "2025-01" } },
+    ],
+  });
+  for (const zone of ["shein", "pinterest"]) {
+    const S = page();
+    S.VX.boot(zone);
+    const secs = S.VX._collect();
+    ok(secs.length === 1, zone + "：图墙整页算一节");
+    ok(secs[0].cards.length === 2, zone + "：应收集到全部图");
+    ok(secs[0].cards[0].title === "女装连衣裙", zone + "：卡片要带类目（页面上就写着）");
+    ok(secs[0].cards[0].tags.indexOf("2025-01") >= 0, zone + "：月度角标要跟着卡片走");
+    ok(secs[0].meta.indexOf("月度：2025-01") >= 0, zone + "：顶部筛选摘要要带过来（否则说不清是哪个月）");
+    ok(secs[0].name !== "全部", zone + "：类目为「全部」时组名退回专区名，不叫「全部」");
+  }
+}
+
+/* 没有 data-* 属性时（老数据 / 其它图墙）仍要能靠 DOM 取到类目与月度 */
+{
+  const S = boot({
+    mvs: [{ url: "http://img/m3.jpg", alt: "", cat: "针织衫", period: "2025-02" }],
+  });
+  const secs = S.VX._collect();
+  ok(secs[0].cards[0].cat === "针织衫", "无属性时从卡片读类目");
+  ok(secs[0].cards[0].tags.indexOf("2025-02") >= 0, "无属性时从角标读月度");
+}
+
+/* 权限晚到：第一次查为空，复查时已授权 → 入口应当补出来 */
+{
+  let n = 0;
+  const S = boot({
+    sb: { myExportZones: () => Promise.resolve(n++ === 0 ? [] : ["shein"]) },
+    pools: [{ name: "A", cards: [{ url: "http://i/1.jpg" }] }],
+  });
+  await S.VX.boot("shein");
+  ok(S.VX.available() === false, "第一次没查到权限时先不显示");
+  const got = await S.VX.recheck();
+  ok(got === true && S.VX.available() === true, "复查到授权后应补出导出入口");
+  const dock = S.page.body.children.filter((c) => c._cls.has("vx-dock"))[0];
+  ok(dock && dock._cls.has("on"), "补查成功后入口要真的挂上去");
+}
+
+/* 没有权限时复查也不能放开 */
+{
+  const S = boot({
+    sb: { myExportZones: () => Promise.resolve([]) },
+    pools: [{ name: "A", cards: [{ url: "http://i/1.jpg" }] }],
+  });
+  await S.VX.boot("pinterest");
+  const got = await S.VX.recheck();
+  ok(got === false && S.VX.available() === false, "权限确实没有时，复查不能放宽");
 }
 
 /* 没有任何图片时不能假装成功 */
@@ -438,11 +508,50 @@ const CMP_POOLS = [
     "并排版的标签也要成对");
   ok(/class="ph"/.test(html) && html.indexOf("搜同款") >= 0, "并排里同样保留点图放大与搜同款");
 
-  /* 其它专区仍是分区堆叠，不被这次改动带跑 */
+  /* 趋势上升榜 / 上新节奏的对比池也是横向并排的列：同样要并排导出 */
   const S2 = boot({ pools: CMP_POOLS });
   S2.VX._state().zone = "rank";
-  const html2 = S2.VX._build(S2.VX._collect(), { title: "趋势上升榜", sub: "", failed: 0, ok: 4 });
-  ok(html2.indexOf('class="cols"') < 0 && html2.indexOf('class="sec"') >= 0, "其它专区仍按区块堆叠（不受影响）");
+  const html2 = S2.VX._build(S2.VX._collect(), { title: "趋势上升榜", sub: "", failed: 0, ok: 4, columns: S2.VX._isBoard() });
+  ok(S2.VX._isBoard() === true, "趋势上升榜的对比池（多列）也应判定为并排看板");
+  ok(html2.indexOf('class="cols"') >= 0 && (html2.match(/class="col"/g) || []).length === 3,
+    "趋势上升榜选了三周就该并排导出三列（实际 " + (html2.match(/class="col"/g) || []).length + "）");
+
+  /* 只有一列的页面仍是堆叠（单列没有并排可言，堆叠版排版更舒展） */
+  const S3 = boot({ pools: [CMP_POOLS[0]] });
+  ok(S3.VX._isBoard() === false, "只有一列时不做并排");
+
+  /* 空列必须留着：页面上的空列是一根「该列暂无数据」的列，导出也要留住它，列数才对得上页面 */
+  const CMP_EMPTY = CMP_POOLS.concat([{ name: "Pinterest 专区2", cols: 3, meta: "渠道图", cards: [] }]);
+  const S4 = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) }, pools: CMP_EMPTY });
+  const secs4 = S4.VX._collect();
+  ok(secs4.length === 4, "空列不能丢（页面上它就占一列），实际 " + secs4.length);
+  const html4 = S4.VX._build(secs4, { title: "渠道对比", sub: "", columns: true, failed: 0, ok: 4 });
+  ok((html4.match(/class="col"/g) || []).length === 4, "四列（含空列）都要并排画出来");
+  ok(html4.indexOf("该列暂无数据") >= 0, "空列要说清「该列暂无数据」，不能只剩一个空框");
+  const S5 = boot({ pools: [{ name: "A", cards: [] }] });
+  ok(S5.VX._collect().length === 0, "单列且没图时仍不导出空壳");
+
+  /* 榜单列里图上压着的字（上升 N 位 / 趋势爆款）必须跟着并排一起出来 */
+  const RANK_POOLS = [
+    { name: "第43周", cols: 3, meta: "第43周", cards: [
+      { url: "http://img/a1.jpg", title: "纯棉长袖衬衫", tags: ["趋势爆款", "上升 12 位"] },
+    ] },
+    { name: "第44周", cols: 3, meta: "第44周", cards: [
+      { url: "http://img/a2.jpg", title: "条纹衬衫", tags: ["上升 3 位"] },
+    ] },
+  ];
+  const S6 = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) }, pools: RANK_POOLS });
+  const secs6 = S6.VX._collect();
+  const html6 = S6.VX._build(secs6, { title: "趋势上升榜", sub: "", columns: true, failed: 0, ok: 2 });
+  ok((html6.match(/class="col"/g) || []).length === 2, "两周并排两列");
+  ok(html6.indexOf("上升 12 位") >= 0 && html6.indexOf("趋势爆款") >= 0, "列里的「上升 N 位 / 趋势爆款」不能丢");
+  ok(html6.indexOf("纯棉长袖衬衫") >= 0, "列里的标题也要带出来");
+  const sheets6 = S6.VX._layoutCols(secs6);
+  ok(sheets6[0].capH >= 30, "并排海报要给文字留位置（capH 实际 " + sheets6[0].capH + "）");
+  const sheets7 = S6.VX._layoutCols(CMP_POOLS.map(function (s) {
+    return { name: s.name, meta: s.meta, cols: s.cols, cards: s.cards.map(function (c) { return { url: c.url }; }) };
+  }));
+  ok(sheets7[0].capH === 0, "渠道对比的列没有字，就不要凭空留一条空白");
 }
 
 /* 真跑：渠道对比点「单页网页」只下一个 html */

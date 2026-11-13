@@ -264,16 +264,25 @@
     list.forEach(function (it) {
       var t = state.tags[it.image_url] || {};
       var done = ALL_DIMS.filter(function (k) { return (t[k] || []).length; }).length;
+      var cat = it.category || "未分类";
+      var mon = it.month || "";
       var card = document.createElement("div");
       card.className = "mv-card";
+      card.setAttribute("data-url", it.image_url || "");
+      card.setAttribute("data-cat", cat);
+      card.setAttribute("data-period", mon);
+      card.setAttribute("data-title", cat + (mon ? " · " + mon : ""));
       card.innerHTML =
-        '<div class="mv-card-img"><img loading="lazy" src="' + esc(it.image_url) + '" alt="">' +
-        (it.month ? '<span class="mv-season-badge">' + esc(it.month) + "</span>" : "") + "</div>" +
-        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(it.category || "未分类") + "</span>" +
+        '<div class="mv-card-img"><img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(cat) + '">' +
+        (mon ? '<span class="mv-season-badge">' + esc(mon) + "</span>" : "") + "</div>" +
+        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(cat) + "</span>" +
         '<span class="mv-card-done">' + done + "/" + ALL_DIMS.length + "</span></div>";
       card.onclick = function () { openModal(it); };
       grid.appendChild(card);
     });
+    /* 图全部渲染完再复查一次导出权限：页面刚打开时登录态可能还没恢复，
+       一次性检查会让「明明授权了却看不到导出按钮」变成常态。 */
+    try { window.VX && window.VX.recheck && window.VX.recheck(); } catch (e) {}
   }
 
   /* ---------- 大图 + 打标结果 ---------- */
