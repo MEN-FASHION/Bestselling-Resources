@@ -1,5 +1,5 @@
 /* ============================================================================
- * view-export.js —— 前台「把当前所见一键带走」（20261113U）
+ * view-export.js —— 前台「把当前所见一键带走」（20261113V）
  * ----------------------------------------------------------------------------
  * 两种成品，都是一步到手、不需要再解压、不需要配任何文件夹：
  *
@@ -37,7 +37,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261113U";
+  var BUILD = "20261113V";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -164,7 +164,18 @@
       if (m) v = m[1];
     }
     var n = parseInt(v, 10);
-    return (n >= 1 && n <= 8) ? n : 0;
+    if (n >= 1 && n <= 8) return n;
+    /* 没有内联 --rk-r 时退回样式表里的档位（.sz-s=5 / .sz-l=3，默认 4），
+       免得海报把一列 5 张的页面画成一列 4 张。 */
+    var cls = (g.className || "") + " " + ((g.getAttribute && g.getAttribute("class")) || "");
+    if (/\bsz-s\b/.test(cls)) return 5;
+    if (/\bsz-l\b/.test(cls)) return 3;
+    /* 天眼视图自己一套格数（--eye-r，默认 6） */
+    var eye = "";
+    try { if (g.style && g.style.getPropertyValue) eye = g.style.getPropertyValue("--eye-r"); } catch (e) {}
+    var ne = parseInt(eye, 10);
+    if (ne >= 1 && ne <= 8) return ne;
+    return 4;
   }
 
   function collectSections() {
@@ -175,6 +186,10 @@
       Array.prototype.forEach.call(pools, function (p) {
         var nameEl = p.querySelector(".rk-pool-name > span");
         var metaEl = p.querySelector(".rk-pool-meta");
+        /* 列头右上角的「N 张」与列底「已展示 48 / 200」是页面上两组真实信息，
+           海报要照抄，否则拿走一张图谁也说不清这一列到底有多少张。 */
+        var nEl = p.querySelector(".rk-pool-name .rk-n");
+        var footEl = p.querySelector(".rk-pool-foot");
         var cards = pickCards(p);
         /* 并排看板：空列也要留着（页面上它就是一根写着「该列暂无数据」的空列，
            丢掉它列数就和页面对不上了）；堆叠模式：空组不出现。 */
@@ -182,6 +197,8 @@
         secs.push({
           name: nameEl ? trim(nameEl.textContent) : "",
           meta: cleanMeta(metaEl ? metaEl.textContent : ""),
+          nText: nEl ? trim(nEl.textContent) : "",
+          foot: footEl ? trim(footEl.textContent) : "",
           cols: gridCols(p),
           cards: cards
         });
@@ -725,7 +742,16 @@
       ".vx-hd h1{margin:0;font-size:17px;line-height:1.4;color:var(--txt,#1b1b1b)}",
       ".vx-hd .sub{margin-top:5px;color:var(--sub,#8b8b8b);font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:2px 12px}",
       ".vx-note{margin:10px 18px 0;padding:9px 12px;border:1px solid #6b4a1f;background:#241a0c;color:#e7c17a;border-radius:8px;font-size:12.5px;line-height:1.6}",
-      ".vx-wrap{padding:10px 16px 28px}",
+      ".vx-wrap{padding:10px 16px 28px;overflow-x:auto}",
+      /* 页面靠脚本按窗口宽度算列，导出的这份必须在任何窗口下都保持「同样的几列并排」：
+         否则在窄窗口/手机上会命中样式表里的窄屏断点，几列被压成一列竖排 ——
+         这正是「导出来的和页面不一样」最常见的原因。 */
+      "body.vx-export .rk-pools{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:flex-start!important;max-height:none!important;overflow:visible!important}",
+      "body.vx-export .rk-pools>.rk-pool{flex:1 1 0!important;min-width:0!important}",
+      "body.vx-export .rk-pool-head{position:static!important}",
+      "body.vx-export .rk-pool-grid{grid-template-columns:repeat(var(--rk-r,4),minmax(0,1fr))!important;gap:6px!important}",
+      "body.vx-export .rk-pool-grid img{width:100%!important;height:auto!important;display:block}",
+      "body.vx-export .rk-pool-foot{text-align:center}",
       ".vx-wrap img[data-miss]{outline:2px solid #6b4a1f;outline-offset:-2px}",
       ".vx-wrap .rk-card,.vx-wrap .cz-card,.vx-wrap .mv-card{cursor:zoom-in}",
       "#vx-lb{position:fixed;inset:0;background:rgba(6,8,11,.94);display:none;align-items:center;justify-content:center;z-index:9999}",
@@ -772,7 +798,7 @@
       '<body class="front vx-export">\n' +
       '<header class="vx-hd"><h1>' + esc(ctx.title) + '</h1><div class="sub">' + subHtml + "</div></header>\n" +
       note + "\n" +
-      '<div class="vx-wrap" style="' + (wrapW ? ("max-width:" + (wrapW + 32) + "px;") : "") + 'margin:0 auto">\n' +
+      '<div class="vx-wrap" style="' + (wrapW ? ("width:" + wrapW + "px;min-width:" + Math.min(wrapW, 720) + "px;") : "") + 'margin:0 auto">\n' +
       html + "\n</div>\n" +
       '<div id="vx-lb"><img id="vx-lb-img" alt=""><button type="button" class="x" id="vx-x">×</button>' +
       '<button type="button" class="p" id="vx-p">‹</button><button type="button" class="n" id="vx-n">›</button></div>\n' +
@@ -854,54 +880,63 @@
     return sheets;
   }
 
-  /* 多列看板（渠道对比）：页面是几列并排，海报也几列并排。
-     每列一张图一行、列内纵向排；一列排到页底就整体换下一张，列头带「（续）」。 */
+  /* 多列看板（渠道对比 / 榜单对比池 / 上新节奏对比池）：
+     页面上是「N 列并排，每列内部又按 --rk-r 摆成一小格一小格」。
+     海报必须照这个结构画；否则把「3 列 × 每列每行 6 张」画成「3 列 × 每列一张大图」，
+     就不是「页面怎么显示就怎么导出」了。 */
   var COL_HEAD_H = 56;
+  var COL_FOOT_H = 26;   // 列底「已展示 48 / 200」
+  var COL_CGAP = 6;      // 列内小格子间距，与页面 .rk-pool-grid 一致
+
+  /* 一列里每行摆几张：优先取页面上算好的 --rk-r，取不到按 4 张 */
+  function colGridR(s) {
+    var r = parseInt(s && s.cols, 10);
+    if (!(r >= 1)) r = 4;
+    return Math.max(2, Math.min(8, r));
+  }
 
   function layoutCols(secs) {
     var C = Math.max(1, secs.length);
     var colW = (POSTER.W - POSTER.M * 2 - (C - 1) * POSTER.GAP) / C;
-    var imgH = Math.round(colW * 4 / 3);
-    /* 渠道对比的列里只有图；榜单 / 上新节奏的列，图上本来就压着「上升 12 位」这类字，
-       这些字要跟着画出来，所以按是否真有字决定卡片下方留不留文字区。 */
-    var anyText = secs.some(function (s) {
-      return (s.cards || []).some(function (c) {
-        return !!(c.title || (c.tags && c.tags.length));
-      });
+    var top = POSTER.HEAD_H + COL_HEAD_H;
+
+    var geo = secs.map(function (s) {
+      var R = colGridR(s);
+      var cw = (colW - (R - 1) * COL_CGAP) / R;
+      var ih = Math.round(cw * 4 / 3);        // 页面卡片是 3:4 竖图
+      return { R: R, cw: cw, ih: ih, rowH: ih + COL_CGAP };
     });
-    var capH = anyText ? 62 : 0;
-    var cardH = imgH + capH;
 
     var idx = secs.map(function () { return 0; });
     var shown = secs.map(function () { return 0; });
     var sheets = [];
 
-    for (var guard = 0; guard < 400; guard++) {
-      var sh = {
-        no: sheets.length + 1, colMode: true,
-        colW: colW, imgH: imgH, cardH: cardH, capH: capH,
-        cols: [], h: POSTER.HEAD_H
-      };
+    for (var guard = 0; guard < 500; guard++) {
+      var sh = { no: sheets.length + 1, colMode: true, colW: colW, cols: [], h: top };
       var any = false, left = false;
       for (var i = 0; i < C; i++) {
-        var s = secs[i];
-        var y = POSTER.HEAD_H + COL_HEAD_H;
-        var room = POSTER.MAX_H - POSTER.M - y;
-        var maxRows = Math.max(0, Math.floor((room + POSTER.GAP) / (cardH + POSTER.GAP)));
-        var take = Math.min(Math.max(0, s.cards.length - idx[i]), maxRows);
+        var s = secs[i], g0 = geo[i];
+        var room = POSTER.MAX_H - POSTER.M - COL_FOOT_H - top;
+        var maxRows = Math.max(1, Math.floor((room + COL_CGAP) / g0.rowH));
+        var take = Math.min(Math.max(0, s.cards.length - idx[i]), maxRows * g0.R);
         var slice = take > 0 ? s.cards.slice(idx[i], idx[i] + take) : [];
         idx[i] += take;
         if (take) any = true;
         if (idx[i] < s.cards.length) left = true;
+        var rows = Math.ceil(slice.length / g0.R);
+        var ch = rows ? top + rows * g0.rowH - COL_CGAP + COL_FOOT_H : top + COL_FOOT_H;
         sh.cols.push({
           name: s.name,
           meta: s.meta,
+          nText: s.nText,
+          foot: s.foot,
           cards: slice,
-          cont: shown[i] > 0 && take > 0          // 这一页是第二页起的续列
+          R: g0.R, cw: g0.cw, ih: g0.ih, rowH: g0.rowH,
+          cont: shown[i] > 0 && take > 0,          // 这一张是续列
+          h: ch
         });
         if (take) shown[i] += take;
-        sh.h = Math.max(sh.h, take ? y + take * (cardH + POSTER.GAP) - POSTER.GAP
-          : POSTER.HEAD_H + COL_HEAD_H);
+        sh.h = Math.max(sh.h, ch);
       }
       if (!any) break;
       sheets.push(sh);
@@ -910,13 +945,20 @@
 
     if (!sheets.length) {
       sheets.push({
-        no: 1, colMode: true, colW: colW, imgH: imgH, cardH: cardH, capH: capH,
-        cols: secs.map(function (s) { return { name: s.name, meta: s.meta, cards: [], cont: false }; }),
-        h: POSTER.HEAD_H + COL_HEAD_H + 40
+        no: 1, colMode: true, colW: colW,
+        cols: secs.map(function (s) {
+          var R = colGridR(s), cw = (colW - (R - 1) * COL_CGAP) / R;
+          return {
+            name: s.name, meta: s.meta, nText: s.nText, foot: s.foot, cards: [],
+            R: R, cw: cw, ih: Math.round(cw * 4 / 3), rowH: Math.round(cw * 4 / 3) + COL_CGAP,
+            cont: false, h: top + COL_FOOT_H
+          };
+        }),
+        h: top + COL_FOOT_H + 20
       });
     }
     sheets.forEach(function (sh) {
-      sh.h = Math.max(POSTER.HEAD_H + COL_HEAD_H + 30, sh.h + POSTER.M - 6);
+      sh.h = Math.max(top + COL_FOOT_H, sh.h + POSTER.M - 6);
     });
     return sheets;
   }
@@ -925,16 +967,31 @@
     g.fillStyle = "#6fa3f0";
     g.fillRect(x, y + 8, 4, 20);
 
+    /* 左：期次（列名），右：该列张数 —— 与页面列头同序 */
+    var rightW = 0;
+    if (col.nText) {
+      g.font = posterFont("400", 12.5);
+      rightW = Math.min(w * 0.42, g.measureText(col.nText).width + 8);
+    }
     g.fillStyle = "#dbe4f2";
     g.font = posterFont("700", 18);
-    var name = wrapLines(g, (col.name || "未命名列") + (col.cont ? "（续）" : ""), w - 26, 1)[0] || "";
+    var name = wrapLines(g, (col.name || "未命名列") + (col.cont ? "（续）" : ""), w - 26 - rightW, 1)[0] || "";
     g.fillText(name, x + 13, y + 26);
 
-    g.font = posterFont("400", 12.5);
-    g.fillStyle = "#7f8b9d";
-    var sub = col.cards.length ? (col.cards.length + " 张") : "本列已完";
-    if (col.meta) sub = col.meta + " · " + sub;
-    g.fillText(wrapLines(g, sub, w - 8, 1)[0] || "", x, y + 46);
+    if (col.nText) {
+      g.font = posterFont("400", 12.5);
+      g.fillStyle = "#7f8b9d";
+      g.textAlign = "right";
+      g.fillText(col.nText, x + w, y + 26);
+      g.textAlign = "left";
+    }
+
+    /* 副标题：页面上那句「美国 · 较上一周（W39）新上榜 73 张」，一个字都不省 */
+    if (col.meta) {
+      g.font = posterFont("400", 12.5);
+      g.fillStyle = "#7f8b9d";
+      g.fillText(wrapLines(g, col.meta, w - 8, 1)[0] || "", x, y + 46);
+    }
 
     g.strokeStyle = "#1f2733";
     g.lineWidth = 1;
@@ -942,6 +999,17 @@
     g.moveTo(x, y + COL_HEAD_H - 8);
     g.lineTo(x + w, y + COL_HEAD_H - 8);
     g.stroke();
+  }
+
+  /* 列底「已展示 48 / 200」：页面有，海报也要有 */
+  function drawColFoot(g, col, x, y, w) {
+    if (!col.foot) return;
+    g.font = posterFont("400", 11.5);
+    g.fillStyle = "#5c6779";
+    g.textAlign = "center";
+    var t = wrapLines(g, col.foot + (col.cont ? "（续）" : ""), w - 4, 1)[0] || "";
+    g.fillText(t, x + w / 2, y);
+    g.textAlign = "left";
   }
 
   function roundRect(g, x, y, w, h, r) {
@@ -1048,6 +1116,24 @@
     }
   }
 
+  /* 图上角标：取卡片第一个标签（「上升 12 位」「新上榜」「美国」），画在图内左下 */
+  function drawCardOverTag(g, c, x, y, cardW, imgH) {
+    var t = (c && c.tags && c.tags[0]) || (c && c.title) || "";
+    t = String(t).trim();
+    if (!t) return;
+    var fs = Math.max(9, Math.round(cardW * 0.095));
+    g.font = posterFont("600", fs);
+    var tw = g.measureText(t).width + fs;
+    if (tw > cardW - 6) return;
+    var th = fs + 8;
+    var bx = x + 3, by = y + imgH - th - 3;
+    roundRect(g, bx, by, tw, th, th / 2);
+    g.fillStyle = "rgba(12,16,22,.78)";
+    g.fill();
+    g.fillStyle = "#e7eefb";
+    g.fillText(t, bx + fs / 2, by + th - 5);
+  }
+
   function drawCard(g, c, x, y, m) {
     var cardW = m.cardW, imgH = m.imgH, cardH = m.cardH, r = 10;
 
@@ -1075,8 +1161,12 @@
     g.lineWidth = 1;
     g.stroke();
 
-    /* 标题：最多两行（紧凑卡不画） */
-    if (typeof m.capH === "number" && m.capH < 30) return;
+    /* 紧凑卡（与页面同样的小格子）：不画标题，但页面上压在图上的
+       「上升 12 位 / 新上榜 / 站点头」这类角标要跟着画，否则导出后信息就丢了 */
+    if (typeof m.capH === "number" && m.capH < 30) {
+      drawCardOverTag(g, c, x, y, cardW, imgH);
+      return;
+    }
     var tx = x + 12, tw = cardW - 24;
     var maxLines = Math.max(1, Math.min(2, Math.floor((m.capH - 10) / 21)));
     g.font = posterFont("400", 15);
@@ -1123,16 +1213,20 @@
     drawHeader(g, ctx, W);
 
     if (sheet.colMode) {
+      /* 与页面同构：每一列内部再按 --rk-r 铺成小格子，不是一列一张大图 */
       sheet.cols.forEach(function (col, i) {
         var x = POSTER.M + i * (sheet.colW + POSTER.GAP);
         drawColHead(g, col, x, POSTER.HEAD_H, sheet.colW);
-        var cy = POSTER.HEAD_H + COL_HEAD_H;
-        col.cards.forEach(function (c) {
-          drawCard(g, c, x, cy, {
-            cardW: sheet.colW, imgH: sheet.imgH, cardH: sheet.cardH, capH: sheet.capH
+        var y0 = POSTER.HEAD_H + COL_HEAD_H;
+        var R = Math.max(1, col.R || 4);
+        col.cards.forEach(function (c, k) {
+          var r = Math.floor(k / R), q = k % R;
+          drawCard(g, c, x + q * (col.cw + COL_CGAP), y0 + r * col.rowH, {
+            cardW: col.cw, imgH: col.ih, cardH: col.ih, capH: 0
           });
-          cy += sheet.cardH + POSTER.GAP;
         });
+        var rows = Math.ceil(col.cards.length / R);
+        drawColFoot(g, col, x, rows ? y0 + rows * col.rowH + 12 : y0 + 14, sheet.colW);
       });
 
       g.font = posterFont("400", 12);

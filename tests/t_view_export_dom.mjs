@@ -300,7 +300,10 @@ console.log("五、样式与标题");
   ok(/<body class="front/.test(html), "导出页要挂 site 的 front 类，变量与主题才生效");
   ok(/趋势上升榜 · 卫衣/.test(html), "标题应写明类目");
   ok(/期次：第43周—第45周/.test(html), "副标题应写明期次范围");
-  ok(/max-width:1212px/.test(html), "应按页面实测宽度限宽，保证列宽比例一致");
+  /* 20261113V：从「限宽」改成「定宽」—— 只限宽时，文件在窄窗口打开会命中样式表的
+     窄屏断点，几列并排被压成一列竖排，看起来就和页面不一样了。 */
+  ok(/width:1180px/.test(html), "应按页面实测宽度定宽，保证列宽与列数一致");
+  ok(/flex-wrap:nowrap/.test(html), "并排容器必须禁止换行，否则窄窗口会塌成一列");
   ok(/<!DOCTYPE html>/.test(html) && /<\/html>/.test(html), "应是一份完整的单文件网页");
 }
 

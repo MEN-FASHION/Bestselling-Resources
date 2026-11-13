@@ -547,11 +547,14 @@ const CMP_POOLS = [
   ok(html6.indexOf("上升 12 位") >= 0 && html6.indexOf("趋势爆款") >= 0, "列里的「上升 N 位 / 趋势爆款」不能丢");
   ok(html6.indexOf("纯棉长袖衬衫") >= 0, "列里的标题也要带出来");
   const sheets6 = S6.VX._layoutCols(secs6);
-  ok(sheets6[0].capH >= 30, "并排海报要给文字留位置（capH 实际 " + sheets6[0].capH + "）");
+  /* 20261113V：海报改为与页面同构 —— 每列内部再按 --rk-r 分格，
+     图上压着的「上升 N 位」由 drawCardOverTag 画在图内，不再单独留一条文字栏。 */
+  ok(sheets6[0].cols[0].R === 3, "并排海报每列内部应按页面 --rk-r 分 3 格（实际 " + sheets6[0].cols[0].R + "）");
+  ok(sheets6[0].cols[0].cw < sheets6[0].colW / 2, "列内小格必须明显小于整列宽（不是一列一张大图）");
   const sheets7 = S6.VX._layoutCols(CMP_POOLS.map(function (s) {
     return { name: s.name, meta: s.meta, cols: s.cols, cards: s.cards.map(function (c) { return { url: c.url }; }) };
   }));
-  ok(sheets7[0].capH === 0, "渠道对比的列没有字，就不要凭空留一条空白");
+  ok(sheets7[0].cols.every(function (c) { return c.R >= 2; }), "渠道对比的列同样按页面分格，不铺成一张大图");
 }
 
 /* 真跑：渠道对比点「单页网页」只下一个 html */
@@ -750,19 +753,22 @@ console.log("六·补 海报版式几何");
 console.log("六·补二 渠道对比海报：按列并排与分页");
 {
   const S = boot({});
+  /* 每列 300 张、每列每行 3 格：一张海报放不下，必须按列续页
+     （20261113V 起列内是分格的，单张能放的张数比以前多很多，
+       所以这里把数据量放大到 300/列，才能真正触发分页） */
   const secs = [0, 1, 2, 3].map((i) => ({
     name: "渠道" + i, meta: "2026-01", cols: 3,
-    cards: new Array(30).fill(0).map((_, k) => ({ url: "u" + i + "_" + k })),
+    cards: new Array(300).fill(0).map((_, k) => ({ url: "u" + i + "_" + k })),
   }));
   const sheets = S.VX._layoutCols(secs);
-  ok(sheets.length > 1, "120 张应分成多张海报（实际 " + sheets.length + "）");
+  ok(sheets.length > 1, "1200 张应分成多张海报（实际 " + sheets.length + "）");
   ok(sheets[0].colMode === true && sheets[0].cols.length === 4, "每张上都是 4 列并排");
   const seen = {};
   let n = 0;
   sheets.forEach((sh) => sh.cols.forEach((c) => c.cards.forEach((cd) => {
     if (!seen[cd.url]) { seen[cd.url] = 1; n++; }
   })));
-  ok(n === 120, "分页不能丢图（实际 " + n + "）");
+  ok(n === 1200, "分页不能丢图（实际 " + n + "）");
   sheets.forEach((sh) => ok(sh.h <= 5200 + 1, "单张高度不超上限（实际 " + sh.h + "）"));
   const contCols = sheets.slice(1).reduce((a, sh) => a + sh.cols.filter((c) => c.cont).length, 0);
   ok(contCols > 0, "跨页的列应标「（续）」");
@@ -785,19 +791,33 @@ console.log("六·补二 渠道对比海报：按列并排与分页");
   const res = await S.VX.runPoster();
   await sleep(160);
 
-  const W = 1240, M = 44, GAP = 20, C = 3;
+  const W = 1240, M = 44, GAP = 20, C = 3, CGAP = 6;
   const colW = (W - M * 2 - (C - 1) * GAP) / C;
+  /* 三列各自的「每行几张」（页面 --rk-r）：Pinterest 3 / SHEIN 3 / 上新节奏 2 */
+  const Rs = [3, 3, 2];
+  const cellW = Rs.map((R) => (colW - (R - 1) * CGAP) / R);
   const imgs = S.ops.filter((o) => o.t === "img");
   ok(imgs.length === 8, "8 张图各画一次（实际 " + imgs.length + "）");
   imgs.forEach((o) => {
-    ok(Math.abs(o.w - colW) < 1.5, "图片宽度等于列宽（" + Math.round(o.w) + " vs " + Math.round(colW) + "）");
+    /* 用「落在哪一列的横向区间里」判列，而不是按列宽等分取整：
+       列内还有小格偏移，取整会在边界上算错列 */
+    let col = 0;
+    for (let ci = C - 1; ci >= 0; ci--) {
+      const cx = M + ci * (colW + GAP);
+      if (o.x >= cx - 1.5) { col = ci; break; }
+    }
+    ok(Math.abs(o.w - cellW[col]) < 1.5,
+      "图片宽度应等于该列的格宽（第 " + col + " 列：" + Math.round(o.w) + " vs " + Math.round(cellW[col]) + "）");
     ok(o.x >= M - 1 && o.x + o.w <= W - M + 1.5, "图片不应超出左右页边距（x=" + Math.round(o.x) + "）");
-    const col = Math.round((o.x - M) / (colW + GAP));
-    ok(col >= 0 && col < C, "列号应在 0..2 之间（实际 " + col + "）");
-    ok(Math.abs((M + col * (colW + GAP)) - o.x) < 1, "图片应落在列上（x=" + o.x + "）");
+    const local = o.x - (M + col * (colW + GAP));
+    const q = Math.round(local / (cellW[col] + CGAP));
+    ok(Math.abs((M + col * (colW + GAP) + q * (cellW[col] + CGAP)) - o.x) < 1, "图片应落在列内小格上（x=" + o.x + "）");
+    ok(q >= 0 && q < Rs[col], "格号应在 0.." + (Rs[col] - 1) + " 之间（实际 " + q + "）");
   });
+  /* 按实际用到的格位算横坐标：Pinterest 4 张占 3 格位 / SHEIN 2 张占 2 格位 /
+     上新节奏 2 张占 2 格位 → 3+2+2 = 7 个不同横坐标（说明列内确实分了格，不是一列一张） */
   const xs = Array.from(new Set(imgs.map((o) => Math.round(o.x))));
-  ok(xs.length === 3, "图只出现在 3 个列位置上（实际 " + xs.length + " 个）");
+  ok(xs.length === 7, "图应分布在列内小格位上（应为 7 个横坐标，实际 " + xs.length + " 个）");
   ok(res.sheets === 1, "8 张应排在一张海报里");
   ok(S.canvases[0].w === 2480, "输出宽 2480px");
   ok(/^渠道对比.*_海报\.jpg$/.test(S.downloads[0].name || ""), "海报文件名以「渠道对比」开头，实际：" + S.downloads[0].name);
