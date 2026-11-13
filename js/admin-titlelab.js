@@ -259,6 +259,7 @@
     let inserted = 0, skippedExisting = 0, mergedInFile = 0, clearedItems = 0, done = 0;
     const failed = [];
     const undoGroups = [], backupRows = [];
+    const myBatchIds = [];   /* 20261113L：本次导入新建的批次号，用来登记上传归属 */
     let backupFail = false;
     let cursor = 0;
 
@@ -323,7 +324,9 @@
         skippedExisting += skipped;
         mergedInFile += merged;
         done++;
-        if (ins > 0) undoGroups.push({ period: g.period, category: g.category, sites: g.slotSites, source: SOURCE });
+        /* 20261113L：记下批次号，导入结束后登记上传归属（谁能改这批） */
+        if (ins > 0) myBatchIds.push(batchId);
+        if (ins > 0) undoGroups.push({ period: g.period, category: g.category, sites: g.slotSites, source: SOURCE, batchId: batchId });
         if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入");
       } catch (e) {
         failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
@@ -345,6 +348,12 @@
     }
 
     tiUndo = undoGroups.length ? { at: new Date(), groups: undoGroups, backup: backupRows } : null;
+    /* 20261113L：登记上传归属（按批次 ID）。写失败不阻断导入，只会让这批显示成「历史数据」。 */
+    try {
+      if (myBatchIds.length && window.UO && typeof window.UO.claim === "function") {
+        await window.UO.claim("b", myBatchIds);
+      }
+    } catch (e) { /* 忽略 */ }
     renderTiUndo();
 
     const msg = "已写入【标题组词台】" + inserted + " 条"
@@ -418,6 +427,8 @@
   async function loadTiBatches() {
     const box = $("#ti-batch-list");
     let list = [];
+    /* 20261113L：先取归属，台账要显示上传人，并据此决定能不能删 */
+    try { if (window.UO && typeof window.UO.ensure === "function") await window.UO.ensure(); } catch (e) { /* 忽略 */ }
     try { list = await SB.listRankBatches(SOURCE); } catch (e) { list = []; }
     const per = {};
     list.forEach((b) => { if (b.period_label) per[b.period_label] = 1; });
@@ -438,15 +449,28 @@
       row.className = "rank-batch-row";
       const n = i < counts.length ? counts[i] : null;
       const cnt = (typeof n === "number") ? n : (b.rows || 0);
+      /* 20261113L：谁传的谁能删。别人的（含历史数据）看得见，但删除按钮是关的 */
+      const can = !(window.UO && typeof window.UO.canManage === "function")
+        ? true : (window.UO.isSuper() || window.UO.canManage("b", b.id));
+      const owner = (window.UO && typeof window.UO.label === "function") ? window.UO.label("b", b.id) : "";
       row.innerHTML = '<span class="rank-batch-meta">'
         + escHtml(b.period_label || "(空期次)") + ' · ' + escHtml(b.category || "其他")
         + ' · ' + escHtml(b.site || "—") + ' · ' + cnt + ' 条'
+        + '<span class="rank-batch-owner' + (can ? "" : " is-other") + '"> · 上传人 '
+        + escHtml(owner || "历史数据") + (can ? "" : "（不可改动）") + '</span>'
         + '</span>';
       const del = document.createElement("button");
       del.type = "button"; del.className = "btn-ghost small danger"; del.textContent = "删除";
+      del.disabled = !can;
+      del.title = can ? "" : "这批不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以删除";
       del.onclick = async () => {
+        if (!can) { sbToast("这批不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以删除", false); return; }
         if (!(await uiConfirm("删除这批记录（只影响标题组词台）？\n会清空它的槽位条目与台账，删了不会自动回来。"))) return;
-        try { await SB.deleteRankBatch(b.id); await loadTiBatches(); sbToast("已删除该批次", true); }
+        try {
+          await SB.deleteRankBatch(b.id);
+          try { if (window.UO) await window.UO.forget("b", [b.id]); } catch (e2) { /* 忽略 */ }
+          await loadTiBatches(); sbToast("已删除该批次", true);
+        }
         catch (e) { sbToast((e && e.message) || "删除失败", false); }
       };
       row.appendChild(del);

@@ -38,6 +38,35 @@
 
   var state = {};   // key -> 面板状态
 
+  /* ---------- 20261113L · 上传归属 ----------
+     看得见所有人传的图，但删除 / 批量编辑 / 改打标只能对自己传的那些动手，超管不限。
+     归属按「图片地址」记（与打标同键），本功能上线前传的图没有归属，记作历史数据，只有超管可改。
+     模块没加载时按旧行为放行，避免一次脚本加载失败让整块面板不能操作。 */
+  function uoOk() { return !!(window.UO && typeof window.UO.canManage === "function"); }
+  function uoReady() {
+    if (!uoOk()) return Promise.resolve(false);
+    return window.UO.ensure().then(function () { return true; }).catch(function () { return false; });
+  }
+  function canOwn(url) {
+    if (!uoOk()) return true;
+    if (window.UO.isSuper()) return true;
+    return window.UO.canManage("i", url);
+  }
+  function ownerOf(url) {
+    if (!uoOk()) return "";
+    return window.UO.label("i", url);
+  }
+  function ownerHint(url) {
+    if (!uoOk()) return "";
+    return window.UO.hint("i", url);
+  }
+  function denyMsg() {
+    return "这张图不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动";
+  }
+  function denyMsgN(n) {
+    return "其中 " + n + " 张不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动，已跳过";
+  }
+
   function SBx() { return window.SB || null; }
   function $(sel) { return document.querySelector(sel); }
   function id(k, s) { return "cz-" + k + "-" + s; }
@@ -127,6 +156,7 @@
         '<input type="file" id="' + id(k, "imp-file") + '" accept=".xlsx,.xls" hidden>' +
         '<button id="' + id(k, "sel-all") + '" class="btn-ghost" type="button">全选本屏</button>' +
         '<button id="' + id(k, "sel-none") + '" class="btn-ghost" type="button" disabled>取消选择</button>' +
+        '<button id="' + id(k, "adopt") + '" class="btn-ghost hidden" type="button" title="把没有上传人记录的图记到你名下，之后由你管理">认领历史数据</button>' +
         '<button id="' + id(k, "batch-edit") + '" class="btn-primary" type="button" disabled>批量编辑</button>' +
         '<button id="' + id(k, "del-sel") + '" class="btn-danger" type="button" disabled>删除选中（0）</button>' +
         '<span id="' + id(k, "msg") + '" class="hint-inline cz-msg"></span>' +
@@ -149,6 +179,7 @@
           '<div class="mv-tag-head">' +
             '<h3>' + esc(z.label) + ' · 打标</h3>' +
             '<span id="' + id(k, "tag-title") + '" class="hint-inline"></span>' +
+            '<span id="' + id(k, "tag-owner") + '" class="hint-inline cz-owner-tip"></span>' +
           '</div>' +
           '<div class="mv-tag-body">' +
             '<div class="mv-tag-img"><img id="' + id(k, "tag-img") + '" alt=""></div>' +
@@ -355,6 +386,15 @@
         else if (typeof SB.listImageTags === "function") st.tagMap = (await SB.listImageTags(urls)) || {};
       } catch (e) { st.tagMap = {}; }
     }
+    /* 20261113L：算一次「哪些是我传的」，渲染时同步取，不用每张图 await 一次 */
+    await uoReady();
+    st.own = {};
+    st.ownerLabel = {};
+    st.items.forEach(function (r) {
+      var u = String(r.image_url || "");
+      st.own[String(r.id)] = canOwn(u);
+      st.ownerLabel[String(r.id)] = ownerOf(u);
+    });
     st.ready = true;
     fillCatSelects(k);
     fillMonthSelects(k);
@@ -484,7 +524,11 @@
       cbx.className = "cz-row-cbx";
       cbx.onclick = function (e) {
         e.stopPropagation();
-        g.items.forEach(function (r) { if (cbx.checked) st.sel[String(r.id)] = 1; else delete st.sel[String(r.id)]; });
+        /* 20261113L：只能勾自己能改的，别人的图不跟着全选 */
+        g.items.forEach(function (r) {
+          if (st.own && st.own[String(r.id)] === false) return;
+          if (cbx.checked) st.sel[String(r.id)] = 1; else delete st.sel[String(r.id)];
+        });
         syncPickUI(k);
       };
       lab.appendChild(cbx);
@@ -545,8 +589,11 @@
       }
       row.appendChild(gbox);
 
-      /* 行内已全选则勾上 */
-      cbx.checked = g.items.every(function (r) { return st.sel[String(r.id)]; });
+      /* 行内已全选则勾上（只看自己能改的那些） */
+      var ownItems = g.items.filter(function (r) { return !(st.own && st.own[String(r.id)] === false); });
+      cbx.checked = ownItems.length > 0 && ownItems.every(function (r) { return st.sel[String(r.id)]; });
+      cbx.disabled = !ownItems.length;
+      if (!ownItems.length) cbx.title = "这一类目下的图都不是你上传的，不能改动";
       box.appendChild(row);
     });
     syncSel(k);
@@ -556,15 +603,17 @@
     var st = state[k];
     var t = st.tagMap[r.image_url] || {};
     var filled = DIMS.filter(function (d) { return (t[d.key] || []).length; }).length;
+    var mine = !(st.own && st.own[String(r.id)] === false);   /* 20261113L：不是我传的 → 只能看 */
     var card = document.createElement("div");
-    card.className = "gcard cz-card" + (st.sel[String(r.id)] ? " is-sel" : "");
+    card.className = "gcard cz-card" + (st.sel[String(r.id)] ? " is-sel" : "") + (mine ? "" : " is-locked");
     card.setAttribute("data-id", String(r.id));
     card.innerHTML =
-      '<label class="cz-pick" title="勾选后可批量编辑 / 批量删除">' +
-        '<input type="checkbox"' + (st.sel[String(r.id)] ? " checked" : "") + "></label>" +
-      '<button type="button" class="cz-card-del" title="删除这张图">×</button>' +
+      '<label class="cz-pick" title="' + (mine ? "勾选后可批量编辑 / 批量删除" : "这张图不是你上传的，不能改动") + '">' +
+        '<input type="checkbox"' + (st.sel[String(r.id)] ? " checked" : "") + (mine ? "" : " disabled") + "></label>" +
+      '<button type="button" class="cz-card-del" title="' + (mine ? "删除这张图" : denyMsg()) + '"' + (mine ? "" : " disabled") + ">×</button>" +
       '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
       (r.month ? '<span class="mv-season-badge">' + esc(r.month) + "</span>" : "") +
+      (mine ? "" : '<span class="cz-lock-badge" title="' + esc(ownerHint(r.image_url)) + '">仅查看 · ' + esc(st.ownerLabel[String(r.id)] || "历史数据") + "</span>") +
       "</div>" +
       '<div class="gmeta">' +
       '<div class="gname">' + esc(r.category || "未分类") + "</div>" +
@@ -576,16 +625,20 @@
     var pick = card.querySelector(".cz-pick input");
     pick.onclick = function (e) {
       e.stopPropagation();
+      if (!mine) { pick.checked = false; return; }
       if (pick.checked) st.sel[String(r.id)] = 1; else delete st.sel[String(r.id)];
-      card.classList.toggle("is-sel", !!pick.checked);
-      syncPickUI(k);
+      syncPickUI(k);   /* 局部同步（含 is-sel 高亮），不重建图墙 */
     };
     var del = card.querySelector(".cz-card-del");
     del.onclick = function (e) {
       e.stopPropagation();
+      if (!mine) { toast(denyMsg(), false); return; }
       delMany(k, [r.id], "这张图（" + (r.category || "未分类") + (r.month ? " · " + r.month : "") + "）");
     };
-    card.onclick = function () { openTag(k, r.id); };
+    card.onclick = function () {
+      /* 打标只读也能看，但弹层里会按归属禁用保存按钮 */
+      openTag(k, r.id);
+    };
     return card;
   }
 
@@ -637,6 +690,17 @@
   }
 
   /* ---------- 删除：单张 / 一批 / 整行 ---------- */
+  /* 20261113L：把一批 id 分成「我能删的」和「别人传的」 */
+  function splitOwn(k, ids) {
+    var st = state[k];
+    var ok = [], denied = [];
+    (ids || []).forEach(function (x) {
+      var s = String(x);
+      ((st.own && st.own[s] === false) ? denied : ok).push(s);
+    });
+    return { ok: ok, denied: denied };
+  }
+
   async function delMany(k, ids, what) {
     var SB = SBx();
     var st = state[k];
@@ -647,14 +711,30 @@
       toast("数据层版本偏旧，请强刷页面后重试", false);
       return;
     }
-    if (!(await uiConfirm("删除" + what + "？\n删掉后前台立即不再展示，打标记录会保留。"))) return;
+    /* 20261113L：别人的图不能删，先挑出来，明确告知，不静默跳过 */
+    var gate = splitOwn(k, list);
+    if (!gate.ok.length) { toast(denyMsgN(list.length), false); return; }
+    var extra = gate.denied.length
+      ? "\n其中 " + gate.denied.length + " 张不是你上传的（或属于历史数据），会跳过，只删你能删的 " + gate.ok.length + " 张。"
+      : "";
+    if (!(await uiConfirm("删除" + what + "？" + extra + "\n删掉后前台立即不再展示，打标记录会保留。"))) return;
+    list = gate.ok;
     say(k, "删除中…");
     try {
       var res = await SB.deleteRankChannelItems(list);
       list.forEach(function (id) { delete st.sel[id]; });
+      /* 图删了，归属记录一并清掉，避免归属表越积越大 */
+      try {
+        if (uoOk()) {
+          var gone = st.items.filter(function (r) { return list.indexOf(String(r.id)) >= 0; })
+            .map(function (r) { return r.image_url; });
+          if (gone.length) await window.UO.forget("i", gone);
+        }
+      } catch (e) { /* 忽略 */ }
       await loadAll(k);
       var msg = "已删除 " + res.ok + " 张";
       if (res.failed && res.failed.length) msg += "，失败 " + res.failed.length + " 张";
+      if (gate.denied.length) msg += "，跳过 " + gate.denied.length + " 张非本人上传";
       say(k, msg);
       toast(msg, !(res.failed && res.failed.length));
     } catch (e) {
@@ -698,6 +778,10 @@
     var ids = selIds(k);
     if (!SB || !ids.length) return;
     if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+    /* 20261113L：别人的图不能改，勾选里混了就跳过并说明 */
+    var gate = splitOwn(k, ids);
+    if (!gate.ok.length) { toast(denyMsgN(ids.length), false); return; }
+    ids = gate.ok;
 
     var patch = {};
     var mo = normMonth(el(k, "batch-month") ? el(k, "batch-month").value : "");
@@ -726,6 +810,7 @@
       await loadAll(k);
       var msg = "已修改 " + res.ok + " 张";
       if (res.failed && res.failed.length) msg += "，失败 " + res.failed.length + " 张";
+      if (gate.denied.length) msg += "，跳过 " + gate.denied.length + " 张非本人上传";
       say(k, msg);
       toast(msg, !(res.failed && res.failed.length));
     } catch (e) {
@@ -913,6 +998,12 @@
       var okNames = {};
       (res.ok || []).forEach(function (x) { if (x && x.name) okNames[normName(x.name)] = 1; });
       rememberFps(st.pending.filter(function (f) { return okNames[normName(f.name)]; }));
+      /* 20261113L：登记上传归属（按图片地址）。这一步失败不影响上传结果，
+         只是这批图会显示成「历史数据」，只有超管能改 —— 宁可收紧也不放开。 */
+      try {
+        var myUrls = (res.ok || []).map(function (x) { return x && x.url ? x.url : ""; }).filter(Boolean);
+        if (myUrls.length && uoOk()) await window.UO.claim("i", myUrls);
+      } catch (e) { /* 忽略 */ }
       st.pending = [];
       renderPending(k);
       say(k, "已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));
@@ -976,6 +1067,23 @@
     var ms = el(k, "tag-month");
     if (ms) ms.value = item.month || "";
     renderDims(k, item);
+    /* 20261113L：不是我传的图 → 打标只读，保存 / 删除 / 改类目全部禁用，并说明原因 */
+    var mine = !(st.own && st.own[String(item.id)] === false);
+    var tip = el(k, "tag-owner");
+    if (tip) {
+      tip.textContent = uoOk() ? ownerHint(item.image_url) : "";
+      tip.classList.toggle("is-readonly", !mine);
+    }
+    ["tag-save", "tag-del"].forEach(function (s) {
+      var b = el(k, s);
+      if (!b) return;
+      b.disabled = !mine;
+      b.title = mine ? "" : denyMsg();
+    });
+    ["tag-cat", "tag-month"].forEach(function (s) {
+      var b = el(k, s);
+      if (b) b.disabled = !mine;
+    });
     var m = el(k, "tag-modal");
     if (m) m.classList.remove("hidden");
   }
@@ -1043,6 +1151,8 @@
     var item = curItem(k);
     if (!SB || !item) return;
     if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+    /* 20261113L：别人的图不能改打标，也不能改它的类目 / 月份 */
+    if (st.own && st.own[String(item.id)] === false) { toast(denyMsg(), false); return; }
     var t = st.tagMap[item.image_url] || {};
     var patch = {};
     DIMS.forEach(function (d) {
@@ -1078,9 +1188,11 @@
     var item = curItem(k);
     if (!SB || !item) return;
     if (typeof window.guardZone === "function" && !window.guardZone(st.zone.key)) return;
+    if (st.own && st.own[String(item.id)] === false) { toast(denyMsg(), false); return; }
     if (!(await uiConfirm("删除这张图？删掉后前台立即不再展示（打标记录保留）。"))) return;
     try {
       await SB.deleteRankChannelItem(item.id);
+      try { if (uoOk()) await window.UO.forget("i", [item.image_url]); } catch (e) { /* 忽略 */ }
       closeTag(k);
       await loadAll(k);
       toast("已删除");
@@ -1132,15 +1244,19 @@
     if (msg) msg.textContent = "正在解析并写入，请稍等…";
 
     try {
-      /* 只把本专区的图交给它当白名单：对不上的行跳过，不会串到别的专区 */
+      /* 只把本专区的图交给它当白名单：对不上的行跳过，不会串到别的专区。
+         20261113L：再加一层——只交「我传的图」，别人的图不能通过导表被改打标。 */
+      var lockedN = st.items.filter(function (r) { return st.own && st.own[String(r.id)] === false; }).length;
       var res = await R.importFile(file, {
-        urls: st.items.map(function (r) { return r.image_url; }),
+        urls: st.items.map(function (r) { return r.image_url; })
+          .filter(function (u, i) { return !(st.own && st.own[String(st.items[i].id)] === false); }),
         mode: mode,
         clearEmpty: clearEmpty,
       });
       var line = "写入 " + (res.written || 0) + " 张";
       if (res.hit != null) line += " · 表内 " + (res.total || 0) + " 行，对上 " + res.hit + " 行";
       if (res.miss) line += " · 对不上 " + res.miss + " 行（不属于本专区，已跳过）";
+      if (lockedN) line += " · " + lockedN + " 张不是你上传的，未纳入本次导入";
       if (res.unknown && res.unknown.length) line += " · 未识别取值 " + res.unknown.length + " 处";
       if (res.missing && res.missing.length) line += " · 缺列未写：" + res.missing.join("、");
       if (res.msg) line += " · " + res.msg;
@@ -1421,10 +1537,36 @@
     /* 选择 / 批量删除 / 批量编辑 */
     var sa = el(k, "sel-all");
     if (sa) sa.onclick = function () {
+      /* 20261113L：只勾自己能改的，别人的图不跟着选中 */
       state[k].sel = {};
-      filteredItems(k).forEach(function (r) { state[k].sel[String(r.id)] = 1; });
+      var st2 = state[k];
+      filteredItems(k).forEach(function (r) {
+        if (st2.own && st2.own[String(r.id)] === false) return;
+        state[k].sel[String(r.id)] = 1;
+      });
       syncPickUI(k);
     };
+    /* 20261113L：超管可把没有归属的历史图认领到自己名下（认领后才能像自己传的一样管理） */
+    var ad = el(k, "adopt");
+    if (ad) {
+      var isSup = uoOk() && window.UO.isSuper();
+      ad.classList.toggle("hidden", !isSup);
+      ad.onclick = async function () {
+        var st3 = state[k];
+        var urls = st3.items.filter(function (r) { return st3.own && st3.own[String(r.id)] === false; })
+          .map(function (r) { return r.image_url; })
+          .filter(function (u) { return window.UO.label("i", u) === "历史数据"; });
+        if (!urls.length) { toast("没有需要认领的历史图片（都已有上传人）", true); return; }
+        if (!(await uiConfirm("把当前 " + urls.length + " 张没有上传人记录的图记到你名下？\n认领后其他管理员仍看得到，但只有你和超管能改动。"))) return;
+        ad.disabled = true;
+        try {
+          await window.UO.claim("i", urls);
+          await loadAll(k);
+          toast("已认领 " + urls.length + " 张", true);
+        } catch (e) { toast("认领失败，请重试", false); }
+        finally { ad.disabled = false; }
+      };
+    }
     var sn = el(k, "sel-none");
     if (sn) sn.onclick = function () { state[k].sel = {}; syncPickUI(k); };
     var ds = el(k, "del-sel");

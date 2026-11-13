@@ -7409,3 +7409,30 @@ html, body{
 .rank-cat-bar .danger { color: #a8452f; border-color: #d9b8ae; }
 .rank-cat-bar .danger:disabled { opacity: .45; }
 .rank-cat-pick { flex: 0 0 auto; width: 15px; height: 15px; cursor: pointer; }
+
+/* ============================================================
+   20261113L · 上传归属（谁能改谁传的图）
+   看得见所有人的，改只能改自己的；不是自己传的给一层视觉上的「锁」，
+   不要靠点下去才弹提示 —— 那样点了才知道，很恼人。
+   ============================================================ */
+.rank-batch-owner { color: var(--muted, #8a8a8a); font-size: 12px; }
+.rank-batch-owner.is-other { color: #b45309; }
+.rank-batch-main.is-readonly { color: #8a8a8a; }
+.rkadm-name.is-readonly { background: #f6f6f6; color: #8a8a8a; cursor: not-allowed; }
+
+/* 专区图墙：不是自己上传的卡片 */
+.cz-card.is-locked .cz-card-del { display: none; }
+.cz-card.is-locked { position: relative; }
+.cz-card.is-locked:hover .cz-lock-badge { opacity: 1; }
+.cz-lock-badge {
+  position: absolute; left: 6px; bottom: 6px; z-index: 3;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(17, 17, 17, .72); color: #fff;
+  font-size: 11px; line-height: 1.6; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  opacity: .92; pointer-events: none;
+}
+.cz-card.is-locked .cz-pick input { cursor: not-allowed; opacity: .5; }
+.cz-owner-tip { margin-left: 8px; }
+.cz-owner-tip.is-readonly { color: #b45309; }

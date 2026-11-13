@@ -17,6 +17,34 @@
   let rankPeriods = [];   // 由上传记录聚合：[{label,type,rows,batches}]
   let itemMonths = [];    // 库里真实存在的月份（不依赖批次台账，老数据也能选到）
   let rankGroups = [];    // 地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
+  /* 20261113L · 上传归属（同趋势上升榜）
+     看得见所有人传的，改只能改自己传的；超管不限；本功能上线前的数据=历史数据，仅超管可改。 */
+  let rankPeriodGate = {};
+  function uoOk() { return !!(window.UO && typeof window.UO.canManage === "function"); }
+  function uoReady() {
+    if (!uoOk()) return Promise.resolve(false);
+    return window.UO.ensure().then(function () { return true; }).catch(function () { return false; });
+  }
+  function batchCanRun(b) {
+    if (!uoOk()) return true;
+    if (window.UO.isSuper()) return true;
+    if (!b || b.id == null) return true;
+    return window.UO.canManage("b", b.id);
+  }
+  function batchOwner(b) {
+    if (!uoOk() || !b || b.id == null) return "";
+    return window.UO.label("b", b.id);
+  }
+  function batchOwnerHint(b) {
+    if (!uoOk() || !b || b.id == null) return "";
+    return window.UO.hint("b", b.id);
+  }
+  function denyTip(n) {
+    if (window.UO && window.UO.isSuper()) return "";
+    return n > 1
+      ? "其中 " + n + " 项不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动，已跳过"
+      : "这条不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动";
+  }
   const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
   /* 站点名归一：交给公共模块，认不出时原样返回（绝不瞎猜） */
   function siteNormResolve(v, list) {
@@ -853,6 +881,9 @@
       const inserted = (res && res.inserted) || 0;
       try { await SB.updateRankBatch(batchId, { rows: inserted, skipped: skippedExisting + mergedInFile }); } catch (e) { /* 统计失败不影响数据 */ }
 
+      /* 20261113L：登记上传归属（按批次 ID）。失败不阻断导入，只会让该批次显示成「历史数据」。 */
+      try { if (inserted > 0 && uoOk()) await window.UO.claim("b", [batchId]); } catch (e) { /* 忽略 */ }
+
       if (rows.length > 0 && inserted === 0) {
         /* 安全网：一条都没写进去，必须说清楚，不能静默 */
         sbToast("导入失败：0 条写入（有效行 " + rowsOut.length + " 条）。请刷新页面后重试；若仍为 0，请把这张表发给开发者排查。", false);
@@ -932,6 +963,7 @@
   async function loadRankBatches() {
     const box = $("#rm-batch-list");
     let list = [];
+    await uoReady();   /* 20261113L：先取归属，批次行要显示上传人并按归属决定能否操作 */
     /* 20261113C：只读本域台账（上新节奏） */
     try { list = await SB.listRankBatches("rhythm"); } catch (e) { list = []; }
     /* 只保留月度期次：周度批次归「上新节奏」面板管，不能混进这里的期次清单 */
@@ -962,6 +994,13 @@
       } else { p.rows = exact; }
     });
     rankPeriods = Object.keys(map).map((k) => map[k]).sort((a, b) => admPeriodKey(a.label) - admPeriodKey(b.label));
+    /* 20261113L：期次下每一批都归我（或我是超管），才允许整期次改名 / 切频次 / 删除 */
+    rankPeriodGate = {};
+    list.forEach((b) => {
+      const k = b.period_type + "|" + b.period_label;
+      if (rankPeriodGate[k] === undefined) rankPeriodGate[k] = true;
+      if (!batchCanRun(b)) rankPeriodGate[k] = false;
+    });
     renderRankPeriods();
     fillRankPvControls();
     loadRankPrintSwitch();          /* 图案印花款开关：每次进面板按库里最新值渲染 */
@@ -972,17 +1011,26 @@
     list.forEach((b) => {
       const row = document.createElement("div");
       row.className = "rank-batch-row";
+      const can = batchCanRun(b);          /* 20261113L：只有上传人本人 / 超管能改这一批 */
 
       const main = document.createElement("span");
       main.className = "rank-batch-main";
+      if (!can) main.classList.add("is-readonly");
       main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+      const own = document.createElement("span");
+      own.className = "rank-batch-owner" + (can ? "" : " is-other");
+      own.textContent = " · 上传人 " + (batchOwner(b) || "历史数据") + (can ? "" : "（不可改动）");
+      own.title = batchOwnerHint(b);
+      main.appendChild(own);
 
       const act = document.createElement("span");
       act.className = "rkadm-row-act";
 
       const ren = document.createElement("button");
       ren.type = "button"; ren.className = "btn-ghost small"; ren.textContent = "改期次名";
+      ren.disabled = !can; ren.title = can ? "" : denyTip(1);
       ren.onclick = async () => {
+        if (!can) { sbToast(denyTip(1), false); return; }
         const v = (await uiPrompt("该批次所属期次改名（会同步该期次全部数据）：", b.period_label) || "").trim();
         if (!v || v === b.period_label) return;
         if (!(await uiConfirm("把期次「" + b.period_label + "」改名为「" + v + "」？\n该期次全部数据会一起改名。"))) return;
@@ -995,9 +1043,15 @@
 
       const del = document.createElement("button");
       del.type = "button"; del.className = "btn-ghost small rank-batch-del"; del.textContent = "删除";
+      del.disabled = !can; del.title = can ? "" : denyTip(1);
       del.onclick = async () => {
+        if (!can) { sbToast(denyTip(1), false); return; }
         if (!(await uiConfirm("删除该批次「" + b.period_label + " · " + b.category + "」及其全部条目？"))) return;
-        try { await SB.deleteRankBatch(b.id); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该批次", true); }
+        try {
+          await SB.deleteRankBatch(b.id);
+          try { if (uoOk()) await window.UO.forget("b", [b.id]); } catch (e) { /* 忽略 */ }
+          await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该批次", true);
+        }
         catch (e) { sbToast("删除失败", false); }
       };
 
@@ -1019,13 +1073,17 @@
     rankPeriods.forEach((p) => {
       const row = document.createElement("div");
       row.className = "rkadm-row";
+      /* 20261113L：整期次操作会动到该期次下所有人的数据 */
+      const gate = rankPeriodGate[p.type + "|" + p.label] !== false;
 
       const type = document.createElement("button");
       type.type = "button";
       type.className = "rkadm-badge";
       type.textContent = p.type === "month" ? "月度" : "周度";
-      type.title = "点击切换：周度 ↔ 月度";
+      type.title = gate ? "点击切换：周度 ↔ 月度" : "该期次里有别人上传的数据，只有上传人或超级管理员可切换";
+      type.disabled = !gate;
       type.onclick = async () => {
+        if (!gate) { sbToast("该期次里有别人上传的数据，不能整期次切换频次", false); return; }
         const nt = p.type === "month" ? "week" : "month";
         if (!(await uiConfirm("把期次「" + p.label + "」的频次改为「" + (nt === "month" ? "月度" : "周度") + "」？\n该期次全部数据会一起切换。"))) return;
         try {
@@ -1039,10 +1097,14 @@
       name.type = "text";
       name.className = "rkadm-name";
       name.value = p.label;
-      name.title = "点一下即可改名（该期次全部数据一起改名）";
+      name.title = gate ? "点一下即可改名（该期次全部数据一起改名）"
+        : "该期次里有别人上传的数据，只有上传人或超级管理员可改名";
+      name.readOnly = !gate;
+      if (!gate) name.classList.add("is-readonly");
       name.addEventListener && name.addEventListener("focus", () => name.select());
       let renaming = false, committed = false;
       const commit = async () => {
+        if (!gate) { name.value = p.label; return; }
         const v = (name.value || "").trim();
         if (!v || v === p.label) { name.value = p.label; return; }
         if (renaming || committed) return;
@@ -1067,8 +1129,11 @@
       cnt.textContent = p.rows + " 条 · " + p.batches + " 批";
 
       const del = document.createElement("button");
-      del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除整个期次";
+      del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕";
+      del.title = gate ? "删除整个期次" : "该期次里有别人上传的数据，只有上传人或超级管理员可删除";
+      del.disabled = !gate;
       del.onclick = async () => {
+        if (!gate) { sbToast("该期次里有别人上传的数据，不能整期次删除", false); return; }
         if (!(await uiConfirm("删除整个期次「" + p.label + "」及其全部数据（" + p.rows + " 条）？此操作不可恢复。"))) return;
         try { await SB.deleteRankPeriod(p.label, p.type, "rhythm"); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该期次", true); }
         catch (e) { sbToast((e && e.message) || "删除失败", false); }
