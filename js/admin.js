@@ -42,7 +42,6 @@ const PANEL_ZONE = {
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
-  "titlelab-card": "",      // 标题组词台：自己的上传入口与台账，任一管理员均可进入
   "movement-card": "movement", // 品牌动向：独立专区，按「后台可管理专区」授权管控
   "pinterest-card": "pinterest", // Pinterest 专区：纯图片专区（只传图 + 打标），按专区授权管控
   "shein-card": "shein",         // SHEIN 专区：同上
@@ -113,7 +112,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "rhythm-card" || target === "titlelab-card" || target === "tools-card") return true;
+    if (target === "rank-card" || target === "rhythm-card" || target === "tools-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -258,9 +257,6 @@ function switchPanel(target) {
     if (target === "rhythm-card" && window.RhythmAdmin && typeof window.RhythmAdmin.enter === "function") {
       window.RhythmAdmin.enter();
     }
-    /* 标题组词台（周度标题）：独立上传入口 —— 只有这里能把表格写进标题组词台，
-       避免在趋势上升榜的导入区里选错数据域把另一份数据弄脏。进入时才拉数据。 */
-    if (target === "titlelab-card" && typeof enterTiPanel === "function") { enterTiPanel(); }
     // 版本恢复：列出快照（不自动生成，避免每次进入都占用一次快照名额）
     if (target === "backup-card" && typeof loadBackupList === "function") { loadBackupList(); loadBackupPolicy(); }
   }

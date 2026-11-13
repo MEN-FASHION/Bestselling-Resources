@@ -129,9 +129,9 @@
   async function loadFacets() {
     var f = { categories: [], periods: [], sites: [] };
     try {
-      f = (typeof SBX.rankFacetsBySource === "function")
-        ? await SBX.rankFacetsBySource("title", "week")
-        : (typeof SBX.rankFacetsByType === "function" ? await SBX.rankFacetsByType("week") : await SBX.rankFacets());
+      f = (typeof SBX.rankFacetsByType === "function")
+        ? await SBX.rankFacetsByType("week")
+        : await SBX.rankFacets();
     } catch (e) { /* 失败按空处理 */ }
     /* 类目菜单只显示标准名：库里残留的平台全路径名合并到同一类，菜单不再一堆长名字 */
     S.catMap = {};
@@ -189,9 +189,7 @@
     try {
       var filter = {
         categories: catsOf(S.cat), periodType: "week", periods: [S.period],
-        cols: "id,image_url,title,category,site,period_label,period_type",
-        /* 20261113B：只读标题组词台自己的数据域 */
-        source: "title"
+        cols: "id,image_url,title,category,site,period_label,period_type"
       };
       if (S.sites.length) filter.sites = S.sites;
       items = await SBX.listRankItems(filter);

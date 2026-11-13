@@ -603,7 +603,7 @@
       CAT_PF_SEEN[key] = 1;
       var periods = activePeriods();
       if (!periods.length) { CAT_PF_ON = false; return; }
-      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS, source: "rank" };
+      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS };
       Promise.resolve()
         .then(function () { return SBX.listRankItems(filter); })
         .then(function (rows) {
@@ -634,8 +634,7 @@
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
-    /* 20261113B：只读「趋势上升榜」这一域的数据，不再与上新节奏 / 标题组词台混读 */
-    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS, source: "rank" };
+    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS };
     if (MODE === "c") {
       var _exp = [];
       cats.forEach(function (c) { _exp = _exp.concat(catsOf(c)); });
@@ -4682,9 +4681,9 @@
     /* 期次按「周度」筛：月度数据（上新节奏专区）与周度共用同一张表，
        不筛的话周度页的期次里会冒出「2026年10月」这种月份，与页面口径不符。 */
     try {
-      FACETS = (typeof SBX.rankFacetsBySource === "function")
-        ? await SBX.rankFacetsBySource("rank", "week")
-        : (typeof SBX.rankFacetsByType === "function" ? await SBX.rankFacetsByType("week") : await SBX.rankFacets());
+      FACETS = (typeof SBX.rankFacetsByType === "function")
+        ? await SBX.rankFacetsByType("week")
+        : await SBX.rankFacets();
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 类目菜单只显示标准名：把平台全路径名合并到同一类，菜单不再出现一堆长名字 */
     RAW_CATS = (FACETS.categories || []).slice();
