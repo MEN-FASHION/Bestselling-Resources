@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261112AC">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261112AC">
+<link rel="stylesheet" href="css/style.css?v=20261113C">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261113C">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -116,6 +116,7 @@
         <a class="nav-item" data-target="movement-card">品牌动向</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
         <a class="nav-item" data-target="rhythm-card">上新节奏</a>
+        <a class="nav-item" data-target="titlelab-card">标题组词台</a>
         <a class="nav-item" data-target="pinterest-card">Pinterest 专区</a>
         <a class="nav-item" data-target="shein-card">SHEIN 专区</a>
         <a class="nav-item" data-target="compare-card">渠道对比</a>
@@ -972,6 +973,12 @@
             <div id="rank-site-defaults" class="rank-site-defaults"></div>
           </div>
           <div class="rank-block-sub">
+            <span class="rank-sub-title">本次导入只写入<b>趋势上升榜</b>（表格自带「期次」列时，上方日历可以留空）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="hint">三个专区的上传、台账、类目清理、期次归并、数据自检已完全分开：上新节奏请去「上新节奏」面板上传，标题组词台请去「标题组词台」面板上传，互相不会串数据。</span>
+            </div>
+          </div>
+          <div class="rank-block-sub">
             <span class="rank-sub-title">导入方式（<b>以本次上传的表格为准</b>：覆盖 = 先清掉「本期次 · 本类目 · 上面勾选的站点」下的旧数据再整表写入，有效行 200 就写 200 条，<b>不跟以前传的表格查重</b>；追加 = 保留旧数据、只补库里还没有的图）</span>
             <div class="rank-inline" style="padding-top:6px">
               <span class="rank-radios">
@@ -1252,6 +1259,79 @@
           <h4>已上传记录（月度）</h4>
           <p class="hint">打标直接用上面「导出月度打标表 / 导入月度打标结果」两块，只针对月度数据，不会碰到趋势上升榜（周度）。</p>
           <div id="rm-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
+        </section>
+      </div>
+
+      <!-- 标题组词台 · 独立上传（20261113C）。三个专区的上传入口各归各的，
+           这里写进去的数据只属于标题组词台，不会影响趋势上升榜与上新节奏。 -->
+      <div class="panel-card hidden" id="titlelab-card">
+        <div class="rkadm-head">
+          <div>
+            <h3>标题组词台 · 标题数据上传</h3>
+            <p class="hint">这里上传的表格<b>只写进「标题组词台」</b>，和趋势上升榜、上新节奏的数据互不相通：清空、查重、撤销、类目清理、期次归并、数据自检都只作用于本专区。</p>
+          </div>
+          <div class="rkadm-head-act">
+            <button id="ti-refresh" class="btn-ghost" type="button">刷新数据</button>
+            <button id="ti-selfcheck" class="btn-ghost" type="button">数据自检…</button>
+            <button id="ti-open-front" class="btn-primary" type="button">前台打开</button>
+          </div>
+        </div>
+
+        <section class="rkadm-sec">
+          <h4>上传标题表格 <span class="rkadm-tip">必含「货品名称（标题）」与「首图url」；「销量站点」「期次」可来自表格，也可在上方选择</span></h4>
+          <p class="hint">组词台只按<b>标题原文</b>统计用词，所以这份表里<b>标题列最要紧</b>；缺标题的行仍会入库，但不会给统计带来词。</p>
+          <div class="rank-grid">
+            <label class="rank-field">
+              <span>选某一周（第几期）</span>
+              <input id="ti-period-date" type="date">
+            </label>
+            <input id="ti-period-label" type="hidden" value="">
+            <label class="rank-field">
+              <span>类目（<b>只认这里选的</b>，没选就归「其他」）</span>
+              <span class="rank-inline">
+                <select id="ti-cat" style="min-width:160px"></select>
+                <button id="ti-cat-add" class="btn-ghost" type="button">自定义添加</button>
+              </span>
+            </label>
+          </div>
+          <div class="hint">期次将记为：<b id="ti-period-week">—</b>（表格自带「期次」列时可留空，页面按表格里的值分组）</div>
+
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">国家站点（<b>以这里勾选的为准</b>：勾了就整表归入所勾站点；一个都不勾才按表格「销量站点」列逐行取）</span>
+            <div id="ti-site-defaults" class="rank-site-defaults"></div>
+          </div>
+
+          <div class="rank-block-sub">
+            <span class="rank-sub-title">导入方式（覆盖 = 先清掉「本期次 · 本类目 · 所勾站点」下的本专区旧数据再写入；追加 = 保留旧数据、只补库里还没有的图）</span>
+            <div class="rank-inline" style="padding-top:6px">
+              <span class="rank-radios">
+                <label class="chk"><input type="radio" name="ti-mode" value="replace" checked> 覆盖（推荐）</label>
+                <label class="chk"><input type="radio" name="ti-mode" value="append"> 追加</label>
+              </span>
+            </div>
+          </div>
+
+          <div id="ti-import-progress" class="rank-progress"></div>
+          <div class="rank-inline">
+            <input id="ti-file" type="file" accept=".xlsx,.xls,.csv">
+            <button id="ti-import" class="btn-primary" type="button" disabled>导入标题数据</button>
+            <button id="ti-undo" class="btn-ghost danger" type="button" style="display:none">撤销本次导入</button>
+          </div>
+          <div id="ti-file-tip" class="rank-file-tip"></div>
+          <div id="ti-undo-tip" class="hint"></div>
+          <div id="ti-preview" class="rank-preview"></div>
+        </section>
+
+        <section class="rkadm-sec">
+          <h4>已上传记录（标题组词台）
+            <span class="rkadm-sec-act">
+              <button id="ti-cat-tools-btn" class="btn-ghost small" type="button">类目清理…</button>
+              <button id="ti-period-tools-btn" class="btn-ghost small" type="button">期次归并…</button>
+            </span>
+          </h4>
+          <p class="hint">这里只显示标题组词台自己的批次；类目清理、期次归并也只改这一份数据。</p>
+          <div id="ti-toolbar"></div>
+          <div id="ti-batch-list" class="rank-batch-list"><div class="hint">正在读取…</div></div>
         </section>
       </div>
 
@@ -1670,43 +1750,45 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261112AC"></script>
-  <script src="vendor/quill.js?v=20261112AC"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261112AC"></script>
-  <script src="vendor/jszip.min.js?v=20261112AC"></script>
-  <script src="vendor/qrcode.min.js?v=20261112AC"></script>
-  <script src="js/config.js?v=20261112AC"></script>
-  <script src="js/supabase.js?v=20261112AC"></script>
+  <script src="vendor/supabase.js?v=20261113C"></script>
+  <script src="vendor/quill.js?v=20261113C"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261113C"></script>
+  <script src="vendor/jszip.min.js?v=20261113C"></script>
+  <script src="vendor/qrcode.min.js?v=20261113C"></script>
+  <script src="js/config.js?v=20261113C"></script>
+  <script src="js/supabase.js?v=20261113C"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261112AC"></script>
-  <script src="js/admin.js?v=20261112AC"></script>
-  <script src="js/admin-images.js?v=20261112AC"></script>
-  <script src="js/rank-enums.js?v=20261112AC"></script>
-  <script src="js/imageexport.js?v=20261112AC"></script>
-  <script src="js/admin-imageimport.js?v=20261112AC"></script>
-  <script src="js/admin-movement.js?v=20261112AC"></script>
-  <script src="js/admin-smart.js?v=20261112AC"></script>
-  <script src="js/admin-trend.js?v=20261112AC"></script>
-  <script src="js/admin-notice.js?v=20261112AC"></script>
-  <script src="js/marketing-data.js?v=20261112AC"></script>
-  <script src="js/admin-festival.js?v=20261112AC"></script>
-  <script src="js/admin-tasks.js?v=20261112AC"></script>
-  <script src="js/admin-bestseller.js?v=20261112AC"></script>
-  <script src="js/ipgeo.js?v=20261112AC"></script>
-  <script src="js/admin-perm.js?v=20261112AC"></script>
-  <script src="js/admin-pool.js?v=20261112AC"></script>
-  <script src="js/rankexport.js?v=20261112AC"></script>
-  <script src="js/admin-rankimport.js?v=20261112AC"></script>
-<script src="js/mindmap.js?v=20261112AC"></script>
-  <script src="js/flowchart.js?v=20261112AC"></script>
-  <script src="js/gantt.js?v=20261112AC"></script>
-<script src="js/admin-tools.js?v=20261112AC"></script>
-<script src="js/admin-channelzone.js?v=20261112AC"></script>
-<script src="js/admin-compare.js?v=20261112AC"></script>
-  <script src="js/rank-cat-norm.js?v=20261112AC"></script>
-  <script src="js/admin-rank.js?v=20261112AC"></script>
-  <script src="js/admin-rhythm.js?v=20261112AC"></script>
-  <script src="js/admin-backup.js?v=20261112AC"></script>
+  <script src="js/admin-dialog.js?v=20261113C"></script>
+  <script src="js/admin.js?v=20261113C"></script>
+  <script src="js/admin-images.js?v=20261113C"></script>
+  <script src="js/rank-enums.js?v=20261113C"></script>
+  <script src="js/imageexport.js?v=20261113C"></script>
+  <script src="js/admin-imageimport.js?v=20261113C"></script>
+  <script src="js/admin-movement.js?v=20261113C"></script>
+  <script src="js/admin-smart.js?v=20261113C"></script>
+  <script src="js/admin-trend.js?v=20261113C"></script>
+  <script src="js/admin-notice.js?v=20261113C"></script>
+  <script src="js/marketing-data.js?v=20261113C"></script>
+  <script src="js/admin-festival.js?v=20261113C"></script>
+  <script src="js/admin-tasks.js?v=20261113C"></script>
+  <script src="js/admin-bestseller.js?v=20261113C"></script>
+  <script src="js/ipgeo.js?v=20261113C"></script>
+  <script src="js/admin-perm.js?v=20261113C"></script>
+  <script src="js/admin-pool.js?v=20261113C"></script>
+  <script src="js/rankexport.js?v=20261113C"></script>
+  <script src="js/admin-rankimport.js?v=20261113C"></script>
+<script src="js/mindmap.js?v=20261113C"></script>
+  <script src="js/flowchart.js?v=20261113C"></script>
+  <script src="js/gantt.js?v=20261113C"></script>
+<script src="js/admin-tools.js?v=20261113C"></script>
+<script src="js/admin-channelzone.js?v=20261113C"></script>
+<script src="js/admin-compare.js?v=20261113C"></script>
+  <script src="js/rank-cat-norm.js?v=20261113C"></script>
+<script src="js/rank-period-norm.js?v=20261113C"></script>
+  <script src="js/admin-rank.js?v=20261113C"></script>
+  <script src="js/admin-rhythm.js?v=20261113C"></script>
+  <script src="js/admin-titlelab.js?v=20261113C"></script>
+  <script src="js/admin-backup.js?v=20261113C"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1768,7 +1850,7 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261112AC"></script>
+  <script src="js/ui-dialog.js?v=20261113C"></script>
 </body>
 </body>
 </html>

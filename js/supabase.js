@@ -93,7 +93,24 @@ const SB = (() => {
       const s0 = String(lb || "").trim();
       if (!s0) return;
       push(s0);
-      if (/W\s*\d/i.test(s0)) return;
+      /* 周次：W45 / 第45周 / 45周 / 2026-W45 视为同一期，查询时一起匹配。
+         以前这里对 W45 直接 return，于是「第45周」和「W45」在库里是两批数据，
+         前台出现两个期次按钮，选其中一个也查不到另一个的图。 */
+      const wm = s0.match(/(20\d{2})\D{0,3}[Ww]\s*0*(\d{1,2})/)
+        || s0.match(/[Ww]\s*0*(\d{1,2})/)
+        || s0.match(/第\s*0*(\d{1,2})\s*周/)
+        || s0.match(/^0*(\d{1,2})\s*周$/)
+        || s0.match(/^0*(\d{1,2})$/);
+      if (wm) {
+        const wn = parseInt(wm[wm.length - 1], 10);
+        if (wn >= 1 && wn <= 53) {
+          const wy = (s0.match(/20\d{2}/) || [String(new Date().getFullYear())])[0];
+          const wp = String(wn).padStart(2, "0");
+          ["第" + wn + "周", wn + "周", "W" + wn, "w" + wn, "W" + wp,
+           wy + "-W" + wn, wy + "W" + wn, wy + "-W" + wp].forEach(push);
+          return;
+        }
+      }
       const m = s0.match(/(20\d{2})\D{0,2}(\d{1,2})/);
       if (!m) return;
       const y = m[1], n = parseInt(m[2], 10);
@@ -2452,13 +2469,62 @@ async removeTrendRecord(id) {
       return out;
     },
 
+    /* 20261113B：按「数据域」取前台筛选项。
+       三个专区各自独立：趋势上升榜只看自己导的，上新节奏、标题组词台同理。
+       聚合口径以 rank_batches 为准（每批都带 category / site / period_label / source）；
+       批次没记 source 时按域规则兜底（rank 域收 null / 空 / rank，其余只认本域）。
+       返回空数组就是该专区还没有数据 —— 这是正确的"隔离后未导入"状态，不该退回全库。 */
+    async rankFacetsBySource(src, periodType) {
+      const out = { sites: [], periods: [], categories: [] };
+      const srcOk = src ? await this.rankSourceColumn() : false;
+      const per = {}, cats = {}, sites = {};
+      try {
+        for (let page = 0; page < 40; page++) {
+          const { data, error } = await client.from("rank_batches").select("*")
+            .order("id", { ascending: true }).range(page * 1000, page * 1000 + 999);
+          if (error) break;
+          const rows = data || [];
+          rows.forEach((b) => {
+            const bs = b && b.source != null ? String(b.source) : "";
+            if (src && srcOk) {
+              if (src === "rank" ? !(bs === "" || bs === "rank") : bs !== src) return;
+            }
+            const tp = (b && b.period_type) || "week";
+            if (periodType && tp !== periodType) return;
+            const lb = String((b && b.period_label) || "").trim();
+            if (lb) per[lb] = 1;
+            const c = String((b && b.category) || "").trim();
+            if (c) cats[c] = 1;
+            String((b && b.site) || "").split(",").forEach((x) => {
+              const v = x.trim();
+              if (v) sites[v] = 1;
+            });
+          });
+          if (rows.length < 1000) break;
+        }
+      } catch (e) { /* 读不到批次 → 返回空，前台按"无数据"处理 */ }
+      out.periods = Object.keys(per).sort();
+      out.categories = Object.keys(cats);
+      out.sites = Object.keys(sites);
+      return out;
+    },
+
     /* 榜单数据自检：导出「库里到底有什么」+「前台筛选到底读到什么」。
        导入看似成功却看不到数据时，靠它一次分清是没写进去、还是前台读不到。 */
-    async rankSelfCheck() {
+    async rankSelfCheck(source) {
+      /* 20261113C：自检也分域 —— 在趋势上升榜面板点自检，看到的就只有这一份数据 */
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
+      const hit = (r) => {
+        if (!want || !srcOk) return true;
+        const s = r && r.source ? String(r.source) : "";
+        return want === "rank" ? (s === "" || s === "rank") : s === want;
+      };
       const out = { items: 0, byType: {}, byPeriod: [], byCategory: [], sites: [], categories: [], periods: [], error: "" };
       try {
-        const { count } = await client.from("rank_items")
-          .select("id", { count: "exact", head: true });
+        let q = client.from("rank_items").select("id", { count: "exact", head: true });
+        if (want && srcOk) q = this._srcCond(q, want);
+        const { count } = await q;
         out.items = count || 0;
       } catch (e) { out.error = "读取条目总数失败"; }
       try {
@@ -2473,6 +2539,7 @@ async removeTrendRecord(id) {
           if (error) break;
           const rows = data || [];
           rows.forEach((r) => {
+            if (!hit(r)) return;
             const tp = r.period_type || "week";
             out.byType[tp] = (out.byType[tp] || 0) + 1;
             const pk = tp + "|" + (r.period_label || "");
@@ -2485,7 +2552,7 @@ async removeTrendRecord(id) {
         out.byPeriod = Object.values(agg).sort((a, b) => b.n - a.n).slice(0, 30);
       } catch (e) { /* 明细统计失败不影响总数 */ }
       try {
-        const f = await this.rankFacets();
+        const f = await this.rankFacetsBySource(want || "rank");
         out.sites = (f && f.sites) || [];
         out.categories = (f && f.categories) || [];
         out.periods = (f && f.periods) || [];
@@ -2580,18 +2647,23 @@ async removeTrendRecord(id) {
     },
     // 期次改名 / 周度·月度切换：迁移 rank_items 与 rank_batches
     // 安全原则：先复制且校验成功，再删除原数据；任何异常都不会造成"改名=丢数据"
-    async updateRankPeriodData(oldLabel, oldType, newLabel, newType) {
+    async updateRankPeriodData(oldLabel, oldType, newLabel, newType, source) {
       const from = String(oldLabel || "").trim(), to = String(newLabel || "").trim();
       const nt = newType || oldType || "week";
       if (!to) throw new Error("期次名称不能为空。");
       if (to === from && nt === (oldType || nt)) return 0;   // 无变化，直接返回，不做任何写操作
+      /* 20261113C：按数据域迁移。后台上传隔离后，同一个期次名在三个专区里都存在，
+         不限定域的话改一次名会把别的专区的数据一起搬走。 */
+      const src = source ? String(source) : "";
+      const srcOk = src ? await this.rankSourceColumn() : false;
       // 目标期次若已有数据，拒绝静默合并（会因去重跳过 + 删原数据而丢数据）
-      const exist = await this._countRankItems({ periods: [to], periodType: nt });
+      const exist = await this._countRankItems({ periods: [to], periodType: nt, source: src });
       if (exist > 0) throw new Error("目标期次「" + to + "」（" + (nt === "month" ? "月度" : "周度") + "）已存在 " + exist + " 条数据，为避免覆盖丢失，未执行改名。请换一个名称，或先删除该期次。");
       let moved = 0;
       for (let round = 0; round < 100; round++) {
         let q = client.from("rank_items").select("*").eq("period_label", from).limit(500);
         if (oldType) q = q.eq("period_type", oldType);
+        if (src && srcOk) q = this._srcCond(q, src);
         const { data: rows, error } = await q;
         if (error) throw new Error(error.message || "读取榜单条目失败");
         if (!rows || !rows.length) break;
@@ -2606,11 +2678,18 @@ async removeTrendRecord(id) {
         if (rows.length < 500) break;
       }
       try {
-        let bq = client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped").eq("period_label", from);
+        let bq = client.from("rank_batches").select("id, period_type, period_label, category, site, rows, skipped, source").eq("period_label", from);
         if (oldType) bq = bq.eq("period_type", oldType);
         const { data } = await bq;
         for (const b of (data || [])) {
-          const { error: ie } = await client.from("rank_batches").insert({ period_type: nt, period_label: to, category: b.category, site: b.site, rows: b.rows, skipped: b.skipped });
+          /* 只迁移本域的批次；缺 source 列时退化为旧行为 */
+          if (src && srcOk) {
+            const bs = b.source ? String(b.source) : "";
+            if (src === "rank" ? !(bs === "" || bs === "rank") : bs !== src) continue;
+          }
+          const payload = { period_type: nt, period_label: to, category: b.category, site: b.site, rows: b.rows, skipped: b.skipped };
+          if (b.source) payload.source = b.source;
+          const { error: ie } = await client.from("rank_batches").insert(payload);
           if (ie) throw new Error(ie.message || "批次写入失败");
           await client.from("rank_batches").delete().eq("id", b.id);
         }
@@ -2627,6 +2706,9 @@ async removeTrendRecord(id) {
         if (ps.length === 1) q = q.eq("period_label", ps[0]);
         else if (ps.length > 1) q = q.in("period_label", ps);
         if (opt.periodType) q = q.eq("period_type", opt.periodType);
+        /* 20261113C：改名占用检查也要分域，否则会给「另一个专区同名期次」误报冲突 */
+        const src = opt.source || "";
+        if (src && await this.rankSourceColumn()) q = this._srcCond(q, src);
         const { count, error } = await q;
         if (error) return 0;
         return count || 0;
@@ -2645,21 +2727,31 @@ async removeTrendRecord(id) {
       return ids;
     },
     // 删除整个期次（其下所有榜单条目与上传批次一并删除）
-    async deleteRankPeriod(oldLabel, oldType) {
+    async deleteRankPeriod(oldLabel, oldType, source) {
+      /* 20261113C：只删本域。三个专区可能有同名期次，不限定域就会连坐。 */
+      const src = source ? String(source) : "";
+      const srcOk = src ? await this.rankSourceColumn() : false;
       let removed = 0;
       for (let round = 0; round < 100; round++) {
-        const rows = await this.listRankItems({ periods: [oldLabel], periodType: oldType || undefined, limit: 500 });
+        const rows = await this.listRankItems({ periods: [oldLabel], periodType: oldType || undefined, limit: 500, source: src || undefined });
         if (!rows.length) break;
         await this.deleteRankItemsByIds(rows.map((r) => r.id));
         removed += rows.length;
         if (rows.length < 500) break;
       }
-      let q = client.from("rank_batches").select("id").eq("period_label", oldLabel);
+      let q = client.from("rank_batches").select("id, source").eq("period_label", oldLabel);
       if (oldType) q = q.eq("period_type", oldType);
       const { data, error } = await q;
       if (error) throw new Error(error.message || "读取批次失败");
-      for (const b of (data || [])) await this.deleteRankBatch(b.id);
-      this._lastPeriodDelete = { items: removed, batches: (data || []).length };
+      let bs = data || [];
+      if (src && srcOk) {
+        bs = bs.filter((b) => {
+          const s = b && b.source ? String(b.source) : "";
+          return src === "rank" ? (s === "" || s === "rank") : s === src;
+        });
+      }
+      for (const b of bs) await this.deleteRankBatch(b.id);
+      this._lastPeriodDelete = { items: removed, batches: bs.length };
       return this._lastPeriodDelete;
     },
     async createRankBatch(b) {
@@ -2669,6 +2761,8 @@ async removeTrendRecord(id) {
         category: b.category || "",
         site: b.site || "",
       };
+      /* 20261113B：批次也要记数据域，后台台账才能按专区分开看 */
+      if (b.source) payload.source = b.source;
       const { data, error } = await client.from("rank_batches").insert(payload).select("id").single();
       if (error) throw new Error(error.message || "创建上传批次失败");
       return data && data.id;
@@ -2718,11 +2812,15 @@ async removeTrendRecord(id) {
       const periodLabel = (o && o.periodLabel) || "";
       const category = (o && o.category) || "";
       const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      /* 20261113B：只清「本专区」的数据，另一专区同槽位的数据不动 */
+      const src = (o && o.source) || "";
+      const srcOk = src ? await this.rankSourceColumn() : true;
       let items = 0;
       for (let round = 0; round < 400; round++) {
         let q = client.from("rank_items").select("id")
           .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
         if (sites.length) q = q.in("site", sites);
+        if (src && srcOk) q = this._srcCond(q, src);
         const { data, error } = await q.limit(500);
         if (error) throw new Error(error.message || "读取旧榜单数据失败");
         const rows = data || [];
@@ -2734,8 +2832,10 @@ async removeTrendRecord(id) {
       // 上传记录（批次）仅作展示用途；只有「该批次的站点完全被本次覆盖」时才一并删除
       let batches = 0;
       try {
-        const { data } = await client.from("rank_batches").select("id, site")
+        let bq = client.from("rank_batches").select("id, site")
           .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        if (src && srcOk) bq = this._srcCond(bq, src);
+        const { data } = await bq;
         for (const b of (data || [])) {
           const bs = String(b.site || "").split(",").map(s => s.trim()).filter(Boolean);
           const covered = bs.length && bs.every(s => sites.indexOf(s) >= 0);
@@ -2751,6 +2851,8 @@ async removeTrendRecord(id) {
       const periodLabel = (o && o.periodLabel) || "";
       const category = (o && o.category) || "";
       const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      const src = (o && o.source) || "";
+      const srcOk = src ? await this.rankSourceColumn() : true;
       const urls = [];
       for (let page = 0; page < 100; page++) {
         let q = client.from("rank_items").select("image_url")
@@ -2758,6 +2860,7 @@ async removeTrendRecord(id) {
           .order("id", { ascending: true })
           .range(page * 1000, page * 1000 + 999);
         if (sites.length) q = q.in("site", sites);
+        if (src && srcOk) q = this._srcCond(q, src);
         const { data, error } = await q;
         if (error) throw new Error(error.message || "读取已有榜单图失败");
         const rows = data || [];
@@ -2778,12 +2881,15 @@ async removeTrendRecord(id) {
       const periodLabel = (o && o.periodLabel) || "";
       const category = (o && o.category) || "";
       const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      const src = (o && o.source) || "";
+      const srcOk = src ? await this.rankSourceColumn() : true;
       try {
         let q = client.from("rank_items").select("id", { count: "exact", head: true })
           .eq("period_type", periodType);
         if (periodLabel) q = q.eq("period_label", periodLabel);
         if (category) q = q.eq("category", category);
         if (sites.length) q = q.in("site", sites);
+        if (src && srcOk) q = this._srcCond(q, src);
         const res = await q;
         if (res && res.error) return null;
         return (res && typeof res.count === "number") ? res.count : null;
@@ -2794,12 +2900,32 @@ async removeTrendRecord(id) {
       if (error) throw new Error(error.message || "更新批次失败");
     },
     // 批次列表（后台管理）
-    async listRankBatches() {
-      const { data, error } = await client.from("rank_batches")
-        .select("id, period_type, period_label, category, site, rows, skipped, created_at")
+    async listRankBatches(source) {
+      /* 20261113B：带上数据域，后台台账才能按域区分；库里没有该列时自动退回旧字段，
+         不至于因为一列不存在整块台账打不开。
+         20261113C：新增 source 参数 —— 后台上传与台账按专区彻底分开，各面板只读自己的域。 */
+      const withSrc = await this.rankSourceColumn();
+      const cols = "id, period_type, period_label, category, site, rows, skipped, created_at"
+        + (withSrc ? ", source" : "");
+      let { data, error } = await client.from("rank_batches").select(cols)
         .order("created_at", { ascending: false }).limit(500);
+      if (error) {
+        const r2 = await client.from("rank_batches")
+          .select("id, period_type, period_label, category, site, rows, skipped, created_at")
+          .order("created_at", { ascending: false }).limit(500);
+        data = r2.data; error = r2.error;
+      }
       if (error) throw new Error(error.message || "读取上传记录失败");
-      return data || [];
+      let list = data || [];
+      if (withSrc && source) {
+        const want = String(source);
+        list = list.filter((b) => {
+          const s = (b && b.source) ? String(b.source) : "";
+          /* 空 source 是升级前的历史数据，只属于趋势上升榜 */
+          return want === "rank" ? (s === "" || s === "rank") : s === want;
+        });
+      }
+      return list;
     },
     // 删除批次：同时清掉该批次所在槽位（期次+类目+站点）的榜单条目。
     // 不能只删台账——库里若没有配置级联删除，条目会留在表中继续被前台读到，
@@ -2808,10 +2934,18 @@ async removeTrendRecord(id) {
       const bid = String(id || "").trim();
       if (!bid) return false;
       let b = null;
+      /* 20261113C：批次带了数据域，删批次时只能清「同一域」的同槽位条目，
+         否则删掉标题组词台的一批，会把趋势上升榜里同槽位的榜单数据一起清掉。 */
       try {
-        const { data } = await client.from("rank_batches")
-          .select("period_type,period_label,category,site").eq("id", bid).limit(1);
-        b = (data || [])[0] || null;
+        const r1 = await client.from("rank_batches")
+          .select("period_type,period_label,category,site,source").eq("id", bid).limit(1);
+        if (r1.error) {
+          const r2 = await client.from("rank_batches")
+            .select("period_type,period_label,category,site").eq("id", bid).limit(1);
+          b = (r2.data || [])[0] || null;
+        } else {
+          b = (r1.data || [])[0] || null;
+        }
       } catch (e) { b = null; }
       if (b) {
         const sites = String(b.site || "").split(",").map((v) => v.trim()).filter(Boolean);
@@ -2821,6 +2955,8 @@ async removeTrendRecord(id) {
             periodLabel: b.period_label || "",
             category: b.category || "",
             sites: sites,
+            /* 空 source 的历史批次都属于趋势上升榜 */
+            source: b.source ? String(b.source) : "rank",
           });
         } catch (e) { /* 条目清空失败仍继续删台账，由调用方提示 */ }
       }
@@ -2832,7 +2968,16 @@ async removeTrendRecord(id) {
     // 类目清单：批次台账 + 条目表 两处合并
     // 只看台账会漏两种情况：①台账被删光但条目还在（旧版删除只删台账）②孤儿条目
     // 这时「类目清理」会显示「还没有类目」，用户以为没数据可清，实际库里还有一堆。
-    async listRankCategories() {
+    async listRankCategories(source) {
+      /* 20261113C：按域列类目。后台上传分开后，趋势上升榜的类目清理不该看到、
+         更不该改到上新节奏 / 标题组词台里的同名类目。 */
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
+      const hit = (s) => {
+        if (!want || !srcOk) return true;
+        const v = s ? String(s) : "";
+        return want === "rank" ? (v === "" || v === "rank") : v === want;
+      };
       const map = new Map();
       const touch = (c) => {
         const name = String(c || "").trim();
@@ -2840,10 +2985,17 @@ async removeTrendRecord(id) {
         if (!map.has(k)) map.set(k, { category: name, batches: 0, est: 0, rows: 0, periods: new Set() });
         return map.get(k);
       };
-      const { data, error } = await client.from("rank_batches")
-        .select("id, period_label, category, rows").limit(2000);
+      let cols = "id, period_label, category, rows";
+      if (srcOk) cols += ", source";
+      let { data, error } = await client.from("rank_batches")
+        .select(cols).limit(2000);
+      if (error && srcOk) {
+        const r2 = await client.from("rank_batches").select("id, period_label, category, rows").limit(2000);
+        data = r2.data; error = r2.error;
+      }
       if (error) throw new Error(error.message || "读取类目失败");
       (data || []).forEach((b) => {
+        if (srcOk && !hit(b.source)) return;
         const e = touch(b.category);
         e.batches += 1;
         e.est += (typeof b.rows === "number" ? b.rows : 0);
@@ -2854,11 +3006,12 @@ async removeTrendRecord(id) {
       try {
         for (let page = 0; map.size === 0 && page < 8; page++) {
           const { data: rows, error: e2 } = await client.from("rank_items")
-            .select("category, period_label").order("id", { ascending: true })
+            .select("category, period_label, source").order("id", { ascending: true })
             .range(page * 1000, page * 1000 + 999);
           if (e2) break;
           const list = rows || [];
           list.forEach((r) => {
+            if (srcOk && !hit(r.source)) return;
             const e = touch(r.category);
             e.rows += 1;
             if (r.period_label) e.periods.add(r.period_label);
@@ -2870,13 +3023,17 @@ async removeTrendRecord(id) {
         .map((e) => ({ category: e.category, batches: e.batches, rows: e.rows || e.est, exact: e.rows > 0, periods: e.periods.size }))
         .sort((a, b) => (b.rows - a.rows) || String(a.category).localeCompare(String(b.category)));
     },
-    // 删除某个类目的全部条目与批次（所有期次、所有站点）
-    async deleteRankCategory(category) {
+    // 删除某个类目的全部条目与批次（仅本数据域；所有期次、所有站点）
+    async deleteRankCategory(category, source) {
       const cat = String(category || "").trim();
       if (!cat) throw new Error("类目名称不能为空。");
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
       let items = 0;
       for (let round = 0; round < 400; round++) {
-        const { data, error } = await client.from("rank_items").select("id").eq("category", cat).limit(500);
+        let q = client.from("rank_items").select("id").eq("category", cat).limit(500);
+        if (want && srcOk) q = this._srcCond(q, want);
+        const { data, error } = await q;
         if (error) throw new Error(error.message || "读取该类目条目失败");
         const rows = data || [];
         if (!rows.length) break;
@@ -2885,19 +3042,30 @@ async removeTrendRecord(id) {
         if (rows.length < 500) break;
       }
       let batches = 0;
-      const { data: bs, error: be } = await client.from("rank_batches").select("id").eq("category", cat);
+      const { data: bs0, error: be } = await client.from("rank_batches").select("id, source").eq("category", cat);
       if (be) throw new Error(be.message || "读取该类目批次失败");
-      for (const b of (bs || [])) { await this.deleteRankBatch(b.id); batches++; }
+      let bs = bs0 || [];
+      if (want && srcOk) {
+        bs = bs.filter((b) => {
+          const s = b && b.source ? String(b.source) : "";
+          return want === "rank" ? (s === "" || s === "rank") : s === want;
+        });
+      }
+      for (const b of bs) { await this.deleteRankBatch(b.id); batches++; }
       return { items: items, batches: batches };
     },
-    // 取某类目已存在的图片地址（合并时用于跳过重复）
-    async listRankCategoryUrls(category) {
+    // 取某类目已存在的图片地址（合并时用于跳过重复；限定数据域）
+    async listRankCategoryUrls(category, source) {
       const cat = String(category || "").trim();
       const urls = [];
       if (!cat) return urls;
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
       for (let page = 0; page < 100; page++) {
-        const { data, error } = await client.from("rank_items").select("image_url").eq("category", cat)
+        let q = client.from("rank_items").select("image_url").eq("category", cat)
           .order("id", { ascending: true }).range(page * 1000, page * 1000 + 999);
+        if (want && srcOk) q = this._srcCond(q, want);
+        const { data, error } = await q;
         if (error) break;
         const rows = data || [];
         rows.forEach((r) => { if (r.image_url) urls.push(r.image_url); });
@@ -2906,14 +3074,18 @@ async removeTrendRecord(id) {
       return urls;
     },
     // 类目改名 / 合并：把 from 并入 to（rank_items 无 update 策略 → 先复制成功、再删原数据）
-    async renameRankCategory(from, to) {
+    async renameRankCategory(from, to, source) {
       const a = String(from || "").trim(), b = String(to || "").trim();
       if (!a || !b) throw new Error("类目名称不能为空。");
       if (a === b) return 0;
-      const exist = new Set(await this.listRankCategoryUrls(b));
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
+      const exist = new Set(await this.listRankCategoryUrls(b, want));
       let moved = 0;
       for (let round = 0; round < 400; round++) {
-        const { data: rows, error } = await client.from("rank_items").select("*").eq("category", a).limit(500);
+        let q = client.from("rank_items").select("*").eq("category", a).limit(500);
+        if (want && srcOk) q = this._srcCond(q, want);
+        const { data: rows, error } = await q;
         if (error) throw new Error(error.message || "读取待迁移条目失败");
         const list = rows || [];
         if (!list.length) break;
@@ -2933,8 +3105,15 @@ async removeTrendRecord(id) {
         moved += news.length;
         if (list.length < 500) break;
       }
-      const { data: bs } = await client.from("rank_batches").select("id").eq("category", a);
-      for (const x of (bs || [])) { await this.deleteRankBatch(x.id); }
+      const { data: bs0 } = await client.from("rank_batches").select("id, source").eq("category", a);
+      let bsx = bs0 || [];
+      if (want && srcOk) {
+        bsx = bsx.filter((x) => {
+          const s = x && x.source ? String(x.source) : "";
+          return want === "rank" ? (s === "" || s === "rank") : s === want;
+        });
+      }
+      for (const x of bsx) { await this.deleteRankBatch(x.id); }
       return moved;
     },
     /* 检查 rank_items 有没有 title 列：缺列时标题写入会被静默丢弃，并刷出一堆 400 */
@@ -2961,11 +3140,15 @@ async removeTrendRecord(id) {
       const periodLabel = (o && o.periodLabel) || "";
       const category = (o && o.category) || "";
       const sites = ((o && o.sites) || []).filter(v => v != null && String(v).trim() !== "");
+      /* 20261113B：按数据域删除（撤销本次导入时不能连带清掉其它专区） */
+      const src = (o && o.source) || "";
+      const srcOk = src ? await this.rankSourceColumn() : true;
       let removed = 0;
       for (let round = 0; round < 400; round++) {
         let q = client.from("rank_items").select("id")
           .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
         if (sites.length) q = q.in("site", sites);
+        if (src && srcOk) q = this._srcCond(q, src);
         const { data, error } = await q.limit(500);
         if (error) throw new Error(error.message || "读取待撤销数据失败");
         const rows = (data || []).map(r => r.id).filter(v => v != null);
@@ -3101,6 +3284,35 @@ async removeTrendRecord(id) {
      *              （一个字典：图片地址 → 渠道名），读写都走它，
      *              功能一样，不用改表结构、不用跑 SQL。
      * ============================================================ */
+    /* ============================================================
+     * 数据域隔离（20261113B）
+     * ------------------------------------------------------------
+     * 趋势上升榜 / 上新节奏 / 标题组词台 三套数据原本共用 rank_items，
+     * 只要一处上传选错，三个专区会一起被写脏。
+     * 这里用一列 source 把"这批数据属于哪个专区"记下来：
+     *   rank（或空 = 历史数据）→ 趋势上升榜
+     *   rhythm                 → 上新节奏
+     *   title                  → 标题组词台
+     * 读 / 清 / 计 一律带域条件，三套互不可见、互不覆盖。
+     * 缺列时（还没加列）自动降级：所有域都按"全部数据"读，行为与升级前一致，不报错。
+     * ============================================================ */
+    _srcColOk: null,
+    async rankSourceColumn() {
+      if (this._srcColOk !== null) return this._srcColOk;
+      try {
+        const { data } = await client.from("rank_items").select("*").limit(1);
+        const row = (data && data[0]) || null;
+        this._srcColOk = !!(row && Object.prototype.hasOwnProperty.call(row, "source"));
+      } catch (e) { this._srcColOk = false; }
+      return this._srcColOk;
+    },
+    /* 给查询加上"域"条件。rank 域必须含 NULL / 空串（历史数据都在那儿）。 */
+    _srcCond(q, src) {
+      if (!src) return q;
+      if (src === "rank") return q.or("source.eq.rank,source.is.null");
+      return q.eq("source", src);
+    },
+
     _chColOk: null,
     async rankChannelColumn() {
       if (this._chColOk !== null) return this._chColOk;
@@ -3612,8 +3824,11 @@ async removeTrendRecord(id) {
         if (f.periodType) q = q.eq("period_type", f.periodType);
         if (f.periods && f.periods.length) q = q.in("period_label", expandPeriods(f.periods));
         if (f.sites && f.sites.length) q = q.in("site", f.sites);
+        if (f.source && _srcOk) q = this._srcCond(q, f.source);
         return q.order("id", { ascending: true }).range(from, to);
       };
+      /* 20261113B：按数据域隔离（趋势上升榜 / 上新节奏 / 标题组词台） */
+      const _srcOk = f.source ? await this.rankSourceColumn() : true;
       const out = [];
       this._rankTruncated = false;
       /* 列缺失自愈：已确认不存在的列（如 title / channel）不再带进 select，

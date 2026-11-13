@@ -299,7 +299,7 @@
   }          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
 
-  var BUILD = "20261112AC";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261113C";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
 
   /* ---------------- 期次排序 ---------------- */
   function periodKey(p) {
@@ -592,7 +592,7 @@
       CAT_PF_SEEN[key] = 1;
       var periods = activePeriods();
       if (!periods.length) { CAT_PF_ON = false; return; }
-      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), periodType: PTYPE, category: c, cols: REL_COLS };
+      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), periodType: PTYPE, category: c, cols: REL_COLS, source: "rhythm" };
       Promise.resolve()
         .then(function () { return SBX.listRankItems(filter); })
         .then(function (rows) {
@@ -624,7 +624,8 @@
 
     /* 纵向 / 类目对比都要拿到「上一月」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
-    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, cols: REL_COLS };
+    /* 20261113B：只读「上新节奏」自己的数据域 */
+    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, cols: REL_COLS, source: "rhythm" };
     if (MODE === "c") filter.categories = cats;
     else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
@@ -4162,7 +4163,7 @@
     if (!sites.length || !periods.length) return { items: [], sites: sites, periods: periods };
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
     var cats = sc.cats || (MODE === "c" ? activeCats() : []);
-    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE };
+    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, source: "rhythm" };
     if (MODE === "c") filter.categories = cats;
     else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
@@ -4657,7 +4658,7 @@
 
     try {
       FACETS = (typeof SBX.rankFacetsByType === "function")
-        ? await SBX.rankFacetsByType(PTYPE)
+        ? await SBX.rankFacetsBySource("rhythm", PTYPE)
         : await SBX.rankFacets();
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 后台可以控制哪些国家站点 / 月份在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */

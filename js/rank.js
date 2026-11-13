@@ -125,6 +125,10 @@
       (window.localStorage || {}).setItem(TAG_STORE_KEY, JSON.stringify({ m: TAG_STORE, o: TAG_STORE_ORDER }));
     } catch (e) { /* 容量满了就算了，不影响功能 */ }
   }
+  var LAST_POOL_KEYS = null, LAST_POOL_MODE = "", LAST_POOL_DROPPED = [];
+  /* 20261113A：上一张池子实际画出来的列（期次 / 类目 / 站点）。
+     体征卡与详细报告要按它对齐 —— 之前池子折叠了空周，报告却仍把空周算一列，
+     于是出现「选 3 列、报告只 2 列」「报告比池多一列」这类不一致。 */
   var LAST_COLS = 0;         // 上一次真正画出来的列数（空类目 / 空周次会折叠，顶栏按实际列数显示）
   var LAST_COLS_MODE = "";
   var REP_OPEN = false;      /* 报告详情是否展开；默认收起，只给逐列画像 */
@@ -599,7 +603,7 @@
       CAT_PF_SEEN[key] = 1;
       var periods = activePeriods();
       if (!periods.length) { CAT_PF_ON = false; return; }
-      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS };
+      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS, source: "rank" };
       Promise.resolve()
         .then(function () { return SBX.listRankItems(filter); })
         .then(function (rows) {
@@ -630,7 +634,8 @@
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
-    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS };
+    /* 20261113B：只读「趋势上升榜」这一域的数据，不再与上新节奏 / 标题组词台混读 */
+    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS, source: "rank" };
     if (MODE === "c") {
       var _exp = [];
       cats.forEach(function (c) { _exp = _exp.concat(catsOf(c)); });
@@ -675,7 +680,14 @@
 
   /* ---------------- 后台可控的前台显隐 + 单选归一化 ---------------- */
   function siteVisible(s) { return (HIDDEN.sites || []).indexOf(s) < 0; }
-  function periodVisible(p) { return (HIDDEN.periods || []).indexOf(p) < 0; }
+  function periodVisible(p) {
+    /* 后台隐藏列表里可能存的是 W45，这里的 p 已经归一成「第45周」，两边都归一后再比 */
+    var np = (typeof normPeriodLabel === "function") ? normPeriodLabel(p) : p;
+    var list = (HIDDEN.periods || []).map(function (x) {
+      return (typeof normPeriodLabel === "function") ? normPeriodLabel(x) : x;
+    });
+    return list.indexOf(np) < 0;
+  }
   /* 把后台隐藏的国家站点 / 周次从筛选项、地区分组、当前选择里统一摘掉 */
   function applyHiddenFilter() {
     var before = (SEL_SITES || []).length + "|" + (SEL_PERIODS || []).length;
@@ -1374,6 +1386,7 @@
     var all = src.filter(hitTags);
     EXPORT_ITEMS = [];                                   /* 每次重排都重新累计，避免残留上一次的范围 */
     var html = "", maxLen = 0, kept = 0, cols = 0, dropped = 0, dropKind = "";
+    var poolKeys = [], dropNames = [];   /* 实际画出的列 / 被折叠的列名 */
 
     /* ===== 横向 · 国家对比：每国一列 ===== */
     if (MODE === "h") {
@@ -1408,11 +1421,11 @@
         /* 该国这一期在这个类目下没有图 → 整列不输出（横向国家对比同理：
            选了几个国家、但其中某个国家本期没上传，留一个空列既难看又白占宽度）。
            去掉后剩下的列由 flex 均分：只剩 1 国就整行铺满，2 国就两等分。 */
-        if (!list.length) { dropped++; dropKind = "site"; return; }
+        if (!list.length) { dropped++; dropKind = "site"; dropNames.push(s); return; }
         if (list.length > maxLen) maxLen = list.length;
         var cards = list.slice(0, limit).map(function (it) { return cardHtml(it, { share: urlSites[it.image_url], eager: opts.eager, eye: opts.eye }); }).join("");
         html += poolHtml(s, meta, total, cards, opts.noFoot ? null : Math.min(limit, total));
-        kept += list.length; cols++;
+        kept += list.length; cols++; poolKeys.push(s);
         /* 导出用清单：整列（不按「每列最多展示」截断）；横向按国家比，没有位次标签 */
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
@@ -1476,7 +1489,7 @@
             + (lastP ? '（最近一次有数据是 ' + esc(lastP) + '）' : '')
             + '。换一个周次，或在上面取消勾选这个类目。';
           html += poolHtml(cat, siteC + " · " + pC + " · 本周无上传", 0, '<div class="rk-empty">' + emptyTxt + '</div>', null, { dragKey: cat });
-          cols++;
+          cols++; poolKeys.push(cat);
           return;
         }
         var cardsC = list.slice(0, limit).map(function (it) {
@@ -1484,7 +1497,7 @@
           return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
         html += poolHtml(cat, metaC, list.length, cardsC, opts.noFoot ? null : Math.min(limit, list.length), { dragKey: cat });
-        kept += list.length; cols++;
+        kept += list.length; cols++; poolKeys.push(cat);
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
             url: it.image_url, label: moveOf(it, pC, prevC, hasOf, rankOf).move,
@@ -1547,13 +1560,13 @@
         /* 该周在这个「国家 + 类目」下没有任何图 → 不输出这一列：
            各国家/类目的周度本来就不齐，留一个空列既难看又占宽；
            去掉后剩下的列由 flex 均分，1 列就铺满、2 列就两等分。 */
-        if (!list.length) { dropped++; dropKind = "period"; return; }
+        if (!list.length) { dropped++; dropKind = "period"; dropNames.push(p); return; }
         var cards = list.slice(0, limit).map(function (it) {
           var mv = moveOf(it, p, prev, hasOf, rankOf);
           return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
         }).join("");
         html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
-        kept += list.length; cols++;
+        kept += list.length; cols++; poolKeys.push(p);
         /* 导出用清单：整列（不按「每列最多展示」截断），带站点 / 期次 / 类目 / 位次标签 */
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
@@ -1565,7 +1578,8 @@
       });
     }
     LAST_COLS = cols; LAST_COLS_MODE = MODE; LAST_KEPT = kept;
-    return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind };
+    LAST_POOL_KEYS = poolKeys; LAST_POOL_MODE = MODE; LAST_POOL_DROPPED = dropNames;
+    return { html: html, maxLen: maxLen, kept: kept, cols: cols, dropped: dropped, dropKind: dropKind, dropNames: dropNames };
   }
 
   /* ---------------- 体征（三种对比模式通用） ----------------
@@ -2348,6 +2362,9 @@
       + '<div class="rk-rep-meta">'
       + '<span>' + esc(repScopeText(dim)) + '</span>'
       + '<span>分组 <b>' + esc(V.map(function (c) { return c.cat; }).join(" / ")) + '</b></span>'
+      + (LAST_POOL_DROPPED && LAST_POOL_DROPPED.length
+        ? '<span>已折叠 <b>' + LAST_POOL_DROPPED.length + '</b> 个无数据列（' + esc(LAST_POOL_DROPPED.join(" / ")) + '），未参与对比</span>'
+        : '')
       + '<span>样本 <b>' + sum + '</b> 张上榜图</span>'
       + '<span>生成于 ' + ts + '</span>'
       + '</div>'
@@ -2356,7 +2373,7 @@
       +     '<span class="rk-kpi-t"><b>打标覆盖</b><em>' + tagged + ' / ' + sum + ' 张带标签</em></span></div>'
       +   '<div class="rk-kpi"><span class="rk-kpi-n">' + sum + '</span>'
       +     '<span class="rk-kpi-t"><b>样本张数</b><em>参与本次对比的上榜图</em></span></div>'
-      +   '<div class="rk-kpi"><span class="rk-kpi-n">' + V.filter(function (c) { return c.n > 0; }).length + '</span>'
+      +   '<div class="rk-kpi"><span class="rk-kpi-n">' + V.length + '</span>'
       +     '<span class="rk-kpi-t"><b>对比列数</b><em>' + esc(dim.noun) + '维度并列</em></span></div>'
       + '</div>'
       + '</div>';
@@ -3547,11 +3564,20 @@
        类目对比比类目、国家对比比国家、时间对比比周次。
        以前这里锁死在 MODE === "c"，所以切到另外两种模式就整块消失。 */
     var vit = "";
+    /* 20261113A：先算对比池，再算体征卡 —— 体征卡要用「池子实际画出来的列」过滤空列，
+       顺序反了就会拿到上一次的列，仍会出现两边列数不一致。 */
+    var R = buildPools(CAP);
     var VG = vitalsGroups();
+    /* 20261113A：与对比池同口径 —— 池子里折叠掉的无数据列，体征卡与详细报告不再把它算作一列，
+       否则会出现「上面 3 列、报告只 2 列」这种两边对不上的情况。 */
+    if (LAST_POOL_MODE === MODE && LAST_POOL_KEYS) {
+      var _kmap = {};
+      LAST_POOL_KEYS.forEach(function (k) { _kmap[k] = 1; });
+      VG = VG.filter(function (g) { return _kmap[g.key]; });
+    }
     /* 详情默认收起 → 只有用户展开时才生成，切类目不再白算七节 */
     if (VG.length) vit = vitalsHtml(vitalsOfGroups(VG), vitalsDim(), { lazyDetail: !REP_OPEN });
     /* 打标数据已在函数开头取过一次（与展示模式无关） */
-    var R = buildPools(CAP);
     if (ONLY !== "off" && !R.kept) {
       box.innerHTML = '<div class="rk-empty">当前筛选里没有「' + onlyLabel() + '」的图片。点筛选里的「全部」可以看回所有图。</div>';
       return;
@@ -3568,6 +3594,7 @@
         : (R.dropKind === "cat"
           ? ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的类目列（该类目这一周没有上传）')
           : ('已自动隐藏 <b>' + R.dropped + '</b> 个无数据的周列（该周这个国家 / 类目没有上传）'));
+      if (R.dropNames && R.dropNames.length) _dtxt += '：<b>' + esc(R.dropNames.join(" / ")) + '</b>';
       html += '<div class="rk-dropnote">' + _dtxt + '，'
         + '剩余 <b>' + R.cols + '</b> 列已铺满宽度。</div>';
     }
@@ -4655,9 +4682,9 @@
     /* 期次按「周度」筛：月度数据（上新节奏专区）与周度共用同一张表，
        不筛的话周度页的期次里会冒出「2026年10月」这种月份，与页面口径不符。 */
     try {
-      FACETS = (typeof SBX.rankFacetsByType === "function")
-        ? await SBX.rankFacetsByType("week")
-        : await SBX.rankFacets();
+      FACETS = (typeof SBX.rankFacetsBySource === "function")
+        ? await SBX.rankFacetsBySource("rank", "week")
+        : (typeof SBX.rankFacetsByType === "function" ? await SBX.rankFacetsByType("week") : await SBX.rankFacets());
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 类目菜单只显示标准名：把平台全路径名合并到同一类，菜单不再出现一堆长名字 */
     RAW_CATS = (FACETS.categories || []).slice();
@@ -4679,7 +4706,10 @@
     try { HIDDEN = await SBX.getRankHidden(); } catch (e) { HIDDEN = { sites: [], periods: [] }; }
     HIDDEN = { sites: (HIDDEN && HIDDEN.sites) || [], periods: (HIDDEN && HIDDEN.periods) || [] };
     FACETS.sites = FACETS.sites || [];
-    FACETS.periods = sortPeriods(FACETS.periods || []);
+    /* 期次统一命名：W45 / 第45周 / 45周 只出现一个按钮（查询时数据层会展开各种写法） */
+    FACETS.periods = sortPeriods((typeof normPeriodList === "function")
+      ? normPeriodList(FACETS.periods || [])
+      : (FACETS.periods || []));
     FACETS.categories = FACETS.categories || [];
 
     /* 国家站点（地区）以后台「站点管理」里我自定义的清单为准。

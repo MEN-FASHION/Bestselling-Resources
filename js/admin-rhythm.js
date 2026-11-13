@@ -680,7 +680,8 @@
     const btn = $("#rm-import");
     if (btn) { btn.disabled = true; btn.textContent = "导入中…"; }
     try {
-      const slot = { periodType: periodType, periodLabel: periodLabel, category: category, sites: slotSites };
+      /* 20261113B：上新节奏有独立数据域，写入 / 清空 / 查重只在 rhythm 域内进行 */
+      const slot = { periodType: periodType, periodLabel: periodLabel, category: category, sites: slotSites, source: "rhythm" };
       let cleared = { items: 0, batches: 0 };
       let skippedExisting = 0;
       let list = rowsOut;
@@ -696,9 +697,9 @@
         skippedExisting = f.skipped;
       }
 
-      const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: periodLabel, category: category, site: batchSite });
+      const batchId = await SB.createRankBatch({ periodType: periodType, periodLabel: periodLabel, category: category, site: batchSite, source: "rhythm" });
       const rows = list.map(r => {
-        const o = Object.assign({}, r, { batch_id: batchId });
+        const o = Object.assign({}, r, { batch_id: batchId, source: "rhythm" });
         o.flag_opportunity = !!r.flag_opportunity;
         o.flag_hot = !!r.flag_hot;
         o.flag_surge = !!r.flag_surge;
@@ -751,7 +752,8 @@
   }
   /* 算出「每个槽位」与「每个期次」的真实条数（去重后各查一次，避免重复请求） */
   async function computeRankCounts(list, opt) {
-    const countFn = (opt && opt.countFn) || ((o) => SB.countRankSlot(o));
+    /* 20261113C：条数按本域统计，别把趋势上升榜 / 标题组词台的数据算进来 */
+    const countFn = (opt && opt.countFn) || ((o) => SB.countRankSlot(Object.assign({}, o, { source: "rhythm" })));
     const bySlot = {}, byPeriod = {};
     const slotDone = {}, periodDone = {};
     for (const b of (list || [])) {
@@ -787,7 +789,8 @@
   async function loadRankBatches() {
     const box = $("#rm-batch-list");
     let list = [];
-    try { list = await SB.listRankBatches(); } catch (e) { list = []; }
+    /* 20261113C：只读本域台账（上新节奏） */
+    try { list = await SB.listRankBatches("rhythm"); } catch (e) { list = []; }
     /* 只保留月度期次：周度批次归「上新节奏」面板管，不能混进这里的期次清单 */
     list = (list || []).filter((b) => ((b && b.period_type) || "week") === "month");
 
@@ -841,7 +844,7 @@
         if (!v || v === b.period_label) return;
         if (!(await uiConfirm("把期次「" + b.period_label + "」改名为「" + v + "」？\n该期次全部数据会一起改名。"))) return;
         try {
-          const mv = await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type);
+          const mv = await SB.updateRankPeriodData(b.period_label, b.period_type, v, b.period_type, "rhythm");
           await loadRankBatches(); rankPreviewRefresh();
           sbToast("期次已改名为「" + v + "」（迁移 " + mv + " 条）", true);
         } catch (e) { sbToast((e && e.message) || "改名失败", false); }
@@ -883,7 +886,7 @@
         const nt = p.type === "month" ? "week" : "month";
         if (!(await uiConfirm("把期次「" + p.label + "」的频次改为「" + (nt === "month" ? "月度" : "周度") + "」？\n该期次全部数据会一起切换。"))) return;
         try {
-          await SB.updateRankPeriodData(p.label, p.type, p.label, nt);
+          await SB.updateRankPeriodData(p.label, p.type, p.label, nt, "rhythm");
           await loadRankBatches(); rankPreviewRefresh();
           sbToast("频次已切换", true);
         } catch (e) { sbToast((e && e.message) || "切换失败", false); }
@@ -903,7 +906,7 @@
         if (!(await uiConfirm("把期次「" + p.label + "」改名为「" + v + "」？\n该期次已上传的全部数据（" + p.rows + " 条）会一起改名。"))) { name.value = p.label; return; }
         renaming = true;
         try {
-          const mv = await SB.updateRankPeriodData(p.label, p.type, v, p.type);
+          const mv = await SB.updateRankPeriodData(p.label, p.type, v, p.type, "rhythm");
           committed = true;
           await loadRankBatches(); rankPreviewRefresh();
           sbToast("期次已改名为「" + v + "」（迁移 " + mv + " 条）", true);
@@ -924,7 +927,7 @@
       del.type = "button"; del.className = "rkadm-icon rkadm-icon--del"; del.textContent = "✕"; del.title = "删除整个期次";
       del.onclick = async () => {
         if (!(await uiConfirm("删除整个期次「" + p.label + "」及其全部数据（" + p.rows + " 条）？此操作不可恢复。"))) return;
-        try { await SB.deleteRankPeriod(p.label, p.type); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该期次", true); }
+        try { await SB.deleteRankPeriod(p.label, p.type, "rhythm"); await loadRankBatches(); rankPreviewRefresh(); sbToast("已删除该期次", true); }
         catch (e) { sbToast((e && e.message) || "删除失败", false); }
       };
 
