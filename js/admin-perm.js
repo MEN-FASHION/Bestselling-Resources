@@ -530,23 +530,51 @@ function updatePermEditCatCount() {
     const frontZones = [...document.querySelectorAll("#perm-edit-zones input:checked")].map(i => i.value);
     const manageZones = [...document.querySelectorAll("#perm-edit-manage-zones input:checked")].map(i => i.value);
     try {
-      await SB.setUserNote(uid, note);
-      await SB.setUserTag(uid, tag);
-      await SB.setUserRole(uid, role);
+      /* 逐项写库：备注 / 标签 / 角色 / 可见专区 / 可管专区各自独立。
+         这几处对应 profiles 表的不同列，历史上加过好几轮列；某一张库少了其中一列，
+         以前会在第一步就抛错，导致后面的类目授权根本没执行，用户只看到一句「保存失败」。
+         现在分别记录，最后一次性说明哪一项没写进去。 */
+      const softFail = [];
+      const step = async (label, fn) => {
+        try { await fn(); } catch (e) { softFail.push(label + "（" + (e.message || "未知原因") + "）"); }
+      };
+      await step("备注", () => SB.setUserNote(uid, note));
+      await step("标签", () => SB.setUserTag(uid, tag));
+      await step("角色", () => SB.setUserRole(uid, role));
       // 前端可见专区（frontend_zones）
       // 全都不勾 = 明确「一个都不给看」，必须写哨兵；写空数组会被当成「未配置 → 跟随全局」，
       // 于是取消勾选后反而又显示全部专区（本次修的 bug）。
-      await SB.setUserFrontendZones(uid, frontZones.length ? frontZones : [ZONE_NONE]);
+      await step("前台可见专区", () => SB.setUserFrontendZones(uid, frontZones.length ? frontZones : [ZONE_NONE]));
       // 后台可管理专区（manage_zones）
-      await SB.setUserManageZones(uid, manageZones);
+      await step("后台可管理专区", () => SB.setUserManageZones(uid, manageZones));
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
       // 注意：已下线的专区不要再写入；新增专区若要卡类目，在这里补 key
       const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm", "pinterest", "shein", "compare"];
+      /* 逐专区独立保存：某一个专区被数据库拒绝（专区名的 CHECK 约束、缺列、RLS），
+         不能再让整次保存中断——否则前面几个专区已写、后面全部没写，用户看到「保存失败」却不知道该信哪一部分。
+         现在把失败收集起来，最后一次性说明「哪些成功、哪些走了字典、哪些真的没存进去」。 */
+      const viaDict = [], hardFail = [];
       for (const z of ALL_CAT_ZONES) {
-        await SB.setUserPermissions(uid, z, cats);
+        try {
+          const r = await SB.setUserPermissions(uid, z, cats);
+          if (r && r.via === "dict") viaDict.push(zoneLabelOf(z));
+        } catch (e) {
+          hardFail.push(zoneLabelOf(z) + "（" + (e.message || "未知原因") + "）");
+        }
       }
-      sbToast("该用户角色与权限已保存");
+      if (softFail.length || hardFail.length) {
+        const parts = [];
+        if (softFail.length) parts.push("未写入：" + softFail.join("；"));
+        if (hardFail.length) parts.push("类目授权未存：" + hardFail.join("；"));
+        if (viaDict.length) parts.push(viaDict.join("、") + " 的类目授权已暂存于站点设置（功能不受影响）");
+        sbToast("已保存，但有部分未生效 —— " + parts.join(" · "), false);
+      } else if (viaDict.length) {
+        // 数据库不认这些专区名，授权已改存站点设置，功能照常生效
+        sbToast("该用户角色与权限已保存（" + viaDict.join("、") + " 的类目授权暂存于站点设置，功能不受影响）");
+      } else {
+        sbToast("该用户角色与权限已保存");
+      }
       // 就地更新内存数据 + 刷新该行 + 同步编辑区/筛选
       const u = permUsers.find(x => x.user_id === uid);
       if (u) { u.role = role; u.user_tag = tag; u.user_note = note; }
