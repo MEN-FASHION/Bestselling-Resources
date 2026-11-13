@@ -57,6 +57,14 @@
       ".fs-tip{position:fixed;z-index:2147483002;max-width:280px;background:rgba(17,24,39,.92);color:#fff;",
       "font-size:12px;line-height:1.55;padding:9px 12px;border-radius:9px;display:none;}",
       ".fs-tip.on{display:block;}",
+      /* 卡片悬停用的小胶囊：贴在图上方，独立浮层，不改页面结构 */
+      ".fs-quick{position:fixed;z-index:2147482999;display:none;align-items:center;gap:4px;",
+      "padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.5);",
+      "background:rgba(17,24,39,.84);color:#fff;font-size:12px;line-height:1;cursor:pointer;",
+      "font-family:inherit;white-space:nowrap;backdrop-filter:blur(4px);",
+      "box-shadow:0 4px 14px rgba(0,0,0,.24);user-select:none;}",
+      ".fs-quick:hover{background:rgba(37,99,235,.94);}",
+      ".fs-quick.on{display:inline-flex;}",
     ].join("");
     (document.head || document.documentElement).appendChild(st);
   }
@@ -266,6 +274,7 @@
     var hit = pick();
     if (!hit) { hide(); return; }
     if (!wrap) build();
+    hideQuick();                     /* 大图按钮出来了，卡片上的小胶囊就收起 */
     last = hit;
     curUrl = hit.src;
     wrap.classList.add("on");
@@ -287,9 +296,12 @@
     if (!tip) return;
     tip.textContent = msg;
     tip.classList.add("on");
-    var r = wrap ? wrap.getBoundingClientRect() : { top: 0, left: 0 };
-    tip.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 300)) + "px";
-    tip.style.top = Math.max(8, r.top - 52) + "px";
+    var anchor = null;
+    if (wrap && wrap.classList.contains("on")) anchor = wrap.getBoundingClientRect();
+    else if (quick && quick.classList.contains("on")) anchor = quick.getBoundingClientRect();
+    if (!anchor) anchor = { top: 80, left: window.innerWidth / 2 - 100 };
+    tip.style.left = Math.max(8, Math.min(anchor.left, window.innerWidth - 300)) + "px";
+    tip.style.top = Math.max(8, anchor.top - 52) + "px";
     clearTimeout(tipTimer);
     tipTimer = setTimeout(function () { tip.classList.remove("on"); }, 4200);
   }
@@ -320,15 +332,194 @@
       a.click();
       setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); }, 200);
     } catch (e) {
-      window.open(u, "_blank", "noopener");
+      /* 下载失败时只兜底打开公开地址；blob:/data: 这种打开也是白页，宁可不做 */
+      if (isPublic(u)) window.open(u, "_blank", "noopener");
     }
+  }
+
+  /* ============================================================
+   * 卡片悬停：鼠标移到图上，图上方浮出「搜同款」，点一下直接搜
+   * ------------------------------------------------------------
+   * 大图里那个按钮要先点开大图；列表里几十上百张图逐个点开太慢，
+   * 所以再给卡片图加一层「悬停即出」的入口。
+   *
+   * 为什么不往卡片里插按钮：
+   *   各页面卡片结构不同（有的 onclick 开弹层、有的可拖拽、有的带勾选框），
+   *   插节点容易和这些交互打架。所以按钮做成独立的一层浮层，
+   *   跟着鼠标悬停那张图的位置贴上去，页面结构一行都不用改。
+   *   位置放「图的上方居中」，避开各卡片四角的星标、勾选框、角标。
+   * ============================================================ */
+  var QMIN = 72;                 /* 卡片图最小边长：再小的是图标/徽标，不做 */
+  var quick = null, quickImg = null, quickSrc = "", quickTimer = null;
+
+  function buildQuick() {
+    if (quick) return;
+    ensureCss();
+    quick = document.createElement("div");
+    quick.className = "fs-quick";
+    quick.setAttribute("role", "button");
+    quick.setAttribute("tabindex", "-1");
+    quick.title = "用这张图去站外找相似款（Google 以图搜图）";
+    quick.innerHTML = '<span aria-hidden="true">\u2315</span><span>搜同款</span>';
+    document.body.appendChild(quick);
+    /* 按下就先拦掉：卡片本身可拖拽/可点开大图，别被这两件事抢先 */
+    quick.onmousedown = function (e) {
+      if (!e) return;
+      e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+    };
+    quick.onmouseenter = function () { clearTimeout(quickTimer); };
+    quick.onmouseleave = function () { scheduleHideQuick(); };
+    quick.onclick = function (e) {
+      if (e) {
+        e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+      }
+      openSearch(quickSrc, ENGINES[0]);
+    };
+  }
+
+  /* 图标、徽标、头像、页头导航里的图不进候选 */
+  var QUICK_SKIP_CLS = /(^|[\s_-])(logo|avatar|icon|sprite|qrcode|qr)([\s_-]|$)/i;
+
+  function quickSkip(im) {
+    if (QUICK_SKIP_CLS.test(clsOf(im))) return true;
+    try {
+      if (im.closest && im.closest("header,nav,.site-head,.topbar,.site-nav,.fs-skip")) return true;
+    } catch (e) { /* 忽略 */ }
+    return false;
+  }
+
+  /* 只在「弹层/灯箱」里才跳过悬停入口；
+     不用 inOverlay 那套计算样式判断——列表容器本身常常是 absolute 定位，
+     用计算样式判断会把正常卡片图误判成弹层大图，等于功能不出现。 */
+  function inOverlayClass(im) {
+    var n = im.parentElement || im.parentNode, d = 0;
+    while (n && n !== document.body && d < 8) {
+      if (OVERLAY_CLS.test(clsOf(n))) return true;
+      n = n.parentElement || n.parentNode;
+      d++;
+    }
+    return false;
+  }
+
+  function quickHit(t) {
+    if (!t) return null;
+    var im = null;
+    if (t.tagName === "IMG") im = t;
+    else if (t.closest) { try { im = t.closest("img"); } catch (e) { im = null; } }
+    if (!im) return null;
+    var src = im.currentSrc || im.src || "";
+    if (!src) return null;
+    if (quickSkip(im)) return null;
+    var r = im.getBoundingClientRect();
+    if (!r || r.width < QMIN || r.height < QMIN) return null;
+    if (r.bottom < 8 || r.top > window.innerHeight - 8) return null;
+    /* 已经在弹层/灯箱里放大的那张图，交给右下角那个按钮，这里不重复出 */
+    if (inOverlayClass(im)) return null;
+    if (wrap && wrap.classList.contains("on") && last && last.el === im) return null;
+    return { el: im, r: r, src: src };
+  }
+
+  function placeQuick(r) {
+    if (!quick) return;
+    var w = quick.offsetWidth || 86, h = quick.offsetHeight || 26;
+    var left = r.left + (r.width - w) / 2;
+    left = Math.max(6, Math.min(left, window.innerWidth - w - 6));
+    var top = r.top + 6;
+    if (top < 6) top = 6;
+    if (top + h > r.bottom - 4) top = Math.max(6, r.bottom - h - 6);
+    if (top + h > window.innerHeight - 6) top = window.innerHeight - h - 6;
+    quick.style.left = left + "px";
+    quick.style.top = top + "px";
+  }
+
+  function showQuick(hit) {
+    buildQuick();
+    clearTimeout(quickTimer);
+    quickImg = hit.el;
+    quickSrc = hit.src;
+    placeQuick(hit.r);
+    quick.classList.add("on");
+  }
+
+  function hideQuick() {
+    clearTimeout(quickTimer);
+    if (quick) quick.classList.remove("on");
+    quickImg = null;
+  }
+
+  function scheduleHideQuick() {
+    clearTimeout(quickTimer);
+    quickTimer = setTimeout(hideQuick, 220);
+  }
+
+  /* 卡片范围的判定：停留在同一张卡片（角标、文字）上时不要让按钮闪掉 */
+  function quickCard(im) {
+    try {
+      return im.closest ? im.closest("figure,li,.rk-card,.mv-card,.fv-card,.gthumb,.cmp-card,.card") : null;
+    } catch (e) { return null; }
+  }
+
+  function hoverAllowed() {
+    try {
+      if (window.matchMedia && window.matchMedia("(hover: none)").matches) return false;
+    } catch (e) { /* 忽略 */ }
+    return true;
+  }
+
+  function wireHover() {
+    if (!hoverAllowed()) return;    /* 触屏设备没有悬停，靠点开大图那个按钮 */
+    document.addEventListener("mouseover", function (e) {
+      var t = e.target;
+      var hit = quickHit(t);
+      if (hit) { showQuick(hit); return; }
+      if (!quickImg || !quick || !quick.classList.contains("on")) return;
+      if (t && t.closest) {
+        var card = quickCard(quickImg);
+        if (card && card.contains(t)) return;
+        if (t.closest(".fs-quick")) return;
+      }
+      scheduleHideQuick();
+    }, true);
+
+    document.addEventListener("mouseout", function (e) {
+      if (!quickImg) return;
+      var to = e.relatedTarget;
+      if (to) {
+        if (to === quickImg) return;
+        if (to.closest && to.closest(".fs-quick")) return;
+        var card = quickCard(quickImg);
+        if (card && card.contains(to)) return;
+      }
+      scheduleHideQuick();
+    }, true);
+
+    /* 滚动、改窗口大小时跟着图片走；图滚出屏幕就收起，别飘在别处 */
+    window.addEventListener("scroll", function () {
+      if (!quickImg || !quick || !quick.classList.contains("on")) return;
+      var r = quickImg.getBoundingClientRect();
+      if (r.width < QMIN || r.bottom < 8 || r.top > window.innerHeight - 8) { hideQuick(); return; }
+      placeQuick(r);
+    }, true);
+    window.addEventListener("resize", function () {
+      if (!quickImg || !quick) return;
+      var r = quickImg.getBoundingClientRect();
+      if (r.width < QMIN) { hideQuick(); return; }
+      placeQuick(r);
+    });
   }
 
   /* ---------- 触发时机 ---------- */
   function boot() {
     build();
+    wireHover();
     /* 点任何地方后都看一眼：打开大图往往是点击后异步完成的 */
     document.addEventListener("click", function (ev) {
+      var inQuick = false;
+      try { inQuick = !!(ev.target && ev.target.closest && ev.target.closest(".fs-quick")); } catch (e) { inQuick = false; }
+      if (inQuick) return;                 /* 点的是「搜同款」胶囊本身，不当作点了卡片 */
+      hideQuick();                         /* 点了卡片（多半是开大图），小胶囊先收起 */
       try {
         var t = ev.target;
         var im = (t && t.tagName === "IMG") ? t : (t && t.closest ? t.closest("img") : null);
@@ -351,7 +542,13 @@
     scanSoon(300);
   }
 
-  window.FindSimilar = { scan: scan, hide: hide, open: function (u) { openSearch(u, ENGINES[0]); } };
+  window.FindSimilar = {
+    scan: scan,
+    hide: hide,
+    open: function (u) { openSearch(u, ENGINES[0]); },
+    quickHide: hideQuick,
+    quickHit: quickHit
+  };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
