@@ -1,5 +1,5 @@
 /* ============================================================================
- * view-export.js —— 前台「把当前所见一键带走」（20261113P）
+ * view-export.js —— 前台「把当前所见一键带走」（20261113Q）
  * ----------------------------------------------------------------------------
  * 两种成品，都是一步到手、不需要再解压、不需要配任何文件夹：
  *
@@ -13,6 +13,10 @@
  *
  * 核心口径仍然是：**页面怎么显示，导出就长什么样**。筛选条件（类目 / 周次 /
  *   月份 / 渠道）决定了导出范围，不是重新按全量导一遍。
+ *
+ *   渠道对比这一页本来就是「几列并排」看板：页面选了几个渠道就是几列、按这个
+ *   顺序排。导出时同样并排成几列（网页里横向排列、海报里按列纵排），
+ *   不再一列一列拆成上下堆叠。多列都摆不下一整页时，海报按列续排到下一张。
  *
  * 实现方式：直接从已经渲染出来的 DOM 取卡片。
  *     a) 「所见即所得」只有读 DOM 才能保证 —— 前端排序、分组、天眼模式、
@@ -33,7 +37,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261113P";
+  var BUILD = "20261113Q";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -54,6 +58,7 @@
     allowed: false,
     booted: false,
     busy: false,
+    board: false,     // 当前页面是否为「多列并排看板」（渠道对比等）
     dock: null,
     htmlBtn: null,
     posterBtn: null,
@@ -147,9 +152,25 @@
 
   /* 章节 = 页面上的一个分组列（榜单的类目列、渠道对比的每个来源列）。
      纯图墙（Pinterest / SHEIN / 品牌动向）没有分组，整页算一节。 */
+  /* 读取这一列「每行摆几张」（页面上的图幅档位），导出时按同样张数铺，列才不至于走形 */
+  function gridCols(p) {
+    var g = p.querySelector(".rk-pool-grid");
+    if (!g) return 0;
+    var v = "";
+    try { if (g.style && g.style.getPropertyValue) v = g.style.getPropertyValue("--rk-r"); } catch (e) {}
+    if (!v) {
+      var st = (g.getAttribute && g.getAttribute("style")) || "";
+      var m = /--rk-r\s*:\s*(\d+)/.exec(st);
+      if (m) v = m[1];
+    }
+    var n = parseInt(v, 10);
+    return (n >= 1 && n <= 8) ? n : 0;
+  }
+
   function collectSections() {
     var secs = [];
     var pools = document.querySelectorAll(".rk-pool");
+    state.board = pools.length > 1;   // 页面是「多列并排看板」，导出也要并排
     if (pools.length) {
       Array.prototype.forEach.call(pools, function (p) {
         var nameEl = p.querySelector(".rk-pool-name > span");
@@ -159,6 +180,7 @@
         secs.push({
           name: nameEl ? trim(nameEl.textContent) : "",
           meta: cleanMeta(metaEl ? metaEl.textContent : ""),
+          cols: gridCols(p),
           cards: cards
         });
       });
@@ -410,6 +432,57 @@
     return uniq.length === 1 ? uniq[0] : uniq[0] + "—" + uniq[uniq.length - 1];
   }
 
+  /* 一张图卡（网页里的最小单元）：图片 + 悬停搜同款 + 可选标题/标签 */
+  function cardFigure(c, s, compact) {
+    var src = c.data || c.url;
+    var tip = [c.title, c.cat, c.period].filter(Boolean).join(" · ");
+    return '<figure class="c">' +
+      '<div class="ph">' +
+      '<img loading="lazy" class="z" src="' + esc(src) + '" data-full="' + esc(src) + '"' +
+      ' data-orig="' + esc(c.url) + '" title="' + esc(tip) + '"' +
+      ' alt="' + esc(c.alt || c.title || s.name || "图片") + '">' +
+      (c.data ? "" : '<span class="miss">未内嵌 · 原地址</span>') +
+      '<button type="button" class="q" data-orig="' + esc(c.url) + '">⌕ 搜同款</button>' +
+      "</div>" +
+      (compact ? "" : "<figcaption>" +
+        (c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
+        (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
+          return "<span>" + esc(x) + "</span>";
+        }).join("") + "</span>" : "") +
+        "</figcaption>") + "</figure>";
+  }
+
+  /* 排版 A：每个分组一个区块，纵向堆叠（榜单 / 上新节奏 / 纯图墙） */
+  function bodyStack(secs) {
+    var body = "";
+    secs.forEach(function (s) {
+      body += '<section class="sec">' +
+        "<h2>" + esc(s.name || "未命名分组") + "</h2>" +
+        (s.meta ? '<p class="m">' + esc(s.meta) + "</p>" : '<p class="m"></p>') +
+        '<div class="grid">';
+      s.cards.forEach(function (c) { body += cardFigure(c, s, false); });
+      body += "</div></section>";
+    });
+    return body;
+  }
+
+  /* 排版 B：页面是几列并排（渠道对比选了哪几个渠道就有几列），导出就原样并排。
+     每列保留页面上的「每行几张」，只取当前显示的这几列、这个顺序。 */
+  function bodyColumns(secs) {
+    var body = '<div class="cols">';
+    secs.forEach(function (s) {
+      var r = s.cols || 4;
+      body += '<section class="col">' +
+        '<div class="col-h"><span class="col-n">' + esc(s.name || "未命名列") + '</span>' +
+        '<span class="col-c">' + s.cards.length + " 张</span></div>" +
+        (s.meta ? '<div class="col-m">' + esc(s.meta) + "</div>" : "") +
+        '<div class="cgrid" style="grid-template-columns:repeat(' + r + ',minmax(0,1fr))">';
+      s.cards.forEach(function (c) { body += cardFigure(c, s, true); });
+      body += "</div></section>";
+    });
+    return body + "</div>";
+  }
+
   function buildHtml(secs, ctx) {
     var css = [
       "*{box-sizing:border-box}",
@@ -441,33 +514,20 @@
       ".lb .p{left:18px;top:50%;transform:translateY(-50%)}",
       ".lb .n{right:18px;top:50%;transform:translateY(-50%)}",
       ".lb .cap{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:#a9b6c8;font-size:12.5px;padding:0 60px}",
+      ".cols{display:flex;gap:10px;align-items:flex-start;padding:16px 18px 28px;overflow-x:auto}",
+      ".col{flex:1 1 0;min-width:170px;background:#12171f;border:1px solid #1f2733;border-radius:12px;padding:9px}",
+      ".col-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:13.5px;font-weight:600;color:#e3eaf6;padding-bottom:7px;margin-bottom:8px;border-bottom:1px solid #1f2733}",
+      ".col-n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".col-c{flex:0 0 auto;font-size:11.5px;font-weight:400;color:#8b96a8}",
+      ".col-m{margin:-2px 0 8px;font-size:11.5px;color:#7f8b9d;line-height:1.5}",
+      ".cgrid{display:grid;gap:6px;align-content:start}",
+      ".cols .c{border-radius:8px}",
+      ".cols .ph{cursor:zoom-in}",
+      "@media(max-width:820px){.cols{gap:8px;padding:12px}.col{min-width:140px;padding:7px}}",
       "@media(max-width:640px){.grid{grid-template-columns:repeat(2,1fr);gap:10px}.hd,.sec{padding-left:14px;padding-right:14px}}"
     ].join("\n");
 
-    var body = "";
-    secs.forEach(function (s) {
-      body += '<section class="sec">' +
-        "<h2>" + esc(s.name || "未命名分组") + "</h2>" +
-        (s.meta ? '<p class="m">' + esc(s.meta) + "</p>" : '<p class="m"></p>') +
-        '<div class="grid">';
-      s.cards.forEach(function (c) {
-        var src = c.data || c.url;
-        body += '<figure class="c">' +
-          '<div class="ph">' +
-          '<img loading="lazy" class="z" src="' + esc(src) + '" data-full="' + esc(src) + '"' +
-          ' data-orig="' + esc(c.url) + '" alt="' + esc(c.alt || c.title || s.name || "图片") + '">' +
-          (c.data ? "" : '<span class="miss">未内嵌 · 原地址</span>') +
-          '<button type="button" class="q" data-orig="' + esc(c.url) + '">⌕ 搜同款</button>' +
-          "</div>" +
-          "<figcaption>" +
-          (c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
-          (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
-            return "<span>" + esc(x) + "</span>";
-          }).join("") + "</span>" : "") +
-          "</figcaption></figure>";
-      });
-      body += "</div></section>";
-    });
+    var body = ctx.columns ? bodyColumns(secs) : bodyStack(secs);
 
     var note = ctx.failed ? '<div class="vx-note">有 ' + ctx.failed +
       " 张图没能抓取（对方站点不允许跨域取图），这几张在下面按原地址显示，需要联网才能看到；" +
@@ -577,6 +637,89 @@
       sh.h = Math.max(POSTER.HEAD_H + 40, sh.h + POSTER.M - POSTER.GAP);
     });
     return sheets;
+  }
+
+  /* 多列看板（渠道对比）：页面是几列并排，海报也几列并排。
+     每列一张图一行、列内纵向排；一列排到页底就整体换下一张，列头带「（续）」。 */
+  var COL_HEAD_H = 56;
+
+  function layoutCols(secs) {
+    var C = Math.max(1, secs.length);
+    var colW = (POSTER.W - POSTER.M * 2 - (C - 1) * POSTER.GAP) / C;
+    var imgH = Math.round(colW * 4 / 3);
+    var capH = 0;                          // 与页面一致：渠道对比的列里只有图，没有文字
+    var cardH = imgH + capH;
+
+    var idx = secs.map(function () { return 0; });
+    var shown = secs.map(function () { return 0; });
+    var sheets = [];
+
+    for (var guard = 0; guard < 400; guard++) {
+      var sh = {
+        no: sheets.length + 1, colMode: true,
+        colW: colW, imgH: imgH, cardH: cardH, capH: capH,
+        cols: [], h: POSTER.HEAD_H
+      };
+      var any = false, left = false;
+      for (var i = 0; i < C; i++) {
+        var s = secs[i];
+        var y = POSTER.HEAD_H + COL_HEAD_H;
+        var room = POSTER.MAX_H - POSTER.M - y;
+        var maxRows = Math.max(0, Math.floor((room + POSTER.GAP) / (cardH + POSTER.GAP)));
+        var take = Math.min(Math.max(0, s.cards.length - idx[i]), maxRows);
+        var slice = take > 0 ? s.cards.slice(idx[i], idx[i] + take) : [];
+        idx[i] += take;
+        if (take) any = true;
+        if (idx[i] < s.cards.length) left = true;
+        sh.cols.push({
+          name: s.name,
+          meta: s.meta,
+          cards: slice,
+          cont: shown[i] > 0 && take > 0          // 这一页是第二页起的续列
+        });
+        if (take) shown[i] += take;
+        sh.h = Math.max(sh.h, take ? y + take * (cardH + POSTER.GAP) - POSTER.GAP
+          : POSTER.HEAD_H + COL_HEAD_H);
+      }
+      if (!any) break;
+      sheets.push(sh);
+      if (!left) break;
+    }
+
+    if (!sheets.length) {
+      sheets.push({
+        no: 1, colMode: true, colW: colW, imgH: imgH, cardH: cardH, capH: capH,
+        cols: secs.map(function (s) { return { name: s.name, meta: s.meta, cards: [], cont: false }; }),
+        h: POSTER.HEAD_H + COL_HEAD_H + 40
+      });
+    }
+    sheets.forEach(function (sh) {
+      sh.h = Math.max(POSTER.HEAD_H + COL_HEAD_H + 30, sh.h + POSTER.M - 6);
+    });
+    return sheets;
+  }
+
+  function drawColHead(g, col, x, y, w) {
+    g.fillStyle = "#6fa3f0";
+    g.fillRect(x, y + 8, 4, 20);
+
+    g.fillStyle = "#dbe4f2";
+    g.font = posterFont("700", 18);
+    var name = wrapLines(g, (col.name || "未命名列") + (col.cont ? "（续）" : ""), w - 26, 1)[0] || "";
+    g.fillText(name, x + 13, y + 26);
+
+    g.font = posterFont("400", 12.5);
+    g.fillStyle = "#7f8b9d";
+    var sub = col.cards.length ? (col.cards.length + " 张") : "本列已完";
+    if (col.meta) sub = col.meta + " · " + sub;
+    g.fillText(wrapLines(g, sub, w - 8, 1)[0] || "", x, y + 46);
+
+    g.strokeStyle = "#1f2733";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x, y + COL_HEAD_H - 8);
+    g.lineTo(x + w, y + COL_HEAD_H - 8);
+    g.stroke();
   }
 
   function roundRect(g, x, y, w, h, r) {
@@ -710,11 +853,13 @@
     g.lineWidth = 1;
     g.stroke();
 
-    /* 标题：最多两行 */
+    /* 标题：最多两行（紧凑卡不画） */
+    if (typeof m.capH === "number" && m.capH < 30) return;
     var tx = x + 12, tw = cardW - 24;
+    var maxLines = Math.max(1, Math.min(2, Math.floor((m.capH - 10) / 21)));
     g.font = posterFont("400", 15);
     g.fillStyle = "#dfe7f3";
-    var lines = wrapLines(g, c.title || c.alt || "", tw, 2);
+    var lines = wrapLines(g, c.title || c.alt || "", tw, maxLines);
     lines.forEach(function (ln, i) {
       g.fillText(ln, tx, y + imgH + 24 + i * 21);
     });
@@ -754,6 +899,25 @@
     g.fillStyle = "#0e1116";
     g.fillRect(0, 0, W, H);
     drawHeader(g, ctx, W);
+
+    if (sheet.colMode) {
+      sheet.cols.forEach(function (col, i) {
+        var x = POSTER.M + i * (sheet.colW + POSTER.GAP);
+        drawColHead(g, col, x, POSTER.HEAD_H, sheet.colW);
+        var cy = POSTER.HEAD_H + COL_HEAD_H;
+        col.cards.forEach(function (c) {
+          drawCard(g, c, x, cy, {
+            cardW: sheet.colW, imgH: sheet.imgH, cardH: sheet.cardH, capH: sheet.capH
+          });
+          cy += sheet.cardH + POSTER.GAP;
+        });
+      });
+
+      g.font = posterFont("400", 12);
+      g.fillStyle = "#5c6779";
+      g.fillText(ctx.footer + (sheet.no > 1 ? " · 第 " + sheet.no + " 张" : ""), POSTER.M, H - 12);
+      return cv;
+    }
 
     var y = POSTER.HEAD_H;
     sheet.blocks.forEach(function (b) {
@@ -826,7 +990,7 @@
       "来源：前台「" + state.label + "」当前筛选所见",
       "类目：" + (cat || "全部"),
       rng ? "期次：" + rng : "",
-      "共 " + total + " 张",
+      isBoard() ? "共 " + total + " 张 · " + secs.length + " 列并排（与页面同序）" : "共 " + total + " 张",
       "导出于 " + ymdDash(now) + " " + hhmm(now)
     ].filter(Boolean).join(" · ");
 
@@ -854,6 +1018,12 @@
     return secs;
   }
 
+  /* 是否按「多列并排」导出：渠道对比这一页本身就是几列并排对比，
+     导出必须保持同样几列、同样顺序，而不是一列一列拆成上下两段。 */
+  function isBoard() {
+    return state.zone === "compare" && state.board;
+  }
+
   /* ---------- ① 单页网页 ---------- */
   function runHtml() {
     var secs = ready();
@@ -874,7 +1044,8 @@
         title: ctx.title,
         sub: ctx.sub,
         failed: stat.failed,
-        ok: stat.ok
+        ok: stat.ok,
+        columns: isBoard()
       });
 
       var blob = new Blob([html], { type: "text/html;charset=utf-8" });
@@ -913,7 +1084,7 @@
         (ctx.rng ? "期次 " + ctx.rng + " · " : "") +
         "导出于 " + ymdDash(now) + " " + hhmm(now);
 
-      var sheets = layout(secs);
+      var sheets = isBoard() ? layoutCols(secs) : layout(secs);
       var names = [];
 
       function step(i) {
@@ -928,9 +1099,15 @@
         }
         var sh = sheets[i];
         var cards = [];
-        sh.blocks.forEach(function (b) {
-          if (b.type === "row") b.cards.forEach(function (c) { cards.push(c); });
-        });
+        if (sh.colMode) {
+          sh.cols.forEach(function (col) {
+            col.cards.forEach(function (c) { cards.push(c); });
+          });
+        } else {
+          sh.blocks.forEach(function (b) {
+            if (b.type === "row") b.cards.forEach(function (c) { cards.push(c); });
+          });
+        }
 
         setTip("绘制海报 " + (i + 1) + " / " + sheets.length);
         return loadSheetImages(cards).then(function () {
@@ -983,6 +1160,8 @@
     _collect: collectSections,   // 自检用
     _build: buildHtml,
     _layout: layout,
+    _layoutCols: layoutCols,
+    _isBoard: isBoard,
     _metrics: metrics,
     _inline: inlineAll,
     _state: function () { return state; }
