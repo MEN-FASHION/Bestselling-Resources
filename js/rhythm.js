@@ -299,7 +299,7 @@
   }          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
 
-  var BUILD = "20261112AE";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261113D";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
 
   /* ---------------- 期次排序 ---------------- */
   function periodKey(p) {
@@ -502,7 +502,7 @@
   function mergeGroupItems(items, g) {
     var byKey = {};
     (items || []).forEach(function (it) {
-      if (g.members.indexOf(it.site) < 0) return;
+      if (!(g.members || []).some(function (m) { return sameSite(m, it.site); })) return;
       var k = it.image_url || ((it.leaf_category || "") + "\u0001" + (it.title || "") + "\u0001" + (it.period_label || ""));
       var prev = byKey[k];
       it.site = g.name;
@@ -559,11 +559,30 @@
     return (MODE === "v" || MODE === "c") ? withBasePeriods(periods) : periods;
   }
 
+  /* 20261113D：站点写法统一。库里可能写成「美国站 / US / 美国」，菜单里是「美国」，
+     若按原文精确比对，取到了数据也会被过滤光 —— 表现为整页空白。
+     siteCanon：用于展示与入桶（尽量用后台清单里的正式名字）
+     siteKey  ：只用于比对（去掉空格标点、别名统一），不写回数据 */
+  function siteCanon(v) {
+    var raw = String(v == null ? "" : v).trim();
+    if (!raw) return raw;
+    if (typeof window !== "undefined" && window.SiteNorm) {
+      return window.SiteNorm.resolve(raw, FACETS.sites || []);
+    }
+    return raw;
+  }
+  function siteKey(v) {
+    if (typeof window !== "undefined" && window.SiteNorm) return window.SiteNorm.key(v);
+    return String(v == null ? "" : v).trim();
+  }
+  function sameSite(a, b) { return !!a && !!b && siteKey(a) === siteKey(b); }
+
   /* 条目归一：ratio / abs_delta 必须是数字，否则排序与阈值判断会按字符串比较 */
   function normItems(rows) {
     return (rows || []).map(function (it) {
       it.ratio = (it.ratio == null ? null : Number(it.ratio));
       it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
+      if (it.site != null) it.site = siteCanon(it.site);
       return it;
     });
   }
@@ -592,7 +611,7 @@
       CAT_PF_SEEN[key] = 1;
       var periods = activePeriods();
       if (!periods.length) { CAT_PF_ON = false; return; }
-      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), periodType: PTYPE, category: c, cols: REL_COLS };
+      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), periodType: PTYPE, category: c, cols: REL_COLS, source: "rhythm" };
       Promise.resolve()
         .then(function () { return SBX.listRankItems(filter); })
         .then(function (rows) {
@@ -624,7 +643,8 @@
 
     /* 纵向 / 类目对比都要拿到「上一月」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
-    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, cols: REL_COLS };
+    /* 20261113B：只读「上新节奏」自己的数据域 */
+    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, cols: REL_COLS, source: "rhythm" };
     if (MODE === "c") filter.categories = cats;
     else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
@@ -1375,12 +1395,15 @@
     if (MODE === "h") {
       var bySite = {};
       sites.forEach(function (s) { bySite[s] = []; });
+      var siteBucket = {};                 /* 归一键 → 菜单里的正式名字 */
+      sites.forEach(function (s) { siteBucket[siteKey(s)] = s; });
       var urlSites = {};
       all.forEach(function (it) {
-        if (bySite[it.site]) bySite[it.site].push(it);
-        if (sites.indexOf(it.site) >= 0) {
+        var bk = siteBucket[siteKey(it.site)];
+        if (bk && bySite[bk]) bySite[bk].push(it);
+        if (bk) {
           if (!urlSites[it.image_url]) urlSites[it.image_url] = [];
-          if (urlSites[it.image_url].indexOf(it.site) < 0) urlSites[it.image_url].push(it.site);
+          if (urlSites[it.image_url].indexOf(bk) < 0) urlSites[it.image_url].push(bk);
         }
       });
 
@@ -1494,7 +1517,15 @@
       var site = sites[0];
       /* 纵向只比「当前这一个国家（或地区合并池）」的月份：别的国家的数据若混进来，
          会给本不存在的月份凑出一列（列里全是别国的图），既误导又和筛选对不上。 */
-      var mineOnly = all.filter(function (it) { return (it.site || "") === site; });
+      var mineOnly = all.filter(function (it) { return sameSite(it.site, site); });
+      /* 所选国家在这些月份里一条都没有，但库里明明有数据：
+         多半是站点写法对不上（「美国」vs「美国站」）。此时按全部国家显示并写明原因，
+         而不是给一张空白页让人以为数据没传上去。 */
+      var AUTO_ALL = false;
+      if (!mineOnly.length && all.length) {
+        AUTO_ALL = true;
+        mineOnly = all.slice();
+      }
       var basePeriods = withBasePeriods(periods);
       var byPeriod = {};
       basePeriods.forEach(function (p) { byPeriod[p] = []; });
@@ -1539,6 +1570,7 @@
         if (TAGGED !== "off") list = list.filter(hitTagged);
         if (list.length > maxLen) maxLen = list.length;
         var meta = site + (prev ? (" · 较上一月（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一月）");
+        if (AUTO_ALL) meta = "⚠ 所选国家（" + site + "）在这些月份里没有数据，已按全部国家显示 · " + (prev ? ("较上一月新上榜 " + newCnt + " 张") : "首期（无上一月）");
         if (ONLY !== "off") meta += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
         /* 该月在这个「国家 + 类目」下没有任何图 → 不输出这一列：
            各国家/类目的月度本来就不齐，留一个空列既难看又占宽；
@@ -1615,7 +1647,7 @@
           key: s, label: s,
           empty: "这个国家这一月在这个类目下没有上榜数据。",
           items: items.filter(function (it) {
-            return it.site === s && (!pLast || (it.period_label || "") === pLast);
+            return sameSite(it.site, s) && (!pLast || (it.period_label || "") === pLast);
           })
         };
       });
@@ -1628,7 +1660,7 @@
         key: p, label: p,
         empty: "这一月这个国家 / 类目没有上榜数据。",
         items: items.filter(function (it) {
-          return (!siteV || it.site === siteV) && (it.period_label || "") === p;
+          return (!siteV || sameSite(it.site, siteV)) && (it.period_label || "") === p;
         })
       };
     });
@@ -2760,7 +2792,7 @@
         all.forEach(function (it) {
           if ((it.period_label || "") !== prev) return;
           if ((it.category || "") !== (items[0].category || "")) return;
-          if ((it.site || "") !== (items[0].site || "")) return;
+          if (!sameSite(it.site, (items[0] || {}).site)) return;
           prevSet[it.image_url] = 1;
         });
         if (!Object.keys(prevSet).length) newNote = "上一期（" + prev + "）无数据，无法判新上榜";
@@ -4162,7 +4194,7 @@
     if (!sites.length || !periods.length) return { items: [], sites: sites, periods: periods };
     var needPeriods = MODE === "v" ? withBasePeriods(periods) : periods;
     var cats = sc.cats || (MODE === "c" ? activeCats() : []);
-    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE };
+    var filter = { sites: sites, periods: needPeriods, periodType: PTYPE, source: "rhythm" };
     if (MODE === "c") filter.categories = cats;
     else if (CAT && CAT !== ALL) filter.category = CAT;
     else if (FACETS.categories.length) filter.categories = FACETS.categories;
@@ -4657,7 +4689,7 @@
 
     try {
       FACETS = (typeof SBX.rankFacetsByType === "function")
-        ? await SBX.rankFacetsByType(PTYPE)
+        ? await SBX.rankFacetsBySource("rhythm", PTYPE)
         : await SBX.rankFacets();
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 后台可以控制哪些国家站点 / 月份在前台展示：整页统一过滤（筛选项、默认值、地区分组、分享链接都跟着走） */

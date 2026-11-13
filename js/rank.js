@@ -60,6 +60,7 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
+  var BUILD = "20261113D";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
@@ -149,6 +150,14 @@
   var GROUPS = [];           // 后台定义的地区分组：[{name, members:[站点名…]}]（如「欧洲」= 英国/德国/法国…）
   var HIDDEN = { sites: [], periods: [] };   // 后台控制前台显隐：这些国家站点 / 周次不在前台出现
   var SEL_GROUP = "";        // 选中的地区名；非空时按整个地区合并成一列，只能单选
+  /* 20261113D：「全部站点」。
+     以前纵向 / 类目对比只查「第一个站点」，其余站点的图既不出现在页面上，
+     也没有任何提示 —— 于是「我导了 100 多张，这里只显示 18 张」变成了反复出现的问题：
+     数据没丢，是另外几个站点根本没查。现在取数一律取全站点，视图再按所选站点过滤，
+     想看全部就点「全部站点」（同一款在多国上榜只算一次）。 */
+  var SITE_ALL = false;
+  var SITE_ALL_KEY = "__all_sites__";
+  var LAST_OFFSITE = 0;      // 当前期次里「属于其它站点、本次未显示」的张数
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
   var MOVE = "off";          // off | move（位次上升最多） | new（新上榜优先）——仅纵向·时间对比有效
@@ -504,6 +513,56 @@
     if (g) return g.members.slice();
     return activeSites();
   }
+  /* 取数范围（20261113D）：纵向 / 类目对比一次把「该类目该期次的全部站点」都取回来，
+     而不是只取一个站点。只取一个站点时，页面上那句「共 18 张」会被当成数据缺失，
+     实际是另外几个站点的图根本没查；取全站点后再按所选站点过滤，切站点也不必再发请求。
+     返回 null = 不加站点条件。 */
+  function fetchSites() {
+    var g = activeGroup();
+    if (g) return g.members.slice();
+    if (MODE === "h") return SEL_SITES.slice();
+    return null;
+  }
+  /* 当前视图要显示哪些站点的图：null = 全部站点（合并成一列） */
+  function viewSites() {
+    var g = activeGroup();
+    if (g) return [g.name];            /* 地区已按地区名合并成一条，按地区名过滤 */
+    if (SITE_ALL) return null;
+    var s = activeSites();
+    return s.length ? s : null;
+  }
+  function pLabel(v) {
+    return (typeof normPeriodLabel === "function") ? normPeriodLabel(v) : String(v == null ? "" : v).trim();
+  }
+  /* 同一张图在多个站点都上榜 → 只算一条（取环比更强的那个），
+     否则「全部站点」会把 1 个款显示成 4 张，「共 N 张」也跟着虚高。 */
+  function uniqByUrl(list) {
+    var by = {}, order = [];
+    (list || []).forEach(function (it) {
+      var u = String((it && it.image_url) || "");
+      if (!u) { order.push(it); return; }
+      var prev = by[u];
+      if (!prev) { by[u] = it; order.push(it); return; }
+      var a = prev.ratio == null ? -Infinity : prev.ratio;
+      var b = it.ratio == null ? -Infinity : it.ratio;
+      if (b > a) {
+        var i = order.indexOf(prev);
+        if (i >= 0) order[i] = it;
+        by[u] = it;
+      }
+    });
+    return order;
+  }
+  function siteCountText(list) {
+    var m = {};
+    (list || []).forEach(function (it) {
+      var s = String(it.site || "");
+      if (!s) return;
+      m[s] = (m[s] || 0) + 1;
+    });
+    var keys = Object.keys(m).sort(function (a, b) { return m[b] - m[a]; });
+    return keys.map(function (k) { return k + " " + m[k]; }).join(" / ");
+  }
   /* 对比池的列名：选了地区 → 一列「欧洲」 */
   function poolSites() {
     var g = activeGroup();
@@ -558,11 +617,13 @@
 
   /* 当前组合的缓存键（取数与「是否要显示加载中」都用它，避免两处口径不一致） */
   function itemsKey(catOverride) {
-    var sites = sitesForQuery();
+    var sites = fetchSites();
     var periods = activePeriods();
     var cats = MODE === "c" ? activeCats() : [];
     var cat = (catOverride === undefined ? CAT : catOverride);
-    return [cat, MODE, SEL_GROUP || "", sites.join("|"), periods.join("|"), cats.join("|")].join("\u00a7");
+    /* 缓存键用「取数范围」而不是「显示范围」：纵向 / 类目对比不看站点取数，
+       所以在站点之间切换时直接命中同一份缓存，秒出图，也不会重复请求。 */
+    return [cat, MODE, SEL_GROUP || "", (sites ? sites.join("|") : "*"), periods.join("|"), cats.join("|")].join("\u00a7");
   }
 
   /* 报告/类目对比需要的"基线周"：纵向与类目对比都要多取上一周做对比 */
@@ -571,10 +632,30 @@
   }
 
   /* 条目归一：ratio / abs_delta 必须是数字，否则排序与阈值判断会按字符串比较 */
+  /* 站点名归一（20261113D）：
+     库里同一国家可能是「美国」「美国站」「US」「美国-全托管」…
+     而前台站点菜单只认后台维护的那个名字，字符串对不上就等于这条数据不存在
+     （页面显示「暂无榜单数据」，其实是数据在库里、只是名字不一样）。
+     这里把每条的站点统一成菜单里的那个名字；菜单里没有的写法原样保留，
+     并会在下面并进站点清单，保证它仍然能被看到、可以被选中。 */
+  function siteCanon(v) {
+    var raw = String(v == null ? "" : v).trim();
+    if (!raw) return raw;
+    if (typeof window !== "undefined" && window.SiteNorm) {
+      return window.SiteNorm.resolve(raw, FACETS.sites || []);
+    }
+    return raw;
+  }
+  /* 站点比对键：不管写成「美国」「美国站」还是「US」，都算同一个国家 */
+  function siteKey(v) {
+    if (typeof window !== "undefined" && window.SiteNorm) return window.SiteNorm.key(v);
+    return String(v == null ? "" : v).trim();
+  }
   function normItems(rows) {
     return (rows || []).map(function (it) {
       it.ratio = (it.ratio == null ? null : Number(it.ratio));
       it.abs_delta = (it.abs_delta == null ? null : Number(it.abs_delta));
+      if (it.site != null) it.site = siteCanon(it.site);
       return it;
     });
   }
@@ -603,7 +684,7 @@
       CAT_PF_SEEN[key] = 1;
       var periods = activePeriods();
       if (!periods.length) { CAT_PF_ON = false; return; }
-      var filter = { sites: sitesForQuery(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS };
+      var filter = { sites: (function () { var fs = fetchSites(); return (fs && fs.length) ? fs : undefined; })(), periods: needPeriodsFor(periods), category: c, cols: REL_COLS, source: "rank" };
       Promise.resolve()
         .then(function () { return SBX.listRankItems(filter); })
         .then(function (rows) {
@@ -621,9 +702,10 @@
   }
 
   async function fetchItems() {
-    var sites = sitesForQuery();
+    var sites = fetchSites();                 /* null = 全部站点（纵向 / 类目对比） */
     var periods = activePeriods();
-    if (!sites.length || !periods.length) return [];
+    if (!periods.length) return [];
+    if (MODE === "h" && (!sites || !sites.length)) return [];
     var cats = MODE === "c" ? activeCats() : [];
     if (MODE === "c" && !cats.length) return [];
     /* 缓存键必须带上类目数组：否则从「卫衣×毛衣」切到「卫衣×外套」会拿到上一次的图 */
@@ -634,7 +716,8 @@
 
     /* 纵向 / 类目对比都要拿到「上一周」的数据做基线，一并取回但不单独成列 */
     var needPeriods = needPeriodsFor(periods);
-    var filter = { sites: sites, periods: needPeriods, cols: REL_COLS };
+    /* 20261113B：只读「趋势上升榜」这一域的数据，不再与上新节奏 / 标题组词台混读 */
+    var filter = { sites: (sites && sites.length) ? sites : undefined, periods: needPeriods, cols: REL_COLS, source: "rank" };
     if (MODE === "c") {
       var _exp = [];
       cats.forEach(function (c) { _exp = _exp.concat(catsOf(c)); });
@@ -705,6 +788,7 @@
   }
   /* 横向对比 = 单选一周（国家可比）；纵向对比 = 单选一国（周次可比）；另一维度才是多列对比 */
   function normalizeSingle() {
+    if (MODE !== "v" && MODE !== "c") SITE_ALL = false;   /* 横向·国家对比本来就是一列一个国家，不需要「全部站点」 */
     if (MODE === "v") {
       if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
     } else if (MODE === "c") {
@@ -821,8 +905,12 @@
     if (!box) return;
     var periods = sortPeriods(FACETS.periods);
 
+    /* 20261113D：纵向 / 类目对比增加「全部站点」。
+       以前这两个模式只查第一个站点，其余站点的图不显示也没有提示 ——
+       「导了 100 多张只显示 18 张」多数是这个原因。 */
     var sitesHtml = FACETS.sites.length
-      ? FACETS.sites.map(function (s) { return chip(s, s, SEL_SITES.indexOf(s) >= 0 && !SEL_GROUP, "data-site"); }).join("")
+      ? ((MODE === "h" ? "" : chip(SITE_ALL_KEY, "全部站点", SITE_ALL && !SEL_GROUP, "data-site"))
+        + FACETS.sites.map(function (s) { return chip(s, s, !SITE_ALL && SEL_SITES.indexOf(s) >= 0 && !SEL_GROUP, "data-site"); }).join(""))
       : '<span class="rk-note">后台还没有维护国家站点</span>';
 
     /* 地区（后台把多个国家并成一个地区）：选中即整区合并成一列；也可以不选，直接挑单个国家 */
@@ -985,7 +1073,14 @@
     if (siteBox) Array.prototype.forEach.call(siteBox.querySelectorAll("[data-site]"), function (b) {
       b.onclick = function () {
         var v = b.getAttribute("data-site");
-        SEL_GROUP = "";                       /* 选单个国家 → 取消地区合并 */
+        SEL_GROUP = "";                       /* 选单个国家 / 全部站点 → 取消地区合并 */
+        if (v === SITE_ALL_KEY) {
+          SITE_ALL = !SITE_ALL;               /* 再点一次回到单站点视图 */
+          CACHE = null; CAP = CAP_STEP;
+          renderPanel(); renderSummary(); renderBar(); load();
+          return;
+        }
+        SITE_ALL = false;
         if (MODE !== "h") {
           SEL_SITES = [v];                    /* 纵向·时间对比：国家单选，选中即自动取消其它国家 */
         } else {
@@ -1008,6 +1103,7 @@
       b.onclick = function () {
         var v = b.getAttribute("data-group");
         SEL_GROUP = (v && v !== SEL_GROUP) ? v : "";
+        SITE_ALL = false;                    /* 选地区 = 按地区合并成一条，与「全部站点」互斥 */
         CACHE = null; CAP = CAP_STEP;
         renderPanel(); renderSummary(); renderBar(); load();
       };
@@ -1091,7 +1187,7 @@
     parts.push(MODE === "c" ? (activeCats().join(" / ") || CAT || ALL) : (CAT || ALL));
     parts.push(periods.length ? periods.join("、") : "未选周次");
     var _g = activeGroup();
-    parts.push(_g ? ("地区 " + _g.name) : (sites.length ? sites.join(" / ") : "未选国家"));
+    parts.push(_g ? ("地区 " + _g.name) : (SITE_ALL ? "全部站点" : (sites.length ? sites.join(" / ") : "未选国家")));
     parts.push(tagLabel());
     if ((MODE === "v" || MODE === "c") && MOVE !== "off") parts.push(moveLabel());
     if ((MODE === "v" || MODE === "c") && ONLY !== "off") parts.push(onlyLabel());
@@ -1116,7 +1212,8 @@
       q.set("size", SIZE);
       if (CAT && CAT !== ALL) q.set("cat", CAT); else q.delete("cat");
       var sites = (MODE === "h") ? SEL_SITES.slice() : SEL_SITES.slice(0, 1);
-      if (sites.length) q.set("sites", sites.join(",")); else q.delete("sites");
+      if (SITE_ALL) q.set("sites", SITE_ALL_KEY);
+      else if (sites.length) q.set("sites", sites.join(",")); else q.delete("sites");
       if (SEL_GROUP) q.set("group", SEL_GROUP); else q.delete("group");
       if (SEL_PERIODS && SEL_PERIODS.length) q.set("periods", SEL_PERIODS.join(",")); else q.delete("periods");
       var cats = (MODE === "c") ? SEL_CATS.slice() : [];
@@ -1133,9 +1230,11 @@
     var sites = sitesForQuery();
     var periods = activePeriods();
     /* 类目对比：CACHE 里含「上一周基线」（只为算位次），直接拿它当总数会把上周的图也算进来，
-       于是出现「共 1000 张，但下面只有 200 张」。这里改成按实际画进各列的张数算。 */
+       于是出现「共 1000 张，但下面只有 200 张」。这里改成按实际画进各列的张数算。
+       20261113D：纵向也一样 —— 取数改成全站点后，CACHE 里带着别国的图，
+       直接数 CACHE 会把没显示的图算成「共 N 张」，必须用实际画进列里的张数。 */
     var total = (CACHE && CACHE.items) ? CACHE.items.length : 0;
-    if (MODE === "c" && LAST_COLS_MODE === "c") total = LAST_KEPT;
+    if ((MODE === "c" || MODE === "v") && LAST_COLS_MODE === MODE) total = LAST_KEPT;
     var shown = total ? Math.min(CAP, total) : 0;
     var h = '<div class="rk-modes">' +
       '<button type="button" class="rk-mode-btn' + (MODE === "h" ? " on" : "") + '" data-mode="h">横向 · 国家对比（多国 × 单周）</button>' +
@@ -1153,6 +1252,10 @@
     h += '<div class="rk-bar-info">';
     if (!sites.length || !periods.length) h += '请选择国家站点与周次';
     else h += '共 <b>' + total + '</b> 张 · <b>' + cols + '</b> 列 · 每列最多展示 <b>' + shown + '</b> 张';
+    /* 20261113D：把「没显示的张数」直接说出来，避免再被当成数据丢失 */
+    if (MODE === "v" && LAST_OFFSITE > 0 && !SEL_GROUP && !SITE_ALL) {
+      h += ' <span class="rk-bar-hint">另有 <b>' + LAST_OFFSITE + '</b> 张属于其它站点（未显示）—— 点上方「全部站点」可一并查看</span>';
+    }
     h += '</div>';
     el.innerHTML = h;
     /* 导出图片（整页 · 高清）：与「导出 PPT」同一套权限口径 —— 只允许超级管理员
@@ -1262,6 +1365,7 @@
       + (opt.eager ? ' fetchpriority="high"' : '') + '>';
     if (!opt.eye) {
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';
+      if (opt.siteTag && it.site) h += '<span class="rk-site">' + esc(it.site) + '</span>';
       if (share) h += '<span class="rk-share" title="与 ' + esc(share.join("、")) + ' 相同">共 ' + share.length + ' 国</span>';
       if (opt.move) h += '<span class="rk-move">' + esc(opt.move) + '</span>';
       /* 我的收藏：右上角星标（点一次收藏/取消），左上角多选勾选（攒够一次批量收藏） */
@@ -1439,15 +1543,24 @@
          列内仍与「自己上一周」比 → 新上榜 / 上升位次 标签照旧成立；
          列与列之间不比重合度（不同类目的图天然不重复），要看差异看体征卡。 */
       var catsC = (opts.cats || activeCats()).slice();
-      var siteC = (sites && sites[0]) || "";
+      /* 20261113D：类目对比也一次取全站点，这里按当前视图（单个站点 / 全部站点）过滤，
+         否则「只选美国」时其它国家的图会混进同一列，张数看着虚高。 */
+      var _cScope = viewSites();
+      var _cSet = null;
+      if (_cScope) { _cSet = {}; _cScope.forEach(function (x) { _cSet[siteKey(x)] = 1; }); }
+      var siteC = _cScope ? (_cScope[0] || "") : "全部站点";
       var pC = periods[periods.length - 1] || "";
       var prevC = prevOfPeriod(pC);
       var baseC = pC ? withBasePeriods([pC]) : [];
       catsC.forEach(function (cat) {
-        var mine = all.filter(function (it) { return (it.category || "") === cat; });
+        var mine = all.filter(function (it) {
+          if ((it.category || "") !== cat) return false;
+          return !_cSet || !!_cSet[siteKey(it.site)];
+        });
         var byP = {};
         baseC.forEach(function (p) { byP[p] = []; });
-        mine.forEach(function (it) { if (byP[it.period_label]) byP[it.period_label].push(it); });
+        mine.forEach(function (it) { var p = pLabel(it.period_label); if (byP[p]) byP[p].push(it); });
+        if (!_cScope) baseC.forEach(function (p) { byP[p] = uniqByUrl(byP[p]); });
         /* 位次只在「同一个类目内部」有意义，所以每类目各自算一套 */
         var hasOf = {}, rankOf = {};
         baseC.forEach(function (p) {
@@ -1493,7 +1606,7 @@
         }
         var cardsC = list.slice(0, limit).map(function (it) {
           var mv = moveOf(it, pC, prevC, hasOf, rankOf);
-          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
+          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye, siteTag: !_cScope });
         }).join("");
         html += poolHtml(cat, metaC, list.length, cardsC, opts.noFoot ? null : Math.min(limit, list.length), { dragKey: cat });
         kept += list.length; cols++; poolKeys.push(cat);
@@ -1507,14 +1620,46 @@
       });
     } else {
       /* ===== 纵向 · 时间对比：每期一列 ===== */
-      var site = sites[0];
-      /* 纵向只比「当前这一个国家（或地区合并池）」的周次：别的国家的数据若混进来，
-         会给本不存在的周次凑出一列（列里全是别国的图），既误导又和筛选对不上。 */
-      var mineOnly = all.filter(function (it) { return (it.site || "") === site; });
+      /* 20261113D：站点不再是「只取第一个」，而是按当前视图取：
+         · 选了地区 → 一条地区合并数据
+         · 选了「全部站点」→ 所有站点合并（同一款多国上榜只算一次）
+         · 否则 → 只显示所选站点，但同时算清「该期全站点合计多少张」，
+           并在列头写明「另有 N 张属于其它站点」，不再让人怀疑数据丢了 */
+      var scope = viewSites();
+      var scopeSet = null;
+      if (scope) { scopeSet = {}; scope.forEach(function (s) { scopeSet[siteKey(s)] = 1; }); }
+      var siteName = scope ? ((scope.length > 1) ? scope.join(" / ") : (scope[0] || "")) : "全部站点";
+      /* 比对用「归一键」：库里写成「美国站 / US」和菜单里的「美国」算同一个国家，
+         否则取到了数据也会被整列过滤掉 —— 表现为页面空白，其实是名字对不上。 */
+      var mineOnly = all.filter(function (it) { return !scopeSet || scopeSet[siteKey(it.site)]; });
+      /* 20261113D：所选站点在这些期次里一条都没有，但库里明明有数据 →
+         绝大多数是站点写法对不上（「美国」vs「美国站」），个别是这批货确实不是该国的。
+         两种情况下给一张空白页都是最差的选择：直接按全部站点显示，并在页面上写明原因。
+         以前这种情况页面只有一句「暂无榜单数据」，看起来像数据没传上去。 */
+      var AUTO_ALL = false;
+      if (scopeSet && !mineOnly.length && all.length) {
+        AUTO_ALL = true;
+        scopeSet = null; scope = null;
+        siteName = "全部站点";
+        mineOnly = all.slice();
+      }
       var basePeriods = withBasePeriods(periods);
-      var byPeriod = {};
-      basePeriods.forEach(function (p) { byPeriod[p] = []; });
-      mineOnly.forEach(function (it) { if (byPeriod[it.period_label]) byPeriod[it.period_label].push(it); });
+      var byPeriod = {}, allPeriod = {};
+      basePeriods.forEach(function (p) { byPeriod[p] = []; allPeriod[p] = []; });
+      /* 期次按归一后的名字入桶：库里可能同时存在 W45 / 45周 / 第45周，
+         查询会把它们一起取回来，若这里按原文精确匹配，取回来却进不了桶 —— 静默丢数据。 */
+      mineOnly.forEach(function (it) { var p = pLabel(it.period_label); if (byPeriod[p]) byPeriod[p].push(it); });
+      all.forEach(function (it) { var p = pLabel(it.period_label); if (allPeriod[p]) allPeriod[p].push(it); });
+      if (!scopeSet) {
+        basePeriods.forEach(function (p) { byPeriod[p] = uniqByUrl(byPeriod[p]); });
+      }
+      var offsite = 0;
+      if (scopeSet) {
+        all.forEach(function (it) {
+          if (!scopeSet[siteKey(it.site)] && byPeriod[pLabel(it.period_label)]) offsite++;
+        });
+      }
+      LAST_OFFSITE = offsite;
 
       var hasOf = {}, rankOf = {};
       basePeriods.forEach(function (p) {
@@ -1554,7 +1699,20 @@
         }
         if (TAGGED !== "off") list = list.filter(hitTagged);
         if (list.length > maxLen) maxLen = list.length;
-        var meta = site + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
+        var meta = siteName + (prev ? (" · 较上一周（" + prev + "）新上榜 " + newCnt + " 张") : " · 首期（无上一周）");
+        /* 张数口径必须写得明明白白：这一列显示几张、该期全站点合计几张、
+           其它站点各几张。以前只有一句「共 18 张」，用户以为数据只导进来 18 条。 */
+        if (scopeSet) {
+          var allN = uniqByUrl(allPeriod[p] || []).length;
+          if (allN > full) {
+            meta += " · 本列 " + full + " 张，该期全站点合计 " + allN + " 张（另有 " + (allN - full) + " 张属于其它站点）";
+          }
+        } else {
+          meta += " · 已合并全部站点（同一款只算一次）";
+        }
+        if (AUTO_ALL) {
+          meta = "⚠ 所选站点（" + (viewSites() || []).join(" / ") + "）在这些期次里没有数据，已按全部站点显示 · " + meta;
+        }
         if (ONLY !== "off") meta += " · " + onlyLabel() + "：" + list.length + " 张（该列共 " + full + " 张）";
         /* 该周在这个「国家 + 类目」下没有任何图 → 不输出这一列：
            各国家/类目的周度本来就不齐，留一个空列既难看又占宽；
@@ -1562,7 +1720,7 @@
         if (!list.length) { dropped++; dropKind = "period"; dropNames.push(p); return; }
         var cards = list.slice(0, limit).map(function (it) {
           var mv = moveOf(it, p, prev, hasOf, rankOf);
-          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye });
+          return cardHtml(it, { move: mv.move, isNew: mv.isNew, eager: opts.eager, eye: opts.eye, siteTag: !scopeSet });
         }).join("");
         html += poolHtml(p, meta, list.length, cards, opts.noFoot ? null : Math.min(limit, list.length));
         kept += list.length; cols++; poolKeys.push(p);
@@ -1570,7 +1728,7 @@
         list.forEach(function (it) {
           EXPORT_ITEMS.push({
             url: it.image_url, label: moveOf(it, p, prev, hasOf, rankOf).move,
-            site: it.site || site, period: p,
+            site: it.site || siteName, period: p,
             cat: it.leaf_category || it.category || CAT || ""
           });
         });
@@ -1611,15 +1769,18 @@
     var sites = poolSites();
 
     if (MODE === "c") {
-      /* 只统计「当前这一列对应的那一期」：CACHE 里还带着用于算位次的上一周基线，
-         若把它算进来，就会出现「体征卡显示 200 张，图片列却是空的」这种自相矛盾。 */
+      var _cV = viewSites();
       return activeCats().map(function (cat) {
+        var mine = items.filter(function (it) {
+          if ((it.category || "") !== cat) return false;
+          if (_cV && _cV.indexOf(it.site) < 0) return false;
+          return !pLast || pLabel(it.period_label) === pLast;
+        });
+        if (!_cV) mine = uniqByUrl(mine);
         return {
           key: cat, label: cat,
           empty: "该类目这一周没有上榜数据，下面的图片列会是空的 —— 换一周，或在上面取消勾选它。",
-          items: items.filter(function (it) {
-            return (it.category || "") === cat && (!pLast || (it.period_label || "") === pLast);
-          })
+          items: mine
         };
       });
     }
@@ -1632,21 +1793,24 @@
           key: s, label: s,
           empty: "这个国家这一周在这个类目下没有上榜数据。",
           items: items.filter(function (it) {
-            return it.site === s && (!pLast || (it.period_label || "") === pLast);
+            return it.site === s && (!pLast || pLabel(it.period_label) === pLast);
           })
         };
       });
     }
 
-    /* 纵向 · 时间对比：每一周一组（同一类目 · 同一国家） */
-    var siteV = sites[0] || "";
+    /* 纵向 · 时间对比：每一周一组（同一类目 · 同一站点；选了「全部站点」则合并） */
+    var _vScope = viewSites();
     return periods.map(function (p) {
+      var mine = items.filter(function (it) {
+        if (_vScope && _vScope.indexOf(it.site) < 0) return false;
+        return pLabel(it.period_label) === p;
+      });
+      if (!_vScope) mine = uniqByUrl(mine);
       return {
         key: p, label: p,
         empty: "这一周这个国家 / 类目没有上榜数据。",
-        items: items.filter(function (it) {
-          return (!siteV || it.site === siteV) && (it.period_label || "") === p;
-        })
+        items: mine
       };
     });
   }
@@ -3519,6 +3683,35 @@
     if (tagQueuePush(miss)) tagQueuePump();
   }
 
+  /* 20261113D：空态必须自述「取到了什么、缺什么」。
+     以前只有一句「该组合下暂无榜单数据」，站点名对不上、期次写法不同、
+     数据确实没传，三种情况在页面上长得一模一样，只能靠猜。
+     这里把本次真实查到的期次 / 站点 / 条数摊开写清楚。 */
+  function fetchedDiag() {
+    var items = (CACHE && CACHE.items) || [];
+    var bySite = {}, order = [], byPeriod = {};
+    items.forEach(function (it) {
+      var s = String(it.site == null ? "" : it.site).trim() || "（站点为空）";
+      if (!bySite[s]) { bySite[s] = 0; order.push(s); }
+      bySite[s]++;
+      var p = pLabel(it.period_label) || "（期次为空）";
+      byPeriod[p] = (byPeriod[p] || 0) + 1;
+    });
+    order.sort(function (a, b) { return bySite[b] - bySite[a]; });
+    var siteTxt = order.length
+      ? order.slice(0, 12).map(function (s) { return s + " " + bySite[s]; }).join("、") + (order.length > 12 ? " 等 " + order.length + " 个" : "")
+      : "无";
+    var perTxt = Object.keys(byPeriod).length
+      ? Object.keys(byPeriod).map(function (p) { return p + " " + byPeriod[p]; }).join("、")
+      : "无";
+    return '<br><span class="rk-note">本次实际取到 <b>' + items.length + '</b> 条：期次 ' + esc(perTxt)
+      + '；站点 ' + esc(siteTxt)
+      + '<br>当前选择：类目 ' + esc(CAT || "全部") + ' · 期次 ' + esc((activePeriods() || []).join(" / ") || "未选")
+      + ' · 站点 ' + esc((viewSites() || []).join(" / ") || "全部站点")
+      + ' · 对比模式 ' + esc(MODE === "c" ? "类目对比" : (MODE === "h" ? "国家对比" : "时间对比"))
+      + ' · 脚本 ' + esc(BUILD || "") + '</span>';
+  }
+
   function renderBody() {
     var box = $("#rk-body");
     if (!box) return;
@@ -3541,7 +3734,13 @@
         + '若刷新后仍然如此，请把这次选中的类目 / 期次 / 站点截图发我，并让管理员在后台点一次「数据自检」，就能定位是没写进去还是读不到。</div>';
       return;
     }
-    if (!CACHE || !CACHE.items.length) { box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据</div>'; return; }
+    if (!CACHE || !CACHE.items.length) {
+      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据。'
+        + '<br>多半是这三件事之一：①这批数据传到别的专区了（趋势上升榜 / 上新节奏 / 标题组词台 各自独立）；'
+        + '②期次写法不同（第45周 / W45 / 45周）；③站点名对不上。'
+        + fetchedDiag() + '</div>';
+      return;
+    }
 
     /* 先把标签取数发出去（并行），再看是否已核对完成 */
     ensureTags(CACHE.items);
@@ -3583,7 +3782,13 @@
     }
     /* 选中的周列里有几列在本组合下确实没有图 → 已折叠；全部为空时给出空态而不是大片留白 */
     if (!R.cols) {
-      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据（所选周次在这个国家 / 类目下都没有上传）。换一个周次或国家试试。</div>';
+      /* 取到了数据却一列都画不出来：把取到的站点摊开写清楚，
+         并给出「点全部站点」这条唯一有效的出口，不再让人对着空白页猜。 */
+      var _ss = (viewSites() || []);
+      box.innerHTML = '<div class="rk-empty">该组合下暂无榜单数据'
+        + (_ss.length ? '（所选站点「' + esc(_ss.join(" / ")) + '」在这些期次、这个类目下没有图）' : '')
+        + '。换一个周次或站点试试，也可以点上方的「全部站点」把各国合并看。'
+        + fetchedDiag() + '</div>';
       return;
     }
     var html = '';
@@ -4156,11 +4361,18 @@
 
   /* 天眼要铺开的列范围 */
   function eyeScope() {
+    /* 纵向 / 类目对比：站点口径跟页面一致（选了「全部站点」就取全部），
+       否则天眼会把「只选一个站点」时看不到的图也画进来，张数与页面列头对不上。 */
+    function eyeSites() {
+      if (MODE === "h") return poolSites();
+      var vs = viewSites();
+      return vs || orderedSites();
+    }
     /* 类目对比：天眼守死「同一周 · 同一站点 · 当前这几个类目」，
        不提供「全部站点 × 全部期次」那种范围（那会把列数乘起来，图上没法看） */
     if (MODE === "c") {
       EYE_PERIOD_CLAMPED = false;
-      return { sites: poolSites(), periods: activePeriods(), cats: activeCats() };
+      return { sites: eyeSites(), periods: activePeriods(), cats: activeCats() };
     }
     if (!EYE_ALL) {
       /* 天眼默认只对比最近两周：列数少了，每列更宽，图自然更大。
@@ -4168,13 +4380,13 @@
       var ps = activePeriods();
       EYE_PERIOD_CLAMPED = ps.length > EYE_PERIODS_MAX;
       if (EYE_PERIOD_CLAMPED) ps = ps.slice(ps.length - EYE_PERIODS_MAX);
-      return { sites: poolSites(), periods: ps };
+      return { sites: eyeSites(), periods: ps };
     }
     /* 「全部站点 × 全部期次」不受两周限制，顶栏的「默认两周」提示也必须随之消失
        （否则切一次范围后提示会一直挂着，与屏幕上的实际列数对不上）。 */
     EYE_PERIOD_CLAMPED = false;
     if (MODE === "h") return { sites: orderedSites(), periods: sortPeriods(FACETS.periods).slice(-1) };
-    return { sites: sitesForQuery(), periods: sortPeriods(FACETS.periods) };
+    return { sites: eyeSites(), periods: sortPeriods(FACETS.periods) };
   }
 
   /* 天眼自己的取数（独立于页面缓存口径；纵向仍需取「上一期」做基线） */
@@ -4681,9 +4893,9 @@
     /* 期次按「周度」筛：月度数据（上新节奏专区）与周度共用同一张表，
        不筛的话周度页的期次里会冒出「2026年10月」这种月份，与页面口径不符。 */
     try {
-      FACETS = (typeof SBX.rankFacetsByType === "function")
-        ? await SBX.rankFacetsByType("week")
-        : await SBX.rankFacets();
+      FACETS = (typeof SBX.rankFacetsBySource === "function")
+        ? await SBX.rankFacetsBySource("rank", "week")
+        : (typeof SBX.rankFacetsByType === "function" ? await SBX.rankFacetsByType("week") : await SBX.rankFacets());
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
     /* 类目菜单只显示标准名：把平台全路径名合并到同一类，菜单不再出现一堆长名字 */
     RAW_CATS = (FACETS.categories || []).slice();
@@ -4720,7 +4932,22 @@
       var _raw = await SBX.listRankSites();
       _defined = (_raw || []).map(function (s) { return s && s.name; }).filter(function (v) { return v && String(v).trim(); });
     } catch (e) { _defined = []; }
-    if (_defined.length) FACETS.sites = _defined.slice();
+    if (_defined.length) {
+      /* 20261113D：菜单 = 后台维护的站点 + 数据里出现但后台没维护的写法。
+         以前只列后台那批，于是站点写成「美国站 / US」的数据在页面上彻底看不见 ——
+         看上去就是"数据没传上去"。现在按归一后去重，同一个国家只留一个按钮
+         （优先用后台的正式名字），照顾不到的历史写法也照样能点。 */
+      var _use = _defined.slice();
+      var _seen = {};
+      _use.forEach(function (n) { _seen[siteKey(n)] = 1; });
+      _dataSites.forEach(function (s) {
+        var k = siteKey(s);
+        if (!k || _seen[k]) return;
+        _seen[k] = 1;
+        _use.push(String(s).trim());
+      });
+      FACETS.sites = _use;
+    }
     applyHiddenFilter();                       /* 隐藏的站点 / 周次不参与前台筛选 */
 
     // 站点顺序：有数据的优先，其余按后台定义顺序（横向按这个顺序取前 N 个）
@@ -4746,7 +4973,10 @@
       var _z = _qs.get("size"); if (_z === "s" || _z === "m" || _z === "l") SIZE = _z;
       var _c = _qs.get("cat"); if (_c) CAT = _c;
       var _ss = (_qs.get("sites") || "").split(",").filter(function (v) { return v.trim(); });
-      if (_ss.length) SEL_SITES = _ss;
+      if (_ss.length) {
+        if (_ss.indexOf(SITE_ALL_KEY) >= 0) SITE_ALL = true;
+        else SEL_SITES = _ss;
+      }
       var _g = _qs.get("group");
       if (_g && GROUPS.some(function (x) { return x.name === _g; })) SEL_GROUP = _g;
       var _pp = (_qs.get("periods") || "").split(",").filter(function (v) { return v.trim(); });
