@@ -1,5 +1,5 @@
 /* ============================================================================
- * view-export.js —— 前台「把当前所见一键带走」（20261113T）
+ * view-export.js —— 前台「把当前所见一键带走」（20261113U）
  * ----------------------------------------------------------------------------
  * 两种成品，都是一步到手、不需要再解压、不需要配任何文件夹：
  *
@@ -37,7 +37,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261113T";
+  var BUILD = "20261113U";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -604,6 +604,181 @@
       "<script>" + script + "</" + "script>\n</body>\n</html>";
   }
 
+
+  /* ============================================================
+   * 三之二、成品①的正解：把页面上那一段 DOM 原样搬走
+   * ------------------------------------------------------------
+   * 之前是「按采集到的卡片重新画一遍」。问题是页面上的东西不止卡片本身：
+   *   · 图上压着的角标（趋势爆款 / 上升 12 位 / 共 3 国 / 国家站点）
+   *   · 每列列头的「周次 · N 张」与副标题（重合度、口径说明）
+   *   · 列上方的体征卡、报告头
+   *   · 每行到底摆几张（由脚本按列宽实时算出来写进 --rk-r）
+   * 重画一遍必然漏东西，用户看到的就是「导出的和页面上不一样」。
+   *
+   * 所以改成：克隆当前已经渲染出来的那块 DOM → 去掉所有能点的控件 →
+   * 把图片换成内嵌数据 → 把站点自己的样式表整篇带上。
+   * 位置、列数、每行张数、图上文字因此与页面完全一致（本来就是同一份 DOM）。
+   * ============================================================ */
+  var PAGE_CSS = "css/style.css";
+  var pageCss = null;
+
+  function loadPageCss() {
+    if (pageCss != null) return Promise.resolve(pageCss);
+    if (typeof fetch !== "function") { pageCss = ""; return Promise.resolve(""); }
+    return fetch(PAGE_CSS, { cache: "force-cache" })
+      .then(function (r) { return (r && r.ok) ? r.text() : ""; })
+      .then(function (t) { pageCss = t || ""; return pageCss; })
+      .catch(function () { pageCss = ""; return ""; });
+  }
+
+  /* 各前台页面「图片所在的那块主体」 */
+  function viewRoot() {
+    var ids = ["#rk-body", "#cmp-body", "#cz-body", "#mv-body"];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.querySelector(ids[i]);
+      if (el && el.querySelector && el.querySelector("img")) return el;
+    }
+    return null;
+  }
+
+  /* 这些是「操作入口」不是「展示内容」：导出物里一律去掉（导出的东西不能再改数据） */
+  var DROP_SEL = [
+    "#vx-dock", "#toast", ".modal-mask", ".rk-lb", "#rk-lightbox",
+    ".rk-pool-grip", ".rk-fav", ".rk-pick", ".rk-card-del", ".rk-del",
+    ".cz-card-x", ".cz-del", ".mv-card-x", ".cp-del", ".fp-del",
+    ".rk-more-wrap", ".rk-empty-actions",
+    "input", "select", "textarea", "button", "[contenteditable]"
+  ].join(",");
+
+  function removeNode(el) {
+    if (!el) return;
+    if (typeof el.remove === "function") { try { el.remove(); return; } catch (e) {} }
+    if (el.parentNode && el.parentNode.removeChild) el.parentNode.removeChild(el);
+  }
+
+  function sanitizeClone(clone) {
+    var kill = clone.querySelectorAll(DROP_SEL);
+    Array.prototype.forEach.call(kill, function (el) { removeNode(el); });
+    var soft = clone.querySelectorAll("[draggable],[data-pick],[data-fav]");
+    Array.prototype.forEach.call(soft, function (el) {
+      if (!el || !el.removeAttribute) return;
+      el.removeAttribute("draggable");
+      el.removeAttribute("data-pick");
+      el.removeAttribute("data-fav");
+    });
+    return clone;
+  }
+
+  function imgUrlsOf(root) {
+    var out = [], seen = {};
+    var imgs = root.querySelectorAll("img");
+    Array.prototype.forEach.call(imgs, function (im) {
+      var u = trim((im.getAttribute && (im.getAttribute("src") || im.getAttribute("data-src"))) || "");
+      if (u && !seen[u]) { seen[u] = 1; out.push(u); }
+    });
+    return out;
+  }
+
+  /* 把克隆体里的图逐张抓下来、转成内嵌数据（同一地址只抓一次） */
+  function inlineDom(root, onStep) {
+    var urls = imgUrlsOf(root);
+    var tasks = urls.map(function (u) {
+      return function () {
+        return fetchImage(u).then(function (b) {
+          if (!b) return null;
+          return decodeBlob(b).then(function (dec) {
+            if (!dec) return null;
+            var d = toDataUrl(dec.img, INLINE_MAX_W, INLINE_Q);
+            release(dec);
+            return d || null;
+          });
+        });
+      };
+    });
+    return pool(tasks, CONCURRENCY, onStep).then(function (res) {
+      var map = {}, okCount = 0;
+      urls.forEach(function (u, i) { if (res[i]) { map[u] = res[i]; okCount++; } });
+      var imgs = root.querySelectorAll("img");
+      Array.prototype.forEach.call(imgs, function (im) {
+        if (!im || !im.getAttribute) return;
+        var u = trim(im.getAttribute("src") || im.getAttribute("data-src") || "");
+        var d = u ? map[u] : "";
+        if (d) {
+          im.setAttribute("src", d);
+          im.setAttribute("data-full", d);
+        } else {
+          im.setAttribute("data-miss", "1");
+          if (u) im.setAttribute("data-full", u);
+        }
+        if (im.removeAttribute) { im.removeAttribute("srcset"); im.removeAttribute("data-src"); }
+        im.setAttribute("loading", "lazy");
+      });
+      return { ok: okCount, failed: urls.length - okCount, total: urls.length };
+    });
+  }
+
+  function buildHtmlDom(clone, ctx, stat, css, wrapW) {
+    var extra = [
+      "html,body{margin:0;padding:0;height:auto!important;min-height:100%;overflow-x:hidden}",
+      "body.vx-export{background:var(--bg,#f6f5f3);color:var(--txt,#1b1b1b)}",
+      ".vx-hd{padding:14px 18px 10px;border-bottom:1px solid var(--line,#e7e4de);background:var(--bg2,#fff)}",
+      ".vx-hd h1{margin:0;font-size:17px;line-height:1.4;color:var(--txt,#1b1b1b)}",
+      ".vx-hd .sub{margin-top:5px;color:var(--sub,#8b8b8b);font-size:12px;line-height:1.7;display:flex;flex-wrap:wrap;gap:2px 12px}",
+      ".vx-note{margin:10px 18px 0;padding:9px 12px;border:1px solid #6b4a1f;background:#241a0c;color:#e7c17a;border-radius:8px;font-size:12.5px;line-height:1.6}",
+      ".vx-wrap{padding:10px 16px 28px}",
+      ".vx-wrap img[data-miss]{outline:2px solid #6b4a1f;outline-offset:-2px}",
+      ".vx-wrap .rk-card,.vx-wrap .cz-card,.vx-wrap .mv-card{cursor:zoom-in}",
+      "#vx-lb{position:fixed;inset:0;background:rgba(6,8,11,.94);display:none;align-items:center;justify-content:center;z-index:9999}",
+      "#vx-lb.on{display:flex}",
+      "#vx-lb img{max-width:94vw;max-height:88vh;object-fit:contain;border-radius:4px}",
+      "#vx-lb button{position:absolute;border:0;background:rgba(30,38,50,.92);color:#e8eef8;width:42px;height:42px;border-radius:50%;font-size:20px;cursor:pointer}",
+      "#vx-lb .x{right:16px;top:14px}",
+      "#vx-lb .p{left:16px;top:50%;transform:translateY(-50%)}",
+      "#vx-lb .n{right:16px;top:50%;transform:translateY(-50%)}",
+      "@media(max-width:760px){.vx-wrap{padding:8px}.vx-hd{padding:12px}}"
+    ].join("\n");
+
+    var subHtml = String(ctx.sub || "").split(" · ").filter(Boolean).map(function (x) {
+      return "<span>" + esc(x) + "</span>";
+    }).join("");
+
+    var note = stat.failed
+      ? '<div class="vx-note">有 ' + stat.failed + " 张图没能抓取（对方站点不允许跨域取图），" +
+        "这几张保留原地址、需要联网才能看到；其余 " + stat.ok + " 张已内嵌在本文件里。</div>"
+      : "";
+
+    var script = [
+      "(function(){",
+      "var imgs=[].slice.call(document.querySelectorAll('.vx-wrap img'));",
+      "if(!imgs.length)return;",
+      "var lb=document.getElementById('vx-lb'),big=document.getElementById('vx-lb-img'),cur=0;",
+      "function show(i){cur=(i+imgs.length)%imgs.length;var im=imgs[cur];big.src=im.getAttribute('data-full')||im.src;big.alt=im.getAttribute('alt')||'';lb.classList.add('on');}",
+      "function hide(){lb.classList.remove('on');}",
+      "imgs.forEach(function(im,i){im.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();show(i);});});",
+      "document.getElementById('vx-x').onclick=hide;",
+      "document.getElementById('vx-p').onclick=function(e){e.stopPropagation();show(cur-1);};",
+      "document.getElementById('vx-n').onclick=function(e){e.stopPropagation();show(cur+1);};",
+      "lb.addEventListener('click',function(e){if(e.target===lb)hide();});",
+      "document.addEventListener('keydown',function(e){if(!lb.classList.contains('on'))return;if(e.key==='Escape')hide();if(e.key==='ArrowLeft')show(cur-1);if(e.key==='ArrowRight')show(cur+1);});",
+      "})();"
+    ].join("");
+
+    var html = clone && clone.outerHTML ? clone.outerHTML : "";
+    if (!html) return "";
+
+    return "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+      "<title>" + esc(ctx.title) + "</title>\n<style>\n" + (css || "") + "\n" + extra + "\n</style>\n</head>\n" +
+      '<body class="front vx-export">\n' +
+      '<header class="vx-hd"><h1>' + esc(ctx.title) + '</h1><div class="sub">' + subHtml + "</div></header>\n" +
+      note + "\n" +
+      '<div class="vx-wrap" style="' + (wrapW ? ("max-width:" + (wrapW + 32) + "px;") : "") + 'margin:0 auto">\n' +
+      html + "\n</div>\n" +
+      '<div id="vx-lb"><img id="vx-lb-img" alt=""><button type="button" class="x" id="vx-x">×</button>' +
+      '<button type="button" class="p" id="vx-p">‹</button><button type="button" class="n" id="vx-n">›</button></div>\n' +
+      "<script>" + script + "</" + "script>\n</body>\n</html>";
+  }
+
   /* ============================================================
    * 四、成品②：高清海报图
    * ============================================================ */
@@ -1021,11 +1196,12 @@
     return max && t.length > max ? t.slice(0, max) : t;
   }
 
-  function contextOf(secs, now) {
+  function contextOf(secs, now, totalOverride) {
     var cat = activeCat();
     var rng = periodRange(secs);
     var total = 0;
     secs.forEach(function (s) { total += s.cards.length; });
+    if (typeof totalOverride === "number" && totalOverride > 0) total = totalOverride;
 
     var nameParts = [state.label];
     if (cat && cat !== "全部") nameParts.push(cat);
@@ -1063,6 +1239,25 @@
     var secs = collectSections();
     var n = 0;
     secs.forEach(function (s) { n += s.cards.length; });
+
+    /* 兜底：有的专区图片不是 .rk-card / .mv-card（或刚改过卡片结构），
+       采集会一张都取不到。这种情况下不再直接报「没有可导出的图片」，
+       而是按页面主体里实际存在的图片建一个分组 —— 导出的还是页面上看到的那批图。 */
+    if (!secs.length || !n) {
+      var root = viewRoot();
+      var urls = root ? imgUrlsOf(root) : [];
+      if (urls.length) {
+        secs = [{
+          name: state.label,
+          meta: pageFilterSummary(),
+          cards: urls.map(function (u) {
+            return { url: u, title: "", cat: "", site: "", period: "", tags: [], alt: "" };
+          })
+        }];
+        n = urls.length;
+      }
+    }
+
     if (!secs.length || !n) { toast("当前页面没有可导出的图片", false); return null; }
     return secs;
   }
@@ -1075,21 +1270,77 @@
   }
 
   /* ---------- ① 单页网页 ---------- */
+  /* 拿到「页面那一段真 DOM」的克隆；拿不到就返回 null（退回按卡片重画的老做法） */
+  function domSnapshot() {
+    var root = viewRoot();
+    if (!root || typeof root.cloneNode !== "function") return null;
+    var clone = null;
+    try { clone = root.cloneNode(true); } catch (e) { return null; }
+    if (!clone || typeof clone.outerHTML !== "string" || !clone.outerHTML) return null;
+    sanitizeClone(clone);
+    var w = 0;
+    try {
+      var r = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+      w = r && r.width ? Math.round(r.width) : 0;
+    } catch (e) {}
+    return { root: root, clone: clone, width: w };
+  }
+
+  function finishHtml(html, ctx, stat) {
+    var blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    saveBlob(blob, ctx.baseName + ".html");
+
+    var mb = (blob.size / 1048576);
+    var sizeTxt = mb >= 1 ? mb.toFixed(1) + "MB" : Math.max(1, Math.round(blob.size / 1024)) + "KB";
+    setBusy(false);
+    setTip("");
+    toast(stat.failed
+      ? "网页已生成 " + sizeTxt + "（" + stat.failed + " 张未能抓取，保留原地址）"
+      : "网页已生成 " + sizeTxt + "，版式与页面一致，图片已全部内嵌", stat.failed ? undefined : true);
+    state._last = { kind: "html", ok: stat.ok, failed: stat.failed, name: ctx.baseName, size: blob.size };
+    return state._last;
+  }
+
+  /* ---------- ① 单页网页 ---------- */
   function runHtml() {
     var secs = ready();
     if (!secs) return Promise.resolve();
 
-    setBusy(true, "html");
-    setTip("正在取图…");
+    var snap = domSnapshot();
 
-    return inlineAll(secs, function (done, all) {
-      setTip("取图 " + done + " / " + all);
-    }).then(function (stat) {
+    setBusy(true, "html");
+    setTip(snap ? "正在按页面原样取图…" : "正在取图…");
+
+    var step = function (done, all) { setTip("取图 " + done + " / " + all); };
+
+    if (snap) {
+      /* 正路：克隆当前页面 DOM → 图片内嵌 → 带上站点自己的样式表 */
+      return inlineDom(snap.clone, step).then(function (stat) {
+        var now = new Date();
+        var ctx = contextOf(secs, now, stat.total);
+        setTip("生成网页…");
+        return loadPageCss().then(function (css) {
+          var html = buildHtmlDom(snap.clone, {
+            title: ctx.title, sub: ctx.sub
+          }, stat, css, snap.width);
+          if (html) return finishHtml(html, ctx, stat);
+          /* 克隆体没法序列化时，退回按卡片重画 */
+          var fb = buildHtml(secs, {
+            title: ctx.title, sub: ctx.sub,
+            failed: stat.failed, ok: stat.ok, columns: isBoard()
+          });
+          return finishHtml(fb, ctx, stat);
+        });
+      }).catch(function (e) {
+        setBusy(false); setTip("");
+        toast("导出失败：" + ((e && e.message) || "未知原因"), false);
+      });
+    }
+
+    return inlineAll(secs, step).then(function (stat) {
       var now = new Date();
       var ctx = contextOf(secs, now);
-
       setTip("生成网页…");
-
       var html = buildHtml(secs, {
         title: ctx.title,
         sub: ctx.sub,
@@ -1097,19 +1348,7 @@
         ok: stat.ok,
         columns: isBoard()
       });
-
-      var blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      saveBlob(blob, ctx.baseName + ".html");
-
-      var mb = (blob.size / 1048576);
-      var sizeTxt = mb >= 1 ? mb.toFixed(1) + "MB" : Math.max(1, Math.round(blob.size / 1024)) + "KB";
-      setBusy(false);
-      setTip("");
-      toast(stat.failed
-        ? "网页已生成 " + sizeTxt + "（" + stat.failed + " 张未能抓取，按原地址显示）"
-        : "网页已生成 " + sizeTxt + "，图片已全部内嵌，双击即开", stat.failed ? undefined : true);
-      state._last = { kind: "html", ok: stat.ok, failed: stat.failed, name: ctx.baseName, size: blob.size };
-      return state._last;
+      return finishHtml(html, ctx, stat);
     }).catch(function (e) {
       setBusy(false); setTip("");
       toast("导出失败：" + ((e && e.message) || "未知原因"), false);
@@ -1239,6 +1478,10 @@
     available: function () { return state.allowed; },
     _collect: collectSections,   // 自检用
     _build: buildHtml,
+    _buildDom: buildHtmlDom,
+    _inlineDom: inlineDom,
+    _snapshot: domSnapshot,
+    _viewRoot: viewRoot,
     _layout: layout,
     _layoutCols: layoutCols,
     _isBoard: isBoard,
