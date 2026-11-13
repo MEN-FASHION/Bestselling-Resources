@@ -1,0 +1,578 @@
+/* ============================================================
+ * 营销节日日历前台逻辑：登录校验 + 时间线 + 3:4 卡片区 + 文章跳转 + 微信分享二维码
+ * 顶部时间线分布时间节点，每个时间节点对应一张展示图卡片（3:4）；
+ * 图片点击跳转对应文章外链；文章可分享到微信（专属链接 + 二维码）。
+ * ============================================================ */
+(function () {
+  const $ = (sel) => document.querySelector(sel);
+
+  let authMode = "register"; // 登录页模式：register 注册 / login 登录
+  let nodes = [];            // 时间节点清单
+  let articles = [];         // 已发布文章清单
+  let zoneVis = {};          // 各专区本身是否前台可见
+  let zoneVisLoaded = false; // 专区可见性是否已加载
+  let myZones = null;        // 当前登录用户级可见专区白名单
+  let activeArticleId = "";  // 当前通过 ?article= 定位的文章
+  // 是否开启二维码库（若 qrcode CDN 未加载则仅显示链接，不阻塞主功能）
+  const HasQR = () => typeof window.QRCode !== "undefined";
+
+  // HTML转义（卡片标题/描述防注入）
+  function escHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+// 日期友好化：把 "2026-09-23T21:38" 等 ISO 时间戳转成 "9月23日"；无法解析则原文回退
+  function formatDate(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return (+m[2]) + "月" + (+m[3]) + "日";
+    return s;
+  }
+  Common.setToast(function (m, ok) { return toast(m, ok); }); // 接入公共模块
+  function toast(msg, ok = true) {
+    const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.background = ok ? "rgba(34,47,38,.92)" : "rgba(120,40,38,.92)";
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
+  function hideSplash() {
+    const s = document.getElementById("boot-splash");
+    if (s) s.classList.add("hidden");
+  }
+
+  // —— 某专区本身是否前台可见（未配置默认可见，支持用户级白名单覆盖） ——
+  function zoneVisible(zone) {
+    if (Array.isArray(myZones) && myZones.length) {
+      if (zoneVis && zoneVis[zone] === false) return false;
+      return myZones.indexOf(zone) !== -1;
+    }
+    return !zoneVis || zoneVis[zone] !== false;
+  }
+
+  // 顶部菜单：每个菜单项都可单独被隐藏；营销日历(本页)= marketing
+  function applyZoneNav() {
+    // 统一走公共专区模块（与榜单页/视觉专区/趋势专区同一套逻辑）
+    if (window.Common && Common.zones && Common.zones.applyNav) { Common.zones.applyNav(); return; }
+    document.querySelectorAll(".top-tabs .tab-link").forEach(a => {
+      const href = a.getAttribute("href") || "";
+      const vt = a.getAttribute("data-viewtab") || "";
+      let z = null;
+      if (href === "index.html") z = "visual";
+      else if (vt === "trend" || href === "trends.html") z = "trend";
+      else if (vt === "recruit" || href === "trends.html#recruit") z = "recruit";
+      else if (vt === "bestseller" || href === "trends.html#bestseller") z = "bestseller";
+      else if (vt === "marketing" || href === "marketing.html") z = "marketing";
+      else if (a.id === "notice-tab") z = "notice";
+      a.style.display = (z && !zoneVisible(z)) ? "none" : "";
+    });
+  }
+
+  async function ensureZoneVis() {
+    if (zoneVisLoaded) return;
+    try { zoneVis = await SB.getFrontendZoneVisibility(); } catch (e) { zoneVis = {}; }
+    try { myZones = await SB.myFrontendZones(); } catch (e) { myZones = null; }
+    zoneVisLoaded = true;
+    if (window.Common && Common.zones) { Common.zones.setVis(zoneVis); Common.zones.setMine(myZones); Common.zones.loadDefs(); }
+    applyZoneNav();
+  }
+
+  // —— 登录页界面 ——
+  function applyAuthMode() {
+    const toggle = $("#auth-toggle-link");
+    if (toggle) toggle.textContent = authMode === "login" ? "没有账号？注册一个" : "已有账号？去登录";
+    const t = $("#auth-title"); if (t) t.textContent = authMode === "login" ? "营销日历登录" : "注册账号";
+    const s = $("#auth-submit"); if (s) s.textContent = authMode === "login" ? "进入营销日历" : "注册并进入";
+  }
+  function showAuthHint(msg) {
+    const h = $("#auth-hint");
+    if (h) { h.textContent = msg; h.classList.remove("hidden"); }
+  }
+  // 注册后若开启邮箱确认：展示醒目的确认引导面板，隐藏登录表单，支持重新发送确认邮件
+
+  function hideAuthHint() {
+    const h = $("#auth-hint");
+    if (h) h.classList.add("hidden");
+  }
+  function bindEmailSuggest() {
+    const EMAIL_DOMAINS = ["gmail.com", "outlook.com", "qq.com", "163.com", "126.com", "hotmail.com", "foxmail.com", "sina.com"];
+    const input = $("#auth-email");
+    const box = document.getElementById("email-suggest");
+    if (!input || !box) return;
+    const hide = () => { box.classList.add("hidden"); box.innerHTML = ""; };
+    const apply = (d) => {
+      const cur = input.value;
+      const at = cur.lastIndexOf("@");
+      if (at >= 0) {
+        input.value = cur.slice(0, at + 1) + d;
+        input.focus();
+      }
+      hide();
+    };
+    input.addEventListener("input", () => {
+      const v = input.value;
+      const at = v.lastIndexOf("@");
+      if (at < 0) { hide(); return; }
+      const tail = v.slice(at + 1).toLowerCase();
+      if (tail.indexOf(".") >= 0 || (tail.length > 0 && /[\s@]/.test(tail))) { hide(); return; }
+      const matched = EMAIL_DOMAINS.filter(d => d.indexOf(tail) === 0);
+      if (!matched.length) { hide(); return; }
+      box.innerHTML = "";
+      matched.forEach(d => {
+        const el = document.createElement("div");
+        el.textContent = d;
+        el.addEventListener("mousedown", (e) => { e.preventDefault(); apply(d); });
+        box.appendChild(el);
+      });
+      box.classList.remove("hidden");
+    });
+    input.addEventListener("blur", () => setTimeout(hide, 160));
+    document.addEventListener("click", (e) => { if (box.contains(e.target)) return; hide(); });
+    window.addEventListener("beforeunload", hide);
+  }
+
+  function showLogin() {
+    authMode = "register";
+    applyAuthMode();
+    hideAuthHint();
+    const lv = $("#login-view"); if (lv) lv.classList.remove("hidden");
+    const mv = $("#marketing-view"); if (mv) mv.classList.add("hidden");
+    const cb = $("#changepwd-btn"); if (cb) cb.classList.add("hidden");
+    const lo = $("#logout-btn"); if (lo) lo.classList.add("hidden");
+    const tb = document.getElementById("front-topbar"); if (tb) tb.classList.add("hidden");
+  }
+
+  function showMain() {
+    const lv = $("#login-view"); if (lv) lv.classList.add("hidden");
+    const cb = $("#changepwd-btn"); if (cb) cb.classList.remove("hidden");
+    const lo = $("#logout-btn"); if (lo) lo.classList.remove("hidden");
+    const tb = document.getElementById("front-topbar"); if (tb) tb.classList.remove("hidden");
+    const mv = $("#marketing-view"); if (mv) mv.classList.remove("hidden");
+
+    // —— 专区守卫：营销日历在前台被隐藏时，即使直接输入地址也拦截进入 ——
+    if (!zoneVisible("marketing")) {
+      toast("该专区暂未开放", false);
+      showLogin();
+      return;
+    }
+    // 顶部菜单高亮本页
+    document.querySelectorAll(".top-tabs [data-viewtab]").forEach(a => a.classList.toggle("active", a.dataset.viewtab === "marketing"));
+    const brand = $("#front-brand");
+    if (brand) brand.textContent = (CONFIG.siteTitle || "TREND BANK") + " · 营销日历";
+    document.title = (CONFIG.siteTitle || "TREND BANK") + " · 营销日历";
+    loadMarketing();
+  }
+
+  async function refreshUI() {
+    await ensureZoneVis();
+    if (window.__loggedIn) { showMain(); }
+    else { showLogin(); }
+    hideSplash();
+  }
+
+  async function onLogin(e) {
+    e.preventDefault();
+    const email = $("#auth-email").value.trim();
+    const pass = $("#auth-pass").value;
+    if (!email || !pass) return toast("请填写邮箱和密码", false);
+    try {
+      if (authMode === "register") {
+        const { data, error } = await SB.signUp(email, pass);
+        if (error) throw error;
+        if (data && data.session) {
+          window.__loggedIn = true;
+          toast("注册成功，已登录");
+          showMain();
+        } else {
+          toast("注册成功！请到邮箱完成确认", true);
+          Common.authConfirm.show(email);
+          authMode = "login";
+          applyAuthMode();
+        }
+        return;
+      }
+      const { data, error } = await SB.signIn(email, pass);
+      if (error) {
+        let exists = null;
+        try { exists = await SB.isEmailRegistered(email); } catch (e2) { exists = null; }
+        if (exists === false) toast("账号错误：该邮箱未注册，请先注册", false);
+        else if (exists === true) toast("密码错误：请检查密码后重试", false);
+        else toast("登录失败：" + (error.message || "请检查邮箱密码"), false);
+        return;
+      }
+      window.__loggedIn = true;
+      toast("登录成功");
+      showMain();
+    } catch (err) {
+      toast("登录失败：" + (err.message || "请检查邮箱密码"), false);
+    }
+  }
+
+  async function onLogout() {
+    try {
+      await SB.signOut();
+      window.__loggedIn = false;
+      toast("已退出");
+      showLogin();
+    } catch (e) {
+      toast("退出失败", false);
+    }
+  }
+
+  // —— 加载营销日历数据并渲染 ——
+// 标题年份：优先取已有节点日期推断的年份，否则取当前年份
+  function setHeroYear() {
+    const yearEl = document.getElementById("mk-hero-year");
+    if (!yearEl) return;
+    let y = new Date().getFullYear();
+    for (const n of nodes) {
+      const d = String(n.date || "");
+      const m = d.match(/(20\d{2})/);
+      if (m) { y = m[1]; break; }
+    }
+    yearEl.textContent = y;
+  }
+  async function loadMarketing() {
+    // 容错取数：任一环节失败均不弹错，回退为空继续渲染（空态由 render* 自行显示）
+    try { await ensureZoneVis(); } catch (e) { zoneVis = {}; }
+    /* 「已发布营销素材」（时间节点 + 趋势文章）已按要求从前台下线：
+       容器不在就不再发这两个请求，避免白跑两次查询（前台只保留节庆库）。 */
+    var _hasPub = !!(document.getElementById("mk-timeline") || document.getElementById("mk-cards") || document.getElementById("mk-publish"));
+    if (!_hasPub) { nodes = []; articles = []; setHeroYear(); return; }
+    try {
+      if (typeof SB.listMarketingNodes === "function") {
+        const nodeRes = await SB.listMarketingNodes();
+        nodes = nodeRes && nodeRes.data ? nodeRes.data : [];
+      } else { nodes = []; }
+    } catch (e) { nodes = []; }
+    try {
+      if (typeof SB.listMarketingArticles === "function") {
+        const artRes = await SB.listMarketingArticles(true);
+        articles = artRes && artRes.data ? artRes.data : [];
+      } else { articles = []; }
+    } catch (e) { articles = []; }
+    setHeroYear();
+    renderNodes();
+    renderCards();
+    maybeFocusArticle();
+  }
+
+  // 顶部横向时间轴（设计稿形态）：一条横向主轴贯穿全部节点，红色圆点标注日期；
+  // 上方=节日庆祝（紫色标签），下方=重大活动（绿色）/促销旺季（深紫）标签；
+  // 每个节点通过垂直虚线连接主轴，并可点击标签/主图打开对应文章。
+  function renderNodes() {
+    const tl = document.getElementById("mk-timeline");
+    if (!tl) return;
+    if (!nodes.length) {
+      tl.innerHTML = '<div class="mk-empty">暂无时间节点，请等待管理员发布。</div>';
+      return;
+    }
+    // 每个节点取一张主图与跳转链接：优先节点自带，否则取该节点下第一篇已发布文章
+    const coverOf = (n) => {
+      const rel = articles.filter(a => String(a.node_id) === String(n.id));
+      const a = rel[0] || null;
+      return {
+        img: (n.image || (a && a.image)) || "",
+        url: (n.url || (a && a.url)) || "",
+        text: (a && a.title) || ""
+      };
+    };
+    // 分类：festival(节日庆祝-上,紫) / event(重大活动-下,绿) / promo(促销旺季-下,深紫)
+    const cat = (n) => {
+      const c = (n.category || "festival").toLowerCase();
+      return c === "event" ? "event" : (c === "promo" ? "promo" : "festival");
+    };
+    tl.innerHTML = nodes.map((n, i) => {
+      const date = escHtml(formatDate(n.date));
+      const title = escHtml(n.title || "");
+      const desc = escHtml(n.description || "");
+      const c = coverOf(n);
+      const k = cat(n);
+      const href = c.url || "javascript:void(0);";
+      const target = c.url ? "_blank" : "";
+      const rel = c.url ? "noopener noreferrer" : "";
+      // 图上+文下：主图固定在时间轴上方，标题/时间统一在时间轴最下方
+      return `<div class="mk-node cat-${k}">
+        ${c.img ? `<a class="mk-tag-img" href="${href}" target="${target}" rel="${rel}" title="${title}"><img class="mk-tag-thumb" alt="" data-path="${escAttr(c.img)}" loading="lazy"></a>` : `<span class="mk-tag-img noimg"></span>`}
+        <span class="mk-conn"></span>
+        <span class="mk-dot"><span class="mk-dot-inner"></span></span>
+        <div class="mk-tag">
+          <a class="mk-tag-link" href="${href}" target="${target}" rel="${rel}">
+            <div class="mk-tag-date">${date}</div>
+            <div class="mk-tag-title">${title}</div>
+            ${desc ? `<div class="mk-tag-desc">${desc}</div>` : ""}
+          </a>
+        </div>
+      </div>`;
+    }).join("");
+    // 节点主图：mage鉴权URL异步填充
+    tl.querySelectorAll(".mk-tag-thumb").forEach(function(imEl){
+      const path = imEl.getAttribute("data-path");
+      if (path) SB.marketingImageUrl(path).then(function(u){ imEl.src = u; }).catch(function(){});
+    });
+    // 主轴末端右箭头
+    const arrow = document.createElement("div");
+    arrow.className = "mk-axis-arrow";
+    arrow.innerHTML = "&#9654;";
+    tl.appendChild(arrow);
+    // 支持鼠标按住横向拖动滑动
+    enableDragScroll(tl);
+  }
+
+  // 鼠标/触摸按住横向拖动时间线
+  function enableDragScroll(el) {
+    if (!el || el._dragBound) return;
+    el._dragBound = true;
+    let isDown = false, startX = 0, scrollLeft = 0, moved = false;
+    el.addEventListener("mousedown", (e) => {
+      // 不拦截主图/按钮点击
+      if (e.target.closest("a,button,input,select")) return;
+      isDown = true; moved = false;
+      startX = e.pageX; scrollLeft = el.scrollLeft;
+      el.style.cursor = "grabbing"; el.style.userSelect = "none";
+    });
+    el.addEventListener("mousemove", (e) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      el.scrollLeft = scrollLeft - dx;
+    });
+    const up = () => { if (!isDown) return; isDown = false; el.style.cursor = ""; el.style.userSelect = ""; };
+    el.addEventListener("mouseup", up);
+    el.addEventListener("mouseleave", up);
+    el.addEventListener("click", (e) => { if (moved) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
+
+  // 已发布文章 → 3:4 卡片区（每个时间节点对应一张展示图）
+  async function renderCards() {
+    const grid = document.getElementById("mk-grid");
+    if (!grid) return;
+    if (!articles.length) {
+      grid.innerHTML = '<div class="mk-empty">暂无已发布的营销日历文章。</div>';
+      return;
+    }
+    grid.innerHTML = "";
+    for (const a of articles) {
+      const card = document.createElement("a");
+      card.className = "mk-card";
+      if (a.url) { card.href = a.url; card.target = "_blank"; card.rel = "noopener noreferrer"; }
+      else { card.href = "javascript:void(0);"; }
+      card.dataset.id = a.id;
+      if (a.id === activeArticleId) card.classList.add("active");
+      // 无外链 → 点击打开站内文章详情
+      if (!a.url) {
+        card.addEventListener("click", (e) => {
+          if (e.target.closest(".share-btn")) return;
+          e.preventDefault();
+          openArticleDetail(a);
+        });
+      }
+
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "mk-card-img";
+      if (a.image) {
+        const img = document.createElement("img");
+        img.alt = a.title || "";
+        img.loading = "lazy";
+        SB.marketingImageUrl(a.image).then(u => { img.src = u; }).catch(() => {});
+        img.onerror = () => { imgWrap.classList.add("noimg"); img.style.display = "none"; };
+        imgWrap.appendChild(img);
+      } else {
+        imgWrap.classList.add("noimg");
+        const ph = document.createElement("span");
+        ph.className = "mk-card-ph";
+        ph.textContent = a.title || "营销日历";
+        imgWrap.appendChild(ph);
+      }
+      // 右上角分享按钮（wx）
+      const share = document.createElement("button");
+      share.className = "mk-wx share-btn";
+      share.type = "button";
+      share.title = "分享到微信";
+      share.textContent = "分享";
+      share.addEventListener("click", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        openShareModal(a);
+      });
+      imgWrap.appendChild(share);
+
+      const body = document.createElement("div");
+      body.className = "mk-card-body";
+      const tt = document.createElement("div");
+      tt.className = "mk-card-title";
+      tt.textContent = a.title || "";
+      const meta = document.createElement("div");
+      meta.className = "mk-card-sub";
+      meta.textContent = a.summary || "点击查看";
+      body.appendChild(tt); body.appendChild(meta);
+
+      card.appendChild(imgWrap); card.appendChild(body);
+      grid.appendChild(card);
+    }
+  }
+
+  // 打开站内文章详情弹窗（无外链时使用；正文从 posts 加载）
+  async function openArticleDetail(a) {
+    if (!a || !a.id) return;
+    const modal = document.getElementById("mk-article-modal");
+    if (!modal) return;
+    let t = a.title || "";
+    let c = a.content || "";
+    let img = a.image || "";
+    if (!c) {
+      // 尝试从已加载文章列表中带出正文
+      const full = articles.find(x => x.id === a.id);
+      if (full && full.content) c = full.content;
+      else if (full && full.image) img = full.image;
+    }
+    if (document.getElementById("mk-article-title")) document.getElementById("mk-article-title").textContent = t;
+    const body = document.getElementById("mk-article-body");
+    if (body) {
+      body.innerHTML = "";
+      if (img) {
+        const im = document.createElement("img");
+        im.className = "mk-article-cover";
+        im.alt = t; SB.marketingImageUrl(img).then(u => { im.src = u; }).catch(() => {});
+        im.onerror = () => { im.remove(); };
+        body.appendChild(im);
+      }
+      const para = document.createElement("div");
+      para.className = "mk-article-text";
+      para.textContent = c || "（暂无正文）";
+      // 支持分段显示
+      para.innerHTML = (c || "").split(/\n{2,}/).map(p => "<p>" + (p || "").replace(/\n/g, "<br>") + "</p>").join("");
+      body.appendChild(para);
+    }
+    modal.classList.remove("hidden");
+  }
+
+  // 二维码分享弹窗：专属链接 + 二维码，可保存分享到微信
+  function openShareModal(a) {
+    const modal = document.getElementById("mk-share-modal");
+    if (!modal) return;
+    const link = location.origin + location.pathname + "?article=" + encodeURIComponent(a.id);
+    const linkEl = document.getElementById("mk-share-link");
+    if (linkEl) linkEl.value = link;
+    const titleEl = document.getElementById("mk-share-title");
+    if (titleEl) titleEl.textContent = a.title || "营销日历文章";
+
+    const qrBox = document.getElementById("mk-share-qr");
+    if (qrBox) {
+      qrBox.innerHTML = "";
+      if (HasQR()) {
+        new window.QRCode(qrBox, { text: link, width: 200, height: 200, correctLevel: window.QRCode.CorrectLevel.M });
+      } else {
+        qrBox.textContent = "二维码库未加载，请复制上方链接分享";
+      }
+    }
+    // 复制链接
+    const copyBtn = document.getElementById("mk-share-copy");
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          toast("链接已复制，可粘贴分享到微信");
+        } catch (e) {
+          if (linkEl) { linkEl.select(); document.execCommand("copy"); toast("链接已复制，可粘贴分享到微信"); }
+          else toast("复制失败，请手动复制", false);
+        }
+      };
+    }
+    modal.classList.remove("hidden");
+  }
+
+  function maybeFocusArticle() {
+    if (!activeArticleId) return;
+    const card = document.querySelector('.mk-card[data-id="' + activeArticleId + '"]');
+    if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); }
+  }
+
+  function bindChangepwd() {
+    const modal = document.getElementById("pwd-modal");
+    if (!modal) return;
+    const open = () => {
+      const o = document.getElementById("pwd-old"), n = document.getElementById("pwd-new"), n2 = document.getElementById("pwd-new2");
+      if (o) o.value = ""; if (n) n.value = ""; if (n2) n2.value = "";
+      modal.classList.remove("hidden");
+      if (o) o.focus();
+    };
+    const close = () => modal.classList.add("hidden");
+    const bp = document.getElementById("changepwd-btn");
+    if (bp) bp.onclick = open;
+    const c1 = document.getElementById("pwd-cancel"); if (c1) c1.onclick = close;
+    const c2 = document.getElementById("pwd-close"); if (c2) c2.onclick = close;
+    modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+    const btn = document.getElementById("pwd-submit");
+    if (btn) btn.onclick = async () => {
+      const o = document.getElementById("pwd-old").value.trim();
+      const n = document.getElementById("pwd-new").value;
+      const n2 = document.getElementById("pwd-new2").value;
+      if (!o) return toast("请输入旧密码", false);
+      if (!n || n.length < 6) return toast("新密码至少6位", false);
+      if (n !== n2) return toast("两次输入的新密码不一致", false);
+      const r = await SB.changePassword(o, n);
+      if (r.error) return toast(r.error.message || "修改失败", false);
+      toast("密码修改成功", true);
+      close();
+    };
+  }
+
+  // 分享弹窗关闭
+  function bindShareModalClose() {
+    const modal = document.getElementById("mk-share-modal");
+    if (!modal) return;
+    const close = () => modal.classList.add("hidden");
+    const c1 = document.getElementById("mk-share-close"); if (c1) c1.onclick = close;
+    const c2 = document.getElementById("mk-share-close-x"); if (c2) c2.onclick = close;
+    modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+  }
+function bindArticleModalClose() {
+    const modal = document.getElementById("mk-article-modal");
+    if (!modal) return;
+    const close = () => modal.classList.add("hidden");
+    const c1 = document.getElementById("mk-article-close"); if (c1) c1.onclick = close;
+    const c2 = document.getElementById("mk-article-close-x"); if (c2) c2.onclick = close;
+    modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const st = $("#site-title");
+    if (st) st.textContent = CONFIG.siteTitle || "TREND BANK";
+
+    // 解析 ?article= 定位文章
+    const qs = new URLSearchParams(location.search);
+    activeArticleId = (qs.get("article") || "").trim();
+
+    // 始终需登录 —— 监听登录态
+    SB.onAuth((session) => {
+      window.__loggedIn = !!session;
+      refreshUI();
+      if (session && window.Common && Common.visit) Common.visit.track("marketing");
+    });
+    // 访问统计（后台「数据看板」）：登记本次进入专区的访问与停留时长
+    SB.getSession().then((s) => { if (s && window.Common && Common.visit) Common.visit.track("marketing"); }).catch(() => {});
+
+    $("#login-form").addEventListener("submit", onLogin);
+    bindEmailSuggest();
+    const authToggle = $("#auth-toggle-link");
+    if (authToggle) authToggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      authMode = authMode === "login" ? "register" : "login";
+      applyAuthMode();
+    });
+    applyAuthMode();
+    const lo = $("#logout-btn"); if (lo) lo.onclick = onLogout;
+    bindChangepwd();
+    bindShareModalClose();
+    bindArticleModalClose();
+
+    // 兜底：异常情况下最多等 3s 后揭开遮罩
+    setTimeout(hideSplash, 3000);
+    // 首次恢复会话后刷新
+    SB.getSession().then(s => { window.__loggedIn = !!s; refreshUI(); }).catch(() => refreshUI());
+  });
+})();
