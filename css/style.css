@@ -7438,7 +7438,7 @@ html, body{
 .cz-owner-tip.is-readonly { color: #b45309; }
 
 /* ============================================================================
- * 20261113N · 前台「导出本页」悬浮入口
+ * 20261113O · 前台「导出本页」悬浮入口
  * 固定在右下角：页面顶栏与筛选条会被各专区反复重绘，塞进工具条里会被冲掉；
  * 左下角是搜同款的分屏状态条，右下角一直空着，不挡任何卡片角标。
  * ==========================================================================*/
@@ -7456,6 +7456,10 @@ html, body{
 }
 .vx-btn:hover { border-color: #4a6a9c; transform: translateY(-1px); }
 .vx-btn:disabled { opacity: .72; cursor: default; transform: none; }
+/* 20261113O：第二个成品按钮（高清海报），与网页按钮同一排、视觉上略作区分 */
+.vx-btn.is-poster { border-color: #3a4a66; background: rgba(23, 30, 42, .94); }
+.vx-btn.is-poster:hover { border-color: #5d7fb5; }
+.vx-btn.is-busy { border-color: #6b8fc9; }
 .vx-ico { font-size: 14px; line-height: 1; }
 .vx-spin { display: inline-block; animation: vxspin 1s linear infinite; }
 @keyframes vxspin { from { transform: rotate(0) } to { transform: rotate(360deg) } }

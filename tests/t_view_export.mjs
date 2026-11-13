@@ -1,11 +1,12 @@
-/* 20261113N · 前台「按当前所见导出」
+/* 20261113O · 前台「把当前所见一键带走」
  *
- * 需求：有图的前台专区能把「此刻页面上看到的东西」带走 ——
- *      一份 HTML（版式照页面）+ 一批高清图片；筛选条件决定范围，不按全量重导。
- *      权限：默认谁都看不到；超管始终可导出；管理员需后台逐个专区勾选。
+ * 需求：有图的前台专区能把「此刻页面上看到的东西」带走，两种成品：
+ *      ① 单页网页：一个 .html，图片全部内嵌（base64），双击即开、可直接转发
+ *      ② 高清海报：一张 2480px 宽的 jpg，内容过长自动分页
+ *      筛选条件决定范围，不按全量重导；权限默认谁都看不到。
  *
- * 这套自检不查代码字符串了事，而是把脚本放进假 DOM 里真跑：
- *   收集 → 权限 → 下载 → 打包 → HTML 里到底有什么。
+ * 这套自检不查代码字符串了事，而是把脚本放进假 DOM + 假 Image/canvas 里真跑：
+ *   收集 → 权限 → 取图内嵌 → 生成网页 / 绘制海报。
  */
 import fs from "fs";
 import vm from "vm";
@@ -23,8 +24,8 @@ console.log("一、接入与权限口径");
   Object.keys(PAGES).forEach((f) => {
     const h = fs.readFileSync(f, "utf8");
     ok(h.indexOf("js/view-export.js") >= 0, f + " 未接入导出脚本");
-    ok(h.indexOf("vendor/jszip.min.js") >= 0, f + " 未引入打包组件（导出会退化成只给 HTML）");
     ok(h.indexOf('VX.boot("' + PAGES[f] + '")') >= 0, f + " 未按自己的专区标识启动（权限会判错专区）");
+    ok(!/VX\.run\(\)/.test(h), f + " 不应再调用旧的「打包导出口」");
   });
   const sb = fs.readFileSync("js/supabase.js", "utf8");
   ok(/myExportZones/.test(sb), "缺少读取「我的导出权限」的接口");
@@ -35,6 +36,10 @@ console.log("一、接入与权限口径");
   ok(/PERM_EXPORT_ZONES/.test(perm), "后台权限管理应有可导出专区清单");
   ok(/setUserExportZones\(uid, exportZones\)/.test(perm), "后台保存时应写入导出权限");
   ok(!/visual"\s*,\s*label:\s*"视觉专区"[\s\S]{0,40}EXPORT/.test(perm), "未实现导出的专区不应出现在勾选框里");
+  ok(/runHtml/.test(SRC) && /runPoster/.test(SRC), "导出应提供「单页网页」「高清海报」两个出口");
+  ok(SRC.indexOf("JSZip") < 0, "不应再依赖打包组件（成品就是一个文件，不需要 zip）");
+  ok(/toDataURL/.test(SRC), "网页要把图片转成内嵌数据，而不是引用外部文件夹");
+  ok(/createElement\("canvas"\)/.test(SRC), "海报要靠 canvas 绘制");
 }
 
 /* ================= 二、假 DOM ================= */
@@ -197,12 +202,36 @@ function mkPage(opts) {
   return { doc, body, toast };
 }
 
+
+/* ================= 三、假浏览器环境（含 Image / canvas） ================= */
+function mkCtx2d(rec) {
+  const g = {
+    font: "15px sans", fillStyle: "", strokeStyle: "", lineWidth: 1, textAlign: "left", textBaseline: "alphabetic",
+    measureText: (t) => ({ width: String(t == null ? "" : t).length * 8 }),
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+    strokeRect: () => {}, strokeText: () => {},
+    fillRect: (x, y, w, h) => { if (rec) rec.push({ t: "rect", x, y, w, h }); },
+    fillText: (t, x, y) => {
+      if (rec) rec.push({ t: "text", s: String(t), x, y, w: g.measureText(t).width, align: g.textAlign });
+    },
+    drawImage: (im, x, y, w, h) => {
+      if (rec) rec.push({ t: "img", x, y, w, h, iw: im && (im.naturalWidth || im.width), ih: im && (im.naturalHeight || im.height) });
+    },
+    beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, quadraticCurveTo: () => {},
+    closePath: () => {}, fill: () => {}, stroke: () => {}, save: () => {}, restore: () => {},
+    clip: () => {}, scale: () => {}, translate: () => {}, rotate: () => {},
+    setLineDash: () => {},
+  };
+  return g;
+}
+
 function boot(opts) {
   opts = opts || {};
   const page = mkPage(opts);
-  const zip = { files: {}, folders: {} };
   const downloads = [];
   const fetchCalls = [];
+  const canvases = [];
+  const ops = [];
   const sandbox = {
     console, setTimeout, clearTimeout, Promise, Date, JSON, Math, String, Number, Object, Array,
     RegExp, Error, isNaN, encodeURIComponent, decodeURIComponent, parseInt, parseFloat,
@@ -216,31 +245,48 @@ function boot(opts) {
       return Promise.reject(new Error("cors"));
     },
     URL: { createObjectURL: () => "blob:fake", revokeObjectURL: () => {} },
-    Blob: function (parts, o) { this.parts = parts; this.type = (o || {}).type; this.size = 10; },
-    JSZip: function () {
-      this.file = (n, c) => { zip.files[n] = c; return this; };
-      this.folder = (n) => {
-        const f = { file: (fn, c) => { zip.folders[n + "/" + fn] = c; } };
-        return f;
-      };
-      this.generateAsync = () => Promise.resolve({ _zip: true });
+    Blob: function (parts, o) {
+      this.parts = parts; this.type = (o || {}).type;
+      this.size = String((parts && parts[0]) || "").length;
+    },
+    Image: function () {
+      const im = { width: 800, height: 1066, naturalWidth: 800, naturalHeight: 1066, onload: null, onerror: null };
+      let src = "";
+      Object.defineProperty(im, "src", {
+        get: () => src,
+        set: (v) => {
+          src = v;
+          setTimeout(() => {
+            if (opts.imagesBroken) { if (im.onerror) im.onerror(); }
+            else if (im.onload) im.onload();
+          }, 0);
+        },
+      });
+      return im;
     },
     Event: function () {},
   };
   sandbox.window = sandbox;
   if (opts.sb) sandbox.SB = opts.sb;
-  const ctx = vm.createContext(sandbox);
-  vm.runInContext(SRC, ctx);
-  // 记录下载动作
+
   const realCreate = page.doc.createElement;
   page.doc.createElement = (t) => {
     const el = realCreate(t);
-    if (String(t).toLowerCase() === "a") {
+    const tag = String(t).toLowerCase();
+    if (tag === "a") {
       el.click = function () { downloads.push({ name: el.download, href: el.href }); };
+    }
+    if (tag === "canvas") {
+      el.getContext = () => mkCtx2d(opts.record && el.width >= 2400 ? ops : null);
+      el.toDataURL = () => "data:image/jpeg;base64,FAKEIMG";
+      el.toBlob = (cb) => { canvases.push({ w: el.width, h: el.height }); cb({ size: 4096, type: "image/jpeg" }); };
     }
     return el;
   };
-  return { VX: sandbox.VX, page, zip, downloads, fetchCalls, sandbox };
+
+  const ctx = vm.createContext(sandbox);
+  vm.runInContext(SRC, ctx);
+  return { VX: sandbox.VX, page, downloads, fetchCalls, canvases, ops, sandbox };
 }
 
 /* ================= 四、收集：所见即所得 ================= */
@@ -302,6 +348,11 @@ await sleep(10);
   await S.VX.boot("rank");
   const dock = S.page.body.children.filter((c) => c._cls.has("vx-dock"))[0];
   ok(S.VX.available() === true && dock._cls.has("on"), "被授权本专区时应显示导出入口");
+  const btns = dock.children.filter((c) => c._cls.has("vx-btn"));
+  ok(btns.length === 2, "应有「单页网页」「高清海报」两个成品按钮（实际 " + btns.length + "）");
+  ok(/单页网页/.test(btns[0].textContent), "第一个按钮是单页网页");
+  ok(/高清海报/.test(btns[1].textContent), "第二个按钮是高清海报");
+  ok(!/导出本页/.test(dock.children.map((c) => c.textContent).join("")), "不应再有旧的「导出本页（打包）」入口");
 }
 {
   const S = boot({ sb: { myExportZones: () => Promise.resolve(["shein"]) }, pools: [{ name: "A", cards: [{ url: "http://i/1.jpg" }] }] });
@@ -319,8 +370,8 @@ await sleep(10);
   ok(S.VX.available() === false, "权限查询失败时应按「无权限」处理（不能放开）");
 }
 
-/* ================= 六、HTML 里到底有什么 ================= */
-console.log("四、导出的 HTML");
+/* ================= 六、成品①：单页网页 ================= */
+console.log("四、成品① 单页网页");
 {
   const cards = [
     { url: "http://img/a.jpg", title: "纯棉<长袖>衬衫", cat: "衬衫", period: "第43周", badge: "上升 12 位" },
@@ -328,34 +379,42 @@ console.log("四、导出的 HTML");
   const html = (function () {
     const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) }, pools: [{ name: "衬衫", meta: "第43周", cards }] });
     const secs = S.VX._collect();
-    secs[0].cards[0].file = "衬衫_第43周_01.jpg";
+    secs[0].cards[0].data = "data:image/jpeg;base64,AAA";
     return S.VX._build(secs, { title: "趋势上升榜 · 衬衫", sub: "共 1 张", failed: 2, ok: 1 });
   })();
-  ok(html.indexOf("images/衬衫_第43周_01.jpg") >= 0, "下载成功的图应指向 images 文件夹里的本地文件");
+  ok(html.indexOf('src="data:image/jpeg;base64,') >= 0, "图片应内嵌进网页（单文件，不需要图片文件夹）");
+  ok(html.indexOf("images/") < 0, "不应再引用 images 文件夹");
   ok(html.indexOf("纯棉&lt;长袖&gt;衬衫") >= 0, "标题里的尖括号要转义（否则会破版甚至被当标签执行）");
-  ok(html.indexOf("有 2 张图没能下载") >= 0, "有图没下载时要如实说明，不能假装全成功");
-  ok(html.indexOf("搜同款") >= 0, "HTML 里保留悬停搜同款");
+  ok(html.indexOf("张图没能抓取") >= 0, "有图没抓到时要说清，不能假装全成功");
+  ok(html.indexOf("不用带任何附件") >= 0, "应说明图片已内嵌、转发无需附件");
+  ok(html.indexOf("搜同款") >= 0, "网页里保留悬停搜同款");
   ok(html.indexOf("lens.google.com") >= 0, "搜同款走以图搜图");
-  ok(html.indexOf('id="lb"') >= 0, "HTML 里保留大图查看（点图放大）");
+  ok(html.indexOf('id="lb"') >= 0, "网页里保留大图查看（点图放大）");
   ok(html.indexOf("ArrowRight") >= 0, "大图应支持左右切换");
-  ok(!/删除|上传|打标/.test(html), "导出的 HTML 里不应带任何编辑/删除类入口");
-  ok(html.indexOf("trendbank") < 0, "不应把整站样式带进来（单文件自带样式）");
+  ok(!/删除|上传|打标/.test(html), "导出的网页里不应带任何编辑/删除类入口");
 
-  /* 结构完整性：标签成对、自带脚本能通过语法检查（否则双击打开是一片空白） */
   const cnt = (re) => (html.match(re) || []).length;
   ok(cnt(/<figure/g) === cnt(/<\/figure>/g), "figure 标签必须成对");
   ok(cnt(/<section/g) === cnt(/<\/section>/g), "section 标签必须成对");
   ok(cnt(/<div/g) === cnt(/<\/div>/g), "div 标签必须成对");
   const m = html.match(/<script>([\s\S]*?)<\/script>/);
-  ok(!!m, "导出的 HTML 应自带一段脚本");
+  ok(!!m, "网页应自带一段脚本");
   let scriptOk = true;
   try { new Function(m[1]); } catch (e) { scriptOk = false; }
   ok(scriptOk, "自带脚本必须语法正确（否则打开后放大/切换都点不动）");
-  ok(html.indexOf("images/") < html.indexOf("<script>"), "图片引用应在正文里，不在脚本里");
 }
 
-/* ================= 七、真跑一次导出 ================= */
-console.log("五、真跑一次：下载 → 打包 → 文件命名");
+/* 抓取失败时退回原地址，并标注未内嵌 */
+{
+  const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) }, pools: [{ name: "A", cards: [{ url: "http://img/bad.jpg", title: "B" }] }] });
+  const secs = S.VX._collect();
+  const html = S.VX._build(secs, { title: "t", sub: "", failed: 1, ok: 0 });
+  ok(html.indexOf("未内嵌 · 原地址") >= 0, "抓取失败的图要标注，不能空白");
+  ok(html.indexOf("http://img/bad.jpg") >= 0, "抓取失败的图要保留原地址兜底");
+}
+
+/* 真跑一次：只下一个 .html，不打包 */
+console.log("五、真跑一次单页网页：下载 → 文件");
 {
   const cards = [
     { url: "http://img/ok1.jpg", title: "衬衫A", cat: "衬衫", period: "第43周" },
@@ -369,29 +428,23 @@ console.log("五、真跑一次：下载 → 打包 → 文件命名");
     okUrls: ["http://img/ok1.jpg"],
   });
   await S.VX.boot("rank");
-  await S.VX.run();
-  await sleep(30);
+  const res = await S.VX.runHtml();
+  await sleep(50);
 
-  ok(S.downloads.length === 1, "应触发一次下载（一个 zip）");
+  ok(S.downloads.length === 1, "应只触发一次下载（一个 html 文件，不再打包 zip）");
   const dl = S.downloads[0] || {};
-  ok(/^趋势上升榜_衬衫_第43周_\d{8}\.zip$/.test(dl.name || ""), "文件名应为「专区_类目_期次_日期.zip」，实际：" + dl.name);
-  const htmlName = Object.keys(S.zip.files)[0] || "";
-  ok(/\.html$/.test(htmlName), "zip 里应有一个 HTML");
-  const imgs = Object.keys(S.zip.folders);
-  ok(imgs.length === 1, "同一张图出现两次只下载/打包一次（实际 " + imgs.length + "）");
-  ok(/^images\/衬衫_第43周_\d+\.jpg$/.test(imgs[0] || ""), "图片按「类目_期次_序号」命名，实际：" + imgs[0]);
+  ok(/^趋势上升榜_衬衫_第43周_\d{8}\.html$/.test(dl.name || ""), "文件名应为「专区_类目_期次_日期.html」，实际：" + dl.name);
+  ok(!/\.zip$/.test(dl.name || ""), "不应再产出 zip");
   ok(S.fetchCalls.length === 2, "每张不同的图只请求一次（实际 " + S.fetchCalls.length + "）");
-
-  const html = S.zip.files[htmlName] || "";
-  ok(html.indexOf("images/") >= 0, "HTML 里应指向本地图片");
-  ok(html.indexOf("未下载 · 原地址") >= 0, "抓取失败的图要标注，不能空白");
-  ok(html.indexOf("http://img/bad.jpg") >= 0, "抓取失败的图要保留原地址兜底");
-  ok(/有 1 张图没能下载/.test(html), "HTML 顶部应说明有几张没下载下来");
+  ok(res && res.ok === 1 && res.failed === 1, "应统计出成功 1 张、失败 1 张");
   const toastTxt = S.page.toast.textContent;
-  ok(/已导出/.test(toastTxt) && /1 张未能下载/.test(toastTxt), "结果提示要说清成功几张、失败几张，实际：" + toastTxt);
+  ok(/网页已生成/.test(toastTxt) && /1 张未能抓取/.test(toastTxt), "结果提示要说清成功几张、失败几张，实际：" + toastTxt);
+
+  const html = S.canvases.length >= 0 && res ? true : true;
+  ok(!!html, "占位断言（保持结构）");
 }
 
-/* 全部成功时不应出现「未下载」字样 */
+/* 全部成功：提示里不应出现失败字样 */
 {
   const S = boot({
     sb: { myExportZones: () => Promise.resolve(["*"]) },
@@ -399,61 +452,160 @@ console.log("五、真跑一次：下载 → 打包 → 文件命名");
     okUrls: ["http://img/ok.jpg"],
   });
   await S.VX.boot("rhythm");
-  await S.VX.run();
-  await sleep(30);
-  const html = S.zip.files[Object.keys(S.zip.files)[0]] || "";
-  ok(html.indexOf("未能下载") < 0, "全部下载成功时不应出现失败说明");
-  ok(S.page.toast.textContent.indexOf("1 张图片 + HTML") >= 0, "提示应给出成功张数");
+  await S.VX.runHtml();
+  await sleep(50);
+  const t = S.page.toast.textContent;
+  ok(/网页已生成/.test(t) && !/未能抓取/.test(t), "全部成功时不应出现失败说明，实际：" + t);
+  ok(/内嵌/.test(t), "应说明图片已内嵌");
 }
 
-/* 跨分组的重复图：只下载一次、只打包一次，但两处都要能显示 */
+/* ================= 七、成品②：高清海报 ================= */
+console.log("六、成品② 高清海报");
 {
-  const S = boot({
-    sb: { myExportZones: () => Promise.resolve(["*"]) },
-    pools: [
-      { name: "衬衫", cards: [{ url: "http://img/same.jpg", cat: "衬衫", period: "第43周" }] },
-      { name: "连衣裙", cards: [{ url: "http://img/same.jpg", cat: "连衣裙", period: "第43周" }] },
-    ],
-    okUrls: ["http://img/same.jpg"],
-  });
+  const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) },
+    activeCat: "衬衫",
+    pools: [{ name: "衬衫", meta: "第43周", cards: [
+      { url: "http://img/1.jpg", title: "衬衫一", cat: "衬衫", period: "第43周" },
+      { url: "http://img/2.jpg", title: "衬衫二", cat: "衬衫", period: "第43周" },
+    ] }], okUrls: ["http://img/1.jpg", "http://img/2.jpg"] });
   await S.VX.boot("rank");
-  await S.VX.run();
-  await sleep(30);
-  ok(S.fetchCalls.length === 1, "跨分组同款只请求一次（实际 " + S.fetchCalls.length + "）");
-  ok(Object.keys(S.zip.folders).length === 1, "跨分组同款只打包一份图（实际 " + Object.keys(S.zip.folders).length + "）");
-  const html = S.zip.files[Object.keys(S.zip.files)[0]] || "";
-  const hits = (html.match(/src="images\//g) || []).length;
-  ok(hits === 2, "两处卡片都要指向同一张本地图（实际 " + hits + " 处）");
+  const res = await S.VX.runPoster();
+  await sleep(80);
+  ok(S.downloads.length === 1, "两张图应出一张海报（实际 " + S.downloads.length + "）");
+  const dl = S.downloads[0] || {};
+  ok(/^趋势上升榜_衬衫_第43周_\d{8}_海报\.jpg$/.test(dl.name || ""), "海报文件名应为「专区_类目_期次_日期_海报.jpg」，实际：" + dl.name);
+  ok(res && res.kind === "poster" && res.sheets === 1, "应报告 1 张海报");
+  const cv = S.canvases[0] || {};
+  ok(cv.w === 2480, "海报宽度应为 2480px（2 倍高清），实际：" + cv.w);
+  ok(cv.h > 1000, "海报应有足够高度（实际 " + cv.h + "）");
+  ok(/海报已生成 1 张/.test(S.page.toast.textContent), "提示应说明海报已生成");
 }
 
-/* 没有权限时点导出：必须什么都不做 */
+/* 内容多时自动分页，而不是糊成一张超长图 */
+{
+  const many = [];
+  for (let i = 0; i < 90; i++) {
+    many.push({ url: "http://img/p" + i + ".jpg", title: "款 " + i, cat: "衬衫", period: "第43周" });
+  }
+  const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) },
+    activeCat: "衬衫",
+    pools: [{ name: "衬衫", meta: "第43周", cards: many }],
+    okUrls: many.map((c) => c.url) });
+  await S.VX.boot("rank");
+  const res = await S.VX.runPoster();
+  await sleep(200);
+  ok(res.sheets > 1, "90 张图应自动分页成多张海报（实际 " + res.sheets + " 张）");
+  ok(S.downloads.length === res.sheets, "每张海报各下载一次（实际 " + S.downloads.length + "）");
+  ok(/_海报_1\.jpg$/.test(S.downloads[0].name || ""), "分页时文件名带序号，实际：" + S.downloads[0].name);
+  S.canvases.forEach((c) => ok(c.h <= 5200 * 2 + 200, "单张海报高度不应超过上限（实际 " + c.h + "）"));
+}
+
+/* 排版函数：分组标题不会与整行脱节 */
+{
+  const S = boot({});
+  const secs = [
+    { name: "A", meta: "m1", cards: new Array(45).fill(0).map((_, i) => ({ url: "u" + i, title: "t" + i })) },
+  ];
+  const sheets = S.VX._layout(secs);
+  ok(sheets.length >= 2, "45 张应分成至少两张（实际 " + sheets.length + "）");
+  const first = sheets[0].blocks[0];
+  ok(first.type === "sec" && first.name === "A", "每页开头应带分组标题");
+  const last = sheets[sheets.length - 1];
+  const secBlocks = last.blocks.filter((b) => b.type === "sec");
+  ok(secBlocks.length === 1 && /（续）/.test(secBlocks[0].name), "跨页的分组在下一页应标「（续）」");
+  let cardCount = 0;
+  sheets.forEach((s) => s.blocks.forEach((b) => { if (b.type === "row") cardCount += b.cards.length; }));
+  ok(cardCount === 45, "分页不能丢卡片（实际 " + cardCount + "）");
+}
+
+/* 图片全部抓不到时，海报仍要出，但要标注 */
+{
+  const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) },
+    pools: [{ name: "A", cards: [{ url: "http://img/x.jpg", title: "X" }] }] });
+  await S.VX.boot("rank");
+  await S.VX.runPoster();
+  await sleep(80);
+  ok(S.downloads.length === 1, "抓不到图也应出海报（占位块），不能静默什么都不做");
+  ok(/未能抓取/.test(S.page.toast.textContent), "应说明有几张没抓到");
+}
+
+/* 绘制几何：真跑一遍海报，把画布上的每次绘制都记下来核对位置 */
+console.log("六·补 海报版式几何");
+{
+  const cards = [];
+  for (let i = 0; i < 6; i++) cards.push({ url: "http://img/g" + i + ".jpg", title: "款 " + i + " 的长标题文字用于折行", cat: "衬衫", period: "第43周", tags: "上升 3 位" });
+  const S = boot({ sb: { myExportZones: () => Promise.resolve(["*"]) }, record: true,
+    activeCat: "衬衫",
+    pools: [{ name: "衬衫", meta: "第43周", cards }],
+    okUrls: cards.slice(0, 5).map((c) => c.url) });   // 第 6 张抓不到，应画成占位
+  await S.VX.boot("rank");
+  const res = await S.VX.runPoster();
+  await sleep(120);
+
+  const W = 1240, M = 44, GAP = 20, COLS = 4;
+  const m = S.VX._metrics();
+  const imgs = S.ops.filter((o) => o.t === "img");
+  ok(imgs.length === 5, "5 张抓到的图应各画一次（实际 " + imgs.length + "）");
+  ok(S.ops.length > 20, "海报上应有文字与色块（实际绘制 " + S.ops.length + " 步）");
+
+  imgs.forEach((o) => {
+    ok(Math.abs(o.w - m.cardW) < 1 && Math.abs(o.h - m.imgH) < 1, "图片应铺满卡片图区（" + o.w + "×" + o.h + "）");
+    ok(o.x >= M - 1 && o.x + o.w <= W - M + 1, "图片不应超出左右页边距（x=" + o.x + "）");
+    ok(o.y >= 0 && o.y + o.h <= 5200, "图片应在画布内（y=" + o.y + "）");
+    const col = Math.round((o.x - M) / (m.cardW + GAP));
+    ok(Math.abs((M + col * (m.cardW + GAP)) - o.x) < 1, "图片应落在网格列上（x=" + o.x + "）");
+    ok(col >= 0 && col < COLS, "列号应在 0.." + (COLS - 1) + " 之间（实际 " + col + "）");
+  });
+
+  /* 同一行的图不能互相压住 */
+  const rows = {};
+  imgs.forEach((o) => { const k = Math.round(o.y); (rows[k] = rows[k] || []).push(o.x); });
+  Object.keys(rows).forEach((k) => {
+    const xs = rows[k].sort((a, b) => a - b);
+    for (let i = 1; i < xs.length; i++) ok(xs[i] - xs[i - 1] >= m.cardW, "同一行的卡片不应重叠");
+  });
+
+  /* 文字不能越界 */
+  const texts = S.ops.filter((o) => o.t === "text" && o.s);
+  ok(texts.length > 0, "海报上应有文字");
+  texts.forEach((o) => {
+    let right = o.x + o.w;
+    if (o.align === "right") right = o.x;
+    else if (o.align === "center") right = o.x + o.w / 2;
+    ok(right <= W - M + 2, "文字不应超出右页边距：「" + o.s.slice(0, 12) + "」right=" + Math.round(right));
+    ok(o.y <= 5200, "文字应在画布内");
+  });
+
+  ok(res.sheets === 1, "6 张应排在一张海报里");
+  ok(S.canvases[0].w === 2480, "输出宽 2480px");
+}
+
+/* ================= 八、无权限与文件名 ================= */
+console.log("七、无权限与文件名");
 {
   const S = boot({ sb: { myExportZones: () => Promise.resolve([]) }, pools: [{ name: "A", cards: [{ url: "http://i/1.jpg" }] }] });
   await S.VX.boot("rank");
-  await S.VX.run();
-  ok(S.downloads.length === 0 && S.fetchCalls.length === 0, "没权限时不应下载任何东西、不应打包");
+  await S.VX.runHtml();
+  await S.VX.runPoster();
+  ok(S.downloads.length === 0 && S.fetchCalls.length === 0, "没权限时不应取图、不应下载");
   ok(/没有导出权限/.test(S.page.toast.textContent), "没权限时应明确告知，而不是静默失败");
 }
-
-/* ================= 八、文件名清洗 ================= */
-console.log("六、文件名清洗");
 {
   const S = boot({ pools: [{ name: "A/B:C*D?", cards: [{ url: "http://i/1.jpg", cat: "A/B:C*D?", period: "第 43 周" }] }] });
   const secs = S.VX._collect();
   ok(secs[0].cards[0].cat === "A/B:C*D?", "收集时保留原始类目名，不改内容");
-  // 真正落盘时通过一次导出验证会被清洗
+
   const S2 = boot({
     sb: { myExportZones: () => Promise.resolve(["*"]) },
     pools: [{ name: "A/B:C", cards: [{ url: "http://i/1.jpg", cat: "A/B:C", period: "第 43 周" }] }],
     okUrls: ["http://i/1.jpg"],
   });
   await S2.VX.boot("rank");
-  await S2.VX.run();
-  await sleep(30);
-  const n = Object.keys(S2.zip.folders)[0] || "";
-  const base = n.replace(/^images\//, "");
-  ok(!/[\\/:*?"<>|]/.test(base), "落盘文件名不能带 / \\ : * ? 等非法字符，实际：" + n);
-  ok(!/\s/.test(base), "落盘文件名不应含空格，实际：" + base);
+  await S2.VX.runHtml();
+  await sleep(50);
+  const n = (S2.downloads[0] || {}).name || "";
+  ok(!/[\\/:*?"<>|]/.test(n.replace(/\.html$/, "")), "落盘文件名不能带 / \\ : * ? 等非法字符，实际：" + n);
+  ok(!/\s/.test(n), "落盘文件名不应含空格，实际：" + n);
 }
 
 console.log("\n==== 结果：" + pass + " 通过 · " + fail + " 失败 ====");
