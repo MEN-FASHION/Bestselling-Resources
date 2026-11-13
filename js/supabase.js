@@ -2910,9 +2910,21 @@ async removeTrendRecord(id) {
       };
       /* 20261113B：批次也要记数据域，后台台账才能按专区分开看 */
       if (b.source) payload.source = b.source;
-      const { data, error } = await client.from("rank_batches").insert(payload).select("id").single();
-      if (error) throw new Error(error.message || "创建上传批次失败");
-      return data && data.id;
+      /* 20261113P：批次写入也走「缺列自愈」。
+         以前这里是裸 insert：rank_batches 若还没有 source 列（补结构脚本没跑，
+         或数据库 schema 缓存还没刷新），整条请求被拒 → 这一组导入 0 条 →
+         前台一条都不会变，用户看到的就是「我明明选了类目，前台还是老类目」。
+         现在缺列自动剔除重试；schema 缓存类报错再重试一次（缓存刷新后就通过了）。 */
+      let lastErr = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const ins = await this._safeInsert("rank_batches", payload, "id");
+        if (!ins.error) {
+          const row = (ins.data && ins.data[0]) || null;
+          return row && row.id;
+        }
+        lastErr = ins.error;
+      }
+      throw new Error(errHint(lastErr, "创建上传批次失败"));
     },
     // 批量写入榜单条目（重复的自动跳过：同一 类目+站点+期次+首图url 只留一条）
     // 导入写入：普通插入（不再让数据库层按「期次+类目+站点+图片」去重）。
@@ -3043,8 +3055,53 @@ async removeTrendRecord(id) {
       } catch (e) { return null; }
     },
     async updateRankBatch(id, patch) {
-      const { error } = await client.from("rank_batches").update(patch || {}).eq("id", id);
-      if (error) throw new Error(error.message || "更新批次失败");
+      /* 20261113P：同样做缺列自愈 —— 台账更新（条数/跳过数）不能因为一列不存在就整条失败 */
+      let body = Object.assign({}, patch || {});
+      for (let i = 0; i < 8; i++) {
+        body = this._dropMiss("rank_batches", body);
+        const { error } = await client.from("rank_batches").update(body).eq("id", id);
+        if (!error) return;
+        const col = this._missName(error);
+        if (col && Object.prototype.hasOwnProperty.call(body, col)) { this._missMark("rank_batches", col); continue; }
+        throw new Error(errHint(error, "更新批次失败"));
+      }
+    },
+    /* 只清「某一期次 + 某一类目」的数据（不限站点），用于「本期次其它类目」的清理。
+       和 deleteRankCategory（删该类目的所有期次）不同：这里只动一个期次，其它期次原样保留。 */
+    async deleteRankPeriodCategory(o) {
+      const periodType = (o && o.periodType) || "week";
+      const periodLabel = (o && o.periodLabel) || "";
+      const category = (o && o.category) || "";
+      const src = (o && o.source) || "";
+      const srcOk = src ? await this.rankSourceColumn() : false;
+      let items = 0;
+      for (let round = 0; round < 400; round++) {
+        let q = client.from("rank_items").select("id")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        if (src && srcOk) q = this._srcCond(q, src);
+        const { data, error } = await q.limit(500);
+        if (error) throw new Error(errHint(error, "读取该类目条目失败"));
+        const rows = data || [];
+        if (!rows.length) break;
+        await this.deleteRankItemsByIds(rows.map((r) => r.id));
+        items += rows.length;
+        if (rows.length < 500) break;
+      }
+      let batches = 0;
+      try {
+        let bq = client.from("rank_batches").select("id, source")
+          .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
+        const { data } = await bq;
+        let bs = data || [];
+        if (src && srcOk) {
+          bs = bs.filter((b) => {
+            const s = b && b.source ? String(b.source) : "";
+            return src === "rank" ? (s === "" || s === "rank") : s === src;
+          });
+        }
+        for (const b of bs) { await this.deleteRankBatch(b.id); batches++; }
+      } catch (e) { /* 批次仅作展示，失败忽略 */ }
+      return { items: items, batches: batches };
     },
     // 批次列表（后台管理）
     async listRankBatches(source) {

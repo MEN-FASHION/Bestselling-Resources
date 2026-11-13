@@ -23,3 +23,9 @@ from information_schema.columns
 where table_schema = 'public'
   and table_name in ('rank_items', 'rank_batches')
   and column_name = 'source';
+
+-- 20261113P：加完列必须让接口层刷新表结构缓存，否则会继续报
+--   Could not find the 'source' column of 'rank_batches' in the schema cache
+-- 这条错误的意思是「数据库里有没有这列我不确定，缓存里没有」，
+-- 只加列不刷新缓存，前端照样写不进去（表现就是导入 0 条、前台一点没变）。
+notify pgrst, 'reload schema';

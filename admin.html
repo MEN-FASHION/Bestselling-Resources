@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261113O">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261113O">
+<link rel="stylesheet" href="css/style.css?v=20261113P">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261113P">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -994,7 +994,11 @@
           </div>
           <div id="rank-undo-tip" class="rank-file-tip"></div>
           <div id="rank-file-tip" class="rank-file-tip"></div>
+          <!-- 20261113P：本次到底写进哪个类目，一眼可见、随选择实时刷新 -->
+          <div id="rank-slot-echo" style="display:none"></div>
           <div id="rank-preview" class="rank-preview"></div>
+          <!-- 20261113P：导入后核对「这几个期次里还有哪些其它类目」，并提供一次性清理 -->
+          <div id="rank-cat-alert" style="display:none"></div>
         </section>
 
         <section class="rkadm-sec">
@@ -1198,6 +1202,8 @@
           </div>
           <div id="rm-file-tip" class="rank-file-tip"></div>
           <div id="rm-preview" class="rank-preview"></div>
+          <!-- 20261113P：导完核对「这个期次里还有哪些其它类目」，并提供一次性清理 -->
+          <div id="rm-cat-alert" style="display:none"></div>
         </section>
 
         <section class="rkadm-sec">
@@ -1754,50 +1760,50 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261113O"></script>
-  <script src="vendor/quill.js?v=20261113O"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261113O"></script>
-  <script src="vendor/jszip.min.js?v=20261113O"></script>
-  <script src="vendor/qrcode.min.js?v=20261113O"></script>
-  <script src="js/site-norm.js?v=20261113O"></script>
-  <script src="js/config.js?v=20261113O"></script>
-  <script src="js/supabase.js?v=20261113O"></script>
+  <script src="vendor/supabase.js?v=20261113P"></script>
+  <script src="vendor/quill.js?v=20261113P"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261113P"></script>
+  <script src="vendor/jszip.min.js?v=20261113P"></script>
+  <script src="vendor/qrcode.min.js?v=20261113P"></script>
+  <script src="js/site-norm.js?v=20261113P"></script>
+  <script src="js/config.js?v=20261113P"></script>
+  <script src="js/supabase.js?v=20261113P"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261113O"></script>
+  <script src="js/admin-dialog.js?v=20261113P"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261113O"></script>
-  <script src="js/admin.js?v=20261113O"></script>
-  <script src="js/admin-images.js?v=20261113O"></script>
-  <script src="js/rank-enums.js?v=20261113O"></script>
-  <script src="js/imageexport.js?v=20261113O"></script>
-  <script src="js/admin-imageimport.js?v=20261113O"></script>
-  <script src="js/admin-movement.js?v=20261113O"></script>
-  <script src="js/admin-smart.js?v=20261113O"></script>
-  <script src="js/admin-trend.js?v=20261113O"></script>
-  <script src="js/admin-notice.js?v=20261113O"></script>
-  <script src="js/marketing-data.js?v=20261113O"></script>
-  <script src="js/admin-festival.js?v=20261113O"></script>
-  <script src="js/admin-tasks.js?v=20261113O"></script>
-  <script src="js/admin-bestseller.js?v=20261113O"></script>
-  <script src="js/ipgeo.js?v=20261113O"></script>
-  <script src="js/upload-owner.js?v=20261113O"></script>
-  <script src="js/admin-perm.js?v=20261113O"></script>
-  <script src="js/admin-pool.js?v=20261113O"></script>
-  <script src="js/rankexport.js?v=20261113O"></script>
-  <script src="js/admin-rankimport.js?v=20261113O"></script>
-<script src="js/mindmap.js?v=20261113O"></script>
-  <script src="js/flowchart.js?v=20261113O"></script>
-  <script src="js/gantt.js?v=20261113O"></script>
-<script src="js/admin-tools.js?v=20261113O"></script>
-<script src="js/admin-channelzone.js?v=20261113O"></script>
-<script src="js/admin-compare.js?v=20261113O"></script>
-  <script src="js/rank-cat-norm.js?v=20261113O"></script>
-<script src="js/rank-period-norm.js?v=20261113O"></script>
-  <script src="js/rhythm-calc.js?v=20261113O"></script>
-  <script src="js/admin-rank.js?v=20261113O"></script>
-  <script src="js/admin-rhythm.js?v=20261113O"></script>
-  <script src="js/admin-titlelab.js?v=20261113O"></script>
-  <script src="js/admin-backup.js?v=20261113O"></script>
+  <script src="js/find-similar.js?v=20261113P"></script>
+  <script src="js/admin.js?v=20261113P"></script>
+  <script src="js/admin-images.js?v=20261113P"></script>
+  <script src="js/rank-enums.js?v=20261113P"></script>
+  <script src="js/imageexport.js?v=20261113P"></script>
+  <script src="js/admin-imageimport.js?v=20261113P"></script>
+  <script src="js/admin-movement.js?v=20261113P"></script>
+  <script src="js/admin-smart.js?v=20261113P"></script>
+  <script src="js/admin-trend.js?v=20261113P"></script>
+  <script src="js/admin-notice.js?v=20261113P"></script>
+  <script src="js/marketing-data.js?v=20261113P"></script>
+  <script src="js/admin-festival.js?v=20261113P"></script>
+  <script src="js/admin-tasks.js?v=20261113P"></script>
+  <script src="js/admin-bestseller.js?v=20261113P"></script>
+  <script src="js/ipgeo.js?v=20261113P"></script>
+  <script src="js/upload-owner.js?v=20261113P"></script>
+  <script src="js/admin-perm.js?v=20261113P"></script>
+  <script src="js/admin-pool.js?v=20261113P"></script>
+  <script src="js/rankexport.js?v=20261113P"></script>
+  <script src="js/admin-rankimport.js?v=20261113P"></script>
+<script src="js/mindmap.js?v=20261113P"></script>
+  <script src="js/flowchart.js?v=20261113P"></script>
+  <script src="js/gantt.js?v=20261113P"></script>
+<script src="js/admin-tools.js?v=20261113P"></script>
+<script src="js/admin-channelzone.js?v=20261113P"></script>
+<script src="js/admin-compare.js?v=20261113P"></script>
+  <script src="js/rank-cat-norm.js?v=20261113P"></script>
+<script src="js/rank-period-norm.js?v=20261113P"></script>
+  <script src="js/rhythm-calc.js?v=20261113P"></script>
+  <script src="js/admin-rank.js?v=20261113P"></script>
+  <script src="js/admin-rhythm.js?v=20261113P"></script>
+  <script src="js/admin-titlelab.js?v=20261113P"></script>
+  <script src="js/admin-backup.js?v=20261113P"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1859,7 +1865,7 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261113O"></script>
+  <script src="js/ui-dialog.js?v=20261113P"></script>
 </body>
 </body>
 </html>

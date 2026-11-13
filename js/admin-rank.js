@@ -443,18 +443,41 @@
   }
 
   /* ---------- 类目下拉（复用「类目管理」，可自定义添加） ---------- */
+  /* 20261113P：类目选择记在本地。
+     以前下拉一重建（打开面板、改「类目管理」、导完一次）就把已选的类目丢掉，
+     下一个值是「请选择类目…」或别的类目，导进去的类目和用户以为的不是同一个。
+     现在：换过就记住；重建时即使它不在「类目管理」里，也补回一个选项，绝不静默丢。 */
+  const RANK_CAT_KEY = "sb.rank.pickCat";
+  function rankCatMemo(v) {
+    try {
+      if (v === undefined) return localStorage.getItem(RANK_CAT_KEY) || "";
+      localStorage.setItem(RANK_CAT_KEY, String(v || ""));
+    } catch (e) { /* 隐私模式忽略 */ }
+    return "";
+  }
+
   async function loadRankCats() {
     try { rankCats = await SB.listActiveCats(); } catch (e) { rankCats = []; }
     const sel = $("#rank-cat");
     if (!sel) return;
-    const keep = sel.value;
+    const keep = sel.value || rankCatMemo();
     const CATS = window.CAT_SEARCH;
     let favs = [];
     try { favs = await SB.myFavCats(); } catch (e) { favs = []; }
     const ordered = CATS ? CATS.sortCats(rankCats, favs) : rankCats.map(n => ({ name: n, fav: false }));
     sel.innerHTML = '<option value="">请选择类目…</option>' +
       ordered.map(o => '<option value="' + escAttr(o.name) + '">' + (o.fav ? "★ " : "") + escHtml(o.name) + '</option>').join("");
-    if (keep && rankCats.indexOf(keep) >= 0) sel.value = keep;
+    if (keep) {
+      /* 记忆的类目若不在「类目管理」里（历史/临时类目），补一个选项，别把用户的已选清掉 */
+      let has = false;
+      for (const op of Array.from(sel.options)) if (op.value === keep) { has = true; break; }
+      if (!has) {
+        const op = document.createElement("option");
+        op.value = keep; op.textContent = keep + "（历史类目）";
+        sel.appendChild(op);
+      }
+      sel.value = keep;
+    }
     // 类目很多时先搜再选；搜索只隐藏不匹配项，不动已选中的值
     if (CATS) {
       CATS.mountBox(sel, "cat-search-rank", "搜索类目…", (v) => { CATS.kw("rank", v); CATS.filterSelect(sel, v); });
@@ -617,6 +640,127 @@
     }
   }
 
+  /* ---------- 导入异常的中文解释 ----------
+     数据库的报错是英文的（Could not find the 'source' column of 'rank_batches'
+     in the schema cache），直接甩给用户等于没说。这里翻成「发生了什么 + 怎么办」。 */
+  function explainFail(msg) {
+    const s = String(msg || "");
+    if (/Could not find the ['"]?([A-Za-z0-9_]+)['"]? column|schema cache/i.test(s)) {
+      const m = s.match(/Could not find the ['"]?([A-Za-z0-9_]+)['"]? column/i);
+      const col = m ? m[1] : "";
+      return "数据库结构还没更新（缺 " + (col || "新增") + " 列），已自动跳过该列重试；"
+        + "这一组没写进去，前台不会变。请执行一次「补结构」脚本（或让管理员刷新数据库表结构）后再导";
+    }
+    if (/等待超时|timeout/i.test(s)) return "等待超时（可能已部分写入，请核对条数后再决定是否重导）";
+    if (/Failed to fetch|NetworkError|network|网络/i.test(s)) return "网络中断（检查网络后重试）";
+    if (/null value in column/i.test(s)) return "表里有必填字段是空的（原表格缺列）";
+    if (/23505|duplicate key/i.test(s)) return "库里还留着旧的唯一约束，写入被拒（先做一次覆盖导入即可）";
+    return s.slice(0, 140);
+  }
+
+  /* ---------- 本期次「其它类目」核对 ----------
+     后台选「打底/压缩」导入时，覆盖只清「本期次 · 本次所选类目」，
+     同期的旧类目（比如以前按表格类目导进来的「运动功能服」）一条都不会动，
+     于是前台照样显示「运动功能服」—— 用户就会以为「我选的类目没生效」。
+     这里把它摆到明面上，并给一个一次性清理入口（带二次确认）。 */
+  async function showOtherCats(periodType, periods, keepCats, opt) {
+    const o = opt || {};
+    const boxId = o.boxId || "rank-cat-alert";
+    const src = o.source || SOURCE;
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    box.style.display = "none";
+    box.innerHTML = "";
+    if (!periods || !periods.length) return;
+    let list = [];
+    try { list = await SB.listRankBatches(src); } catch (e) { return; }
+    const map = {};
+    (list || []).forEach((b) => {
+      if (String(b.period_type || "week") !== String(periodType || "week")) return;
+      const p = String(b.period_label || "");
+      if (!p || periods.indexOf(p) < 0) return;
+      const c = String(b.category || "");
+      if (keepCats && keepCats[c]) return;
+      const k = p + "\u0000" + c;
+      if (!map[k]) map[k] = { period: p, category: c, sites: {}, rows: 0 };
+      map[k].rows += (typeof b.rows === "number" ? b.rows : 0);
+      String(b.site || "").split(",").map((s) => s.trim()).filter(Boolean)
+        .forEach((s) => { map[k].sites[s] = 1; });
+    });
+    const items = Object.keys(map).map((k) => map[k]);
+    if (!items.length) return;
+    /* 条数按槽位精确数一遍（批次自带的 rows 只是上次写入时的数字） */
+    for (const it of items) {
+      try {
+        const n = await SB.countRankSlot({
+          periodType: periodType, periodLabel: it.period, category: it.category,
+          sites: Object.keys(it.sites), source: src,
+        });
+        if (typeof n === "number") it.rows = n;
+      } catch (e) { /* 用批次汇总值兜底 */ }
+    }
+    const keep = items.filter((it) => (it.rows || 0) > 0);
+    if (!keep.length) return;
+    const total = keep.reduce((a, b) => a + (b.rows || 0), 0);
+
+    box.style.display = "";
+    box.style.cssText = "display:block;margin:10px 0;padding:10px 12px;border:1px solid #f0b429;"
+      + "background:#fffbe8;border-radius:8px;font-size:13px;line-height:1.7";
+    const head = document.createElement("div");
+    head.innerHTML = "⚠️ <b>这几个期次里还有「其它类目」的旧数据（合计 " + total + " 条）</b>"
+      + "—— 覆盖只清「本次所选类目」，它们不会被删除，前台会照常显示：";
+    box.appendChild(head);
+    const listEl = document.createElement("div");
+    listEl.style.cssText = "margin:6px 0 8px;color:#8a5a00";
+    listEl.textContent = keep.slice(0, 12).map((it) => it.period + " · " + (it.category || "(未填类目)") + " · " + (it.rows || 0) + " 条").join("　|　")
+      + (keep.length > 12 ? "　…共 " + keep.length + " 项" : "");
+    box.appendChild(listEl);
+    const bar = document.createElement("div");
+    bar.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn-ghost small";
+    del.textContent = "删除这些其它类目（前台只剩本次类目）";
+    del.onclick = async () => {
+      const names = keep.slice(0, 8).map((it) => it.period + " · " + (it.category || "(未填类目)")).join("\n");
+      /* 20261113P：这个动作会真删数据，必须点确认；删之前提醒可先用「导出打标表」留底 */
+      if (typeof uiConfirm === "function") {
+        const ok = await uiConfirm("删除下列「其它类目」的全部条目和上传记录？\n\n"
+          + names + (keep.length > 8 ? "\n…共 " + keep.length + " 项" : "")
+          + "\n\n共 " + total + " 条，只影响本专区、只影响这些期次；删了不会自动回来。\n"
+          + "（打标标签按图片地址另存，删条目不会丢标签；要留底请先「导出打标表」）");
+        if (!ok) return;
+      }
+      del.disabled = true;
+      let n = 0, bad = 0;
+      for (const it of keep) {
+        try {
+          const r = await SB.deleteRankPeriodCategory({
+            periodType: periodType, periodLabel: it.period,
+            category: it.category, source: src,
+          });
+          n += (r && r.items) || 0;
+        } catch (e) { bad += 1; }
+        head.innerHTML = "正在清理其它类目… 已删 " + n + " 条" + (bad ? " · 失败 " + bad + " 项" : "");
+      }
+      try { if (typeof o.onDone === "function") await o.onDone(); else { await loadRankBatches(); rankPreviewRefresh(); } } catch (e) { /* 刷新失败不影响结果 */ }
+      box.style.display = "none";
+      box.innerHTML = "";
+      sbToast("已删除其它类目 " + n + " 条" + (bad ? "，失败 " + bad + " 项" : "") + "。刷新前台即可只看到本次导入的类目。", bad === 0);
+    };
+    const keepBtn = document.createElement("button");
+    keepBtn.type = "button";
+    keepBtn.className = "btn-ghost small";
+    keepBtn.textContent = "保留（知道了）";
+    keepBtn.onclick = () => { box.style.display = "none"; box.innerHTML = ""; };
+    bar.appendChild(del);
+    bar.appendChild(keepBtn);
+    box.appendChild(bar);
+  }
+
+  /* 其它专区面板（上新节奏 / 标题组词台）复用同一套「其它类目」核对 */
+  try { window.RankOtherCatsCheck = showOtherCats; } catch (e) { /* 忽略 */ }
+
   function renderRankPreview() {
     const tip = $("#rank-file-tip");
     const box = $("#rank-preview");
@@ -663,6 +807,25 @@
         + (perNorm.length > 6 ? " ……（共 " + perNorm.length + " 个）" : "")
         + (periodPicked ? "；你在上方选了「" + periodPicked + "」，以所选为准" : " —— 上方日历可以留空，导入时统一记作「第N周」")
       : "";
+    /* 20261113P：把「这次到底写进哪个类目」写成一条不可忽略的硬信息。
+       以前类目只在正文里一句「全部归入类目 X」，改类目时预览不会刷新，
+       用户以为选了 A，实际写进 B —— 前台自然显示 B。 */
+    const slotBox = $("#rank-slot-echo");
+    if (slotBox) {
+      const _pt = (document.querySelector('input[name="rank-period"]:checked') || {}).value || "week";
+      const _pl = ($("#rank-period-label").value || "").trim();
+      const _md = (document.querySelector('input[name="rank-mode"]:checked') || {}).value || "replace";
+      const _st = [...document.querySelectorAll('#rank-site-defaults input[type="checkbox"]:checked')].map(c => c.value);
+      const _cat = pickedCat || "其他";
+      const _per = _pl || (perNorm.length === 1 ? "表格自带「" + perNorm[0] + "」" : perNorm.length ? "表格自带的 " + perNorm.length + " 个期次" : "未定（请选期次）");
+      slotBox.innerHTML = "本次写入 → 期次 <b>" + escHtml(_per) + "</b> · 类目 <b style=\"color:#0a7\">"
+        + escHtml(_cat) + "</b>" + (pickedCat ? "" : "（<b>你没选类目</b>，将归入「其他」）")
+        + " · 站点 <b>" + escHtml(_st.length ? _st.join("、") : "按表格站点列") + "</b>"
+        + " · 方式 <b>" + (_md === "replace" ? "覆盖（先清本期次本类目旧数据）" : "追加（只补新图）") + "</b>"
+        + " · " + rows.length + " 行";
+      slotBox.style.cssText = "margin:8px 0;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.7;"
+        + "background:" + (pickedCat ? "#f2fbf5" : "#fffbe8") + ";border:1px solid " + (pickedCat ? "#b7e3c6" : "#f0b429");
+    }
     if (tip) tip.textContent = "✅ 已识别 " + rankParsed.fileName + "：共 " + rows.length + " 行"
       + (groupNote ? " · " + groupNote : "")
       + (periodNote ? " · " + periodNote : "");
@@ -975,9 +1138,9 @@
           periodSet[g.period] = 1;
           catSet[g.category] = 1;
           if (ins > 0) undoGroups.push({ period: g.period, category: g.category, sites: g.slotSites, source: SOURCE, batchId: batchId });
-          if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入");
+          if (payload.length > 0 && ins === 0) failed.push(g.period + " · " + g.category + "：0 条写入（一条都没进库）");
         } catch (e) {
-          failed.push(g.period + " · " + g.category + "：" + ((e && e.message) || "失败"));
+          failed.push(g.period + " · " + g.category + "：" + explainFail((e && e.message) || "失败"));
         }
       };
       /* 光靠按钮文字不够显眼（按钮在很下面，用户视线往往停在页面上方），
@@ -1020,7 +1183,7 @@
           await Promise.race([
             runGroup(g),
             new Promise(resolve => setTimeout(() => {
-              failed.push(g.period + " · " + g.category + "：等待超时（可能已部分写入，导完请核对）");
+              failed.push(g.period + " · " + g.category + "：" + explainFail("等待超时（可能已部分写入，请核对条数）"));
               resolve();
             }, GROUP_TIMEOUT_MS)),
           ]);
@@ -1032,13 +1195,24 @@
       try { window.__rankImportTicker = null; } catch (e) { /* 忽略 */ }
       if (progEl) { progEl.textContent = "✅ " + TOTAL + " 组已处理完 · 共 " + Math.round((Date.now() - t0) / 1000) + " 秒"; }
 
+      /* 20261113P：导完立刻核对「这几个期次里还有哪些其它类目」。
+         覆盖只清本次所选类目，同期别的类目（旧数据）会留在前台，
+         以前没有任何提示，看起来就像「我选的类目没生效」。 */
+      try {
+        const keepMap = {};
+        gf.groups.forEach((g) => { keepMap[g.category] = 1; });
+        const periodsTried = Array.from(new Set(gf.groups.map((g) => g.period)));
+        await showOtherCats(periodType, periodsTried, keepMap);
+      } catch (e) { /* 核对失败不影响导入结果提示 */ }
+
       const nPeriod = Object.keys(periodSet).length;
       const nCat = Object.keys(catSet).length;
       const head = multi
         ? "已按时段与类目拆成 " + gf.groups.length + " 组（期次 " + nPeriod + " 个 · 类目 " + nCat + " 个）导入："
         : "导入完成：";
       let msg = head
-        + (useMine ? "按我定义的站点归入「" + defaults.join("、") + "」" : "按表格站点列归入")
+        + "写入「" + Object.keys(catSet).map((c) => c || "其他").join("、") + "」类目 "
+        + (useMine ? "（站点 " + defaults.join("、") + "）" : "（按表格站点列归入）")
         + "，写入 " + inserted + " 条";
       if (mode === "replace" && clearedItems > 0) msg += "（已替换旧数据 " + clearedItems + " 条）";
       if (mode === "append" && skippedExisting > 0) msg += "（库里已存在 " + skippedExisting + " 条未重复写入）";
@@ -1975,6 +2149,15 @@
     const groupNew = $("#rank-group-new");
     if (groupNew) groupNew.onkeydown = (ev) => { if (ev.key === "Enter" && groupAdd) groupAdd.click(); };
 
+    /* 20261113P：换类目要立刻反映到「本次写入」那一条上。
+       以前改类目不刷新预览，界面上写的还是改之前的类目，很容易「以为选了 A、其实写的是 B」。 */
+    const catSel = $("#rank-cat");
+    if (catSel) {
+      const onCatChange = () => { rankCatMemo(catSel.value || ""); if (rankParsed) renderRankPreview(); };
+      catSel.addEventListener("change", onCatChange);
+      catSel.addEventListener("input", onCatChange);
+    }
+
     const catAdd = $("#rank-cat-add");
     if (catAdd) catAdd.onclick = async () => {
       const v = (await uiPrompt("输入新类目名称（将同步到「标签管理 → 前台类目」）：") || "").trim();
@@ -1983,7 +2166,7 @@
         await SB.addCategory(v);
         await loadRankCats(); fillRankPvControls();
         const sel = $("#rank-cat");
-        if (sel) sel.value = v;
+        if (sel) { sel.value = v; rankCatMemo(v); if (rankParsed) renderRankPreview(); }
         sbToast("已新增类目「" + v + "」", true);
       } catch (e) { sbToast((e && e.message) || "新增类目失败", false); }
     };

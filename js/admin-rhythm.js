@@ -901,6 +901,18 @@
       $("#rm-file-tip").textContent = "";
       $("#rm-preview").innerHTML = "";
       await loadRankBatches();
+      /* 20261113P：和历史数据核对一次 —— 覆盖只清「本期次 · 本类目」，
+         同期别的类目会留在前台，以前没有任何提示，看起来像「选了类目没生效」。 */
+      try {
+        if (window.RankOtherCatsCheck) {
+          const keepMap = {};
+          keepMap[category] = 1;
+          await window.RankOtherCatsCheck(periodType, [periodLabel], keepMap, {
+            boxId: "rm-cat-alert", source: "rhythm",
+            onDone: async () => { await loadRankBatches(); rankPreviewRefresh(); },
+          });
+        }
+      } catch (e) { /* 核对失败不影响导入结果 */ }
     } catch (e) {
       sbToast("导入失败：" + ((e && e.message) || "请重试"), false);
     } finally {
