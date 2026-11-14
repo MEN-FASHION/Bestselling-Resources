@@ -3110,7 +3110,7 @@ async removeTrendRecord(id) {
       /* 20261113B：带上数据域，后台台账才能按域区分；库里没有该列时自动退回旧字段，
          不至于因为一列不存在整块台账打不开。
          20261113C：新增 source 参数 —— 后台上传与台账按专区彻底分开，各面板只读自己的域。 */
-      /* 20261114J：列探测改成问批次表本身（以前问的是条目表，两张表补列进度不一致时必然错判） */
+      /* 20261114K：列探测改成问批次表本身（以前问的是条目表，两张表补列进度不一致时必然错判） */
       const withSrc = await this.rankBatchSourceColumn();
       const cols = "id, period_type, period_label, category, site, rows, skipped, created_at"
         + (withSrc ? ", source" : "");
@@ -3180,7 +3180,7 @@ async removeTrendRecord(id) {
          更不该改到上新节奏 / 标题组词台里的同名类目。 */
       const want = source ? String(source) : "";
       const srcOk = want ? await this.rankSourceColumn() : false;
-      /* 20261114J：批次表用批次表自己的探测结果，别拿条目表的去凑（缺列时整条 400） */
+      /* 20261114K：批次表用批次表自己的探测结果，别拿条目表的去凑（缺列时整条 400） */
       const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
       const hit = (s) => {
         if (!want || !srcOk) return true;
@@ -3257,7 +3257,7 @@ async removeTrendRecord(id) {
         if (rows.length < 500) break;
       }
       let batches = 0;
-      /* 20261114J：同样的坑 —— 写死 select("id, source") 在缺列的库上必然 400，
+      /* 20261114K：同样的坑 —— 写死 select("id, source") 在缺列的库上必然 400，
          这里以前是直接 throw，于是"条目删完了、台账删不掉"，前台类目依旧存在。 */
       const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
       const { data: bs0, error: be } = await client.from("rank_batches")
@@ -3324,7 +3324,7 @@ async removeTrendRecord(id) {
         moved += news.length;
         if (list.length < 500) break;
       }
-      /* 20261114J：批次台账删除不能「静默失败」。
+      /* 20261114K：批次台账删除不能「静默失败」。
          以前这里写死 select("id, source")：库里的 rank_batches 若还没有 source 列，
          这一条就是 400，而错误被忽略 → 条目迁走了、台账还在 →
          前台类目菜单照样有「工装」，用户看到的就是"合并不了"。
@@ -3559,7 +3559,7 @@ async removeTrendRecord(id) {
       } catch (e) { this._srcColOk = false; }
       return this._srcColOk;
     },
-    /* 20261114J：批次表的 source 列要单独探测。
+    /* 20261114K：批次表的 source 列要单独探测。
        事故：合并类目时「条目已迁走、批次台账没删掉」，前台类目照旧显示，看着就是"合并不了"。
        根因：卡在 rank_items 上的探测结果被拿去给 rank_batches 用了。
        两张表各自补列、各自可能缺列，必须分开问。 */

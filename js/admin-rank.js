@@ -1704,7 +1704,7 @@
     try { cats = await SB.listRankCategories(SOURCE); } catch (e) { cats = null; }
     if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
     if (!cats.length) { panel.innerHTML = '<div class="hint">还没有类目。</div>'; return; }
-    /* 20261114J：台账里的 rows 大量是 0（导入时没回填），面板上就全是「约 0 条」，
+    /* 20261114K：台账里的 rows 大量是 0（导入时没回填），面板上就全是「约 0 条」，
        看着像没有数据、也没法判断合并到底成了没有。这里按条目表真实清点。
        最多清点 60 个类目（并发 6），再多就退回台账估算，避免把面板拖慢。 */
     const trueCnt = {};

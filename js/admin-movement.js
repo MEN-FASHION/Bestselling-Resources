@@ -269,8 +269,8 @@
         "</div>" +
         '<div class="gmeta">' +
         '<div class="gname">' + esc((r.title || "").slice(0, 40) || "—") + "</div>" +
-        '<div class="gsub">' + esc(r.category || "未分类") +
-        '<span class="mv-prog' + (filled >= DIMS.length ? " is-done" : "") + '">' + filled + "/" + DIMS.length + "</span></div>" +
+        /* 20261114K：同上，卡片上不再挂「已打标 n/13」 */
+        '<div class="gsub">' + esc(r.category || "未分类") + "</div>" +
         "</div>";
       card.onclick = function () { openTag(r.id); };
       box.appendChild(card);
