@@ -7586,51 +7586,18 @@ body.front[data-img-size="s"] .mv-season-badge { font-size: 10px; padding: 1px 5
 body.front[data-img-size="s"] .mv-card { border-radius: 8px; }
 body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px; }
 
-/* ===== 数据统计（20261114K）—— 顶部一个按钮，点开弹窗看「谁 / 几号 / 哪些类目 / 多少张」 ===== */
-.updash-slot { margin: 0 0 10px; }
-.updash-btn {
-  display: inline-flex; align-items: center; gap: 7px; font: inherit;
-  font-size: 12.5px; font-weight: 600; line-height: 1.7;
-  padding: 4px 13px; color: #3a3428; background: #fffdf8;
-  border: 1px solid #e2ddd4; border-radius: 999px; cursor: pointer;
-  transition: background .16s ease, border-color .16s ease, box-shadow .16s ease;
-}
-.updash-btn:hover { background: #fff; border-color: #cfc7b6; box-shadow: 0 1px 3px rgba(35,28,15,.07); }
-.updash-btn .updash-ico { font-size: 13px; opacity: .7; }
-.updash-btn .updash-hint { font-weight: 400; color: #9a9285; font-size: 11.5px; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.updash-modal {
-  position: fixed; inset: 0; z-index: 9990; display: none;
-  align-items: center; justify-content: center; padding: 18px;
-  background: rgba(28,24,17,.42); backdrop-filter: blur(2px);
-}
-.updash-modal.is-open { display: flex; }
-.updash-card {
-  width: min(880px, 100%); max-height: min(82vh, 780px);
-  display: flex; flex-direction: column; background: #fffdf8;
-  border: 1px solid #e7e0d3; border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(30,24,12,.22);
-  animation: updashIn .18s ease-out;
-}
-@keyframes updashIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
-.updash-mhead {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 12px clamp(13px, 2vw, 17px); border-bottom: 1px solid #efeade;
-}
-.updash-mt { font-size: 14px; font-weight: 700; color: #3a3428; }
-.updash-msub { font-size: 12px; color: #8b8477; }
-.updash-refresh {
-  margin-left: auto; font: inherit; font-size: 12px; padding: 2px 11px;
-  color: #4a443b; background: #fff; border: 1px solid #e2ddd4;
+/* ===== 数据统计（20261114L）—— 后台独立面板，按专区一个页签、各自独立统计 ===== */
+.updash-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.updash-tab {
+  font: inherit; font-size: 12.5px; line-height: 1.7; padding: 3px 13px;
+  color: #4a443b; background: #fffdf8; border: 1px solid #e2ddd4;
   border-radius: 999px; cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
 }
-.updash-refresh:hover { background: #f6f3ee; }
-.updash-x {
-  font: inherit; font-size: 18px; line-height: 1; width: 26px; height: 26px;
-  color: #8b8477; background: transparent; border: 0; border-radius: 8px; cursor: pointer;
-}
-.updash-x:hover { background: #f1ece1; color: #3a3428; }
-.updash-mbody { padding: 12px clamp(13px, 2vw, 17px) 14px; overflow: auto; }
+.updash-tab:hover { background: #fff; border-color: #cfc7b6; }
+.updash-tab.is-active { color: #fff; background: #3a3428; border-color: #3a3428; font-weight: 600; }
+.updash-sub { font-size: 12px; color: #8b8477; margin: 0 0 8px; }
+.updash-body { min-height: 60px; }
 .updash-load, .updash-empty { font-size: 12.5px; color: #8b8477; padding: 2px 0 4px; }
 .updash-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .updash-chip {
@@ -7640,7 +7607,7 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 .updash-chip b { font-weight: 600; }
 .updash-chip i { font-style: normal; color: #9a9285; font-size: 11.5px; }
 .updash-chip.is-hist { background: #f3f1ec; color: #7a7367; }
-.updash-scroll { max-height: min(58vh, 560px); overflow: auto; border: 1px solid #efeade; border-radius: 10px; }
+.updash-scroll { max-height: min(62vh, 620px); overflow: auto; border: 1px solid #efeade; border-radius: 10px; }
 .updash-tb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .updash-tb th, .updash-tb td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid #f1ece1; }
 .updash-tb thead th {
@@ -7659,3 +7626,4 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 .updash-cat b { font-weight: 600; color: #111827; }
 .updash-n { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .updash-tip { font-size: 11.5px; color: #9a9285; margin-top: 8px; line-height: 1.7; }
+

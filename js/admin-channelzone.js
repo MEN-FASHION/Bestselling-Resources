@@ -617,7 +617,7 @@
       "</div>" +
       '<div class="gmeta">' +
       '<div class="gname">' + esc(r.category || "未分类") + "</div>" +
-      /* 20261114K：卡片右下角不再显示「已打标 n/13」——选图时这个数字只造成干扰，
+      /* 20261114L：卡片右下角不再显示「已打标 n/13」——选图时这个数字只造成干扰，
          整体进度在上方工具条「共 N 张 · 已打标 M 张」里看 */
       '<div class="gsub">' + esc(r.channel || st.zone.channel) + "</div>" +
       (r.uploaded ? '<div class="cz-up">上传 ' + esc(r.uploaded) + "</div>" : "") +

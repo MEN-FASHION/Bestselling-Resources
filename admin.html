@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261114K">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261114K">
+<link rel="stylesheet" href="css/style.css?v=20261114L">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261114L">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -120,6 +120,7 @@
         <a class="nav-item" data-target="pinterest-card">Pinterest 专区</a>
         <a class="nav-item" data-target="shein-card">SHEIN 专区</a>
         <a class="nav-item" data-target="compare-card">渠道对比</a>
+        <a class="nav-item" data-target="uploaddash-card">数据统计</a>
         <a class="nav-item" data-target="tools-card">实用工具</a>
         <a class="nav-item" data-target="mk-card" data-super="1">营销日历</a>
           <a class="nav-item" data-target="backup-card" data-super="1">版本恢复</a>
@@ -1379,6 +1380,30 @@
          数据存 site_settings.frontend_dims，不改表结构。 -->
     <div class="panel-card hidden" id="tools-card"></div>
 
+    <!-- ================= 数据统计（20261114L） =================
+         原先放在前台各专区顶部的「数据统计」，按要求搬到后台。
+         面板内按专区各一个页签，每个专区独立统计：谁、几号、在哪些类目、各传了多少张。
+         内容由 js/upload-dash.js 渲染；数据全部来自已有表与上传归属，不改表结构、不跑 SQL。 -->
+    <div class="panel-card hidden" id="uploaddash-card">
+      <div class="rkadm-head">
+        <div>
+          <h3>数据统计</h3>
+          <p class="hint">
+            按<b>专区分开统计</b>：每个页签只看该专区自己的上传记录，互不混算。
+            统计口径为「谁 · 几号 · 在哪些类目 · 各传了多少张」，<b>所有管理员都能看到全员的上传量</b>。
+          </p>
+        </div>
+        <div class="rkadm-head-act">
+          <button id="updash-refresh" class="btn-ghost" type="button">重新统计</button>
+        </div>
+      </div>
+      <div class="updash-tabs" id="updash-tabs" role="tablist"></div>
+      <p class="updash-sub" id="updash-sub">统计中…</p>
+      <div class="updash-body" id="updash-body">
+        <div class="updash-load">正在汇总上传记录…</div>
+      </div>
+    </div>
+
     <!-- ================= 渠道对比 · 对比列配置 =================
          渠道对比页（compare.html）是只读聚合页：把「上新节奏（月度）」与
          各渠道专区的图按「类目 + 月度」并排成多列。这里只配「对比哪几列」。 -->
@@ -1760,50 +1785,51 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261114K"></script>
-  <script src="vendor/quill.js?v=20261114K"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261114K"></script>
-  <script src="vendor/jszip.min.js?v=20261114K"></script>
-  <script src="vendor/qrcode.min.js?v=20261114K"></script>
-  <script src="js/site-norm.js?v=20261114K"></script>
-  <script src="js/config.js?v=20261114K"></script>
-  <script src="js/supabase.js?v=20261114K"></script>
+  <script src="vendor/supabase.js?v=20261114L"></script>
+  <script src="vendor/quill.js?v=20261114L"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261114L"></script>
+  <script src="vendor/jszip.min.js?v=20261114L"></script>
+  <script src="vendor/qrcode.min.js?v=20261114L"></script>
+  <script src="js/site-norm.js?v=20261114L"></script>
+  <script src="js/config.js?v=20261114L"></script>
+  <script src="js/supabase.js?v=20261114L"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261114K"></script>
+  <script src="js/admin-dialog.js?v=20261114L"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261114K"></script>
-  <script src="js/admin.js?v=20261114K"></script>
-  <script src="js/admin-images.js?v=20261114K"></script>
-  <script src="js/rank-enums.js?v=20261114K"></script>
-  <script src="js/imageexport.js?v=20261114K"></script>
-  <script src="js/admin-imageimport.js?v=20261114K"></script>
-  <script src="js/admin-movement.js?v=20261114K"></script>
-  <script src="js/admin-smart.js?v=20261114K"></script>
-  <script src="js/admin-trend.js?v=20261114K"></script>
-  <script src="js/admin-notice.js?v=20261114K"></script>
-  <script src="js/marketing-data.js?v=20261114K"></script>
-  <script src="js/admin-festival.js?v=20261114K"></script>
-  <script src="js/admin-tasks.js?v=20261114K"></script>
-  <script src="js/admin-bestseller.js?v=20261114K"></script>
-  <script src="js/ipgeo.js?v=20261114K"></script>
-  <script src="js/upload-owner.js?v=20261114K"></script>
-  <script src="js/admin-perm.js?v=20261114K"></script>
-  <script src="js/admin-pool.js?v=20261114K"></script>
-  <script src="js/rankexport.js?v=20261114K"></script>
-  <script src="js/admin-rankimport.js?v=20261114K"></script>
-<script src="js/mindmap.js?v=20261114K"></script>
-  <script src="js/flowchart.js?v=20261114K"></script>
-  <script src="js/gantt.js?v=20261114K"></script>
-<script src="js/admin-tools.js?v=20261114K"></script>
-<script src="js/admin-channelzone.js?v=20261114K"></script>
-<script src="js/admin-compare.js?v=20261114K"></script>
-  <script src="js/rank-cat-norm.js?v=20261114K"></script>
-<script src="js/rank-period-norm.js?v=20261114K"></script>
-  <script src="js/rhythm-calc.js?v=20261114K"></script>
-  <script src="js/admin-rank.js?v=20261114K"></script>
-  <script src="js/admin-rhythm.js?v=20261114K"></script>
-  <script src="js/admin-titlelab.js?v=20261114K"></script>
-  <script src="js/admin-backup.js?v=20261114K"></script>
+  <script src="js/find-similar.js?v=20261114L"></script>
+  <script src="js/admin.js?v=20261114L"></script>
+  <script src="js/admin-images.js?v=20261114L"></script>
+  <script src="js/rank-enums.js?v=20261114L"></script>
+  <script src="js/imageexport.js?v=20261114L"></script>
+  <script src="js/admin-imageimport.js?v=20261114L"></script>
+  <script src="js/admin-movement.js?v=20261114L"></script>
+  <script src="js/admin-smart.js?v=20261114L"></script>
+  <script src="js/admin-trend.js?v=20261114L"></script>
+  <script src="js/admin-notice.js?v=20261114L"></script>
+  <script src="js/marketing-data.js?v=20261114L"></script>
+  <script src="js/admin-festival.js?v=20261114L"></script>
+  <script src="js/admin-tasks.js?v=20261114L"></script>
+  <script src="js/admin-bestseller.js?v=20261114L"></script>
+  <script src="js/ipgeo.js?v=20261114L"></script>
+  <script src="js/upload-owner.js?v=20261114L"></script>
+  <script src="js/admin-perm.js?v=20261114L"></script>
+  <script src="js/admin-pool.js?v=20261114L"></script>
+  <script src="js/rankexport.js?v=20261114L"></script>
+  <script src="js/admin-rankimport.js?v=20261114L"></script>
+<script src="js/mindmap.js?v=20261114L"></script>
+  <script src="js/flowchart.js?v=20261114L"></script>
+  <script src="js/gantt.js?v=20261114L"></script>
+<script src="js/admin-tools.js?v=20261114L"></script>
+<script src="js/admin-channelzone.js?v=20261114L"></script>
+<script src="js/admin-compare.js?v=20261114L"></script>
+  <script src="js/rank-cat-norm.js?v=20261114L"></script>
+<script src="js/rank-period-norm.js?v=20261114L"></script>
+  <script src="js/rhythm-calc.js?v=20261114L"></script>
+  <script src="js/admin-rank.js?v=20261114L"></script>
+  <script src="js/admin-rhythm.js?v=20261114L"></script>
+  <script src="js/admin-titlelab.js?v=20261114L"></script>
+  <script src="js/admin-backup.js?v=20261114L"></script>
+  <script src="js/upload-dash.js?v=20261114L"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1865,6 +1891,6 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261114K"></script>
+  <script src="js/ui-dialog.js?v=20261114L"></script>
 </body>
 </html>

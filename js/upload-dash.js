@@ -1,10 +1,12 @@
 /* ============================================================================
- * upload-dash.js —— 前台「数据统计」（20261114K）
+ * upload-dash.js —— 后台「数据统计」（20261114L）
  * ----------------------------------------------------------------------------
- * 相对上一版的改动：
- *   1) 统计不再常驻占页面顶部 —— 顶部只放一个「数据统计」按钮，点开才出现；
- *   2) 面板内容不变：谁、几号、在哪些类目、各传了多少张；
- *   3) 所有管理员都能看到全部人的上传量（不按上传人过滤，就是给协作看的）。
+ * 相对上一版的改动（用户要求）：
+ *   1) 统计从「前台各专区顶部按钮」搬到「后台」——前台不再有任何统计入口；
+ *   2) 后台新增独立面板「数据统计」，面板内按专区各一个页签，**每个专区独立统计**，
+ *      趋势上升榜只算趋势上升榜、上新节奏只算上新节奏，互不混算；
+ *   3) 面板内容不变：谁、几号、在哪些类目、各传了多少张；
+ *   4) 所有管理员都能看到全员的上传量（面板本身就只在后台、只对管理员开放）。
  *
  * 数据从哪来（不新建表、不跑 SQL）：
  *   · 「谁 + 什么时候」→ 上传归属（site_settings.frontend_dims.upload_owners，由 upload-owner.js 维护）
@@ -12,8 +14,9 @@
  *        SHEIN / Pinterest / 品牌动向：按图片地址（kind "i"）
  *        视觉专区：images.uploaded_by + images.created_at（图库本来就有这两个字段）
  *   · 「哪些类目 + 多少张」→ 各专区自己的数据：
- *        rank_batches（类目 / 期次 / 行数）→ 趋势上升榜、上新节奏
- *        rank_items 里 channel 有值的那批  → SHEIN / Pinterest
+ *        rank_batches（source=rank 的批次）→ 趋势上升榜
+ *        rank_batches（source=rhythm 的批次）→ 上新节奏
+ *        rank_items 里 channel 有值的那批  → SHEIN / Pinterest / 渠道对比
  *        movement_items                     → 品牌动向
  *        images                             → 视觉专区
  *
@@ -22,25 +25,26 @@
  *   统计时只按「最早登记的那个人」记一次账，否则一张图会被记成两张。
  *   没有归属的历史数据单列「历史数据」，仍然算进总数。
  *
- * 性能：数据在「点开按钮」时才查询，首屏不再为统计付带宽；
- *       同一专区一次会话内只查一次，面板里可手动「重新统计」。
+ * 性能：进入面板（或切换页签）时才查询；同一专区一次会话内只查一次，
+ *       可手动「重新统计」。首屏不再为统计付出任何代价。
  * 降级：任何一路读取失败都不影响页面，只在面板里注明。
  * ==========================================================================*/
 (function () {
   "use strict";
 
-  var BUILD = "20261114K";
+  var BUILD = "20261114L";
 
-  /* 各专区的统计来源。channels 用大写比较，写错大小写不影响。 */
+  /* 每个专区一条独立通道；channels 用大写比较，写错大小写不影响。 */
   var ZONES = {
     rank: { label: "趋势上升榜", batches: ["rank"] },
     rhythm: { label: "上新节奏", batches: ["rhythm"] },
     shein: { label: "SHEIN 专区", channels: ["SHEIN"] },
     pinterest: { label: "Pinterest 专区", channels: ["PINTEREST"] },
-    compare: { label: "渠道对比", batches: ["*"], channels: ["*"], movement: true, images: true },
+    compare: { label: "渠道对比", channels: ["*"] },
     movement: { label: "品牌动向", movement: true },
     visual: { label: "视觉专区", images: true }
   };
+  var ORDER = ["rank", "rhythm", "shein", "pinterest", "compare", "movement", "visual"];
 
   var HIST = "历史数据";
 
@@ -263,7 +267,8 @@
   function bodyHtml(records, warn) {
     var admins = perAdmin(records);
     if (!admins.length) {
-      return '<div class="updash-empty">这个专区还没有可统计的上传记录。传图后这里会按「日期 / 管理员 / 类目」自动汇总，所有管理员都能看到。</div>';
+      if (warn) return '<div class="updash-empty">上传记录暂时读取不到，稍后再点一次「重新统计」。</div>';
+      return '<div class="updash-empty">这个专区还没有可统计的上传记录。传图后这里会按「日期 / 管理员 / 类目」自动汇总。</div>';
     }
     var chips = admins.map(function (a) {
       return '<span class="updash-chip' + (a.who === HIST ? " is-hist" : "") + '"><b>' + esc(a.who) + "</b> " +
@@ -293,8 +298,8 @@
       (warn ? " 本次有部分数据读取失败，数字可能偏少。" : "") + "</div>";
   }
 
-  /* ---------------- 取数 ---------------- */
-  var cache = {};   /* key → { records, warn, at } */
+  /* ---------------- 取数（按专区各自缓存） ---------------- */
+  var cache = {};   /* zoneKey → { records, warn, at } */
 
   async function build(key) {
     var cfg = ZONES[key];
@@ -318,114 +323,89 @@
     return res;
   }
 
-  /* ---------------- 弹窗 ---------------- */
-  var modal = null, modalKey = null;
+  /* ---------------- 后台面板渲染 ---------------- */
+  var active = "";      /* 当前选中的专区 */
+  var mounted = false;
 
-  function ensureModal() {
-    if (modal) return modal;
-    var el = document.createElement("div");
-    el.className = "updash-modal";
-    el.setAttribute("role", "dialog");
-    el.innerHTML =
-      '<div class="updash-card">' +
-        '<div class="updash-mhead">' +
-          '<span class="updash-mt" data-title>数据统计</span>' +
-          '<span class="updash-msub" data-roles>统计中…</span>' +
-          '<button type="button" class="updash-refresh" data-refresh title="重新统计">重新统计</button>' +
-          '<button type="button" class="updash-x" data-close title="关闭（Esc）">×</button>' +
-        "</div>" +
-        '<div class="updash-mbody" data-body><div class="updash-load">正在汇总上传记录…</div></div>' +
-      "</div>";
-    if (document.body && document.body.appendChild) document.body.appendChild(el);
+  function tabsHtml() {
+    return ORDER.map(function (k) {
+      var cfg = ZONES[k];
+      return '<button type="button" class="updash-tab' + (k === active ? " is-active" : "") +
+        '" data-zone="' + k + '" role="tab">' + esc(cfg.label) + "</button>";
+    }).join("");
+  }
 
-    el.onclick = function (e) {
-      if (e && e.target === el) closePanel();
-    };
-    var x = el.querySelector("[data-close]");
-    if (x) x.onclick = function () { closePanel(); };
-    var rf = el.querySelector("[data-refresh]");
-    if (rf) rf.onclick = function () {
-      if (!modalKey) return;
-      delete cache[modalKey];
-      refresh(modalKey);
-    };
-    if (document.addEventListener) {
-      document.addEventListener("keydown", function (e) {
-        if (e && (e.key === "Escape" || e.keyCode === 27)) closePanel();
-      });
+  function paintTabs() {
+    var box = $("#updash-tabs");
+    if (!box) return;
+    box.innerHTML = tabsHtml();
+    var btns = (box.querySelectorAll ? box.querySelectorAll(".updash-tab") : []) || [];
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) {
+        b.onclick = function () { selectZone(b.getAttribute("data-zone")); };
+      })(btns[i]);
     }
-    modal = el;
-    return el;
   }
 
-  function openPanel(key) {
+  function setSub(text) {
+    var el = $("#updash-sub");
+    if (el) el.textContent = text || "";
+  }
+
+  function setBody(html) {
+    var el = $("#updash-body");
+    if (el) el.innerHTML = html;
+  }
+
+  async function selectZone(key) {
+    if (!ZONES[key]) return;
+    active = key;
+    paintTabs();
     var cfg = ZONES[key];
-    if (!cfg) return;
-    var el = ensureModal();
-    modalKey = key;
-    var t = el.querySelector("[data-title]");
-    if (t) t.textContent = "数据统计 · " + cfg.label;
-    el.classList.add("is-open");
-    refresh(key);
-  }
-
-  function closePanel() {
-    if (!modal) return;
-    modal.classList.remove("is-open");
-    modalKey = null;
-  }
-
-  async function refresh(key) {
-    var el = ensureModal();
-    var body = el.querySelector("[data-body]");
-    var roles = el.querySelector("[data-roles]");
+    setSub("数据统计 · " + cfg.label + " · 统计中…");
     var res = cache[key];
     if (!res) {
-      if (body) body.innerHTML = '<div class="updash-load">正在汇总上传记录…</div>';
-      if (roles) roles.textContent = "统计中…";
+      setBody('<div class="updash-load">正在汇总「' + esc(cfg.label) + "」的上传记录…</div>");
       try { res = await build(key); } catch (e) { res = null; }
     }
+    /* 期间可能已切到别的专区 */
+    if (active !== key) return;
     if (!res) {
-      if (body) body.innerHTML = '<div class="updash-empty">上传记录暂时读取不到，稍后再点一次「重新统计」。</div>';
-      if (roles) roles.textContent = "读取失败";
+      setSub("数据统计 · " + cfg.label + " · 读取失败");
+      setBody('<div class="updash-empty">上传记录暂时读取不到，稍后再点一次「重新统计」。</div>');
       return;
     }
-    /* 期间用户可能已经关掉或切到别的专区 */
-    if (modalKey !== key) return;
-    if (roles) roles.textContent = headText(res.records, res.warn);
-    if (body) body.innerHTML = bodyHtml(res.records, res.warn);
+    setSub("数据统计 · " + cfg.label + " · " + headText(res.records, res.warn));
+    setBody(bodyHtml(res.records, res.warn));
   }
 
-  /* ---------------- 挂载：顶部只放一个按钮 ---------------- */
-  async function mount(key) {
-    var cfg = ZONES[key];
-    if (!cfg) return;
-    var box = $('[data-updash="' + key + '"]');
+  /* 进入后台面板时调用（首次渲染页签 + 载入默认专区） */
+  function enter(key) {
+    var box = $("#updash-tabs");
     if (!box) return;
-
-    /* 只给管理员看：访客连登录都没有，没必要多跑几次查询 */
-    var role = null;
-    try {
-      var s = SB();
-      if (s && typeof s.myRole === "function") role = await s.myRole();
-    } catch (e) { role = null; }
-    if (role !== "admin" && role !== "super_admin") { box.remove(); return; }
-
-    box.className = "updash-slot";
-    box.innerHTML = '<button type="button" class="updash-btn" data-open>' +
-      '<span class="updash-ico">▤</span>数据统计' +
-      '<span class="updash-hint">谁 · 几号 · 哪些类目 · 多少张</span>' +
-      "</button>";
-    var btn = box.querySelector("[data-open]");
-    if (btn) btn.onclick = function () { openPanel(key); };
+    if (key && ZONES[key]) active = key;
+    if (!active) active = ORDER[0];
+    if (!mounted) {
+      mounted = true;
+      var rf = $("#updash-refresh");
+      if (rf) rf.onclick = function () {
+        if (!active) return;
+        delete cache[active];
+        selectZone(active);
+      };
+    }
+    paintTabs();
+    selectZone(active);
   }
 
   window.UploadDash = {
     BUILD: BUILD,
-    mount: mount,
-    open: openPanel,
-    close: closePanel,
+    enter: enter,
+    selectZone: selectZone,
     ZONES: ZONES,
+    ORDER: ORDER,
+    _active: function () { return active; },
+    _reset: function () { cache = {}; mounted = false; active = ""; },
     _t: { group: group, perAdmin: perAdmin, bodyHtml: bodyHtml, headText: headText }
   };
 })();

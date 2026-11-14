@@ -113,7 +113,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "rhythm-card" || target === "titlelab-card" || target === "tools-card") return true;
+    if (target === "rank-card" || target === "rhythm-card" || target === "titlelab-card" || target === "uploaddash-card" || target === "tools-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -240,6 +240,10 @@ function switchPanel(target) {
     }
     if (target === "compare-card" && window.CompareAdmin && typeof window.CompareAdmin.reload === "function") {
       window.CompareAdmin.reload();
+    }
+    /* 数据统计（20261114L）：首次进入才渲染页签与取数，之后按页签各自缓存 */
+    if (target === "uploaddash-card" && window.UploadDash && typeof window.UploadDash.enter === "function") {
+      window.UploadDash.enter();
     }
     if (target === "trend-card") { loadTrendList(); }
     if (target === "recruit-card") { loadRecruitList(); loadRecruitCatPicker(); loadRecruitCatSettings(); if (typeof window.loadRecruitDashStats === "function") window.loadRecruitDashStats(); }
