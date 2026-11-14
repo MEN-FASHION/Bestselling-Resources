@@ -496,6 +496,23 @@
     if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
     if (!cats.length) { panel.innerHTML = '<div class="hint">标题组词台还没有类目。</div>'; return; }
     panel.innerHTML = '<div class="hint">共 ' + cats.length + ' 个类目（只统计<b>标题组词台</b>这一份数据）。</div>';
+    /* 20261114I · 与趋势上升榜同一套保护：弹窗不可用就退回原生弹窗，出错必给提示 */
+    const guard = (label, fn) => async () => {
+      try { await fn(); }
+      catch (e) {
+        const m = (e && e.message) ? e.message : String(e || "未知错误");
+        try { sbToast(label + "失败：" + m, false); }
+        catch (e2) { try { window.alert(label + "失败：" + m); } catch (e3) {} } /* native-fallback */
+      }
+    };
+    const askText = async (msg, def) => {
+      if (typeof uiPrompt === "function") { try { return await uiPrompt(msg, def); } catch (e) {} }
+      try { return window.prompt(msg, def == null ? "" : def); } catch (e) { return null; } /* native-fallback */
+    };
+    const askYes = async (msg) => {
+      if (typeof uiConfirm === "function") { try { return await uiConfirm(msg); } catch (e) {} }
+      try { return window.confirm(msg); } catch (e) { return false; } /* native-fallback */
+    };
     cats.forEach((c) => {
       const row = document.createElement("div");
       row.className = "rank-cat-row";
@@ -507,29 +524,29 @@
       meta.textContent = (c.batches || 0) + " 批 · " + (c.exact ? "" : "约 ") + c.rows + " 条 · " + c.periods + " 个期次";
       const merge = document.createElement("button");
       merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
-      merge.onclick = async () => {
-        const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的条目并入哪个类目？\n填目标类目名：", c.category) || "").trim();
+      merge.onclick = guard("合并", async () => {
+        const v = (await askText("把「" + (c.category || "(未填类目)") + "」的条目并入哪个类目？\n填目标类目名：", c.category) || "").trim();
         if (!v) return;
         if (v === c.category) { sbToast("目标类目和源类目是同一个，没有需要合并的内容", false); return; }
-        if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？（只影响标题组词台）\n重复的图会自动跳过，源类目随后删除。"))) return;
+        if (!(await askYes("确认把「" + c.category + "」并入「" + v + "」？（只影响标题组词台）\n重复的图会自动跳过，源类目随后删除。"))) return;
         try {
           const n = await SB.renameRankCategory(c.category, v, SOURCE);
           await loadTiBatches();
           sbToast("已并入「" + v + "」（迁移 " + n + " 条）", true);
           panel.dataset.open = "0"; panel.innerHTML = ""; openTiCatTools();
         } catch (e) { sbToast((e && e.message) || "合并失败", false); }
-      };
+      });
       const wipe = document.createElement("button");
       wipe.type = "button"; wipe.className = "btn-ghost small danger"; wipe.textContent = "整类删除";
-      wipe.onclick = async () => {
-        if (!(await uiConfirm("删除「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + (c.batches || 0) + " 个批次、约 " + c.rows + " 条；只影响标题组词台。"))) return;
+      wipe.onclick = guard("删除", async () => {
+        if (!(await askYes("删除「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + (c.batches || 0) + " 个批次、约 " + c.rows + " 条；只影响标题组词台。"))) return;
         try {
           const r = await SB.deleteRankCategory(c.category, SOURCE);
           await loadTiBatches();
           sbToast("已删除该类目（" + r.items + " 条 / " + r.batches + " 批）", true);
           panel.dataset.open = "0"; panel.innerHTML = ""; openTiCatTools();
         } catch (e) { sbToast((e && e.message) || "删除失败", false); }
-      };
+      });
       row.appendChild(name); row.appendChild(meta); row.appendChild(merge); row.appendChild(wipe);
       panel.appendChild(row);
     });

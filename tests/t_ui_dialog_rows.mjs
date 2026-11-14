@@ -43,6 +43,9 @@ jsFiles.forEach((f) => {
   const hits = s.split("\n").filter((ln) => {
     if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return false;            // 注释
     if (/uiConfirm\(|uiAlert\(|ui-dialog/.test(ln)) return false; // 已替换
+    /* 20261114I：弹窗组件出问题时的最后兜底（askText / askYes / guard 内），
+       是为了「永不静默失败」而保留的原生调用，必须显式标注才放行 */
+    if (/native-fallback/.test(ln)) return false;
     return /\bwindow\.(confirm|alert|prompt)\s*\(|(?<![\w$.])(confirm|alert|prompt)\s*\(/.test(ln);
   });
   if (hits.length) nativeHits.push(f + "(" + hits.length + "): " + hits[0].trim().slice(0, 60));

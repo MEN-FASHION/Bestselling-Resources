@@ -27,7 +27,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114H";
+  var BUILD = "20261114J";
 
   /* 各专区的统计来源。channels 用大写比较，写错大小写不影响。 */
   var ZONES = {

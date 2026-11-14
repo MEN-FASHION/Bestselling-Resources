@@ -141,7 +141,10 @@ const footOf = (box) => box.childNodes.filter((n) => n.className && n.className.
   const AR = read("js/admin-rank.js");
   const i = AR.indexOf("合并到…");
   const seg = AR.slice(i, i + 1000);
-  ok(/uiPrompt\(/.test(seg), "「合并到…」应使用 uiPrompt 让用户填目标类目");
+  /* 20261114I：改为 askText —— 站内弹窗优先，弹窗不可用时退回原生 prompt，
+     保证「点了永远有反应」。askText 内部仍然调用 uiPrompt。 */
+  ok(/askText\(/.test(seg), "「合并到…」应使用 askText（内部走 uiPrompt）让用户填目标类目");
+  ok(/uiPrompt\(/.test(AR.slice(AR.indexOf("const askText"), AR.indexOf("const askText") + 300)), "askText 内部应调用 uiPrompt");
   ok(/renameRankCategory/.test(seg), "「合并到…」应调用 renameRankCategory 迁移条目");
 }
 

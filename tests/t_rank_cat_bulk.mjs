@@ -31,8 +31,14 @@ ok(/sbToast\([\s\S]{0,160}bad\s*===\s*0\)/.test(block), "结束后给出成功/�
 ok(/await loadRankBatches\(\); rankPreviewRefresh\(\);/.test(block), "删除后刷新批次与预览");
 
 /* 5) 危险操作要有二次确认 */
-ok(/uiConfirm\([\s\S]{0,220}全部条目都会被删掉/.test(block), "批量删除前二次确认并说明后果");
-ok(/uiConfirm\(/.test(block) && !/window\.confirm\(/.test(block), "使用站内确认弹窗，不用原生 confirm");
+ok(/(askYes|uiConfirm)\([\s\S]{0,220}全部条目都会被删掉/.test(block), "批量删除前二次确认并说明后果");
+/* 20261114I：确认统一走 askYes（站内弹窗优先，弹窗不可用才退回原生），
+   主确认路径不再直接调 window.confirm；带 native-fallback 标记的兜底行放行 */
+{
+  const lines = block.split("\n").filter((ln) => !/native-fallback/.test(ln));
+  const body = lines.join("\n");
+  ok(/askYes\(/.test(body) && !/window\.confirm\(/.test(body), "使用站内确认弹窗（askYes），不用原生 confirm");
+}
 
 /* 6) 样式 */
 ok(/\.rank-cat-bar/.test(css), "批量工具条有样式");

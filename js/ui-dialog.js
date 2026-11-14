@@ -56,14 +56,44 @@
   var busy = false;
   var curMask = null;
 
+  /* 20261114I · 复位：任何异常路径都必须把「正在弹」的标记清掉。
+     否则 busy 会一直停在 true，之后所有弹窗都直接 resolve(false)，
+     界面上表现为「按钮点了没反应」，而且不报错、不提示，极难自查。 */
+  function reset() {
+    busy = false;
+    try { if (curMask && curMask.parentNode) curMask.parentNode.removeChild(curMask); } catch (e) {}
+    curMask = null;
+  }
+
+  /* 组件万一不可用（脚本没加载、内部异常），退回浏览器原生弹窗，功能不至于失效 */
+  function nativeFallback(msg, opts) {
+    opts = opts || {};
+    try {
+      if (opts.input) {
+        var v = window.prompt(msg == null ? "" : String(msg), opts.value == null ? "" : String(opts.value));
+        return v == null ? null : v;
+      }
+      if (opts.onlyOk) { window.alert(msg == null ? "" : String(msg)); return true; }
+      return window.confirm(msg == null ? "" : String(msg));
+    } catch (e2) { return opts.input ? null : false; }
+  }
+
   /* 核心：显示一个弹窗，返回 Promise。
      opts: { title, okText, cancelText, danger, onlyOk } */
   function open(msg, opts) {
     opts = opts || {};
     ensureCss();
+    /* 自愈：上一次弹窗半路出错时 busy 可能卡在 true，画面上却没有任何遮罩。
+       不处理的话，之后每一次点「合并 / 删除 / 改名」都会静默落空 —— 不弹框也不报错。 */
+    if (busy) {
+      var alive = false;
+      try { alive = !!(curMask && curMask.parentNode); } catch (e) { alive = false; }
+      if (!alive) reset();
+    }
     var pr = new Promise(function (resolve) {
+      try {
       /* 已有弹窗在等回答时，直接视为取消，绝不叠框 */
-      if (busy) { resolve(false); return; }
+      if (busy) { resolve(opts.input ? null : false); return; }
       busy = true;
 
       var mask = document.createElement("div");
@@ -88,7 +118,7 @@
       box.appendChild(body);
 
       /* 底部按钮区：必须先建好，输入框要插在它上面
-         （20261114H 修复：此前 foot 声明在下面，输入分支里 appendChild(foot)
+         （20261114I 修复：此前 foot 声明在下面，输入分支里 appendChild(foot)
            拿到的是 undefined，浏览器抛 TypeError，Promise 直接 rejected，
            于是所有「输入框弹窗」点按钮都毫无反应） */
       var foot = document.createElement("div");
@@ -133,6 +163,7 @@
         busy = false;
         document.removeEventListener("keydown", onKey, true);
         if (mask.parentNode) mask.parentNode.removeChild(mask);
+        if (curMask === mask) curMask = null;
         if (opts.input) resolve(val ? (input ? input.value : "") : null);
         else resolve(val);
       }
@@ -149,9 +180,16 @@
         try { (input || btnOk).focus(); } catch (e) {}
         if (input) { try { input.select(); } catch (e) {} }
       }, 30);
+      } catch (err) {
+        /* 构建弹窗过程中出错：复位标记、清掉残留遮罩，并退回原生弹窗。
+           绝不允许「点了没反应」。 */
+        try { console.error("[ui-dialog]", err); } catch (e) {}
+        reset();
+        resolve(nativeFallback(msg, opts));
+      }
     });
 
-    /* 20261114H：弹窗内部一旦出错，绝不能变成「点了没反应」。
+    /* 20261114I：弹窗内部一旦出错，绝不能变成「点了没反应」。
        清掉残留遮罩，并退回浏览器原生弹窗，让功能照样能用。 */
     return pr.catch(function (err) {
       busy = false;

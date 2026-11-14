@@ -2886,12 +2886,13 @@ async removeTrendRecord(id) {
         removed += rows.length;
         if (rows.length < 500) break;
       }
-      let q = client.from("rank_batches").select("id, source").eq("period_label", oldLabel);
+      const bSrcOk = src ? await this.rankBatchSourceColumn() : false;
+      let q = client.from("rank_batches").select(bSrcOk ? "id, source" : "id").eq("period_label", oldLabel);
       if (oldType) q = q.eq("period_type", oldType);
       const { data, error } = await q;
-      if (error) throw new Error(error.message || "读取批次失败");
+      if (error) throw new Error(errHint(error, "读取批次失败"));
       let bs = data || [];
-      if (src && srcOk) {
+      if (src && srcOk && bSrcOk) {
         bs = bs.filter((b) => {
           const s = b && b.source ? String(b.source) : "";
           return src === "rank" ? (s === "" || s === "rank") : s === src;
@@ -3089,11 +3090,12 @@ async removeTrendRecord(id) {
       }
       let batches = 0;
       try {
-        let bq = client.from("rank_batches").select("id, source")
+        const bSrcOk = src ? await this.rankBatchSourceColumn() : false;
+        let bq = client.from("rank_batches").select(bSrcOk ? "id, source" : "id")
           .eq("period_type", periodType).eq("period_label", periodLabel).eq("category", category);
         const { data } = await bq;
         let bs = data || [];
-        if (src && srcOk) {
+        if (src && srcOk && bSrcOk) {
           bs = bs.filter((b) => {
             const s = b && b.source ? String(b.source) : "";
             return src === "rank" ? (s === "" || s === "rank") : s === src;
@@ -3108,7 +3110,8 @@ async removeTrendRecord(id) {
       /* 20261113B：带上数据域，后台台账才能按域区分；库里没有该列时自动退回旧字段，
          不至于因为一列不存在整块台账打不开。
          20261113C：新增 source 参数 —— 后台上传与台账按专区彻底分开，各面板只读自己的域。 */
-      const withSrc = await this.rankSourceColumn();
+      /* 20261114J：列探测改成问批次表本身（以前问的是条目表，两张表补列进度不一致时必然错判） */
+      const withSrc = await this.rankBatchSourceColumn();
       const cols = "id, period_type, period_label, category, site, rows, skipped, created_at"
         + (withSrc ? ", source" : "");
       let { data, error } = await client.from("rank_batches").select(cols)
@@ -3177,8 +3180,15 @@ async removeTrendRecord(id) {
          更不该改到上新节奏 / 标题组词台里的同名类目。 */
       const want = source ? String(source) : "";
       const srcOk = want ? await this.rankSourceColumn() : false;
+      /* 20261114J：批次表用批次表自己的探测结果，别拿条目表的去凑（缺列时整条 400） */
+      const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
       const hit = (s) => {
         if (!want || !srcOk) return true;
+        const v = s ? String(s) : "";
+        return want === "rank" ? (v === "" || v === "rank") : v === want;
+      };
+      const hitB = (s) => {
+        if (!want || !bSrcOk) return true;
         const v = s ? String(s) : "";
         return want === "rank" ? (v === "" || v === "rank") : v === want;
       };
@@ -3190,16 +3200,16 @@ async removeTrendRecord(id) {
         return map.get(k);
       };
       let cols = "id, period_label, category, rows";
-      if (srcOk) cols += ", source";
+      if (bSrcOk) cols += ", source";
       let { data, error } = await client.from("rank_batches")
         .select(cols).limit(2000);
-      if (error && srcOk) {
+      if (error && bSrcOk) {
         const r2 = await client.from("rank_batches").select("id, period_label, category, rows").limit(2000);
         data = r2.data; error = r2.error;
       }
-      if (error) throw new Error(error.message || "读取类目失败");
+      if (error) throw new Error(errHint(error, "读取类目失败"));
       (data || []).forEach((b) => {
-        if (srcOk && !hit(b.source)) return;
+        if (!hitB(b.source)) return;
         const e = touch(b.category);
         e.batches += 1;
         e.est += (typeof b.rows === "number" ? b.rows : 0);
@@ -3210,7 +3220,8 @@ async removeTrendRecord(id) {
       try {
         for (let page = 0; map.size === 0 && page < 8; page++) {
           const { data: rows, error: e2 } = await client.from("rank_items")
-            .select("category, period_label, source").order("id", { ascending: true })
+            .select(srcOk ? "category, period_label, source" : "category, period_label")
+            .order("id", { ascending: true })
             .range(page * 1000, page * 1000 + 999);
           if (e2) break;
           const list = rows || [];
@@ -3246,10 +3257,14 @@ async removeTrendRecord(id) {
         if (rows.length < 500) break;
       }
       let batches = 0;
-      const { data: bs0, error: be } = await client.from("rank_batches").select("id, source").eq("category", cat);
-      if (be) throw new Error(be.message || "读取该类目批次失败");
+      /* 20261114J：同样的坑 —— 写死 select("id, source") 在缺列的库上必然 400，
+         这里以前是直接 throw，于是"条目删完了、台账删不掉"，前台类目依旧存在。 */
+      const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
+      const { data: bs0, error: be } = await client.from("rank_batches")
+        .select(bSrcOk ? "id, source" : "id").eq("category", cat);
+      if (be) throw new Error(errHint(be, "读取该类目批次失败"));
       let bs = bs0 || [];
-      if (want && srcOk) {
+      if (want && srcOk && bSrcOk) {
         bs = bs.filter((b) => {
           const s = b && b.source ? String(b.source) : "";
           return want === "rank" ? (s === "" || s === "rank") : s === want;
@@ -3309,16 +3324,50 @@ async removeTrendRecord(id) {
         moved += news.length;
         if (list.length < 500) break;
       }
-      const { data: bs0 } = await client.from("rank_batches").select("id, source").eq("category", a);
-      let bsx = bs0 || [];
-      if (want && srcOk) {
-        bsx = bsx.filter((x) => {
-          const s = x && x.source ? String(x.source) : "";
-          return want === "rank" ? (s === "" || s === "rank") : s === want;
-        });
+      /* 20261114J：批次台账删除不能「静默失败」。
+         以前这里写死 select("id, source")：库里的 rank_batches 若还没有 source 列，
+         这一条就是 400，而错误被忽略 → 条目迁走了、台账还在 →
+         前台类目菜单照样有「工装」，用户看到的就是"合并不了"。
+         现在：按批次表真实结构取列，失败必须报出来，并且删完再复查一遍。 */
+      const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
+      const bCols = bSrcOk ? "id, source" : "id";
+      const readBatches = async () => {
+        const { data, error } = await client.from("rank_batches").select(bCols).eq("category", a);
+        if (error) throw new Error(errHint(error, "读取待合并的批次失败"));
+        let list = data || [];
+        if (want && bSrcOk && bSrcOk !== undefined) {
+          list = list.filter((x) => {
+            const s = x && x.source ? String(x.source) : "";
+            return want === "rank" ? (s === "" || s === "rank") : s === want;
+          });
+        }
+        return list;
+      };
+      const bsx = await readBatches();
+      let bDel = 0;
+      for (const x of bsx) { try { await this.deleteRankBatch(x.id); bDel += 1; } catch (e) { /* 单条失败由下面的复查兜住 */ } }
+      const left = await readBatches();
+      this._lastCatMerge = { from: a, to: b, moved: moved, batches: bDel, left: left.length };
+      if (left.length) {
+        throw new Error("已把 " + moved + " 条并入「" + b + "」，但还有 " + left.length
+          + " 个批次台账没删掉，所以前台仍会显示「" + a + "」。到「已上传记录」里删掉该类目的批次即可。");
       }
-      for (const x of bsx) { await this.deleteRankBatch(x.id); }
       return moved;
+    },
+    /* 某类目当前的真实条目数（跨期次）。台账里的 rows 常常是空的/没回填，
+       面板上才会出现"约 0 条"这种看不出有没有数据的数字。 */
+    async countRankCategory(category, source) {
+      const cat = String(category || "").trim();
+      if (!cat) return null;
+      const want = source ? String(source) : "";
+      const srcOk = want ? await this.rankSourceColumn() : false;
+      try {
+        let q = client.from("rank_items").select("id", { count: "exact", head: true }).eq("category", cat);
+        if (want && srcOk) q = this._srcCond(q, want);
+        const res = await q;
+        if (res && res.error) return null;
+        return (res && typeof res.count === "number") ? res.count : null;
+      } catch (e) { return null; }
     },
     /* 检查 rank_items 有没有 title 列：缺列时标题写入会被静默丢弃，并刷出一堆 400 */
     async probeRankTitleColumn() {
@@ -3509,6 +3558,24 @@ async removeTrendRecord(id) {
         this._srcColOk = !!(row && Object.prototype.hasOwnProperty.call(row, "source"));
       } catch (e) { this._srcColOk = false; }
       return this._srcColOk;
+    },
+    /* 20261114J：批次表的 source 列要单独探测。
+       事故：合并类目时「条目已迁走、批次台账没删掉」，前台类目照旧显示，看着就是"合并不了"。
+       根因：卡在 rank_items 上的探测结果被拿去给 rank_batches 用了。
+       两张表各自补列、各自可能缺列，必须分开问。 */
+    _batchSrcColOk: null,
+    async rankBatchSourceColumn() {
+      if (this._batchSrcColOk !== null && this._batchSrcColOk !== undefined) return this._batchSrcColOk;
+      try {
+        const { data, error } = await client.from("rank_batches").select("*").limit(1);
+        if (error) { this._batchSrcColOk = false; return false; }
+        const row = (data && data[0]) || null;
+        if (row) { this._batchSrcColOk = Object.prototype.hasOwnProperty.call(row, "source"); return this._batchSrcColOk; }
+        /* 表是空的：取不到键名，只能直接点名列试一次（缺列会 400，但只发生一次并缓存） */
+        const r2 = await client.from("rank_batches").select("source").limit(1);
+        this._batchSrcColOk = !r2.error;
+      } catch (e) { this._batchSrcColOk = false; }
+      return this._batchSrcColOk;
     },
     /* 给查询加上"域"条件。rank 域必须含 NULL / 空串（历史数据都在那儿）。 */
     _srcCond(q, src) {

@@ -1704,8 +1704,27 @@
     try { cats = await SB.listRankCategories(SOURCE); } catch (e) { cats = null; }
     if (!cats) { panel.innerHTML = '<div class="hint">类目读取失败，请重试。</div>'; return; }
     if (!cats.length) { panel.innerHTML = '<div class="hint">还没有类目。</div>'; return; }
+    /* 20261114J：台账里的 rows 大量是 0（导入时没回填），面板上就全是「约 0 条」，
+       看着像没有数据、也没法判断合并到底成了没有。这里按条目表真实清点。
+       最多清点 60 个类目（并发 6），再多就退回台账估算，避免把面板拖慢。 */
+    const trueCnt = {};
+    const todo = cats.slice(0, 60).filter((c) => c && c.category);
+    for (let i = 0; i < todo.length; i += 6) {
+      await Promise.all(todo.slice(i, i + 6).map(async (c) => {
+        let n = null;
+        try { n = await SB.countRankCategory(c.category, SOURCE); } catch (e) { n = null; }
+        if (typeof n === "number" && isFinite(n)) trueCnt[c.category] = n;
+      }));
+    }
+    const cntOf = (c) => (trueCnt[c.category] != null ? trueCnt[c.category] : (c.rows || 0));
+    const cntApprox = (c) => trueCnt[c.category] == null;
+    let bSrcOk = true;
+    try { bSrcOk = await SB.rankBatchSourceColumn(); } catch (e) { bSrcOk = true; }
     panel.innerHTML = '<div class="hint">共 ' + cats.length + ' 个类目。可疑重复（同音/大小写/空格/全半角不同）可直接合并，多余的整类删除。'
-      + '<br><b>这里的删除 / 合并只作用于本专区（趋势上升榜）。上新节奏、标题组词台有同名类目也不会被动到 —— 要清它们请到各自的面板。</b></div>';
+      + '<br><b>这里的删除 / 合并只作用于本专区（趋势上升榜）。上新节奏、标题组词台有同名类目也不会被动到 —— 要清它们请到各自的面板。</b></div>'
+      + (bSrcOk ? '' : '<div class="rkadm-warn">⚠️ 数据库的 <b>rank_batches</b> 表还没有 <b>source</b> 列：'
+        + '「趋势上升榜 / 上新节奏 / 标题组词台」三份数据目前无法在批次层面区分，'
+        + '合并 / 删除同名类目时会把同名类目一起处理。执行一次补结构脚本（<b>patch_20261113B_rank_source.sql</b>）即可恢复正常隔离。</div>');
 
     /* 批量清理：一次导入可能带进几十上百个类目，逐个点不现实 */
     const cbar = document.createElement("div");
@@ -1725,6 +1744,24 @@
     cNorm.type = "button"; cNorm.className = "btn-ghost small";
     const cNote = document.createElement("span");
     cNote.className = "rank-cat-meta";
+    /* 20261114I · 弹窗组件一旦不可用，这两个按钮以前会「静默失败」——点了不弹框、不报错。
+       现在统一走 guard：弹窗取不到就退回浏览器原生弹窗；处理中出错一定给出提示。 */
+    const guard = (label, fn) => async () => {
+      try { await fn(); }
+      catch (e) {
+        const m = (e && e.message) ? e.message : String(e || "未知错误");
+        try { sbToast(label + "失败：" + m, false); }
+        catch (e2) { try { window.alert(label + "失败：" + m); } catch (e3) {} } /* native-fallback */
+      }
+    };
+    const askText = async (msg, def) => {
+      if (typeof uiPrompt === "function") { try { return await uiPrompt(msg, def); } catch (e) {} }
+      try { return window.prompt(msg, def == null ? "" : def); } catch (e) { return null; } /* native-fallback */
+    };
+    const askYes = async (msg) => {
+      if (typeof uiConfirm === "function") { try { return await uiConfirm(msg); } catch (e) {} }
+      try { return window.confirm(msg); } catch (e) { return false; } /* native-fallback */
+    };
     const pickedCats = () => Array.from(panel.querySelectorAll(".rank-cat-pick:checked")).map((x) => x.dataset.cat);
     const refreshCbar = () => {
       const n = pickedCats().length;
@@ -1744,16 +1781,16 @@
       panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = /^\d+$/.test(x.dataset.cat); });
       refreshCbar();
     };
-    cMerge.onclick = async () => {
+    cMerge.onclick = guard("合并", async () => {
       const picked = pickedCats();
       if (!picked.length) return;
       const preview = picked.slice(0, 8).map((c) => "· " + (c || "(未填类目)")).join("\n") + (picked.length > 8 ? "\n…" : "");
       const seed = picked.length === 1 ? picked[0] : "";
-      const v = (await uiPrompt("把选中的 " + picked.length + " 个类目并入哪个类目？\n填目标类目名（不存在会新建）：\n\n" + preview, seed) || "").trim();
+      const v = (await askText("把选中的 " + picked.length + " 个类目并入哪个类目？\n填目标类目名（不存在会新建）：\n\n" + preview, seed) || "").trim();
       if (!v) return;
       const srcs = picked.filter((c) => c !== v);
       if (!srcs.length) { sbToast("目标类目就是被选中的类目本身，无需合并", false); return; }
-      if (!(await uiConfirm("确认把这 " + srcs.length + " 个类目并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
+      if (!(await askYes("确认把这 " + srcs.length + " 个类目并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
       cMerge.disabled = true;
       let done = 0, bad = 0, rows = 0;
       for (const c of srcs) {
@@ -1764,11 +1801,11 @@
       await loadRankBatches(); rankPreviewRefresh();
       sbToast("已合并 " + done + " 个类目到「" + v + "」（迁移 " + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
       panel.dataset.open = "0"; openRankCategoryTools(bar);
-    };
-    cDel.onclick = async () => {
+    });
+    cDel.onclick = guard("删除", async () => {
       const cats_ = pickedCats();
       if (!cats_.length) return;
-      if (!(await uiConfirm("删除选中的 " + cats_.length + " 个类目？\n这些类目在【趋势上升榜】所有期次下的全部条目都会被删掉，其它专区不受影响；删了不会自动回来。"))) return;
+      if (!(await askYes("删除选中的 " + cats_.length + " 个类目？\n这些类目在【趋势上升榜】所有期次下的全部条目都会被删掉，其它专区不受影响；删了不会自动回来。"))) return;
       cDel.disabled = true;
       let done = 0, bad = 0, rows = 0;
       for (const c of cats_) {
@@ -1779,7 +1816,7 @@
       await loadRankBatches(); rankPreviewRefresh();
       sbToast("已删除 " + done + " 个类目（" + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
       openRankCategoryTools(bar);
-    };
+    });
     const fixable = () => cats.filter((c) => {
       const raw = String(c.category || "").trim();
       return raw && typeof window !== "undefined" && window.RankCatNorm
@@ -1790,11 +1827,11 @@
       cNorm.textContent = "按标准名归并" + (n ? "（" + n + "）" : "");
       cNorm.disabled = n === 0;
     };
-    cNorm.onclick = async () => {
+    cNorm.onclick = guard("按标准名归并", async () => {
       const list = fixable();
       if (!list.length) return;
       const preview = list.slice(0, 6).map((c) => "「" + String(c.category).slice(0, 24) + "」→「" + window.RankCatNorm.normalize(c.category) + "」").join("\n");
-      if (!(await uiConfirm("把 " + list.length + " 个类目按标准名归并？\n\n" + preview + (list.length > 6 ? "\n…" : "") + "\n\n重复的图会自动跳过，源类目随后删除。"))) return;
+      if (!(await askYes("把 " + list.length + " 个类目按标准名归并？\n\n" + preview + (list.length > 6 ? "\n…" : "") + "\n\n重复的图会自动跳过，源类目随后删除。"))) return;
       cNorm.disabled = true;
       let done = 0, bad = 0, rows = 0;
       for (const c of list) {
@@ -1806,7 +1843,7 @@
       await loadRankBatches(); rankPreviewRefresh();
       sbToast("已归并 " + done + " 个类目（迁移 " + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
       panel.dataset.open = "0"; openRankCategoryTools(bar);
-    };
+    });
     cbar.appendChild(cAll); cbar.appendChild(cNum); cbar.appendChild(cNorm); cbar.appendChild(cMerge); cbar.appendChild(cDel); cbar.appendChild(cNote);
     panel.appendChild(cbar);
     refreshNorm();
@@ -1824,32 +1861,32 @@
       name.textContent = c.category || "(未填类目)";
       const meta = document.createElement("span");
       meta.className = "rank-cat-meta";
-      meta.textContent = (c.batches || 0) + " 批 · " + (c.exact ? "" : "约 ") + c.rows + " 条 · " + c.periods + " 个期次" + (c.batches ? "" : " · 无台账");
+      meta.textContent = (c.batches || 0) + " 批 · " + (cntApprox(c) ? "约 " : "") + cntOf(c) + " 条 · " + c.periods + " 个期次" + (c.batches ? "" : " · 无台账");
       const merge = document.createElement("button");
       merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
-      merge.onclick = async () => {
-        const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的全部条目并入哪个类目？\n填目标类目名（不存在会新建）：", c.category) || "").trim();
+      merge.onclick = guard("合并", async () => {
+        const v = (await askText("把「" + (c.category || "(未填类目)") + "」的全部条目并入哪个类目？\n填目标类目名（不存在会新建）：", c.category) || "").trim();
         if (!v) return;
         if (v === c.category) { sbToast("目标类目和源类目是同一个，没有需要合并的内容", false); return; }
-        if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
+        if (!(await askYes("确认把「" + c.category + "」并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
         try {
           const n = await SB.renameRankCategory(c.category, v, SOURCE);
           await loadRankBatches(); rankPreviewRefresh();
           sbToast("已并入「" + v + "」（迁移 " + n + " 条）", true);
           panel.dataset.open = "0"; openRankCategoryTools(bar);
         } catch (e) { sbToast((e && e.message) || "合并失败", false); }
-      };
+      });
       const wipe = document.createElement("button");
       wipe.type = "button"; wipe.className = "btn-ghost small"; wipe.textContent = "整类删除";
-      wipe.onclick = async () => {
-        if (!(await uiConfirm("删除类目「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + c.batches + " 个批次、约 " + c.rows + " 条，所有期次都会删。"))) return;
+      wipe.onclick = guard("删除", async () => {
+        if (!(await askYes("删除类目「" + (c.category || "(未填类目)") + "」的全部数据？\n含 " + c.batches + " 个批次、" + (cntApprox(c) ? "约 " : "") + cntOf(c) + " 条，所有期次都会删。"))) return;
         try {
           const r = await SB.deleteRankCategory(c.category, SOURCE);
           await loadRankBatches(); rankPreviewRefresh();
           sbToast("已删除该类目（" + r.items + " 条 / " + r.batches + " 批）", true);
           panel.dataset.open = "0"; openRankCategoryTools(bar);
         } catch (e) { sbToast((e && e.message) || "删除失败", false); }
-      };
+      });
       row.appendChild(name); row.appendChild(meta); row.appendChild(merge); row.appendChild(wipe);
       panel.appendChild(row);
     });
