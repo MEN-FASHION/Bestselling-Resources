@@ -43,20 +43,21 @@ stable.forEach((s) => {
   ok(N.needsFix(s) === false, "标准名不需要归并：" + s);
 });
 
-/* 3. 常见写法差异 */
-ok(N.normalize("T 恤") === "T恤", "「T 恤」→ T恤");
-ok(N.normalize("t恤") === "T恤", "「t恤」→ T恤");
-ok(N.normalize("polo衫") === "POLO", "「polo衫」→ POLO");
-ok(N.normalize("Polo 衬衫") === "衬衫", "含衬衫优先于 polo（先判衬衫）");
-ok(N.normalize("男士休闲运动套装") === "套装", "「男士休闲运动套装」→ 套装");
-ok(N.normalize("健身服") === "运动功能服", "「健身服」→ 运动功能服");
-ok(N.normalize("男士运动服") === "运动功能服", "「男士运动服」→ 运动功能服");
-ok(N.normalize("羽绒服") === "棉服羽绒", "「羽绒服」→ 棉服羽绒");
-ok(N.normalize("摇粒绒外套") === "抓绒衫", "抓绒优先于外套");
-ok(N.normalize("休闲长裤") === "裤装", "「休闲长裤」→ 裤装");
-ok(N.normalize("汉服") === "传统服饰", "「汉服」→ 传统服饰");
-ok(N.normalize("cardigan") === "开衫", "英文 cardigan → 开衫");
-ok(N.normalize("Hoodie") === "卫衣", "英文 hoodie → 卫衣");
+/* 3. 20261114F：短名一律原样返回 —— 后台选什么就显示什么
+     现场：「打底压缩」被关键词规则（压缩→运动功能服）改写，后台选了也没用 */
+const verbatim = ["打底压缩", "打底/压缩", "T 恤", "t恤", "polo衫", "Polo 衬衫", "男士休闲运动套装", "健身服", "男士运动服", "羽绒服", "摇粒绒外套", "休闲长裤", "汉服", "cardigan", "Hoodie"];
+verbatim.forEach((s) => {
+  ok(N.normalize(s) === s, "短名原样保留：" + s + "（实际 " + N.normalize(s) + "）");
+  ok(N.needsFix(s) === false, "短名不需要归并：" + s);
+});
+ok(N.normalize("打底压缩") === "打底压缩", "「打底压缩」不会被改写成运动功能服（本次核心回归）");
+ok(N.isDirty("打底压缩") === false, "打底压缩 判定为干净名");
+ok(N.isDirty("服装，鞋靴和珠宝饰品，男士时尚，男装，男士休闲运动套装") === true, "全路径名判定为脏名");
+ok(N.isDirty("30472") === true, "纯数字判定为脏名");
+
+/* 3b. 脏名仍要走规则表清洗（否则菜单又会被长名字撑爆） */
+ok(N.normalize("服装，鞋靴和珠宝饰品，男士时尚，男装，男士休闲运动服，男士休闲运动套装") === "套装", "全路径套装 → 套装");
+ok(N.normalize("服装，鞋靴和珠宝饰品，男士时尚，男装，男士运动服") === "运动功能服", "全路径运动服 → 运动功能服");
 
 /* 4. 平台类目 ID 与空值 */
 ok(N.normalize("30472") === "其他", "纯数字类目 ID → 其他");
@@ -80,7 +81,8 @@ const adminRank = fs.readFileSync(path.join(root, "js/admin-rank.js"), "utf8");
 ok(/function normCat\(/.test(adminRank), "admin-rank 定义了 normCat");
 ok(/const cat = defCat \|\| "其他"/.test(adminRank), "类目只来自后台所选，未选时统一归「其他」");
 ok(!/normCat\(r\.leaf_category\)/.test(adminRank), "表格里的类目不再用来建类目（只留叶子类目原文）");
-ok(/const defCat = normCat\(o\.category\)/.test(adminRank), "界面所选类目同样归一");
+ok(/const defCat = String\(o\.category == null \? "" : o\.category\)/.test(adminRank), "界面所选类目原样使用，不再过关键词归一");
+ok(!/const defCat = normCat\(o\.category\)/.test(adminRank), "已移除「界面所选类目也归一」的旧写法");
 ok(/按标准名归并/.test(adminRank), "类目清理面板提供一键归并");
 ok(/renameRankCategory\(c\.category, target, SOURCE\)/.test(adminRank), "归并复用既有的类目改名接口（带本域，不跨专区）");
 ok(/归并中 " \+ \(done \+ bad\)/.test(adminRank), "归并过程有进度提示");

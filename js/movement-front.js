@@ -189,11 +189,7 @@
     }
     body.innerHTML = "";
     list.forEach(function (it) {
-      var t = tagsOf(state.tags[it.image_url]);
-      var shown = shownGroups();
-      var done = shown.filter(function (g) {
-        return g[1].some(function (f) { return (t[f] || []).length; });
-      }).length;
+      /* 20261114G：卡片右下角不再显示「已打标 n/13」，理由同 SHEIN / Pinterest 专区 */
       var sea = seasonLabel(it);
       var card = document.createElement("div");
       card.className = "mv-card";
@@ -201,8 +197,7 @@
         '<div class="mv-card-img"><img loading="lazy" src="' + esc(imgUrl(it)) + '" alt="' + esc(it.title || "") + '">' +
         (sea ? '<span class="mv-season-badge">' + esc(sea) + "</span>" : "") +
         "</div>" +
-        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(it.category || "未分类") + "</span>" +
-        '<span class="mv-card-done">' + done + "/" + shown.length + "</span></div>";
+        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(it.category || "未分类") + "</span></div>";
       card.onclick = function () { openModal(it); };
       body.appendChild(card);
     });

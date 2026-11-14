@@ -262,8 +262,8 @@
     body.innerHTML = '<div class="grid" id="cz-grid"></div>';
     var grid = $("#cz-grid");
     list.forEach(function (it) {
-      var t = state.tags[it.image_url] || {};
-      var done = ALL_DIMS.filter(function (k) { return (t[k] || []).length; }).length;
+      /* 20261114G：卡片右下角不再显示「已打标 n/13」——前台是给运营选图看的，
+         这张打标了没有跟他们无关，一屏几十个数字反而干扰判断。进度仍在顶部计数条里。 */
       var cat = it.category || "未分类";
       var mon = it.month || "";
       var card = document.createElement("div");
@@ -275,8 +275,7 @@
       card.innerHTML =
         '<div class="mv-card-img"><img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(cat) + '">' +
         (mon ? '<span class="mv-season-badge">' + esc(mon) + "</span>" : "") + "</div>" +
-        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(cat) + "</span>" +
-        '<span class="mv-card-done">' + done + "/" + ALL_DIMS.length + "</span></div>";
+        '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(cat) + "</span></div>";
       card.onclick = function () { openModal(it); };
       grid.appendChild(card);
     });

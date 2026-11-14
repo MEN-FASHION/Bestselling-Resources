@@ -335,7 +335,14 @@
       ops: boxes.concat(imgs, texts)
     };
   }    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
-  var SIZE = "m";            // s | m | l
+  /* 20261114G · 图幅与全站共用一份记忆：在别的专区选了「小/中/大」，进这里接着生效 */
+  var SIZE = (function () {
+    try {
+      var _v = localStorage.getItem("bs_img_size");
+      if (_v === "s" || _v === "m" || _v === "l") return _v;
+    } catch (e) { /* 隐私模式忽略 */ }
+    return "s";
+  })();   // s | m | l
   var CAP = CAP_STEP;
   var CACHE = null;
   /* 20261103F：以前 CACHE 只存一个组合，切一次类目就整批重新请求，
@@ -372,7 +379,7 @@
   }          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
 
-  var BUILD = "20261114B";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261114H";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
 
   /* ---------------- 期次排序 ---------------- */
   function periodKey(p) {
@@ -1148,6 +1155,8 @@
     if (sizeBox) Array.prototype.forEach.call(sizeBox.querySelectorAll("[data-size]"), function (b) {
       b.onclick = function () {
         SIZE = b.getAttribute("data-size");
+        /* 20261114G · 记住这次选择，其它专区的图幅跟着一起变 */
+        try { localStorage.setItem("bs_img_size", SIZE); } catch (e) {}
         renderPanel(); renderBody();
       };
     });

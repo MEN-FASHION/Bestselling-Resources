@@ -609,35 +609,110 @@ window.Common = (function () {
   })();
 
   /* ============================================================
-   * 20261114B · 图墙「每行展示多少张」—— 全站唯一算法
+   * 20261114G · 图墙「图片展示大小（图幅）」+「每行展示多少张」—— 全站唯一算法
    * ------------------------------------------------------------
-   * 需求：有图的每个专区，一行摆几张都要和【趋势上升榜】对齐。
-   * 口径：以趋势上升榜卡片「中档」为基准 —— 宽屏一行 4 张；
-   *       容器变窄时按同一阶梯降档（3 / 2 / 1 张），所有专区同步。
+   * 需求：有图的每个专区，都要像【趋势上升榜】那样能调「图幅 小 / 中 / 大」——
+   *       图越小，一行摆得越多；图越大，一行摆得越少。
+   * 口径：与趋势上升榜完全同一套三档目标卡宽：s=70 / m=130 / l=220（px）。
+   *       每行张数 = 列宽 ÷ 目标卡宽 + 间距（6px）；档位顺序硬保证 小 > 中 > 大，
+   *       避免窄列时四舍五入把两档撞成同一个张数（点了没反应）。
+   * 记忆：全站只存一个选择（localStorage: bs_img_size）。在任何一个专区改，
+   *       其它专区、以及趋势上升榜 / 上新节奏，一起跟着变 —— 不会这页 10 张那页 4 张。
    * 用法：页面不写死列数，这里算出结果写进元素的 --card-cols，
    *       样式（css/style.css 末尾）只按 var(--card-cols) 排版。
+   * 控件：页面里放一个 <div class="imgsize-bar" data-imgsize></div>，
+   *       boot() 时自动渲染「图幅 小 / 中 / 大」按钮（只渲染一次，重绘不会重复插）。
    * 触发：首次加载、窗口尺寸变化、DOM 有新增（切专区/翻页/改筛选）时重算。
    * ============================================================ */
   var cardGrid = (function () {
-    var BASE = 4;                       /* 宽屏每行张数（与榜单中档一致） */
-    var STEPS = [[880, 4], [600, 3], [380, 2], [0, 1]];   /* 容器宽度 → 每行张数 */
+    var GAP = 6;                        /* 图与图之间的缝，与 --card-gap 一致 */
+    var SIZE_KEY = "bs_img_size";       /* 全站唯一的图幅记忆键 */
+    var SIZE_TARGET = { s: 70, m: 130, l: 220 };   /* 与榜单 SIZE_TARGET 完全一致 */
+    var SIZE_LABEL = { s: "小", m: "中", l: "大" };
+    var DEFAULT_SIZE = "s";             /* 默认「小」：打开就是一行能看更多图 */
+    var MIN_W = 34;                     /* 卡片最小可读宽度（px），低于它就不再增加张数 */
+    var MAX = 40;                       /* 每行上限，防止超宽屏铺成一片色块 */
     var SEL = "body.front .grid, body.front #mv-body, body.front .fv-grid, " +
               "body.front .trend-grid, body.front .recruit-grid, " +
               "body.front .bestseller-grid, body.front .mk-grid";
 
-    /* 纯函数：给定容器宽度，返回这一行该摆几张（全站只有这一份规则） */
-    function cols(w) {
+    /* 读全站记忆（Node 里跑测试时没有 localStorage，安全退化为默认档） */
+    function stored() {
+      try {
+        if (typeof localStorage === "undefined" || !localStorage) return "";
+        var v = localStorage.getItem(SIZE_KEY);
+        if (v === "s" || v === "m" || v === "l") return v;
+      } catch (e) { /* 隐私模式等忽略 */ }
+      return "";
+    }
+    var SIZE = stored() || DEFAULT_SIZE;
+
+    function size() { return SIZE; }
+    function sizeLabel() { return SIZE_LABEL[SIZE] || SIZE_LABEL.m; }
+    function sizeTargetW() { return SIZE_TARGET[SIZE] || SIZE_TARGET.m; }
+
+    /* 纯函数：给定容器宽度（可选指定档位），返回这一行该摆几张
+       与榜单 poolColsFromWidth 同源：三档各算一次，再按档位取，档位顺序硬保证。
+       容器越宽 → 张数越多；所以「对比列越少（每列越宽）」时，每行自然摆得更多。 */
+    function cols(w, sz) {
       w = Number(w) || 0;
       if (w <= 0) return 0;             /* 未排版（隐藏容器）不写列数 */
-      for (var i = 0; i < STEPS.length; i++) {
-        if (w >= STEPS[i][0]) return STEPS[i][1];
+      var avail = w + GAP;
+      var use = SIZE_TARGET[sz] ? sz : SIZE;
+      var rS = Math.max(1, Math.round(avail / (SIZE_TARGET.s + GAP)));
+      var rM = Math.max(1, Math.round(avail / (SIZE_TARGET.m + GAP)));
+      var rL = Math.max(1, Math.round(avail / (SIZE_TARGET.l + GAP)));
+      if (rM <= rL) rM = rL + 1;        /* 中 > 大 */
+      if (rS <= rM) rS = rM + 1;        /* 小 > 中 */
+      var n = use === "s" ? rS : (use === "l" ? rL : rM);
+      var maxCols = Math.floor(avail / (MIN_W + GAP));
+      n = Math.min(n, MAX, Math.max(1, maxCols));
+      return Math.max(1, n);
+    }
+
+    /* 图幅按钮：只渲染一次；之后只切换 on 状态 */
+    function renderChips(el) {
+      var keys = ["s", "m", "l"];
+      var html = '<span class="isg-name">图幅</span><span class="isg-chips">';
+      for (var i = 0; i < keys.length; i++) {
+        html += '<button type="button" class="isg-chip" data-imgsize-pick="' + keys[i] + '">' +
+                SIZE_LABEL[keys[i]] + "</button>";
       }
-      return 1;
+      html += '</span><span class="isg-hint">小 = 一行更多</span>';
+      el.innerHTML = html;
+      el.setAttribute("data-imgsize-done", "1");
+      var picks = el.querySelectorAll("[data-imgsize-pick]");
+      for (var j = 0; j < picks.length; j++) {
+        picks[j].onclick = function () {
+          setSize(this.getAttribute("data-imgsize-pick"));
+        };
+      }
+    }
+
+    function syncChips() {
+      var boxes = document.querySelectorAll("[data-imgsize]");
+      for (var i = 0; i < boxes.length; i++) {
+        var picks = boxes[i].querySelectorAll("[data-imgsize-pick]");
+        for (var j = 0; j < picks.length; j++) {
+          var on = picks[j].getAttribute("data-imgsize-pick") === SIZE;
+          if (on) picks[j].classList.add("on"); else picks[j].classList.remove("on");
+        }
+      }
+    }
+
+    function mountAll() {
+      var boxes;
+      try { boxes = document.querySelectorAll("[data-imgsize]"); } catch (e) { return; }
+      for (var i = 0; i < boxes.length; i++) {
+        if (!boxes[i].getAttribute("data-imgsize-done")) renderChips(boxes[i]);
+      }
+      syncChips();
     }
 
     function paint() {
       var list;
       try { list = document.querySelectorAll(SEL); } catch (e) { return; }
+      try { document.body.setAttribute("data-img-size", SIZE); } catch (e) {}
       for (var i = 0; i < list.length; i++) {
         var el = list[i];
         var w = el.clientWidth || 0;
@@ -648,18 +723,51 @@ window.Common = (function () {
         el.setAttribute("data-card-cols", String(n));
         try { el.style.setProperty("--card-cols", String(n)); } catch (e) {}
       }
+      syncChips();
+    }
+
+    var listeners = [];
+    function onChange(fn) { if (typeof fn === "function") listeners.push(fn); }
+    function fire() {
+      for (var i = 0; i < listeners.length; i++) { try { listeners[i](SIZE); } catch (e) {} }
+      try {
+        window.dispatchEvent(new CustomEvent("cardgrid:size", { detail: { size: SIZE } }));
+      } catch (e) { /* 老浏览器忽略 */ }
+    }
+
+    function setSize(v) {
+      if (v !== "s" && v !== "m" && v !== "l") return;
+      if (v === SIZE) { syncChips(); return; }
+      SIZE = v;
+      try {
+        if (typeof localStorage !== "undefined" && localStorage) localStorage.setItem(SIZE_KEY, v);
+      } catch (e) { /* 记不住也不影响本次使用 */ }
+      /* 清掉缓存属性，强制按新档位重算一遍（否则会被 data-card-cols 判定「没变」而跳过） */
+      var all;
+      try { all = document.querySelectorAll(SEL); } catch (e) { all = []; }
+      for (var i = 0; i < all.length; i++) all[i].removeAttribute("data-card-cols");
+      try { document.body.setAttribute("data-img-size", SIZE); } catch (e) {}
+      paint();
+      fire();
     }
 
     var timer = null;
     function soon() {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(function () { timer = null; try { paint(); } catch (e) {} }, 60);
+      timer = setTimeout(function () {
+        timer = null;
+        try { paint(); } catch (e) {}
+        try { mountAll(); } catch (e) {}
+      }, 60);
     }
 
     function boot() {
       paint();
+      mountAll();
       window.addEventListener("resize", soon);
       window.addEventListener("load", soon);
+      /* 别的页面（榜单/上新节奏）改了图幅，回到这里也跟着变 */
+      window.addEventListener("cardgrid:size", function () { try { paint(); } catch (e) {} });
       if (window.MutationObserver) {
         try {
           new MutationObserver(soon).observe(document.body, { childList: true, subtree: true });
@@ -670,7 +778,12 @@ window.Common = (function () {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
     else boot();
 
-    return { cols: cols, paint: paint, soon: soon, SEL: SEL, BASE: BASE, STEPS: STEPS };
+    return {
+      cols: cols, paint: paint, soon: soon, mountAll: mountAll,
+      size: size, sizeLabel: sizeLabel, setSize: setSize, onChange: onChange,
+      SIZE_KEY: SIZE_KEY, SIZE_TARGET: SIZE_TARGET, SIZE_LABEL: SIZE_LABEL,
+      DEFAULT_SIZE: DEFAULT_SIZE, SEL: SEL, GAP: GAP, MIN_W: MIN_W, MAX: MAX
+    };
   })();
   try { window.CardGrid = cardGrid; } catch (e) {}
 

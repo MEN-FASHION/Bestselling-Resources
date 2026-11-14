@@ -142,19 +142,14 @@
      · 渠道名：库里可能同时存在 SHEIN / Shein / shein / SHE-IN。严格按原文分组，
        同一个渠道会裂成几列；而「SHEIN 专区」那边是忽略大小写和分隔符比较的，
        于是会出现「专区里有图，对比页这一列却空」。这里跟专区对齐。
-     · 类目名：与趋势上升榜 / 上新节奏同一套归一（RankCatNorm）。
-       否则同一个「套装」一边是标准名、一边是平台全路径，选中类目后渠道列就空了。 */
+     · 类目名（20261114G）：一律原样，不做任何归并改写。
+       以前这里会把类目名再过一遍关键词规则，后台选 A、这里显示 B，
+       一个类目裂成好几列。现在库里存什么就显示什么、就按什么查。 */
   function chKey(v) {
     return String(v == null ? "" : v).replace(/[\s_\-]/g, "").toLowerCase();
   }
   function normCat(v) {
-    var s = String(v == null ? "" : v).replace(/\s+/g, " ").trim();
-    if (!s) return "";
-    var N = (typeof window !== "undefined") ? window.RankCatNorm : null;
-    if (N && typeof N.normalize === "function") {
-      try { return N.normalize(s) || s; } catch (e) { /* 归一失败就用原文，绝不把数据改成认不出的样子 */ }
-    }
-    return s;
+    return String(v == null ? "" : v).replace(/\s+/g, " ").trim();
   }
 
   /* 加载提示：每秒报一次已等待秒数，绝不出现「永远是加载中」的观感 */
@@ -551,15 +546,55 @@
   }
 
   /* ---------- 多列对比池 ---------- */
-  function perRowOf(n) {
+  /* 每行几张：与趋势上升榜同一套算法 ——「列宽 ÷ 目标卡宽（130px）」。
+     因此列数减少（每列更宽）时，每行自动摆更多；列数增多时，每行自动变少，
+     图不会被压成一小格。这里只是渲染前的估算，插入 DOM 后 fitPools 会按实测列宽校正。 */
+  function perRowOf(n, containerW) {
     var fixed = state.cfg && Number(state.cfg.perRow);
     if (fixed >= 1) return Math.min(6, Math.max(1, fixed));
-    /* 列越多，每列每行摆得越少，保证一屏能看全、图也不至于糊成一格色块 */
-    if (n <= 2) return 4;
+    var cg = window.CardGrid;
+    var W = Number(containerW) || 0;
+    if (!W) { var host = $("#cmp-body"); W = host ? host.clientWidth || 0 : 0; }
+    if (W > 0 && n > 0 && cg && cg.cols) {
+      /* 减去列间距与列内边距，得到单列内部的可用宽度 */
+      var colW = (W - (n - 1) * 10) / n - 22;
+      var c = cg.cols(colW);
+      if (c) return c;
+    }
+    if (n <= 2) return 6;
     if (n === 3) return 4;
     if (n === 4) return 3;
-    if (n === 5) return 2;
     return 2;
+  }
+
+  /* 插入 DOM 后按每列实测宽度重算，保证「页面实际多宽就摆多少张」 */
+  function fitPools() {
+    var body = $("#cmp-body");
+    if (!body) return;
+    var cg = window.CardGrid;
+    var fixed = state.cfg && Number(state.cfg.perRow);
+    var grids = body.querySelectorAll(".rk-pool-grid");
+    for (var i = 0; i < grids.length; i++) {
+      var g = grids[i];
+      var w = g.clientWidth || 0;
+      if (!w) continue;
+      var n = g.querySelectorAll(".rk-card").length;
+      var c = fixed >= 1 ? Math.min(6, Math.max(1, fixed))
+                         : (cg && cg.cols ? cg.cols(w) : 0);
+      if (!c) continue;
+      if (n) c = Math.min(c, Math.max(1, n));
+      g.style.setProperty("--rk-r", String(c));
+    }
+  }
+
+  var _fitTimer = null;
+  function fitPoolsSoon() {
+    if (_fitTimer) clearTimeout(_fitTimer);
+    _fitTimer = setTimeout(function () { _fitTimer = null; try { fitPools(); } catch (e) {} }, 50);
+  }
+  if (window && typeof window.addEventListener === "function") {
+    window.addEventListener("resize", fitPoolsSoon);
+    window.addEventListener("load", fitPoolsSoon);
   }
 
   function renderPools() {
@@ -593,7 +628,7 @@
       return;
     }
 
-    var pr = perRowOf(srcs.length);
+    var pr = perRowOf(srcs.length, body.clientWidth || 0);
     var html = '<div class="rk-pools">';
     srcs.forEach(function (s) {
       var got = colItems(s);
@@ -639,6 +674,10 @@
     });
     var allBtn = $("#cmp-insight-all");
     if (allBtn) allBtn.onclick = function () { openInsight(""); };
+
+    /* 首屏按实测列宽再校正一次（渲染前只能估算） */
+    fitPools();
+    fitPoolsSoon();
   }
 
   /* ---------- 大图 + 打标 ---------- */

@@ -509,7 +509,8 @@
       merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
       merge.onclick = async () => {
         const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的条目并入哪个类目？\n填目标类目名：", c.category) || "").trim();
-        if (!v || v === c.category) return;
+        if (!v) return;
+        if (v === c.category) { sbToast("目标类目和源类目是同一个，没有需要合并的内容", false); return; }
         if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？（只影响标题组词台）\n重复的图会自动跳过，源类目随后删除。"))) return;
         try {
           const n = await SB.renameRankCategory(c.category, v, SOURCE);

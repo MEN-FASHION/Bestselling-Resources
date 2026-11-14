@@ -113,12 +113,9 @@
     await load();
   }
 
-  /* 类目名归一：与榜单页同一套规则（平台全路径名 → 标准类目名） */
+  /* 20261114G：类目名原样显示，不做任何改写（与榜单页同一口径）。 */
   function normCatName(x) {
-    var raw = String(x == null ? "" : x).trim();
-    if (!raw) return "";
-    if (typeof window !== "undefined" && window.RankCatNorm) return window.RankCatNorm.normalize(raw);
-    return raw;
+    return String(x == null ? "" : x).replace(/\s+/g, " ").trim();
   }
   function catsOf(label) {
     var k = String(label || "");

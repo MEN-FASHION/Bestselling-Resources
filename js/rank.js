@@ -38,15 +38,12 @@
     return v;
   }
 
-  /* 类目名归一：库里可能残留平台全路径名
-     （「服装，鞋靴和珠宝饰品，男士时尚，男装，男士休闲运动服，男士休闲运动套装，男士运动服」），
-     前台菜单不能照原样一条条列出来 —— 合并成标准类目显示，
-     查询时再用映射把标准名展开成它包含的所有原始类目名。 */
+  /* 20261114G：类目名一律原样显示，前台不做任何改写。
+     以前这里会把库里的类目名再过一遍关键词归并，于是「后台选的是 A、前台显示成 B」。
+     现在类目名从写入到展示全程直通：库里存什么就显示什么。
+     库里若还留着早年的全路径长名，会照原样列出来，需要清理时用后台「类目清理…」手动归并。 */
   function normCatName(x) {
-    var raw = String(x == null ? "" : x).trim();
-    if (!raw) return "";
-    if (typeof window !== "undefined" && window.RankCatNorm) return window.RankCatNorm.normalize(raw);
-    return raw;
+    return String(x == null ? "" : x).replace(/\s+/g, " ").trim();
   }
   var RAW_CATS = [];      /* 库里真实的类目名（可能很脏） */
   var CAT_MAP = {};       /* 标准名 → 原始类目名数组 */
@@ -60,7 +57,7 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
-  var BUILD = "20261114B";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261114H";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
@@ -327,7 +324,14 @@
       ops: boxes.concat(imgs, texts)
     };
   }    // all = 全部期次都按位次重排；或某个具体期次（只重排该列）
-  var SIZE = "m";            // s | m | l
+  /* 20261114G · 图幅与全站共用一份记忆：在别的专区选了「小/中/大」，进这里接着生效 */
+  var SIZE = (function () {
+    try {
+      var _v = localStorage.getItem("bs_img_size");
+      if (_v === "s" || _v === "m" || _v === "l") return _v;
+    } catch (e) { /* 隐私模式忽略 */ }
+    return "s";
+  })();   // s | m | l
   var CAP = CAP_STEP;
   var CACHE = null;
   /* 20261103F：以前 CACHE 只存一个组合，切一次类目就整批重新请求，
@@ -1211,6 +1215,8 @@
     if (sizeBox) Array.prototype.forEach.call(sizeBox.querySelectorAll("[data-size]"), function (b) {
       b.onclick = function () {
         SIZE = b.getAttribute("data-size");
+        /* 20261114G · 记住这次选择，其它专区的图幅跟着一起变 */
+        try { localStorage.setItem("bs_img_size", SIZE); } catch (e) {}
         renderPanel(); renderBody();
       };
     });

@@ -54,13 +54,14 @@
   }
 
   var busy = false;
+  var curMask = null;
 
   /* 核心：显示一个弹窗，返回 Promise。
      opts: { title, okText, cancelText, danger, onlyOk } */
   function open(msg, opts) {
     opts = opts || {};
     ensureCss();
-    return new Promise(function (resolve) {
+    var pr = new Promise(function (resolve) {
       /* 已有弹窗在等回答时，直接视为取消，绝不叠框 */
       if (busy) { resolve(false); return; }
       busy = true;
@@ -86,6 +87,13 @@
       body.textContent = msg == null ? "" : String(msg);
       box.appendChild(body);
 
+      /* 底部按钮区：必须先建好，输入框要插在它上面
+         （20261114H 修复：此前 foot 声明在下面，输入分支里 appendChild(foot)
+           拿到的是 undefined，浏览器抛 TypeError，Promise 直接 rejected，
+           于是所有「输入框弹窗」点按钮都毫无反应） */
+      var foot = document.createElement("div");
+      foot.className = "uid-foot";
+
       /* 需要输入时（uiPrompt），在正文下面放一个单行输入框 */
       var input = null;
       if (opts.input) {
@@ -96,12 +104,8 @@
         if (opts.placeholder) input.placeholder = opts.placeholder;
         input.style.margin = "4px 18px 2px";
         input.style.width = "calc(100% - 36px)";
-        box.insertBefore(input, foot);
-        box.appendChild(foot);
+        box.appendChild(input);
       }
-
-      var foot = document.createElement("div");
-      foot.className = "uid-foot";
 
       var btnCancel = null;
       if (!opts.onlyOk) {
@@ -120,6 +124,7 @@
       box.appendChild(foot);
       mask.appendChild(box);
       document.body.appendChild(mask);
+      curMask = mask;
 
       var done = false;
       function finish(val) {
@@ -144,6 +149,23 @@
         try { (input || btnOk).focus(); } catch (e) {}
         if (input) { try { input.select(); } catch (e) {} }
       }, 30);
+    });
+
+    /* 20261114H：弹窗内部一旦出错，绝不能变成「点了没反应」。
+       清掉残留遮罩，并退回浏览器原生弹窗，让功能照样能用。 */
+    return pr.catch(function (err) {
+      busy = false;
+      if (curMask && curMask.parentNode) curMask.parentNode.removeChild(curMask);
+      curMask = null;
+      try { console.error("[ui-dialog]", err); } catch (e) {}
+      try {
+        if (opts.input) {
+          var v = window.prompt(msg == null ? "" : String(msg), opts.value == null ? "" : String(opts.value));
+          return v == null ? null : v;
+        }
+        if (opts.onlyOk) { window.alert(msg == null ? "" : String(msg)); return true; }
+        return window.confirm(msg == null ? "" : String(msg));
+      } catch (e2) { return opts.input ? null : false; }
     });
   }
 

@@ -15,16 +15,17 @@
   --ok: #4a9c6d;
   --shade: #f0eee9;
   --shadow: 0 18px 40px rgba(60,52,42,.12);
-  /* 20261114B · 图片展示比例唯一来源
+  /* 20261114C · 图片展示比例唯一来源
      全站所有「图片格」的宽高比都读这一个变量，取值与【趋势上升榜】的卡片一致（3:4 竖版）。
      改这一行 = 改所有专区，包括趋势专区、SHEIN、Pinterest、渠道对比、上新节奏、
      视觉专区、我的收藏、品牌动向、营销日历和后台图墙。 */
   --img-ratio: 3 / 4;
-  /* 20261114B · 图墙「每行展示多少张」唯一来源
-     口径与【趋势上升榜】卡片中档一致：宽屏一行 4 张；
-     窄屏按同一档位阶梯降到 3 / 2 / 1 张，各专区一起变。
+  /* 20261114C · 图墙「每行展示多少张」唯一来源
+     口径与【趋势上升榜】完全一致：每行张数 = 列宽 ÷ 目标卡宽（130px）。
+     因此**对比列越少（每列越宽），每行自动摆得越多**；列越多、每行越少，图不被压小。
+     单列满宽约 10 张，三列时每列约 3 张，窄屏自然降档。
      页面脚本算出张数写进 --card-cols，样式只按这个张数排版；
-     改这一处 = 改全站每行张数，各专区永远一致。 */
+     改这一处 = 改全站目标卡宽，各专区永远一致。 */
   --card-cols-base: 4;
   --card-gap: 6px;
 }
@@ -7488,7 +7489,7 @@ html, body{
 }
 
 /* ============================================================================
- * 导出高清图（page-shot.js，20261114B）
+ * 导出高清图（page-shot.js，20261114C）
  * 每个有图的专区工具条里一个按钮，与趋势上升榜「天眼」旁那个同一个能力：
  * 把页面此刻的样子定格成一张 2 倍分辨率的长图。
  * ==========================================================================*/
@@ -7536,12 +7537,13 @@ html, body{
 .ps-hud-x:hover { background: #efeae2; }
 
 /* ==================================================================
- * 20261114B · 全站图墙「每行张数」统一
+ * 20261114C · 全站图墙「每行张数」统一
  * ------------------------------------------------------------------
- * 口径：所有有图的专区，一行摆几张，与【趋势上升榜】完全一致。
- * 做法：算法只有一份（js/common.js 的 CardGrid），按容器宽度 ÷ 目标卡宽
- *       （130px）+ 间距（6px）算出列数，写进元素上的 --card-cols；
- *       下面这些图墙只负责按 --card-cols 排版。
+ * 口径：所有有图的专区，一行摆几张，与【趋势上升榜】同一套算法 ——
+ *       每行张数 = 列宽 ÷ 目标卡宽（130px）+ 间距（6px）。
+ *       所以对比列越少（每列越宽），每行自动摆得越多；列越多则每行越少。
+ * 做法：算法只有一份（js/common.js 的 CardGrid），算出列数写进元素上的
+ *       --card-cols；下面这些图墙只负责按 --card-cols 排版。
  * 放在文件最后 = 覆盖各专区原有的 minmax(...) 与媒体查询断点，
  * 于是窗口变窄时张数也由同一套算法决定，不会再出现「这页 4 张、那页 7 张」。
  * 后台（body 没有 .front）不受影响。
@@ -7556,3 +7558,78 @@ body.front .mk-grid {
   grid-template-columns: repeat(var(--card-cols, 4), minmax(0, 1fr));
   gap: var(--card-gap, 6px);
 }
+
+/* ==================================================================
+ * 20261114D · 「图幅（图片展示大小）」控件 + 档位下的卡片文字缩放
+ * ------------------------------------------------------------------
+ * 控件由 js/common.js 自动渲染（页面里放 <div class="imgsize-bar" data-imgsize></div>）。
+ * 小档卡片只有 70px 宽，文字不跟着缩会挤成两行甚至溢出；大档则略放大。
+ * ================================================================== */
+.imgsize-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 0 0 10px; font-size: 12.5px; color: #6b6357;
+}
+.imgsize-bar .isg-name { flex: none; }
+.isg-chips { display: inline-flex; gap: 4px; }
+.isg-chip {
+  font: inherit; font-size: 12px; line-height: 1.5; padding: 2px 12px;
+  color: #4a443b; background: #fff; border: 1px solid #e2ddd4;
+  border-radius: 999px; cursor: pointer;
+}
+.isg-chip:hover { background: #f6f3ee; }
+.isg-chip.on { color: #fff; background: #111827; border-color: #111827; }
+.imgsize-bar .isg-hint { color: #9a9285; font-size: 12px; }
+.fv-bar .imgsize-bar, .mk-head .imgsize-bar { margin: 0; }
+
+body.front[data-img-size="s"] .mv-card-meta { font-size: 10.5px; padding: 5px 6px; }
+body.front[data-img-size="s"] .mv-season-badge { font-size: 10px; padding: 1px 5px; }
+body.front[data-img-size="s"] .mv-card { border-radius: 8px; }
+body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px; }
+
+/* ===== 上传看板（20261114F）—— 每个有图的专区顶部：谁、几号、哪些类目、各多少张 ===== */
+.updash {
+  background: #fffdf8; border: 1px solid #e7e0d3; border-radius: 12px;
+  margin: 0 0 12px; box-shadow: 0 1px 2px rgba(35,28,15,.04);
+}
+.updash-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px clamp(11px, 2vw, 14px);
+}
+.updash-t { font-size: 13.5px; font-weight: 700; color: #3a3428; }
+.updash-sub { font-size: 12px; color: #8b8477; }
+.updash-toggle {
+  margin-left: auto; font: inherit; font-size: 12px; line-height: 1.6;
+  padding: 2px 12px; color: #4a443b; background: #fff;
+  border: 1px solid #e2ddd4; border-radius: 999px; cursor: pointer;
+}
+.updash-toggle:hover { background: #f6f3ee; }
+.updash-body { padding: 0 clamp(11px, 2vw, 14px) 12px; }
+.updash.is-closed .updash-body { display: none; }
+.updash-load, .updash-empty { font-size: 12.5px; color: #8b8477; padding: 2px 0 4px; }
+.updash-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.updash-chip {
+  font-size: 12px; color: #3a3428; background: #fff;
+  border: 1px solid #e7e0d3; border-radius: 999px; padding: 2px 10px;
+}
+.updash-chip b { font-weight: 600; }
+.updash-chip i { font-style: normal; color: #9a9285; font-size: 11.5px; }
+.updash-chip.is-hist { background: #f3f1ec; color: #7a7367; }
+.updash-scroll { max-height: 268px; overflow: auto; border: 1px solid #efeade; border-radius: 10px; }
+.updash-tb { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.updash-tb th, .updash-tb td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid #f1ece1; }
+.updash-tb thead th {
+  position: sticky; top: 0; z-index: 1; background: #faf7f0;
+  font-weight: 600; color: #6b6357; white-space: nowrap;
+}
+.updash-tb tbody tr:last-child td { border-bottom: 0; }
+.updash-d { white-space: nowrap; color: #4a443b; font-variant-numeric: tabular-nums; }
+.updash-nod { color: #a8a094; }
+.updash-w { white-space: nowrap; color: #111827; font-weight: 600; }
+.updash-c { line-height: 1.9; }
+.updash-cat {
+  display: inline-block; margin: 0 4px 0 0; padding: 0 8px;
+  background: #f5f2ea; border-radius: 999px; color: #4a443b; font-size: 12px;
+}
+.updash-cat b { font-weight: 600; color: #111827; }
+.updash-n { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.updash-tip { font-size: 11.5px; color: #9a9285; margin-top: 8px; line-height: 1.7; }

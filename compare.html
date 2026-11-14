@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>渠道对比 · TREND BANK</title>
 <link rel="icon" href="favicon.svg">
-<link rel="stylesheet" href="css/style.css?v=20261114B">
+<link rel="stylesheet" href="css/style.css?v=20261114H">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
@@ -45,6 +45,8 @@
 
       <!-- ===== 右侧：上方只筛「月度」，下方多列并排对比 ===== -->
       <main class="grid-wrap">
+        <!-- 上传看板：谁、几号、在哪些类目传了多少张（所有管理员可见） -->
+        <div class="updash" data-updash="compare"></div>
         <div id="cmp-filter" class="tag-filter">
           <div class="tf-trigger" id="cmp-trigger">
             <span class="tf-t">筛选</span>
@@ -57,6 +59,7 @@
         </div>
 
         <div id="cmp-bar" class="rk-bar"></div>
+        <div class="imgsize-bar" data-imgsize></div>
 
         <div id="cmp-body" class="rk-body"><div class="rk-empty">加载中…</div></div>
       </main>
@@ -85,21 +88,24 @@
     </div>
   </div>
 
-<script src="vendor/supabase.js?v=20261114B"></script>
-<script src="js/site-norm.js?v=20261114B"></script>
-<script src="js/config.js?v=20261114B"></script>
-<script src="js/supabase.js?v=20261114B"></script>
-<script src="js/common.js?v=20261114B"></script>
-<script src="js/rank-enums.js?v=20261114B"></script>
-<script src="js/rank-cat-norm.js?v=20261114B"></script>
-<script src="js/compare-insight.js?v=20261114B"></script>
-<script src="js/compare-front.js?v=20261114B"></script>
-  <script src="js/ui-dialog.js?v=20261114B"></script>
-  <script src="js/find-similar.js?v=20261114B"></script>
-  <script src="vendor/jszip.min.js?v=20261114B"></script>
-  <script src="js/view-export.js?v=20261114B"></script>
+<script src="vendor/supabase.js?v=20261114H"></script>
+<script src="js/site-norm.js?v=20261114H"></script>
+<script src="js/config.js?v=20261114H"></script>
+<script src="js/supabase.js?v=20261114H"></script>
+<script src="js/common.js?v=20261114H"></script>
+<script src="js/rank-enums.js?v=20261114H"></script>
+<script src="js/rank-cat-norm.js?v=20261114H"></script>
+<script src="js/compare-insight.js?v=20261114H"></script>
+<script src="js/compare-front.js?v=20261114H"></script>
+  <script src="js/ui-dialog.js?v=20261114H"></script>
+  <script src="js/find-similar.js?v=20261114H"></script>
+  <script src="vendor/jszip.min.js?v=20261114H"></script>
+  <script src="js/view-export.js?v=20261114H"></script>
   <script>try { window.VX && window.VX.boot("compare"); } catch (e) {}</script>
-  <script src="js/page-shot.js?v=20261114B"></script>
+  <script src="js/upload-owner.js?v=20261114H"></script>
+  <script src="js/upload-dash.js?v=20261114H"></script>
+  <script src="js/page-shot.js?v=20261114H"></script>
   <script>try { window.PageShot && window.PageShot.mount("compare"); } catch (e) {}</script>
+  <script>try { window.UploadDash && window.UploadDash.mount("compare"); } catch (e) {}</script>
 </body>
 </html>

@@ -976,18 +976,20 @@
   /* 类目名归一：表格里的「叶子类目名称」常是平台全路径
      （服装、鞋靴和珠宝饰品，男士时尚，…，男士休闲运动套装），
      直接建类目会把后台菜单撑爆。统一清洗成标准类目名。 */
+  /* 20261114G：类目名不做任何改写。后台选什么，写进库就是什么、前台就显示什么。
+     以前这里会过一遍关键词归并表，正式类目名也可能被改写（「打底压缩」→「运动功能服」）。 */
   function normCat(x) {
-    const raw = String(x == null ? "" : x).trim();
-    if (!raw) return "";
-    if (typeof window !== "undefined" && window.RankCatNorm) return window.RankCatNorm.normalize(raw);
-    return raw;
+    return String(x == null ? "" : x).replace(/\s+/g, " ").trim();
   }
 
   function groupRankRows(rows, opt) {
     const o = opt || {};
     const periodType = o.periodType || "week";
     const defPeriod = String(o.periodLabel || "").trim();
-    const defCat = normCat(o.category);
+    /* 20261114G：界面所选类目原样使用，不再过 normalize。
+       以前 normalize 会按关键词改写正式类目名（「打底压缩」命中「压缩」→「运动功能服」），
+       于是后台明明选的是打底压缩，前台却显示运动功能服。 */
+    const defCat = String(o.category == null ? "" : o.category).replace(/\s+/g, " ").trim();
     const useMine = !!o.useMine && (o.sites || []).length > 0;
     const groups = new Map();
     let noSite = 0, noCat = 0, noPeriod = 0, tableCatOverrode = 0;
@@ -1714,6 +1716,9 @@
     cNum.type = "button"; cNum.className = "btn-ghost small"; cNum.textContent = "只选数字类目";
     const cDel = document.createElement("button");
     cDel.type = "button"; cDel.className = "btn-ghost small danger"; cDel.textContent = "删除选中";
+    /* 勾选多个 → 一次并入同一个目标类目（清理「POLO / Polo 衫 / POLO衫」这类重复时不必逐个点） */
+    const cMerge = document.createElement("button");
+    cMerge.type = "button"; cMerge.className = "btn-ghost small"; cMerge.textContent = "合并选中…";
     /* 一堆「服装、鞋靴和珠宝饰品，…，男士休闲运动套装」这类长路径名，逐个改名不现实，
        按词典一次性归并到标准类目 */
     const cNorm = document.createElement("button");
@@ -1725,6 +1730,8 @@
       const n = pickedCats().length;
       cDel.textContent = "删除选中" + (n ? "（" + n + "）" : "");
       cDel.disabled = n === 0;
+      cMerge.textContent = "合并选中" + (n ? "（" + n + "）" : "") + "…";
+      cMerge.disabled = n === 0;
       const allOn = panel.querySelectorAll(".rank-cat-pick").length === n && n > 0;
       cAll.textContent = allOn ? "取消全选" : "全选";
     };
@@ -1736,6 +1743,27 @@
     cNum.onclick = () => {
       panel.querySelectorAll(".rank-cat-pick").forEach((x) => { x.checked = /^\d+$/.test(x.dataset.cat); });
       refreshCbar();
+    };
+    cMerge.onclick = async () => {
+      const picked = pickedCats();
+      if (!picked.length) return;
+      const preview = picked.slice(0, 8).map((c) => "· " + (c || "(未填类目)")).join("\n") + (picked.length > 8 ? "\n…" : "");
+      const seed = picked.length === 1 ? picked[0] : "";
+      const v = (await uiPrompt("把选中的 " + picked.length + " 个类目并入哪个类目？\n填目标类目名（不存在会新建）：\n\n" + preview, seed) || "").trim();
+      if (!v) return;
+      const srcs = picked.filter((c) => c !== v);
+      if (!srcs.length) { sbToast("目标类目就是被选中的类目本身，无需合并", false); return; }
+      if (!(await uiConfirm("确认把这 " + srcs.length + " 个类目并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
+      cMerge.disabled = true;
+      let done = 0, bad = 0, rows = 0;
+      for (const c of srcs) {
+        try { rows += await SB.renameRankCategory(c, v, SOURCE); done += 1; }
+        catch (e) { bad += 1; }
+        cNote.textContent = "合并中 " + (done + bad) + "/" + srcs.length + " · 已迁移 " + rows + " 条";
+      }
+      await loadRankBatches(); rankPreviewRefresh();
+      sbToast("已合并 " + done + " 个类目到「" + v + "」（迁移 " + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
+      panel.dataset.open = "0"; openRankCategoryTools(bar);
     };
     cDel.onclick = async () => {
       const cats_ = pickedCats();
@@ -1779,7 +1807,7 @@
       sbToast("已归并 " + done + " 个类目（迁移 " + rows + " 条）" + (bad ? "，失败 " + bad + " 个" : ""), bad === 0);
       panel.dataset.open = "0"; openRankCategoryTools(bar);
     };
-    cbar.appendChild(cAll); cbar.appendChild(cNum); cbar.appendChild(cNorm); cbar.appendChild(cDel); cbar.appendChild(cNote);
+    cbar.appendChild(cAll); cbar.appendChild(cNum); cbar.appendChild(cNorm); cbar.appendChild(cMerge); cbar.appendChild(cDel); cbar.appendChild(cNote);
     panel.appendChild(cbar);
     refreshNorm();
 
@@ -1801,7 +1829,8 @@
       merge.type = "button"; merge.className = "btn-ghost small"; merge.textContent = "合并到…";
       merge.onclick = async () => {
         const v = (await uiPrompt("把「" + (c.category || "(未填类目)") + "」的全部条目并入哪个类目？\n填目标类目名（不存在会新建）：", c.category) || "").trim();
-        if (!v || v === c.category) return;
+        if (!v) return;
+        if (v === c.category) { sbToast("目标类目和源类目是同一个，没有需要合并的内容", false); return; }
         if (!(await uiConfirm("确认把「" + c.category + "」并入「" + v + "」？\n重复的图会自动跳过，源类目随后删除。"))) return;
         try {
           const n = await SB.renameRankCategory(c.category, v, SOURCE);

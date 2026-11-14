@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SHEIN 专区 · TREND BANK</title>
 <link rel="icon" href="favicon.svg">
-<link rel="stylesheet" href="css/style.css?v=20261114B">
+<link rel="stylesheet" href="css/style.css?v=20261114H">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
@@ -44,6 +44,8 @@
 
       <!-- ===== 右侧：上方只保留「月度」筛选 + 图片网格 ===== -->
       <main class="grid-wrap">
+        <!-- 上传看板：谁、几号、在哪些类目传了多少张（所有管理员可见） -->
+        <div class="updash" data-updash="shein"></div>
         <div id="cz-filter" class="tag-filter">
           <div class="tf-trigger" id="cz-trigger">
             <span class="tf-t">筛选</span>
@@ -56,6 +58,7 @@
         </div>
 
         <div id="cz-bar" class="rk-bar"></div>
+        <div class="imgsize-bar" data-imgsize></div>
 
         <div id="cz-body" class="rk-body"><div class="rk-empty">加载中…</div></div>
       </main>
@@ -77,19 +80,22 @@
   </div>
 
 <script>window.CZONE = { key: "shein", label: "SHEIN 专区", channel: "SHEIN" };</script>
-<script src="vendor/supabase.js?v=20261114B"></script>
-<script src="js/site-norm.js?v=20261114B"></script>
-<script src="js/config.js?v=20261114B"></script>
-<script src="js/supabase.js?v=20261114B"></script>
-<script src="js/common.js?v=20261114B"></script>
-<script src="js/rank-enums.js?v=20261114B"></script>
-<script src="js/channel-zone-front.js?v=20261114B"></script>
-  <script src="js/ui-dialog.js?v=20261114B"></script>
-  <script src="js/find-similar.js?v=20261114B"></script>
-  <script src="vendor/jszip.min.js?v=20261114B"></script>
-  <script src="js/view-export.js?v=20261114B"></script>
+<script src="vendor/supabase.js?v=20261114H"></script>
+<script src="js/site-norm.js?v=20261114H"></script>
+<script src="js/config.js?v=20261114H"></script>
+<script src="js/supabase.js?v=20261114H"></script>
+<script src="js/common.js?v=20261114H"></script>
+<script src="js/rank-enums.js?v=20261114H"></script>
+<script src="js/channel-zone-front.js?v=20261114H"></script>
+  <script src="js/ui-dialog.js?v=20261114H"></script>
+  <script src="js/find-similar.js?v=20261114H"></script>
+  <script src="vendor/jszip.min.js?v=20261114H"></script>
+  <script src="js/view-export.js?v=20261114H"></script>
   <script>try { window.VX && window.VX.boot("shein"); } catch (e) {}</script>
-  <script src="js/page-shot.js?v=20261114B"></script>
+  <script src="js/upload-owner.js?v=20261114H"></script>
+  <script src="js/upload-dash.js?v=20261114H"></script>
+  <script src="js/page-shot.js?v=20261114H"></script>
   <script>try { window.PageShot && window.PageShot.mount("shein"); } catch (e) {}</script>
+  <script>try { window.UploadDash && window.UploadDash.mount("shein"); } catch (e) {}</script>
 </body>
 </html>

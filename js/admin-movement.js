@@ -364,6 +364,14 @@
         if (bar) bar.style.width = Math.round(done / total * 100) + "%";
         say("上传中 " + done + "/" + total);
       }, { seasonYear: seasonYear, season: season });
+      /* 20261114G：登记上传归属 —— 前台「上传看板」靠它算「谁在几号传了多少张」。
+         归属模块没加载或写库失败都不影响上传本身（与其它专区同一口径）。 */
+      try {
+        var myUrls = (res.ok || []).map(function (x) { return x && x.url; }).filter(Boolean);
+        if (myUrls.length && window.UO && typeof window.UO.claim === "function") {
+          await window.UO.claim("i", myUrls);
+        }
+      } catch (e) { /* 忽略：图已经传上去了，归属缺一条不影响使用 */ }
       state.pending = [];
       renderPending();
       say("已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));
@@ -505,6 +513,9 @@
     if (!(await uiConfirm("删除这张图？打标记录会一并清空。"))) return;
     try {
       await SB.deleteMovementItem(item.id);
+      try {
+        if (window.UO && typeof window.UO.forget === "function") await window.UO.forget("i", [item.image_url]);
+      } catch (e) { /* 忽略 */ }
       closeTag();
       await loadAll();
       toast("已删除");

@@ -1,8 +1,7 @@
-/* 类目名清洗与归并
-   用途：导入榜单时，表格里的「叶子类目名称」有时是平台全路径
-   （如「服装、鞋靴和珠宝饰品，男士时尚，男装，男士休闲运动服，男士休闲运动套装，男士运动服」），
-   直接拿来建类目，后台类目菜单就会被一堆长名字撑爆。
-   这里把它归一到固定的一组标准类目名。 */
+/* 类目名清洗与归并 —— 仅用于后台「类目清理…」里用户主动点击的那个归并按钮。
+   20261114G：导入与前台展示都不再调用这里的规则。后台选什么类目，写进库就是什么、
+   前台就显示什么，全程原样直通，不会因为名字里带某个词就被改成另一个类目。
+   这里保留的唯一用途：用户明确要「把一批早年的长名字合并成一个标准名」时，由他点按钮触发。 */
 (function (global) {
   "use strict";
 
@@ -41,6 +40,25 @@
     return null;
   }
 
+  /* 分隔符：平台全路径名（服装、鞋靴和珠宝饰品，男士时尚，…）才会带。
+     注意不要把「/」算进来 ——「打底/压缩」这类正式类目名本身就带斜杠。 */
+  var SEP = /[，,、＞>｜|;；:：]/;
+
+  /* 只有「看起来就不像类目名」的值才需要清洗：
+       ① 纯数字（平台类目 ID）
+       ② 带路径分隔符（平台全路径名）
+       ③ 超过 20 字
+     20261114G：短名一律不动。以前按关键词改写真名，把后台选好的
+     「打底压缩」改成「运动功能服」（命中 压缩 关键词），后台选什么前台就该显示什么。 */
+  function isDirty(name) {
+    var t = String(name == null ? "" : name).replace(/\s+/g, " ").trim();
+    if (!t) return false;
+    if (/^\d+$/.test(t)) return true;
+    if (SEP.test(t)) return true;
+    if (t.length > 20) return true;
+    return false;
+  }
+
   function lastSeg(s) {
     var t = s.replace(/[，,、＞>/／|｜;；:：]/g, "，");
     if (t.indexOf("，") < 0) return s;
@@ -48,12 +66,16 @@
     return parts.length ? parts[parts.length - 1] : s;
   }
 
-  /* 把任意类目名归一成标准名；归不进标准类目时，返回清洗后的短名 */
+  /* 把「脏」类目名归一成标准名。
+     20261114G：干净短名（含后台所选的正式类目名）原样返回，绝不按关键词改写；
+     只有全路径名 / 纯数字 ID / 超长名才走规则表清洗。 */
   function normalize(name) {
     var s = String(name == null ? "" : name).replace(/\s+/g, " ").trim();
     if (!s) return "其他";
     /* 纯数字是平台类目 ID，没有语义，统一进其他 */
     if (/^\d+$/.test(s)) return "其他";
+    /* 关键：短名视为正式类目名，原样保留（后台选「打底压缩」就显示「打底压缩」） */
+    if (!isDirty(s)) return s;
 
     var hit = pickRule(s);
     if (hit) return hit;
@@ -75,5 +97,5 @@
     return !!s && normalize(s) !== s;
   }
 
-  global.RankCatNorm = { normalize: normalize, needsFix: needsFix, RULES: RULES };
+  global.RankCatNorm = { normalize: normalize, needsFix: needsFix, isDirty: isDirty, RULES: RULES };
 })(typeof window !== "undefined" ? window : globalThis);
