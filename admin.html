@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261113W">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261113W">
+<link rel="stylesheet" href="css/style.css?v=20261114B">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261114B">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -25,7 +25,7 @@
     .mk-dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:16px;height:16px;border-radius:50%;background:#d8382e;border:2px solid #fff;box-shadow:0 0 0 4px rgba(216,56,46,.18),0 0 12px rgba(216,56,46,.5);}
     .mk-dot-inner{display:block;width:4px;height:4px;margin:3px auto 0;border-radius:50%;background:#fff;}
     .mk-conn{position:absolute;left:50%;top:calc(50% - 172px);bottom:calc(50% + 132px);width:2px;transform:translateX(-50%);background-image:linear-gradient(180deg,#c9a13c 55%,transparent 45%);background-size:2px 10px;background-repeat:repeat-y;z-index:1;}
-    .mk-tag-img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:204px;aspect-ratio:4/3;overflow:hidden;border-radius:10px;background:rgba(255,255,255,.06);display:block;text-decoration:none;box-shadow:0 6px 16px rgba(60,52,42,.12);transition:transform .22s,box-shadow .22s;}
+    .mk-tag-img{position:absolute;left:50%;top:0;transform:translateX(-50%);width:204px;aspect-ratio:var(--img-ratio);overflow:hidden;border-radius:10px;background:rgba(255,255,255,.06);display:block;text-decoration:none;box-shadow:0 6px 16px rgba(60,52,42,.12);transition:transform .22s,box-shadow .22s;}
     .mk-tag-img:hover{transform:translateX(-50%) translateY(-3px);box-shadow:0 12px 24px rgba(60,52,42,.18);}
     .mk-tag-img.noimg{background:linear-gradient(150deg,rgba(143,111,216,.35),rgba(111,82,192,.35));}
     .mk-tag-thumb{width:100%;height:100%;object-fit:cover;display:block;}
@@ -53,7 +53,7 @@
     .mk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px;}
     .mk-card{position:relative;display:flex;flex-direction:column;background:#fbfaf6;border:1px solid #e4dcca;border-radius:14px;overflow:hidden;text-decoration:none;box-shadow:0 4px 16px rgba(60,52,42,.06);transition:transform .22s,box-shadow .22s,border-color .22s;}
     .mk-card:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(60,52,42,.14);border-color:#d4a017;}
-    .mk-card-img{position:relative;aspect-ratio:3/4;background:#f0eee6;overflow:hidden;}
+    .mk-card-img{position:relative;aspect-ratio:var(--img-ratio);background:#f0eee6;overflow:hidden;}
     .mk-card-img img{width:100%;height:100%;object-fit:cover;object-position:center top;}
     </style>
 
@@ -1760,50 +1760,50 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261113W"></script>
-  <script src="vendor/quill.js?v=20261113W"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261113W"></script>
-  <script src="vendor/jszip.min.js?v=20261113W"></script>
-  <script src="vendor/qrcode.min.js?v=20261113W"></script>
-  <script src="js/site-norm.js?v=20261113W"></script>
-  <script src="js/config.js?v=20261113W"></script>
-  <script src="js/supabase.js?v=20261113W"></script>
+  <script src="vendor/supabase.js?v=20261114B"></script>
+  <script src="vendor/quill.js?v=20261114B"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261114B"></script>
+  <script src="vendor/jszip.min.js?v=20261114B"></script>
+  <script src="vendor/qrcode.min.js?v=20261114B"></script>
+  <script src="js/site-norm.js?v=20261114B"></script>
+  <script src="js/config.js?v=20261114B"></script>
+  <script src="js/supabase.js?v=20261114B"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261113W"></script>
+  <script src="js/admin-dialog.js?v=20261114B"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261113W"></script>
-  <script src="js/admin.js?v=20261113W"></script>
-  <script src="js/admin-images.js?v=20261113W"></script>
-  <script src="js/rank-enums.js?v=20261113W"></script>
-  <script src="js/imageexport.js?v=20261113W"></script>
-  <script src="js/admin-imageimport.js?v=20261113W"></script>
-  <script src="js/admin-movement.js?v=20261113W"></script>
-  <script src="js/admin-smart.js?v=20261113W"></script>
-  <script src="js/admin-trend.js?v=20261113W"></script>
-  <script src="js/admin-notice.js?v=20261113W"></script>
-  <script src="js/marketing-data.js?v=20261113W"></script>
-  <script src="js/admin-festival.js?v=20261113W"></script>
-  <script src="js/admin-tasks.js?v=20261113W"></script>
-  <script src="js/admin-bestseller.js?v=20261113W"></script>
-  <script src="js/ipgeo.js?v=20261113W"></script>
-  <script src="js/upload-owner.js?v=20261113W"></script>
-  <script src="js/admin-perm.js?v=20261113W"></script>
-  <script src="js/admin-pool.js?v=20261113W"></script>
-  <script src="js/rankexport.js?v=20261113W"></script>
-  <script src="js/admin-rankimport.js?v=20261113W"></script>
-<script src="js/mindmap.js?v=20261113W"></script>
-  <script src="js/flowchart.js?v=20261113W"></script>
-  <script src="js/gantt.js?v=20261113W"></script>
-<script src="js/admin-tools.js?v=20261113W"></script>
-<script src="js/admin-channelzone.js?v=20261113W"></script>
-<script src="js/admin-compare.js?v=20261113W"></script>
-  <script src="js/rank-cat-norm.js?v=20261113W"></script>
-<script src="js/rank-period-norm.js?v=20261113W"></script>
-  <script src="js/rhythm-calc.js?v=20261113W"></script>
-  <script src="js/admin-rank.js?v=20261113W"></script>
-  <script src="js/admin-rhythm.js?v=20261113W"></script>
-  <script src="js/admin-titlelab.js?v=20261113W"></script>
-  <script src="js/admin-backup.js?v=20261113W"></script>
+  <script src="js/find-similar.js?v=20261114B"></script>
+  <script src="js/admin.js?v=20261114B"></script>
+  <script src="js/admin-images.js?v=20261114B"></script>
+  <script src="js/rank-enums.js?v=20261114B"></script>
+  <script src="js/imageexport.js?v=20261114B"></script>
+  <script src="js/admin-imageimport.js?v=20261114B"></script>
+  <script src="js/admin-movement.js?v=20261114B"></script>
+  <script src="js/admin-smart.js?v=20261114B"></script>
+  <script src="js/admin-trend.js?v=20261114B"></script>
+  <script src="js/admin-notice.js?v=20261114B"></script>
+  <script src="js/marketing-data.js?v=20261114B"></script>
+  <script src="js/admin-festival.js?v=20261114B"></script>
+  <script src="js/admin-tasks.js?v=20261114B"></script>
+  <script src="js/admin-bestseller.js?v=20261114B"></script>
+  <script src="js/ipgeo.js?v=20261114B"></script>
+  <script src="js/upload-owner.js?v=20261114B"></script>
+  <script src="js/admin-perm.js?v=20261114B"></script>
+  <script src="js/admin-pool.js?v=20261114B"></script>
+  <script src="js/rankexport.js?v=20261114B"></script>
+  <script src="js/admin-rankimport.js?v=20261114B"></script>
+<script src="js/mindmap.js?v=20261114B"></script>
+  <script src="js/flowchart.js?v=20261114B"></script>
+  <script src="js/gantt.js?v=20261114B"></script>
+<script src="js/admin-tools.js?v=20261114B"></script>
+<script src="js/admin-channelzone.js?v=20261114B"></script>
+<script src="js/admin-compare.js?v=20261114B"></script>
+  <script src="js/rank-cat-norm.js?v=20261114B"></script>
+<script src="js/rank-period-norm.js?v=20261114B"></script>
+  <script src="js/rhythm-calc.js?v=20261114B"></script>
+  <script src="js/admin-rank.js?v=20261114B"></script>
+  <script src="js/admin-rhythm.js?v=20261114B"></script>
+  <script src="js/admin-titlelab.js?v=20261114B"></script>
+  <script src="js/admin-backup.js?v=20261114B"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1865,7 +1865,7 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261113W"></script>
+  <script src="js/ui-dialog.js?v=20261114B"></script>
 </body>
 </body>
 </html>

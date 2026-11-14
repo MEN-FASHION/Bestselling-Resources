@@ -608,7 +608,74 @@ window.Common = (function () {
     return { track: track, flush: flush };
   })();
 
+  /* ============================================================
+   * 20261114B · 图墙「每行展示多少张」—— 全站唯一算法
+   * ------------------------------------------------------------
+   * 需求：有图的每个专区，一行摆几张都要和【趋势上升榜】对齐。
+   * 口径：以趋势上升榜卡片「中档」为基准 —— 宽屏一行 4 张；
+   *       容器变窄时按同一阶梯降档（3 / 2 / 1 张），所有专区同步。
+   * 用法：页面不写死列数，这里算出结果写进元素的 --card-cols，
+   *       样式（css/style.css 末尾）只按 var(--card-cols) 排版。
+   * 触发：首次加载、窗口尺寸变化、DOM 有新增（切专区/翻页/改筛选）时重算。
+   * ============================================================ */
+  var cardGrid = (function () {
+    var BASE = 4;                       /* 宽屏每行张数（与榜单中档一致） */
+    var STEPS = [[880, 4], [600, 3], [380, 2], [0, 1]];   /* 容器宽度 → 每行张数 */
+    var SEL = "body.front .grid, body.front #mv-body, body.front .fv-grid, " +
+              "body.front .trend-grid, body.front .recruit-grid, " +
+              "body.front .bestseller-grid, body.front .mk-grid";
+
+    /* 纯函数：给定容器宽度，返回这一行该摆几张（全站只有这一份规则） */
+    function cols(w) {
+      w = Number(w) || 0;
+      if (w <= 0) return 0;             /* 未排版（隐藏容器）不写列数 */
+      for (var i = 0; i < STEPS.length; i++) {
+        if (w >= STEPS[i][0]) return STEPS[i][1];
+      }
+      return 1;
+    }
+
+    function paint() {
+      var list;
+      try { list = document.querySelectorAll(SEL); } catch (e) { return; }
+      for (var i = 0; i < list.length; i++) {
+        var el = list[i];
+        var w = el.clientWidth || 0;
+        if (!w) continue;                     /* 隐藏容器（未切到该专区）先跳过 */
+        var n = cols(w);
+        if (!n) continue;
+        if (el.getAttribute("data-card-cols") === String(n)) continue;
+        el.setAttribute("data-card-cols", String(n));
+        try { el.style.setProperty("--card-cols", String(n)); } catch (e) {}
+      }
+    }
+
+    var timer = null;
+    function soon() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { timer = null; try { paint(); } catch (e) {} }, 60);
+    }
+
+    function boot() {
+      paint();
+      window.addEventListener("resize", soon);
+      window.addEventListener("load", soon);
+      if (window.MutationObserver) {
+        try {
+          new MutationObserver(soon).observe(document.body, { childList: true, subtree: true });
+        } catch (e) { /* 老浏览器忽略 */ }
+      }
+    }
+
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+    else boot();
+
+    return { cols: cols, paint: paint, soon: soon, SEL: SEL, BASE: BASE, STEPS: STEPS };
+  })();
+  try { window.CardGrid = cardGrid; } catch (e) {}
+
   return {
+    cardGrid,
     setToast, toast, escHtml, fmtTime,
     downloadWatermarked, setupAntiDownload,
     authConfirm, notices, zones, visit
