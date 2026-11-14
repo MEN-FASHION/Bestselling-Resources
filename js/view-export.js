@@ -33,11 +33,19 @@
  *       window.VX.runHtml()       —— 导出单页网页
  *       window.VX.runPoster()     —— 导出高清海报
  *       window.VX.available()     —— 当前账号是否有本页导出权限
+ *
+ * 20261114N：「对比的列」也要跟着走。
+ *   页面上的详细报告（逐列画像 / 横向对照表 / 核心结论）默认是折叠的，
+ *   而且内容是首次展开才生成 —— 以前导出的网页里因此根本没有这几块，
+ *   选了 3 列、拿到的只有 3 列图。现在导出前先在真实页面展开一次、克隆完立刻折回，
+ *   并在克隆体里摘掉 hidden，让静态网页里这几块正常显示。
+ *   按钮坞另加一个「带对比分析」开关（默认开，记在浏览器里）：
+ *   不想要这几块时取消勾选，导出的就只剩图片列。
  * ==========================================================================*/
 (function () {
   "use strict";
 
-  var BUILD = "20261114L";
+  var BUILD = "20261114N";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -59,11 +67,28 @@
     booted: false,
     busy: false,
     board: false,     // 当前页面是否为「多列并排看板」（渠道对比等）
+    withRep: true,    // 导出是否带上「对比的列」（逐列画像 / 横向对照表 / 结论）
     dock: null,
     htmlBtn: null,
     posterBtn: null,
     tip: null
   };
+
+  /* 这个开关记在浏览器里：勾过一次就一直记住，不用每次进页面重设 */
+  var REP_KEY = "vx_with_rep";
+  function readRepOpt() {
+    try {
+      var v = window.localStorage && window.localStorage.getItem(REP_KEY);
+      if (v === "0") return false;
+      if (v === "1") return true;
+    } catch (e) {}
+    return true;
+  }
+  function writeRepOpt(on) {
+    try {
+      if (window.localStorage) window.localStorage.setItem(REP_KEY, on ? "1" : "0");
+    } catch (e) {}
+  }
 
   function $(s, r) { return (r || document).querySelector(s); }
   function SBx() { return window.SB || null; }
@@ -121,6 +146,21 @@
     b2.title = "导出高清海报图（宽 2480px，内容过长自动分页）";
 
     d.appendChild(tip);
+    /* 「对比的列」要不要带走：默认带走（页面上有的对照表/结论，导出也要有）；
+       只想要图片时取消勾选，导出的就只剩图片列。 */
+    var lab = document.createElement("label");
+    lab.className = "vx-opt";
+    lab.title = "勾上：连页面上的对比分析（逐列画像 / 横向对照表 / 结论）一起导出；取消：只导图片";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "vx-opt-rep";
+    cb.checked = readRepOpt();
+    var cbx = document.createElement("span");
+    cbx.textContent = "带对比分析";
+    lab.appendChild(cb);
+    lab.appendChild(cbx);
+    cb.onchange = function () { state.withRep = !!cb.checked; writeRepOpt(state.withRep); };
+    d.appendChild(lab);
     d.appendChild(b1);
     d.appendChild(b2);
     document.body.appendChild(d);
@@ -673,9 +713,50 @@
     if (el.parentNode && el.parentNode.removeChild) el.parentNode.removeChild(el);
   }
 
+  /* 详细报告默认是折叠的（按钮上写「查看详细报告」），而且内容是**首次展开才生成**。
+     于是导出的网页里始终没有「对比的列」—— 逐列画像、横向对照表、核心结论全都不在
+     文件里，只有几张图。这里在导出前先把它在真实页面上展开一次，让内容进 DOM；
+     克隆完立刻折回去，同一个事件循环内完成，用户看不到闪动，页面状态也不留改動。 */
+  function openRepForExport() {
+    if (!state.withRep) return null;   /* 用户选了「只导图片」：不去展开，也不改页面 */
+    var root = viewRoot();
+    if (!root) return null;
+    var btn = root.querySelector("[data-rep-toggle]");
+    if (!btn) return null;
+    var dets = root.querySelectorAll("[data-rep-detail]");
+    var need = false;
+    for (var i = 0; i < dets.length; i++) {
+      if (dets[i].hasAttribute && dets[i].hasAttribute("hidden")) { need = true; break; }
+    }
+    if (!need) return null;            /* 用户本来就展开着：内容已经在 DOM 里，不用动 */
+    try { btn.click(); } catch (e) { return null; }
+    return function restore() {
+      try {
+        var b2 = root.querySelector("[data-rep-toggle]");
+        if (b2 && b2.getAttribute("aria-expanded") === "true") b2.click();
+      } catch (e) {}
+    };
+  }
+
   function sanitizeClone(clone) {
     var kill = clone.querySelectorAll(DROP_SEL);
     Array.prototype.forEach.call(kill, function (el) { removeNode(el); });
+    /* 折叠条本身是操作入口，连壳一起去掉；详情块已展开过，把 hidden 摘掉，
+       否则这份静态网页里「对比的列」会一直是隐藏的（看得见代码、看不见内容）。 */
+    Array.prototype.forEach.call(clone.querySelectorAll(".rk-rep-toggle-bar"), function (el) {
+      removeNode(el);
+    });
+    /* 取消「带对比分析」时，逐列画像与详细报告整块不带走，导出物只剩图片列 */
+    if (!state.withRep) {
+      Array.prototype.forEach.call(clone.querySelectorAll(".rk-rep-detail,.rk-rep-cols"), function (el) {
+        removeNode(el);
+      });
+    }
+    Array.prototype.forEach.call(clone.querySelectorAll("[data-rep-detail]"), function (el) {
+      if (!el || !el.removeAttribute) return;
+      el.removeAttribute("hidden");
+      if (el.classList && el.classList.add) el.classList.add("in");
+    });
     var soft = clone.querySelectorAll("[draggable],[data-pick],[data-fav]");
     Array.prototype.forEach.call(soft, function (el) {
       if (!el || !el.removeAttribute) return;
@@ -752,6 +833,11 @@
       "body.vx-export .rk-pool-grid{grid-template-columns:repeat(var(--rk-r,4),minmax(0,1fr))!important;gap:6px!important}",
       "body.vx-export .rk-pool-grid img{width:100%!important;height:auto!important;display:block}",
       "body.vx-export .rk-pool-foot{text-align:center}",
+      /* 「对比的列」（详细报告里的逐列画像与横向对照表）在页面上是折叠的，
+         导出时已经展开并摘掉了 hidden；这里再兜一层，保证任何样式下都能看见。 */
+      "body.vx-export .rk-rep-detail,body.vx-export .rk-rep-detail[hidden]{display:block!important;visibility:visible!important;height:auto!important}",
+      "body.vx-export .rk-rep-detail.in{display:block!important}",
+      "body.vx-export .rk-mx{overflow-x:auto}",
       ".vx-wrap img[data-miss]{outline:2px solid #6b4a1f;outline-offset:-2px}",
       ".vx-wrap .rk-card,.vx-wrap .cz-card,.vx-wrap .mv-card{cursor:zoom-in}",
       "#vx-lb{position:fixed;inset:0;background:rgba(6,8,11,.94);display:none;align-items:center;justify-content:center;z-index:9999}",
@@ -1368,8 +1454,13 @@
   function domSnapshot() {
     var root = viewRoot();
     if (!root || typeof root.cloneNode !== "function") return null;
+    var restore = openRepForExport();
     var clone = null;
-    try { clone = root.cloneNode(true); } catch (e) { return null; }
+    try { clone = root.cloneNode(true); } catch (e) {
+      if (restore) { try { restore(); } catch (x) {} }
+      return null;
+    }
+    if (restore) { try { restore(); } catch (e) {} }
     if (!clone || typeof clone.outerHTML !== "string" || !clone.outerHTML) return null;
     sanitizeClone(clone);
     var w = 0;
@@ -1525,6 +1616,7 @@
     var key = trim(zoneKey);
     if (!key) return Promise.resolve(false);
     state.zone = key;
+    state.withRep = readRepOpt();
     /* 专区名不再写死在 LABELS 里才有救：漏登记新专区时用页面标题兜底，
        否则新开的专区永远拿不到导出按钮（以前就是这个坑）。 */
     state.label = labelOf(key);

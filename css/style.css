@@ -7460,6 +7460,15 @@ html, body{
   display: none; align-items: center; gap: 10px;
 }
 .vx-dock.on { display: flex; }
+/* 20261114M：「带对比分析」开关 —— 决定导出的网页要不要连逐列画像/对照表一起带走 */
+.vx-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 999px;
+  border: 1px solid #2b364a; background: rgba(20, 26, 36, .94);
+  color: #cdd8e8; font-size: 12.5px; cursor: pointer;
+  backdrop-filter: blur(6px); user-select: none;
+}
+.vx-opt input { width: 14px; height: 14px; accent-color: #4a6a9c; cursor: pointer; }
 .vx-btn {
   display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid #2b364a; background: rgba(20, 26, 36, .94);
@@ -7485,6 +7494,7 @@ html, body{
 @media (max-width: 640px) {
   .vx-dock { right: 10px; bottom: 12px; }
   .vx-btn { padding: 8px 13px; font-size: 12.5px; }
+  .vx-opt { padding: 6px 10px; font-size: 12px; }
   .vx-tip { display: none; }
 }
 
@@ -7625,5 +7635,86 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 }
 .updash-cat b { font-weight: 600; color: #111827; }
 .updash-n { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.updash-p { white-space: nowrap; color: #4a443b; font-variant-numeric: tabular-nums; }
 .updash-tip { font-size: 11.5px; color: #9a9285; margin-top: 8px; line-height: 1.7; }
+
+/* --- 20261114N 可视化：筛选条 / KPI / 图表 --- */
+.updash-filter {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 9px 12px; margin: 0 0 10px;
+  background: #fffdf8; border: 1px solid #eae4d8; border-radius: 10px;
+}
+.updash-filter label { font-size: 12px; color: #6b6357; display: inline-flex; align-items: center; gap: 5px; }
+.updash-filter select, .updash-filter input[type="date"] {
+  font: inherit; font-size: 12px; color: #3a3428;
+  padding: 3px 6px; background: #fff; border: 1px solid #e2ddd4; border-radius: 6px;
+  max-width: 170px;
+}
+.updash-reset {
+  font: inherit; font-size: 12px; padding: 3px 11px; cursor: pointer;
+  color: #4a443b; background: #fff; border: 1px solid #e2ddd4; border-radius: 999px;
+}
+.updash-reset:hover { background: #f7f4ec; border-color: #cfc7b6; }
+.updash-fsum { margin-left: auto; font-size: 12px; color: #8b8477; }
+.updash-fsum b { color: #3a3428; font-weight: 600; }
+.updash-fsum em { font-style: normal; color: #b06a2a; margin-left: 4px; }
+
+.updash-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.updash-kpi {
+  flex: 1 1 120px; min-width: 110px; padding: 9px 12px;
+  background: #fff; border: 1px solid #eae4d8; border-radius: 10px;
+}
+.updash-kpi b { display: block; font-size: 19px; line-height: 1.25; color: #111827; font-variant-numeric: tabular-nums; }
+.updash-kpi span { display: block; font-size: 11.5px; color: #8b8477; margin-top: 1px; }
+.updash-kpi i { display: block; font-style: normal; font-size: 10.5px; color: #a8a094; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.updash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.updash-card { background: #fff; border: 1px solid #eae4d8; border-radius: 10px; padding: 10px 12px 12px; min-width: 0; }
+.updash-card-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
+.updash-card-h h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: #3a3428; }
+.updash-card-s { font-size: 11px; color: #a8a094; }
+.updash-none { font-size: 12px; color: #a8a094; padding: 10px 0; }
+.updash-more { font-size: 11px; color: #a8a094; margin-top: 4px; }
+
+.updash-hbars { display: flex; flex-direction: column; gap: 4px; }
+.updash-hb {
+  display: grid; grid-template-columns: 84px minmax(0, 1fr) 54px; align-items: center; gap: 8px;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+  padding: 2px 0; background: none; border: 0; border-radius: 6px; color: #4a443b;
+}
+.updash-hb:hover { background: #faf7f0; }
+.updash-hb.is-on { background: #f1ece1; }
+.updash-hbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a443b; }
+.updash-hbt { height: 12px; background: #f2ede2; border-radius: 999px; overflow: hidden; }
+.updash-hbt i { display: block; height: 100%; background: linear-gradient(90deg, #b9a98a, #6f6450); border-radius: 999px; }
+.updash-hbn { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: #111827; }
+
+.updash-vbars { display: flex; align-items: flex-end; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.updash-vb {
+  flex: 1 1 0; min-width: 38px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: 0; font: inherit; cursor: pointer; padding: 2px 2px 0; border-radius: 8px; color: #4a443b;
+}
+.updash-vb:hover { background: #faf7f0; }
+.updash-vb.is-on { background: #f1ece1; }
+.updash-vbn { font-size: 11px; font-weight: 600; color: #111827; font-variant-numeric: tabular-nums; }
+.updash-vbt { width: 100%; height: 92px; display: flex; align-items: flex-end; background: #f7f4ec; border-radius: 6px; overflow: hidden; }
+.updash-vbt i { display: block; width: 100%; background: linear-gradient(180deg, #8d7f66, #c3b49a); border-radius: 6px 6px 0 0; }
+.updash-vbl { font-size: 11px; color: #6b6357; white-space: nowrap; }
+
+.updash-spark { width: 100%; }
+.updash-spark svg { width: 100%; height: 170px; display: block; }
+.updash-spark .updash-ar { fill: rgba(111, 100, 80, .12); }
+.updash-spark .updash-ln { fill: none; stroke: #6f6450; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.updash-spark .updash-dots circle { fill: #3a3428; }
+.updash-spark .updash-xl text { font-size: 11px; fill: #a8a094; }
+
+.updash-mx-scroll { overflow-x: auto; }
+.updash-mx { border-collapse: separate; border-spacing: 3px; font-size: 11.5px; }
+.updash-mx th { font-weight: 600; color: #6b6357; white-space: nowrap; text-align: center; padding: 2px 4px; }
+.updash-mx th.updash-mx-w { text-align: left; color: #3a3428; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+.updash-mx td { padding: 0; text-align: center; }
+.updash-mx-c { display: block; min-width: 34px; padding: 4px 5px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.updash-mx-0 { color: #d8d2c6; }
+.updash-mx-t { color: #111827; font-weight: 600; padding: 0 6px !important; }
+.updash-tbwrap { margin-top: 2px; }
 
