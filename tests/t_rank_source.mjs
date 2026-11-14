@@ -57,9 +57,9 @@ ok(/want === "rank" \? \(s === "" \|\| s === "rank"\) : s === want/.test(SB),
 ok(!/id="rank-import-source"/.test(HTML), "导入区不应再有「数据域」下拉（三个专区各有自己的面板）");
 ok(/const SOURCE = "rank";/.test(ADM), "趋势上升榜面板必须固定写 rank 域，不能可配");
 ok(/SB\.listRankBatches\(SOURCE\)/.test(ADM), "趋势上升榜台账只读本域");
-ok(/id="titlelab-card"/.test(HTML), "后台应有独立的「标题组词台」面板");
-ok(/<a class="nav-item" data-target="titlelab-card">/.test(HTML), "侧栏应有「标题组词台」入口");
-ok(/enterTiPanel\(\)/.test(read("js/admin.js")), "进入面板时要拉起它自己的数据");
+ok(!/id="titlelab-card"/.test(HTML), "标题组词台已下线，后台不应再有它的面板");
+ok(!/data-target="titlelab-card"/.test(HTML), "标题组词台已下线，侧栏不应再有它的入口");
+ok(!/enterTiPanel/.test(read("js/admin.js")), "标题组词台已下线，后台不应再拉起它的面板");
 
 ok(/sites: g\.slotSites, source: SOURCE \}/.test(ADM), "清空槽位要带域");
 ok(/max: 60000, source: SOURCE/.test(ADM), "留底读取要带域（只留本域的底）");
@@ -99,7 +99,7 @@ ok(/上新节奏/.test(ADM) && /标题组词台/.test(ADM) && /趋势上升榜/.
 const BUILD = (RHY.match(/var BUILD = "([^"]+)"/) || [])[1];
 ok(!!BUILD, "前台 BUILD 应有值，实际 " + BUILD);
 /* 以代码里的 BUILD 为准，不写死版本号（写死会在每次发版时误报失败） */
-["index.html", "rank.html", "rhythm.html", "titlelab.html", "admin.html"].forEach((f) => {
+["index.html", "rank.html", "rhythm.html", "admin.html"].forEach((f) => {
   const t = read(f);
   ok(t.includes("?v=" + BUILD), f + " 版本戳应与 BUILD 一致（" + BUILD + "）");
 });

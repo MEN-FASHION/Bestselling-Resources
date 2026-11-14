@@ -160,7 +160,7 @@ console.log("五·二、上新节奏（月度）同一口径");
 console.log("六、页面都引入了归一模块");
 {
     const BUILD = (RANK.match(/var BUILD\s*=\s*"([^"]+)"/) || [])[1] || "";
-  const pages = ["index.html", "rank.html", "rhythm.html", "titlelab.html", "admin.html", "compare.html",
+  const pages = ["index.html", "rank.html", "rhythm.html", "admin.html", "compare.html",
     "fav.html", "marketing.html", "movement.html", "pinterest.html", "shein.html", "trends.html"];
   pages.forEach((p) => {
     const s = R(p);

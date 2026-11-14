@@ -191,8 +191,8 @@ async function enterWith(opts, zone) {
   await D.enter();
   await tick(); await tick();
   const tabs = env.nodes["#updash-tabs"].innerHTML;
-  ok(D.ORDER.length === 7, "一共 7 个专区页签");
-  ["趋势上升榜", "上新节奏", "SHEIN 专区", "Pinterest 专区", "渠道对比", "品牌动向", "视觉专区"]
+  ok(D.ORDER.length === 8, "一共 8 个专区页签");
+  ["趋势上升榜", "上新节奏", "SHEIN 专区", "Pinterest 专区", "TikTok 专区", "渠道对比", "品牌动向", "视觉专区"]
     .forEach((n) => ok(tabs.indexOf(n) > 0, "页签包含「" + n + "」"));
   ok(/is-active/.test(tabs), "默认选中一个页签");
   ok(queried >= 1, "进面板后才查库（实际 " + queried + " 次）");

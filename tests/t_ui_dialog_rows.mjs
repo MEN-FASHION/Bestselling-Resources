@@ -31,6 +31,8 @@ ok(/if \(busy\)/.test(DLG), "已有一个弹窗时不应叠框");
 const pages = fs.readdirSync(ROOT).filter((f) => f.endsWith(".html"));
 ok(pages.length >= 10, "页面数量异常：" + pages.length);
 pages.forEach((f) => {
+  /* 已下线专区的跳转页没有交互，也不需要弹窗组件 */
+  if (/location\.replace\("/.test(read(f))) return;
   ok(read(f).indexOf("js/ui-dialog.js") >= 0, f + " 未引入 ui-dialog.js");
 });
 

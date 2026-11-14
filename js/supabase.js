@@ -3801,7 +3801,7 @@ async removeTrendRecord(id) {
      * 前台照样出那一列（数据说话），避免"删了字典图就消失"。
      * ============================================================ */
     RANK_CHANNEL_TYPE: "rank_channel",
-    RANK_CHANNEL_DEFAULTS: ["Pinterest", "SHEIN", "Amazon"],
+    RANK_CHANNEL_DEFAULTS: ["Pinterest", "SHEIN", "TikTok", "Amazon"],
     async listRankChannelDict() {
       try {
         const rows = await this.listTagDefs(this.RANK_CHANNEL_TYPE);

@@ -54,7 +54,7 @@ ok(/rank_items/.test(sql), 'SQL 应作用于 rank_items');
 /* 6. 版本戳统一 */
 const ver = (read('js/rhythm.js').match(/BUILD\s*=\s*"([^"]+)"/) || [])[1];
 ok(!!ver, '未取到 BUILD 版本号');
-const pages = ['index.html', 'admin.html', 'rank.html', 'titlelab.html', 'compare.html', 'shein.html', 'pinterest.html', 'trends.html', 'rhythm.html', 'marketing.html', 'fav.html', 'movement.html'];
+const pages = ['index.html', 'admin.html', 'rank.html', 'compare.html', 'shein.html', 'pinterest.html', 'trends.html', 'rhythm.html', 'marketing.html', 'fav.html', 'movement.html'];
 pages.forEach((p) => {
   const t = read(p);
   const vs = Array.from(t.matchAll(/\?v=([0-9A-Za-z]+)/g)).map((m) => m[1]).filter((v) => /^2026/.test(v));

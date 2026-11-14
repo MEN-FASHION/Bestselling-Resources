@@ -148,19 +148,19 @@ const b = boot();
 const throws = b.calls.filter((c) => c.fn === "__throw");
 ok(!throws.length, "脚本执行抛错：" + throws.map((c) => c.arg).join(" | "));
 ok(!!b.win.RankParse, "admin-rank.js 应暴露 RankParse（供组词台复用表头识别 / 分组）");
-ok(typeof b.win.enterTiPanel === "function", "标题组词台面板应暴露 enterTiPanel");
+ok(typeof b.win.enterTiPanel === "function", "组词台数据层内核仍在（仅面板不再挂载）");
 
 /* ---------- 一、面板结构：三个专区各有自己的上传入口 ---------- */
 const HTML = read("admin.html");
 ok(!/id="rank-import-source"/.test(HTML), "趋势上升榜导入区不应再有「数据域」下拉");
-ok(/<a class="nav-item" data-target="titlelab-card">/.test(HTML), "侧栏应有独立「标题组词台」入口");
-ok(/id="titlelab-card"/.test(HTML), "应有标题组词台面板容器");
+ok(!/data-target="titlelab-card"/.test(HTML), "标题组词台已下线，侧栏不应再有它的入口");
+ok(!/id="titlelab-card"/.test(HTML), "标题组词台已下线，不应再有它的面板容器");
 ["ti-file", "ti-import", "ti-undo", "ti-batch-list", "ti-selfcheck", "ti-import-progress"].forEach((id) => {
-  ok(new RegExp('id="' + id + '"').test(HTML), "标题组词台面板缺 #" + id);
+  ok(!new RegExp('id="' + id + '"').test(HTML), "标题组词台已下线，不应再有 #" + id);
 });
 ok(/id="rm-import"/.test(HTML) && /id="rank-import"/.test(HTML),
   "上新节奏 / 趋势上升榜各自的上传按钮应保留（三个入口并列，而不是挤在一个面板里选域）");
-ok(read("admin.html").indexOf("admin-titlelab.js") > 0, "admin.html 应引入 admin-titlelab.js");
+ok(read("admin.html").indexOf("admin-titlelab.js") < 0, "标题组词台已下线，admin.html 不应再引入它的面板脚本");
 
 /* ---------- 二、真跑一次导入：只写 title 域 ---------- */
 /* 给文件输入塞一个假文件，触发 onTiFileChange → doTiImport */
@@ -256,7 +256,7 @@ const BUILD = (read("js/rhythm.js").match(/var BUILD = "([^"]+)"/) || [])[1];
 ok(!!BUILD, "前台 BUILD 常量应存在，实际 " + BUILD);
 /* 版本号以代码为准，不再写死：每次发版都硬断言某个字符串，只会把发版卡住 */
 /* 每个页面引用的脚本版本都必须等于 BUILD（旧戳会让浏览器一直用缓存） */
-["index.html", "rank.html", "rhythm.html", "titlelab.html", "admin.html"].forEach((f) => {
+["index.html", "rank.html", "rhythm.html", "admin.html"].forEach((f) => {
   const vs = [...read(f).matchAll(/\?v=([0-9A-Za-z]+)/g)].map((m) => m[1]);
   ok(vs.length > 0 && vs.every((v) => v === BUILD), f + " 脚本版本戳应全部为 " + BUILD + "（实际 " + vs.join(",") + "）");
 });

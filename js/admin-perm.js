@@ -24,6 +24,7 @@ let PERM_ZONES = [
   { key: "movement", label: "品牌动向" },
   { key: "pinterest", label: "Pinterest 专区" },
   { key: "shein", label: "SHEIN 专区" },
+  { key: "tiktok", label: "TikTok 专区" },
   { key: "compare", label: "渠道对比" },
 ];
 
@@ -41,6 +42,7 @@ const PERM_EXPORT_ZONES = [
   { key: "rhythm", label: "上新节奏" },
   { key: "pinterest", label: "Pinterest 专区" },
   { key: "shein", label: "SHEIN 专区" },
+  { key: "tiktok", label: "TikTok 专区" },
   { key: "compare", label: "渠道对比" },
   { key: "movement", label: "品牌动向" },
   { key: "visual", label: "视觉专区" },
@@ -584,7 +586,7 @@ function updatePermEditCatCount() {
       // 类目授权：与界面「跨专区统一生效」语义一致，写入全部四个专区
       // （无论超管是否勾了后台可管理专区，管理员在任一被授权专区上传都可受该类目约束）
       // 注意：已下线的专区不要再写入；新增专区若要卡类目，在这里补 key
-      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm", "pinterest", "shein", "compare"];
+      const ALL_CAT_ZONES = ["visual", "trend", "recruit", "bestseller", "movement", "rhythm", "pinterest", "shein", "tiktok", "compare"];
       /* 逐专区独立保存：某一个专区被数据库拒绝（专区名的 CHECK 约束、缺列、RLS），
          不能再让整次保存中断——否则前面几个专区已写、后面全部没写，用户看到「保存失败」却不知道该信哪一部分。
          现在把失败收集起来，最后一次性说明「哪些成功、哪些走了字典、哪些真的没存进去」。 */
@@ -764,6 +766,7 @@ const ZDEF_HREF_PRESETS = [
   { label: "营销日历 (marketing.html)", href: "marketing.html" },
   { label: "Pinterest 专区 (pinterest.html)", href: "pinterest.html" },
   { label: "SHEIN 专区 (shein.html)", href: "shein.html" },
+  { label: "TikTok 专区 (tiktok.html)", href: "tiktok.html" },
   { label: "渠道对比 (compare.html)", href: "compare.html" },
 ];
 

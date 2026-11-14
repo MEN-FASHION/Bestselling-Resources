@@ -399,6 +399,12 @@ window.Common = (function () {
     let loaded = false;
 
     function fallback() { return (window.ZONE_DEFS_DEFAULT || []).slice(); }
+    /* 已下线专区（20261114P）：数据库里可能还留着一份旧配置，
+       这里统一剔掉，避免前台菜单/后台专区开关又把它长出来。 */
+    var RETIRED_ZONES = { titlebank: 1 };
+    function alive(arr) {
+      return (arr || []).filter(function (z) { return z && z.key && !RETIRED_ZONES[z.key]; });
+    }
     // 专区顺序：趋势上升榜固定在第一位（用户打开站点默认进入的专区），其余保持原有配置顺序。
     // 这样即使数据库里存着早年保存的旧专区配置，榜单入口也不会被排到最后或漏掉。
     function rankFirst(arr) {
@@ -407,7 +413,7 @@ window.Common = (function () {
       if (i > 0) out.unshift(out.splice(i, 1)[0]);
       return out;
     }
-    function list() { return rankFirst((defs && defs.length) ? defs : fallback()); }
+    function list() { return rankFirst(alive((defs && defs.length) ? defs : fallback())); }
 
     /* 个人专区：只对"自己"有意义，不允许被账号的专区白名单挡住，
        否则收藏成功了却找不到入口（用户级白名单是用来管公共业务专区的）。 */

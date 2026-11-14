@@ -1,5 +1,5 @@
 /* ============================================================================
- * admin-channelzone.js —— 渠道图片专区后台（Pinterest / SHEIN）
+ * admin-channelzone.js —— 渠道图片专区后台（Pinterest / SHEIN / TikTok）
  * ----------------------------------------------------------------------------
  * 定位：与「趋势上升榜」同构的纯图片专区后台作业台。
  *   这两个专区没有榜单指标（无环比、无国家、无排名），进来只有一件事：
@@ -18,6 +18,7 @@
   var ZONES = [
     { key: "pinterest", label: "Pinterest 专区", channel: "Pinterest" },
     { key: "shein", label: "SHEIN 专区", channel: "SHEIN" },
+    { key: "tiktok", label: "TikTok 专区", channel: "TikTok" },
   ];
 
   var DIMS = [

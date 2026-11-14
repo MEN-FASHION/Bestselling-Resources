@@ -57,7 +57,7 @@ ok(/S\.catMap\s*=\s*\{\}/.test(titleJs), "组词台也有类目映射");
 ok(/categories:\s*catsOf\(S\.cat\)/.test(titleJs), "组词台查询用展开后的类目");
 
 /* ---------- 3. 脚本引用顺序 ---------- */
-[["rank.html", "js/rank.js"], ["titlelab.html", "js/titlelab.js"]].forEach(([page, dep]) => {
+[["rank.html", "js/rank.js"]].forEach(([page, dep]) => {
   const html = read(page);
   const iNorm = html.indexOf("js/rank-cat-norm.js");
   const iDep = html.indexOf(dep);

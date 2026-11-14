@@ -25,7 +25,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114N";
+  var BUILD = "20261114P";
 
   /* 各专区的按钮挂点（工具条）与取景范围（内容区） */
   var ZONES = {
@@ -34,6 +34,7 @@
     compare: { label: "渠道对比", bar: "#cmp-bar", root: "#cmp-body" },
     shein: { label: "SHEIN 专区", bar: "#cz-bar", root: "#cz-body" },
     pinterest: { label: "Pinterest 专区", bar: "#cz-bar", root: "#cz-body" },
+    tiktok: { label: "TikTok 专区", bar: "#cz-bar", root: "#cz-body" },
     movement: { label: "品牌动向", bar: "#mv-bar", root: "#mv-body" },
     visual: { label: "视觉专区", bar: "#grid-bar", root: "#grid" }
   };

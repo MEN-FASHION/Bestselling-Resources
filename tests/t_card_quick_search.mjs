@@ -31,7 +31,7 @@ ok(!/\.appendChild\([^)]*\)[\s\S]{0,40}card/.test(SRC), "不应往卡片 DOM 里
 
 /* 有图的专区都得接上：前台 11 页 + 后台图墙 */
 const PAGES = ["index.html", "rank.html", "rhythm.html", "compare.html", "pinterest.html", "shein.html",
-  "trends.html", "fav.html", "movement.html", "marketing.html", "titlelab.html", "admin.html"];
+  "trends.html", "fav.html", "movement.html", "marketing.html", "admin.html"];
 PAGES.forEach((f) => {
   const h = fs.readFileSync(f, "utf8");
   ok(h.indexOf("find-similar.js") >= 0, f + " 未接入悬停搜同款脚本");

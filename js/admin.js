@@ -42,10 +42,10 @@ const PANEL_ZONE = {
   "tag-card": "visual",
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
-  "titlelab-card": "",      // 标题组词台：自己的上传入口与台账，任一管理员均可进入
   "movement-card": "movement", // 品牌动向：独立专区，按「后台可管理专区」授权管控
   "pinterest-card": "pinterest", // Pinterest 专区：纯图片专区（只传图 + 打标），按专区授权管控
   "shein-card": "shein",         // SHEIN 专区：同上
+  "tiktok-card": "tiktok",       // TikTok 专区：同上
   "compare-card": "compare",     // 渠道对比：只读聚合页的列配置（按专区授权管控）
   "tools-card": "",          // 实用工具（思维导图等）：不属于任何专区，任一管理员可用
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
@@ -70,6 +70,9 @@ let panelReady = false;
 // ================= 前台访问模式开关（公开浏览 / 必须登录） =================
 let catVisCfg = {};
 
+// 已下线专区（20261114P）：只在旧的站点配置里残留，载入专区定义时统一剔除
+const RETIRED_ZONES = { titlebank: 1 };
+
 // 四个专区（key 与前端 readZone 一致）：视觉 / 趋势 / 招品 / BESTSELLER
 const CAT_VIS_ZONES = [
   { key: "marketing", label: "营销日历" },
@@ -82,6 +85,7 @@ const CAT_VIS_ZONES = [
   { key: "rank", label: "趋势上升榜" },
   { key: "pinterest", label: "Pinterest 专区", href: "pinterest.html" },
   { key: "shein", label: "SHEIN 专区", href: "shein.html" },
+  { key: "tiktok", label: "TikTok 专区", href: "tiktok.html" },
   { key: "compare", label: "渠道对比", href: "compare.html" }
 ];
 
@@ -93,7 +97,7 @@ async function reloadZoneDefs() {
   let defs = null;
   try { defs = await SB.getZoneDefs(); } catch (e) { defs = null; }
   if (Array.isArray(defs) && defs.length) {
-    ZONE_DEFS = defs.filter(d => d && d.key).map(d => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
+    ZONE_DEFS = defs.filter(d => d && d.key && !RETIRED_ZONES[d.key]).map(d => ({ key: String(d.key), label: String(d.label || d.key), href: String(d.href || "") }));
   } else {
     ZONE_DEFS = CAT_VIS_ZONES.map(z => Object.assign({}, z));
   }
@@ -113,7 +117,7 @@ let zoneVisCfg = {};
     if (currentRole !== "admin") return false;
     const zone = PANEL_ZONE[target];
     // 数据看板 / 趋势上升榜：任一已授权专区即可访问（不限专区）
-    if (target === "rank-card" || target === "rhythm-card" || target === "titlelab-card" || target === "uploaddash-card" || target === "tools-card") return true;
+    if (target === "rank-card" || target === "rhythm-card" || target === "uploaddash-card" || target === "tools-card") return true;
     if (!zone) return false;
     // 超级专区（超管专属）
     if (zone === "super") return false;
@@ -230,9 +234,10 @@ function switchPanel(target) {
     // 视觉专区：合并了「图片管理 + 数据看板」，进入时回到上次的子页签
     if (target === "manage-card") { setVisualTab(visualTab); }
     if (target === "tag-card") { loadTagDefs(); loadFavCats(); loadCatMgmt(); }
-    /* 渠道图片专区（Pinterest / SHEIN）：首次进入才拉数据 */
-    if ((target === "pinterest-card" || target === "shein-card") && window.ChannelZoneAdmin && typeof window.ChannelZoneAdmin.reload === "function") {
-      window.ChannelZoneAdmin.reload(target === "shein-card" ? "shein" : "pinterest");
+    /* 渠道图片专区（Pinterest / SHEIN / TikTok）：首次进入才拉数据 */
+    var czKey = { "pinterest-card": "pinterest", "shein-card": "shein", "tiktok-card": "tiktok" }[target];
+    if (czKey && window.ChannelZoneAdmin && typeof window.ChannelZoneAdmin.reload === "function") {
+      window.ChannelZoneAdmin.reload(czKey);
     }
     /* 实用工具（思维导图）：首次进入才挂载与读库，避免一进后台就多一次请求 */
     if (target === "tools-card" && window.ToolsAdmin && typeof window.ToolsAdmin.enter === "function") {
@@ -262,9 +267,6 @@ function switchPanel(target) {
     if (target === "rhythm-card" && window.RhythmAdmin && typeof window.RhythmAdmin.enter === "function") {
       window.RhythmAdmin.enter();
     }
-    /* 标题组词台（周度标题）：独立上传入口 —— 只有这里能把表格写进标题组词台，
-       避免在趋势上升榜的导入区里选错数据域把另一份数据弄脏。进入时才拉数据。 */
-    if (target === "titlelab-card" && typeof enterTiPanel === "function") { enterTiPanel(); }
     // 版本恢复：列出快照（不自动生成，避免每次进入都占用一次快照名额）
     if (target === "backup-card" && typeof loadBackupList === "function") { loadBackupList(); loadBackupPolicy(); }
   }

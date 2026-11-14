@@ -128,10 +128,10 @@ window.CONFIG = {
  * ============================================================ */
 window.ZONE_DEFS_DEFAULT = [
   { key: "rank",          label: "趋势上升榜",     href: "rank.html" },
-  { key: "titlebank",     label: "标题组词台",     href: "titlelab.html" },
   { key: "rhythm",        label: "上新节奏",       href: "rhythm.html" },
   { key: "pinterest",     label: "Pinterest 专区", href: "pinterest.html" },
   { key: "shein",         label: "SHEIN 专区",    href: "shein.html" },
+  { key: "tiktok",        label: "TikTok 专区",   href: "tiktok.html" },
   { key: "compare",       label: "渠道对比",      href: "compare.html" },
   { key: "marketing",     label: "营销日历",      href: "marketing.html" },
   { key: "visual",        label: "视觉专区",      href: "index.html" },

@@ -76,7 +76,7 @@ ok(/共 ' \+ total \+ ' 条/.test(pt), "面板要显示合并后的条数，便�
 ok(/图片标签按图片地址关联/.test(pt), "确认框要说明标签不受影响");
 
 /* ---------- 七、脚本引入与版本戳 ---------- */
-for (const f of ["admin.html", "rank.html", "rhythm.html", "titlelab.html"]) {
+for (const f of ["admin.html", "rank.html", "rhythm.html"]) {
   const html = read(f);
   /* 只验「有没有引入」，不锁死版本号 —— 锁死版本号会在每次发版后白白变红 */
   ok(/js\/rank-period-norm\.js\?v=\d{8}[A-Z]+/.test(html), f + " 必须引入期次归一脚本");

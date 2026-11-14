@@ -1,5 +1,5 @@
 /* ============================================================================
- * upload-dash.js —— 后台「数据统计」+ 可视化图表（20261114N）
+ * upload-dash.js —— 后台「数据统计」+ 可视化图表（20261114P）
  * ----------------------------------------------------------------------------
  * 相对上一版的改动（用户要求）：
  *   1) 加可视化图表：谁、什么时候、哪个周次/哪个月、传了多少张，一屏直观看完；
@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114N";
+  var BUILD = "20261114P";
 
   /* 每个专区一条独立通道；channels 用大写比较，写错大小写不影响。
      ptype：该专区默认按「周次」还是「月份」看。 */
@@ -33,11 +33,12 @@
     rhythm: { label: "上新节奏", batches: ["rhythm"], ptype: "month" },
     shein: { label: "SHEIN 专区", channels: ["SHEIN"], ptype: "month" },
     pinterest: { label: "Pinterest 专区", channels: ["PINTEREST"], ptype: "month" },
+    tiktok: { label: "TikTok 专区", channels: ["TIKTOK"], ptype: "month" },
     compare: { label: "渠道对比", channels: ["*"], ptype: "month" },
     movement: { label: "品牌动向", movement: true, ptype: "month" },
     visual: { label: "视觉专区", images: true, ptype: "month" }
   };
-  var ORDER = ["rank", "rhythm", "shein", "pinterest", "compare", "movement", "visual"];
+  var ORDER = ["rank", "rhythm", "shein", "pinterest", "tiktok", "compare", "movement", "visual"];
 
   var HIST = "历史数据";
 

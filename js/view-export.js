@@ -34,7 +34,7 @@
  *       window.VX.runPoster()     —— 导出高清海报
  *       window.VX.available()     —— 当前账号是否有本页导出权限
  *
- * 20261114N：「对比的列」也要跟着走。
+ * 20261114P：「对比的列」也要跟着走。
  *   页面上的详细报告（逐列画像 / 横向对照表 / 核心结论）默认是折叠的，
  *   而且内容是首次展开才生成 —— 以前导出的网页里因此根本没有这几块，
  *   选了 3 列、拿到的只有 3 列图。现在导出前先在真实页面展开一次、克隆完立刻折回，
@@ -45,13 +45,14 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114N";
+  var BUILD = "20261114P";
 
   var LABELS = {
     rank: "趋势上升榜",
     rhythm: "上新节奏",
     pinterest: "Pinterest 专区",
     shein: "SHEIN 专区",
+    tiktok: "TikTok 专区",
     compare: "渠道对比",
     movement: "品牌动向"
   };

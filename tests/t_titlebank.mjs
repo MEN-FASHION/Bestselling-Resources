@@ -160,38 +160,34 @@ const r1 = T.tally([{ title: "纯棉T恤" }], {});
 const r2 = T.tally([{ title: "纯棉T恤", tags: { fabric: "雪纺" }, label_fabric: "雪纺" }], {});
 ok(JSON.stringify(r1) === JSON.stringify(r2), "给同一标题附加打标字段，结果必须完全不变");
 
-console.log("七、页面只读 / 无截图 / 引用");
-ok(!/\binsert\s*\(|\bupsert\s*\(|\bupdate\s*\(|\bdelete\s*\(/.test(APP_SRC), "页面不应有写库调用");
-ok(!/<img\b/i.test(HTML), "页面不应出现产品截图");
-ok(/js\/title-words\.js/.test(HTML), "页面应引用标题词库");
-ok(!/js\/title-slot\.js/.test(HTML), "页面不应再引用旧的打标槽位脚本");
+console.log("七、计算内核仍在（页面已下线，内核保留供后续复用）");
+ok(!/\binsert\s*\(|\bupsert\s*\(|\bupdate\s*\(|\bdelete\s*\(/.test(APP_SRC), "内核不应有写库调用");
+ok(/getPatternPrintVisible/.test(APP_SRC), "内核应读取后台的图案印花款开关");
 
-console.log("八、导航 / 专区定义 / 版本戳");
-ok(/titlebank/.test(CFG), "专区定义应登记 titlebank");
-const pages = ["index.html", "rank.html", "rising.html", "rising2.html", "rhythm.html",
-  "favorites.html", "compare.html", "zone.html", "trend.html", "brand.html", "titlelab.html"];
-let navOk = true, navMiss = [];
-pages.forEach((p) => {
-  if (!fs.existsSync(p)) { return; }
-  const src = fs.readFileSync(p, "utf8");
-  if (!/titlebank|标题组词台/.test(src) && p !== "titlelab.html") { navOk = false; navMiss.push(p); }
-});
-ok(navOk, "各页面应含专区入口/导航：" + navMiss.join(","));
+console.log("八、专区已下线（20261114P）：前台 + 后台都不再出现");
+const CFG2 = fs.readFileSync("js/config.js", "utf8");
+ok(!/titlebank/.test(CFG2), "专区定义不应再登记 titlebank");
+ok(!/titlelab\.html/.test(CFG2), "专区定义不应再指向 titlelab.html");
+
+const frontPages = ["index.html", "rank.html", "rhythm.html", "trends.html", "compare.html",
+  "fav.html", "marketing.html", "movement.html", "pinterest.html", "shein.html", "tiktok.html"];
+const leak = frontPages.filter((p) => fs.existsSync(p) && /titlelab\.html|标题组词台/.test(fs.readFileSync(p, "utf8")));
+ok(leak.length === 0, "前台任何页面都不应再有组词台入口：" + leak.join(","));
 
 const admin = fs.readFileSync("admin.html", "utf8");
 const adminJs = fs.readFileSync("js/admin.js", "utf8");
-ok(/titlebank/.test(CFG) && /titlelab\.html/.test(CFG), "专区定义应登记 titlebank 与页面地址");
-ok(/ZONE_DEFS/.test(adminJs) && /for \(const z of ZONE_DEFS\)|ZONE_DEFS\.forEach/.test(adminJs),
-  "后台可见性/权限开关应遍历专区定义动态生成（新增专区自动出现）");
-ok(/getPatternPrintVisible/.test(APP_SRC), "页面应读取后台的图案印花款开关");
+ok(!/titlelab-card|标题组词台/.test(admin), "后台不应再有组词台面板与侧栏入口");
+ok(!/admin-titlelab\.js/.test(admin), "后台不应再加载组词台面板脚本");
+ok(!/titlelab-card/.test(adminJs), "后台面板映射不应再有 titlelab-card");
+ok(/RETIRED_ZONES/.test(adminJs) && /RETIRED_ZONES\[d\.key\]/.test(adminJs), "后台载入专区定义时应剔除已下线专区");
+const commonJs = fs.readFileSync("js/common.js", "utf8");
+ok(/RETIRED_ZONES/.test(commonJs) && /titlebank:\s*1/.test(commonJs), "前台菜单渲染应剔除已下线专区（否则旧配置会把入口长回来）");
+ok(/rankFirst\(alive\(/.test(commonJs), "前台专区列表必须经 alive() 过滤后才渲染（旧配置里存着 titlebank 也不会长出菜单）");
 
-const ver = (HTML.match(/v=(20\d{6}[A-Z]+)/) || [])[1];
-ok(!!ver, "页面应有版本戳");
-if (ver) {
-  const bad = pages.filter((p) => fs.existsSync(p) && !fs.readFileSync(p, "utf8").includes("v=" + ver));
-  ok(bad.length === 0, "版本戳应全站一致：" + bad.join(","));
-}
-
+/* 旧链接不能裸奔：直接访问 titlelab.html 必须跳回榜单，且不再加载组词台脚本 */
+ok(!/js\/titlelab\.js/.test(HTML), "下线页不应再加载组词台脚本");
+ok(!/title-words\.js/.test(HTML), "下线页不应再加载词库脚本");
+ok(/location\.replace\("rank\.html"\)/.test(HTML), "直接访问旧地址应跳回趋势上升榜");
 
 console.log("九、归位优先级（客户裁决 6 条）");
 function slotOf(title, w) {

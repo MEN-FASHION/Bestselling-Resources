@@ -616,7 +616,7 @@
     }
 
     if (!srcs.length) {
-      body.innerHTML = '<div class="rk-empty">还没有可对比的来源。去后台「渠道对比」勾选要对比的专区，<br>或先在「Pinterest 专区 / SHEIN 专区 / 上新节奏」里传图。</div>';
+      body.innerHTML = '<div class="rk-empty">还没有可对比的来源。去后台「渠道对比」勾选要对比的专区，<br>或先在「Pinterest 专区 / SHEIN 专区 / TikTok 专区 / 上新节奏」里传图。</div>';
       return;
     }
     if (!total) {
