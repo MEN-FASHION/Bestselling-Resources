@@ -43,6 +43,7 @@ const PERM_EXPORT_ZONES = [
   { key: "shein", label: "SHEIN 专区" },
   { key: "compare", label: "渠道对比" },
   { key: "movement", label: "品牌动向" },
+  { key: "visual", label: "视觉专区" },
 ];
 
 // 跟随全局 = 显示全局 frontend_zone_visibility 中可见的专区；供权限表「已授权专区」列直接列出
