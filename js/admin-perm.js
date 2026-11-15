@@ -606,7 +606,7 @@ function updatePermEditCatCount() {
         if (viaDict.length) parts.push(viaDict.join("、") + " 的类目授权改由站点设置承载（已生效，可正常传图），数据库那条旧约束不收这类专区名，点上方「授权体检 / 修复」可再补一次专区白名单");
         sbToast("已保存，但有部分未生效 —— " + parts.join(" · "), false);
       } else if (viaDict.length) {
-        /* 20261115C：这份授权现在由站点设置承载，图片服务已按它放行 —— 是「生效但未镜像进数据库」，
+        /* 20261115E：这份授权现在由站点设置承载，图片服务已按它放行 —— 是「生效但未镜像进数据库」，
            不再用「传图会被拒」这种说法，避免超管以为还得跑 SQL 才能用。 */
         sbToast("已保存。" + viaDict.join("、") + " 的类目授权由站点设置承载，当前就在生效，该管理员可正常传图；数据库里那张授权表不收这类专区名（旧约束），需要同步可选点上方「授权体检 / 修复」补一次专区白名单");
       } else {
@@ -934,7 +934,7 @@ async function runPermAudit(repair) {
     html += '<p class="pa-bad">授权表读取失败：可能是登录状态已失效，或数据库策略不允许当前账号读取。请退出后重新登录再试。</p>';
   }
 
-  /* 20261115C：口径改了 —— 「没写进授权表」不等于「没生效」。
+  /* 20261115E：口径改了 —— 「没写进授权表」不等于「没生效」。
      授权存在站点设置里、图片服务又认这份暂存，那就是可用的正常状态，不必挂红字。 */
   if (!dictUsers.length) {
     html += '<p class="pa-ok">授权都在授权表里，管理员上传与入库的权限链路是通的。</p>';
@@ -957,6 +957,22 @@ async function runPermAudit(repair) {
     });
     html += '</tbody></table>';
   }
+
+  /* 20261115E · 传图自检：选人 + 专区 + 类目 → 问图片服务「这张图能不能传」。
+     管理员报 403 时，超管在这里点一下就能看到是哪一环缺（角色 / 专区 / 类目），不用再猜。 */
+  const diagList = (permUsers || []).filter(u => u && u.user_id);
+  html += '<div class="pa-diag"><b>传图自检</b>' +
+    '<select id="perm-diag-uid" class="input">' +
+    (diagList.length
+      ? diagList.map(u => '<option value="' + escAttr(u.user_id) + '">' + escHtml(u.email || u.user_id) + '</option>').join('')
+      : '<option value="">（我自己）</option>') +
+    '</select>' +
+    '<select id="perm-diag-zone" class="input">' +
+    PERM_ZONES.map(z => '<option value="' + escAttr(z.key) + '">' + escHtml(z.label) + '</option>').join('') +
+    '</select>' +
+    '<input id="perm-diag-cat" class="input" placeholder="类目名（可留空）" />' +
+    '<button id="perm-diag-run" class="btn-ghost small" type="button">查</button>' +
+    '</div><div id="perm-diag-out" class="pa-diag-out"></div>';
 
   html += '<div class="pa-act">';
   if (dictUsers.length) {
@@ -1001,6 +1017,35 @@ async function runPermAudit(repair) {
   if (rf) rf.onclick = () => { repairResult = null; runPermAudit(false); };
   const cl = $("#perm-audit-close");
   if (cl) cl.onclick = () => { box.style.display = "none"; };
+  const dgRun = $("#perm-diag-run");
+  if (dgRun) dgRun.onclick = async () => {
+    const out = $("#perm-diag-out");
+    if (!out) return;
+    const uid = (($("#perm-diag-uid") || {}).value || "").trim();
+    const zone = (($("#perm-diag-zone") || {}).value || "").trim();
+    const cat = (($("#perm-diag-cat") || {}).value || "").trim();
+    out.innerHTML = '<p class="pa-tip">正在问图片服务…</p>';
+    try {
+      if (!SB.workerDiag) throw new Error("当前页面的脚本是旧版本，请强制刷新后再试");
+      const d = await SB.workerDiag({ uid: uid, zone: zone, category: cat });
+      const v = d.verdict || {};
+      let head;
+      if (v.ok) {
+        head = '<p class="pa-ok">结论：<b>可以传图</b>' + (v.matchedIn ? '（命中专区 ' + escHtml(v.matchedIn) + '）' : '（' + escHtml(v.reason || "放行") + '）') + '</p>';
+      } else {
+        head = '<p class="pa-bad">结论：<b>不能传图</b> —— ' + escHtml(v.reason || "原因未知") + '</p>';
+      }
+      const list = (o) => Object.keys(o || {}).map(k => k + "(" + o[k] + ")").join("、");
+      out.innerHTML = head +
+        '<p class="pa-tip">角色：' + escHtml(String(d.role || "空")) +
+        '｜后台白名单：' + escHtml((d.manageZones || []).join("、") || "未配置") +
+        '｜站点设置承载：' + escHtml(list(d.dictZones) || "无") +
+        '｜授权表：' + escHtml(list(d.tableZones) || "无") +
+        '｜图片服务：' + escHtml(String(d.build || "旧版")) + '</p>';
+    } catch (e) {
+      out.innerHTML = '<p class="pa-bad">自检失败：' + escHtml((e && e.message) || "未知错误") + '</p>';
+    }
+  };
 
   if (repair && dictUsers.length) {
     repairResult = null;

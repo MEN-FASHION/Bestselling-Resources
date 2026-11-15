@@ -7904,6 +7904,12 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 .perm-audit-box th { color: var(--sub, #999); font-weight: 500; }
 .perm-audit-box .pa-tip { color: var(--sub, #999); }
 .perm-audit-box .pa-act { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* 20261115E · 传图自检 */
+.perm-audit-box .pa-diag { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 4px; padding-top: 10px; border-top: 1px dashed var(--line, #2a2a2a); }
+.perm-audit-box .pa-diag b { font-size: 12.5px; }
+.perm-audit-box .pa-diag .input { max-width: 190px; height: 30px; font-size: 12px; }
+.perm-audit-box .pa-diag-out { font-size: 12.5px; line-height: 1.75; }
+.perm-audit-box .pa-diag-out p { margin: 4px 0; }
 
 /* ===== 20261115A · 上传失败原因 ===== */
 .smart-fail-box { margin: 8px 0 0; padding: 9px 11px; border: 1px solid rgba(255,120,80,.45); border-radius: 8px; background: rgba(255,120,80,.08); font-size: 12px; line-height: 1.75; color: #ffc9b0; max-height: 190px; overflow: auto; }

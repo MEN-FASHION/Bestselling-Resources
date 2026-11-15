@@ -1335,7 +1335,7 @@ function smartRenderPending() {
            后者是管理员「传了图后台却看不到」的真正原因，必须告诉他。 */
         let path = "";
         try {
-          path = await SB.uploadImage(file, cat);
+          path = await SB.uploadImage(file, cat, "visual");   /* 20261115E：视觉专区的图必须声明专区 */
         } catch (e) {
           console.warn(e);
           results[i] = { ok: false, fail: true, reason: "未存进图床：" + ((e && e.message) || "上传失败") };

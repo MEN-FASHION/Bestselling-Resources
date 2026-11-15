@@ -200,7 +200,7 @@ ok(/rankBatchSel\.clear\(\)/.test(rankJs), "趋势上升榜：列表清空后不
 }
 
 /* ---------- 3. 版式与版本 ---------- */
-ok(/\?v=20261115C/.test(adminHtml), "后台版本戳升到 20261115C（不然浏览器还在跑旧脚本）");
+ok(/\?v=20261115E/.test(adminHtml), "后台版本戳升到 20261115E（不然浏览器还在跑旧脚本）");
 ok(!/\?v=20261114Y/.test(adminHtml), "后台没有残留旧版本戳");
 
 console.log((fail === 0 ? "✅ " : "❌ ") + "t_list_pager: " + pass + " 项通过, " + fail + " 项失败");

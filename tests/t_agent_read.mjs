@@ -39,14 +39,17 @@ function installFetch(cfg) {
     }
     const authOf = () => ((init && init.headers && (init.headers.Authorization || init.headers.authorization)) || '');
     if (u.includes('/auth/v1/user')) {
-      // good=超管，adminOnly=普通管理员，其他视为未登录
+      // good=超管(u-super)，adminOnly=普通管理员(u-admin)，其他视为未登录
       const a = authOf();
-      if (a.includes('good') || a.includes('adminOnly')) return new Response(JSON.stringify({ id: 'u1' }), { status: 200 });
+      if (a.includes('good')) return new Response(JSON.stringify({ id: 'u-super' }), { status: 200 });
+      if (a.includes('adminOnly')) return new Response(JSON.stringify({ id: 'u-admin' }), { status: 200 });
       return new Response('{}', { status: 401 });
     }
     if (u.includes('/rest/v1/profiles')) {
-      const a = authOf();
-      const role = a.includes('adminOnly') ? 'admin' : 'super_admin';
+      /* 20261115E：守门员读 profiles 现在优先用服务端密钥（不受行级策略影响），
+         所以这份 mock 必须像真实数据库那样「按 user_id 过滤后返回该用户的角色」，
+         不能靠 Authorization 头猜调用者是谁 —— 否则测的是 mock 的行为，不是产品行为。 */
+      const role = u.includes('user_id=eq.u-admin') ? 'admin' : 'super_admin';
       return new Response(JSON.stringify([{ role }]), { status: 200 });
     }
     if (u.includes('/rest/v1/user_roles')) {

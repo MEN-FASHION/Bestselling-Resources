@@ -38,17 +38,37 @@ async function getUserId(token, env) {
   return id;
 }
 
+/* 20261115E · 守门员读权限数据一律「服务端密钥优先，用户令牌兜底」
+   ------------------------------------------------------------
+   上一版的病根：守门员用「管理员自己的令牌」去读 profiles / site_settings / zone_permissions。
+   这三张表的行级策略（RLS）看一眼就把行过滤掉了 —— 返回 200 + 空数组，看上去「这个人什么都没有」，
+   于是明明超管在后台勾好了，管理员一点上传还是 403。
+   守门员本身就是在做鉴权，读这几张表不该被它们自己的行级策略左右：
+   先用服务端密钥读（一定读得到），读不到（没配密钥 / 网络异常）再用用户令牌兜底。 */
+async function restRows(env, token, pathAndQuery) {
+  const tries = [];
+  if (env.SUPABASE_SERVICE_ROLE_KEY) {
+    tries.push({ apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY });
+  }
+  if (token) {
+    tries.push({ apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + token });
+  }
+  let first = null;
+  for (const h of tries) {
+    try {
+      const res = await fetch(env.SUPABASE_URL + "/rest/v1/" + pathAndQuery, { headers: h });
+      if (!res.ok) { if (!first) first = { rows: null, status: res.status }; continue; }
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows)) return rows;
+      if (!first) first = { rows: null, status: res.status };
+    } catch (e) { /* 换下一种方式 */ }
+  }
+  return first && first.rows !== undefined ? first.rows : null;
+}
+
 // 查询某用户在 profiles 表中的角色
 async function getRole(userId, token, env) {
-  const url = `${env.SUPABASE_URL}/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}&select=role`;
-  const res = await fetch(url, {
-    headers: {
-      apikey: env.SUPABASE_ANON_KEY,
-      Authorization: "Bearer " + token,
-    },
-  });
-  if (!res.ok) return null;
-  const rows = await res.json();
+  const rows = await restRows(env, token, `profiles?user_id=eq.${encodeURIComponent(userId)}&select=role`);
   return rows && rows.length ? rows[0].role : null;
 }
 
@@ -66,74 +86,160 @@ function isSuperRole(role) {
 }
 
 // 查询某用户在 profiles 表中的专区白名单（manage_zones 数组）
+// 20261115E：改用服务端密钥优先（见 restRows），不再被 profiles 的行级策略过滤成空数组
 async function getManageZones(userId, token, env) {
   try {
-    const url = `${env.SUPABASE_URL}/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}&select=manage_zones`;
-    const res = await fetch(url, {
-      headers: {
-        apikey: env.SUPABASE_ANON_KEY,
-        Authorization: "Bearer " + token,
-      },
-    });
-    if (!res.ok) return [];
-    const rows = await res.json();
+    const rows = await restRows(env, token, `profiles?user_id=eq.${encodeURIComponent(userId)}&select=manage_zones`);
     const z = rows && rows.length ? rows[0].manage_zones : null;
-    return Array.isArray(z) ? z : [];
+    return Array.isArray(z) ? z.map(x => String(x || "").trim()).filter(Boolean) : [];
   } catch (e) { return []; }
 }
-// 专区授权判定：超管固定放行；未配置白名单的管理员默认放行；已配置则严格按白名单
+/* ============================================================
+ * 20261115E · 上传/改图的权限判定（守门员唯一口径）
+ * ------------------------------------------------------------
+ * 上一版有三处会被判成 403，而它们都不是真的没权限：
+ *   ① 前台有两条上传路径压根没把「专区」传给守门员，守门员只能按「视觉专区」校验；
+ *      S / P / T 专区只授权了渠道专区的管理员于是被判「未授权该专区」。
+ *   ② 守门员用管理员自己的令牌去读 profiles / site_settings / zone_permissions，
+ *      被行级策略过滤成空数组 → 看起来「这个人什么授权都没有」。
+ *   ③ 类目名一边是标准名、一边是平台全路径（"服装、鞋靴… ，男士卫衣"），
+ *      字符串不等就判无权，明明授权的是同一个类目。
+ * 现在改成：专区缺省按「该账号实际拥有的专区」自动判定；权限数据用服务端密钥读；
+ * 类目名按「整串 + 逐段」双向归一后比较；两处授权（字典/表）合并，任一处允许即通过。
+ * ============================================================ */
+
+// 类目名归一：整串 + 平台全路径逐段，忽略空白/大小写/全角分隔符
+function catKeys(s) {
+  const raw = String(s == null ? "" : s).trim().toLowerCase();
+  if (!raw) return [];
+  const norm = (x) => x.replace(/\s+/g, "");
+  const out = [];
+  const add = (x) => { const t = norm(x); if (t && out.indexOf(t) === -1) out.push(t); };
+  add(raw);
+  raw.split(/[，,>＞／\/|、;；]+/).forEach(add);
+  return out;
+}
+function catMatch(a, b) {
+  const A = catKeys(a), B = catKeys(b);
+  for (const x of A) {
+    for (const y of B) {
+      if (x === y) return true;
+      /* 授权用的是标准短名（卫衣），表格给的是平台全路径（…，男士卫衣）：
+         逐段之后短名就落在某段的末尾（或反过来），也要算同一类目。
+         只做「首尾相接」的包含，且双方至少 2 个字，避免「裤」这类单字把一堆类目都放进来。 */
+      if (x.length >= 2 && y.endsWith(x)) return true;
+      if (y.length >= 2 && x.endsWith(y)) return true;
+    }
+  }
+  return false;
+}
+
+// 渠道专区与视觉专区的历史兼容通道（有些管理员的白名单里只有 visual，却一直在传 S/P/T 的图）
+const CHANNEL_ZONES = ["pinterest", "shein", "tiktok", "compare"];
+
+// 某账号的权限快照：后台白名单 ∪ 字典里配过类目的专区
+async function accessSnapshot(userId, token, env) {
+  const mz = await getManageZones(userId, token, env);
+  const dict = (await getPermDict(userId, token, env)) || {};
+  const dictZones = Object.keys(dict).filter(k => Array.isArray(dict[k]) && dict[k].length);
+  const allowed = mz.slice();
+  dictZones.forEach(k => { if (allowed.indexOf(k) === -1) allowed.push(k); });
+  return { manageZones: mz, dict, dictZones, allowed };
+}
+
+// 某用户某专区的类目授权（字典 ∪ 授权表，两处任一为准）
+async function getZoneCats(userId, token, env, zone, dict) {
+  const out = [];
+  const push = (arr) => (arr || []).forEach(c => {
+    const s = String(c == null ? "" : c).trim();
+    if (s && !out.some(x => catMatch(x, s))) out.push(s);
+  });
+  const d = dict || (await getPermDict(userId, token, env)) || {};
+  if (Array.isArray(d[zone])) push(d[zone]);
+  try {
+    const rows = await restRows(env, token,
+      `zone_permissions?user_id=eq.${encodeURIComponent(userId)}&zone=eq.${encodeURIComponent(zone)}&select=category`);
+    push((rows || []).map(r => r.category));
+  } catch (e) { /* 读不到表就用字典那份 */ }
+  return out;
+}
+
+// 专区授权判定：超管放行；未配置白名单默认放行；已配置按白名单（含视觉↔渠道兼容）
 async function canManageZone(userId, role, token, env, zone) {
   if (isSuperRole(role)) return true;
   if (!isAdminRole(role)) return false;
-  const zones = await getManageZones(userId, token, env);
-  if (!zones.length) return true;   // 未配置用户级专区：按全局放行（兼容）
-  if (zones.indexOf(zone) !== -1) return true;
-  /* 20261115B：渠道专区的 key（shein/pinterest/tiktok/compare）与「视觉专区」的 key（visual）
-     在历史数据里混用过 —— 有些管理员的后台白名单里只有 visual，却一直在传 S/P/T 的图。
-     严格按新 key 校验会把这类管理员挡在门外（表现为「未授权该专区」）。
-     这里保留一条兼容通道：只要该管理员被授权了视觉专区，就允许其上传图片到渠道专区。 */
-  return zones.indexOf("visual") !== -1;
+  const snap = await accessSnapshot(userId, token, env);
+  if (!snap.allowed.length) return true;            // 完全没配置：按全局放行（兼容）
+  const z = String(zone || "").trim();
+  if (!z || z === "auto") return true;              // 未指定专区：由调用方按类目再判
+  if (snap.allowed.indexOf(z) !== -1) return true;
+  if (CHANNEL_ZONES.indexOf(z) !== -1 && snap.allowed.indexOf("visual") !== -1) return true;
+  return false;
 }
 
-// 类目授权判定：超管放行；非管理员拒绝；管理员需专区授权 + 该类目在其 zone_permissions 内（类目为空则回退专区级）
-async function canManageZoneCat(userId, role, token, env, zone, category) {
-  if (isSuperRole(role)) return true;
-  if (!isAdminRole(role)) return false;
-  if (!(await canManageZone(userId, role, token, env, zone))) return false;
-  if (!category || !String(category).trim()) return true;
-  const cat = String(category).trim().toLowerCase();
-  /* 20261115B：类目授权有两个来源 ——
-       ① zone_permissions 表（权威，数据库行级策略也只认这张表）；
-       ② site_settings.frontend_dims.perm_zones 字典（授权表被数据库拒收时的暂存区）。
-     以前守门员只认 ①，后台页面却按 ② 放行，于是「后台看着有权限、点上传就 403」。
-     现在两边口径对齐：字典里有该用户该专区的记录就以字典为准，否则用表。 */
-  try {
-    const dict = await getPermDict(userId, token, env);
-    if (dict && Object.prototype.hasOwnProperty.call(dict, zone) && Array.isArray(dict[zone])) {
-      return dict[zone].some(c => String(c || "").trim().toLowerCase() === cat);
+/* 上传/改图的核心判定：返回 { ok, code, reason, allowed, cats }
+   code：super / role / zone / category / ok / no-config */
+async function checkUploadAccess(userId, role, token, env, zone, category) {
+  if (isSuperRole(role)) return { ok: true, code: "super" };
+  if (!isAdminRole(role)) {
+    return { ok: false, code: "role", reason: "当前账号的角色不是管理员（" + String(role || "空") + "）" };
+  }
+  const snap = await accessSnapshot(userId, token, env);
+  const noZoneCfg = !snap.allowed.length;
+  const z = String(zone || "").trim();
+  const auto = !z || z === "auto";
+
+  if (!auto) {
+    let zoneOk = noZoneCfg || snap.allowed.indexOf(z) !== -1;
+    if (!zoneOk && CHANNEL_ZONES.indexOf(z) !== -1 && snap.allowed.indexOf("visual") !== -1) zoneOk = true;
+    if (!zoneOk) {
+      return {
+        ok: false, code: "zone",
+        reason: "该账号未开通「" + z + "」专区（已开通：" + (snap.allowed.join("、") || "无") + "）",
+        allowed: snap.allowed,
+      };
     }
-  } catch (e) { /* 读不到字典就按表走 */ }
-  try {
-    const url = `${env.SUPABASE_URL}/rest/v1/zone_permissions?user_id=eq.${encodeURIComponent(userId)}&zone=eq.${encodeURIComponent(zone)}&select=category`;
-    const res = await fetch(url, {
-      headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + token },
-    });
-    if (!res.ok) return false;
-    const rows = await res.json();
-    return (rows || []).some(r => String(r.category || "").trim().toLowerCase() === cat);
-  } catch (e) { return false; }
+  }
+
+  const cat = String(category || "").trim();
+  if (!cat) return { ok: true, code: "ok", reason: "只按专区校验，未指定类目", allowed: snap.allowed };
+
+  /* 候选专区：指定了就看那一个（不够再回看全部已开通的），没指定就看全部已开通的 */
+  const pool = auto ? snap.allowed.slice() : [z];
+  if (!pool.length) return { ok: true, code: "no-config", reason: "该账号没有配置任何专区/类目限制，按放行处理" };
+
+  let anyCfg = false, matchedIn = "";
+  const detail = [];
+  for (const cz of pool.concat(snap.allowed.filter(x => pool.indexOf(x) === -1))) {
+    const cats = await getZoneCats(userId, token, env, cz, snap.dict);
+    if (cats.length) anyCfg = true;
+    detail.push(cz + ":" + cats.length + "类目");
+    if (!matchedIn && cats.some(c => catMatch(c, cat))) matchedIn = cz;
+  }
+  if (matchedIn) return { ok: true, code: "ok", matchedIn, allowed: snap.allowed, detail };
+  if (!anyCfg) {
+    return { ok: true, code: "no-config", reason: "该账号没有配置类目授权，按放行处理", allowed: snap.allowed, detail };
+  }
+  return {
+    ok: false, code: "category",
+    reason: "该账号在「" + z + "」下没有被授权类目「" + cat + "」（已授权类目见授权管理）",
+    allowed: snap.allowed, detail,
+  };
+}
+
+// 类目授权判定（保留旧函数名，内部走统一口径）
+async function canManageZoneCat(userId, role, token, env, zone, category) {
+  const r = await checkUploadAccess(userId, role, token, env, zone, category);
+  return !!r.ok;
 }
 
 // 读取「站点设置」里的类目授权暂存字典：{ zone: [category...] }
+// 20261115E：改用服务端密钥优先，避免被 site_settings 的行级策略过滤成 null
 async function getPermDict(userId, token, env) {
   try {
-    const url = `${env.SUPABASE_URL}/rest/v1/site_settings?id=eq.1&select=frontend_dims`;
-    const res = await fetch(url, {
-      headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: "Bearer " + token },
-    });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    const dims = (rows && rows[0] && rows[0].frontend_dims) || {};
+    const rows = await restRows(env, token, "site_settings?id=eq.1&select=frontend_dims");
+    if (!rows) return null;
+    const dims = (rows[0] && rows[0].frontend_dims) || {};
     const m = dims.perm_zones || {};
     const u = m[userId];
     return (u && typeof u === "object") ? u : null;
@@ -171,7 +277,7 @@ async function adminDeleteAuthUser(env, uid) {
 }
 
 // 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
-const WORKER_BUILD = "20261115C";
+const WORKER_BUILD = "20261115E";
 
 // CORS 头
 const CORS = {
@@ -185,7 +291,7 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   const method = request.method;
   // 关键修复：浏览器请求时中文类目会被 URL 编码，这里必须还原成本地字符再查 R2（否则中文类目图片 404）
-  /* 20261115C · 致命顺序缺陷修复：
+  /* 20261115E · 致命顺序缺陷修复：
      上一版把 /ver 与 /admin/add-image 两段处理写在了「方法/路径还没解析」的位置，
      里面引用的 method 在那一刻尚处于暂时性死区（尚未声明），一进函数就抛异常，
      图片服务的所有请求（含正常上传、看图）全部变成 500。
@@ -206,7 +312,7 @@ async function handleRequest(request, env) {
      前端用它判断「这次到底有没有把图片服务重新部署」。案板上的坑：
      站点推 GitHub 只部署前台静态页，图片服务要单独部署；
      没部署时前台已经是新版、图片服务还是旧逻辑，排查会一直在原地打转。
-     注意：本段必须在 method / path 解析之后（20261115C 修复过这里的位置）。 */
+     注意：本段必须在 method / path 解析之后（20261115E 修复过这里的位置）。 */
   if (method === "GET" && (path === "ver" || path === "version")) {
     return json({ ok: true, build: WORKER_BUILD, dictAuth: true }, 200, CORS);
   }
@@ -217,7 +323,7 @@ async function handleRequest(request, env) {
       service: "TREND BANK 图片服务",
       build: WORKER_BUILD,
       dictAuth: true,
-      routes: ["/ver", "/geo", "/uploads/{zone}/{category}/{file}", "/upload", "/admin/add-image"],
+      routes: ["/ver", "/diag", "/geo", "/uploads/{zone}/{category}/{file}", "/upload", "/admin/add-image"],
     }, 200, CORS);
   }
 
@@ -226,6 +332,53 @@ async function handleRequest(request, env) {
   let token = auth.startsWith("Bearer ") ? auth.slice(7) : (url.searchParams.get("token") || "");
   const userId = await getUserId(token, env);
 
+  /* ---------- GET /diag：传图自检 ----------
+     作用：把「这个人到底能不能传这张图」一次说清 —— 角色、后台白名单、站点设置里的类目授权、
+     授权表里的行数，以及守门员最终的判定和原因。
+     用途：管理员说「传图 403」时，超管在后台点一下就能看到是哪一环缺，不用再猜。 */
+  if (method === "GET" && path === "diag") {
+    if (!userId) return json({ error: "未登录", code: "auth" }, 401, CORS);
+    const myRole = await getRole(userId, token, env);
+    const askUid = String(url.searchParams.get("uid") || "").trim();
+    const target = askUid && askUid !== userId ? askUid : userId;
+    if (target !== userId && !isSuperRole(myRole)) {
+      return json({ error: "只有超级管理员可以检查别人的授权", code: "role" }, 403, CORS);
+    }
+    const targetRole = target === userId ? myRole : (await getRole(target, token, env));
+    const zone = String(url.searchParams.get("zone") || "").trim();
+    const category = String(url.searchParams.get("category") || "").trim();
+    const snap = await accessSnapshot(target, token, env);
+    const dictCount = {};
+    Object.keys(snap.dict || {}).forEach(k => { dictCount[k] = Array.isArray(snap.dict[k]) ? snap.dict[k].length : 0; });
+    const tableCount = {};
+    try {
+      const rows = await restRows(env, token, `zone_permissions?user_id=eq.${encodeURIComponent(target)}&select=zone`);
+      (rows || []).forEach(r => {
+        const k = String(r.zone || "").trim() || "(空)";
+        tableCount[k] = (tableCount[k] || 0) + 1;
+      });
+    } catch (e) { /* 读不到表不影响结论 */ }
+    const verdict = await checkUploadAccess(target, targetRole, token, env, zone, category);
+    return json({
+      ok: true, build: WORKER_BUILD,
+      checkedUser: target, isSelf: target === userId,
+      role: targetRole,
+      isAdmin: isAdminRole(targetRole),
+      manageZones: snap.manageZones,
+      dictZones: dictCount,
+      tableZones: tableCount,
+      zone: zone || "auto",
+      category,
+      verdict: {
+        ok: !!verdict.ok, code: verdict.code || "",
+        reason: verdict.reason || "",
+        matchedIn: verdict.matchedIn || "",
+        allowed: verdict.allowed || [],
+        detail: verdict.detail || [],
+      },
+    }, 200, CORS);
+  }
+
   /* ---------- POST /admin/add-image：登记一条图片清单（服务端写，绕开行级策略）----------
      故障背景：图片已经存进对象存储，但浏览器直接往数据库插这条记录被拒（400/401），
      结果「后台看不到这张图」。图片服务用服务端密钥写入，不受浏览器会话的写入策略影响。
@@ -233,14 +386,23 @@ async function handleRequest(request, env) {
   if (method === "POST" && path === "admin/add-image") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const roleA = await getRole(userId, token, env);
-    if (!isAdminRole(roleA)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(roleA)) return json({ error: "无管理员权限", code: "role" }, 403, CORS);
     const bodyA = await request.json().catch(() => ({}));
     const categoryA = String(bodyA.category || "").trim();
     const pathA = String(bodyA.path || "").trim();
-    const zoneA = String(bodyA.zone || "visual").trim() || "visual";
+    /* 20261115E：专区缺省不再硬按 visual —— 按该账号实际拥有的专区自动判定 */
+    const zoneA = String(bodyA.zone || "").trim();
     if (!categoryA || !pathA) return json({ error: "缺少类目或路径" }, 400, CORS);
-    if (!(await canManageZoneCat(userId, roleA, token, env, zoneA, categoryA))) {
-      return json({ error: "未授权该分类（" + categoryA + " / " + zoneA + "）" }, 403, CORS);
+    const accA = await checkUploadAccess(userId, roleA, token, env, zoneA, categoryA);
+    if (!accA.ok) {
+      return json({
+        error: accA.reason || "没有权限登记该图片",
+        code: accA.code || "deny",
+        zone: zoneA || "auto",
+        category: categoryA,
+        allowed: accA.allowed || [],
+        detail: accA.detail || [],
+      }, 403, CORS);
     }
     const rowA = {
       category: categoryA,
@@ -448,21 +610,29 @@ function genReadKey() {
   if (method === "POST" && path === "upload") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
-    const form = await request.formData();
-    /* 20261115B：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
-       以前一律按 visual 校验，导致只被授权了渠道专区的管理员传图必被拒（403）。
-       现在由前端带上所属专区 key，按该专区校验；老前端不带时仍然按 visual。 */
-    const zone = String(form.get("zone") || "visual").trim() || "visual";
-    if (!(await canManageZone(userId, role, token, env, zone))) {
-      return json({ error: "未授权该专区（" + zone + "）" }, 403, CORS);
+    if (!isAdminRole(role)) {
+      return json({ error: "无管理员权限", reason: "当前账号的角色不是管理员", code: "role" }, 403, CORS);
     }
+    const form = await request.formData();
+    /* 20261115E：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
+       以前前端不带 zone 时一律按 visual 校验 —— 只被授权了 S 专区的管理员，
+       上传被按视觉专区判定，必然是 403。
+       现在：前端带了 zone 就按那个专区判；没带就按「该账号实际拥有的专区」自动判定，
+       不再替用户猜一个最容易被拒的默认值。 */
+    const zone = String(form.get("zone") || "").trim();
     const file = form.get("file");
     const category = (form.get("category") || "").trim();
     if (!file || !category) return json({ error: "缺少文件或分类" }, 400, CORS);
-    // 类目授权校验：管理员只能上传其授权专区下被授权的类目
-    if (!(await canManageZoneCat(userId, role, token, env, zone, category))) {
-      return json({ error: "未授权该分类（" + category + " / " + zone + "）" }, 403, CORS);
+    const acc = await checkUploadAccess(userId, role, token, env, zone, category);
+    if (!acc.ok) {
+      return json({
+        error: acc.reason || "没有权限上传",
+        code: acc.code || "deny",
+        zone: zone || "auto",
+        category: category,
+        allowed: acc.allowed || [],
+        detail: acc.detail || [],
+      }, 403, CORS);
     }
 
     // 唯一文件名，防覆盖
@@ -789,9 +959,20 @@ function genReadKey() {
 
   // 7. 存量图片压缩池：列出存储全部图片（key + size），仅管理员
   if (method === "GET" && path === "admin/list-imgs") {
-    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    /* 20261115E：截图里的 401 就是这一行返回的 —— 请求没带令牌（会话过期后前端又没刷新成功）。
+       以前只说「未登录」，看不出是没带令牌还是令牌无效，排查会绕圈。
+       现在把「有没有带令牌」与「令牌是否有效」分开写清楚，前端也好给出「重新登录」的指引。 */
+    if (!userId) {
+      return json({
+        error: token ? "登录令牌已失效，请退出重新登录" : "请求没有带上登录令牌（可能刚退出登录或页面是旧版本）",
+        code: token ? "token-invalid" : "token-missing",
+        build: WORKER_BUILD,
+      }, 401, CORS);
+    }
     const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    if (!isAdminRole(role)) {
+      return json({ error: "无管理员权限", code: "role", role: role || "空" }, 403, CORS);
+    }
     const items = [];
     let cursor;
     do {

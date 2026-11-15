@@ -45,7 +45,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261115C";
+  var BUILD = "20261115E";
 
   var LABELS = {
     rank: "趋势上升榜",

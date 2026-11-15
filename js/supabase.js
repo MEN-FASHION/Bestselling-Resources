@@ -2220,7 +2220,7 @@ async removeTrendRecord(id) {
     },
     /* 把「只暂存」的授权真正写回授权表。
        onStep(info) 每处理一个「用户 × 专区」回调一次，便于界面边跑边显示。 */
-    /* 20261115C · 一键修复改成「让授权真的生效」，不再把「抄不进数据库」当失败
+    /* 20261115E · 一键修复改成「让授权真的生效」，不再把「抄不进数据库」当失败
        ------------------------------------------------------------
        上一版把「写不进 zone_permissions」渲染成一行红字「被数据库拒绝 N 组」，
        超管点完只看到报错，其实功能是好的：授权已经在站点设置里，前台与图片服务都按它放行。
@@ -2303,10 +2303,25 @@ async removeTrendRecord(id) {
         const res = await workerFetch("/ver", { method: "GET" });
         if (!res.ok) return { ok: false, status: res.status };
         const j = await res.json().catch(() => ({}));
-        return { ok: true, build: String(j.build || ""), dictAuth: !!j.dictAuth };
+        return { ok: true, build: String(j.build || ""), dictAuth: !!j.dictAuth, diag: true };
       } catch (e) {
         return { ok: false, error: String((e && e.message) || "") };
       }
+    },
+
+    /* 20261115E · 传图自检：问图片服务「这个人这个专区这个类目能不能传」。
+       返回它自己的判定过程（角色 / 后台白名单 / 站点设置承载 / 授权表），
+       管理员说 403 时，超管在这里一点就知道缺哪一环，不用再靠猜。 */
+    async workerDiag(opts) {
+      const o = opts || {};
+      const q = [];
+      if (o.uid) q.push("uid=" + encodeURIComponent(o.uid));
+      if (o.zone) q.push("zone=" + encodeURIComponent(o.zone));
+      if (o.category) q.push("category=" + encodeURIComponent(o.category));
+      const res = await workerFetch("/diag" + (q.length ? "?" + q.join("&") : ""), { method: "GET" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(workerErrText(res, j, "自检失败"));
+      return j;
     },
     // 读取某管理员被授权的类目名列表（按专区；不传 zone 则取全部专区并集）
     async listUserPermissions(userId, zone) {
@@ -4556,7 +4571,7 @@ async removeTrendRecord(id) {
       /* 20261114V：串行改并行（默认 4 路），并能中途取消 */
       await runPool(list, o.concurrency || 4, async (f) => {
         try {
-          const path = await this.uploadImage(f, category || "品牌动向");
+          const path = await this.uploadImage(f, category || "品牌动向", "movement");
           const url = base + "/" + path;
           const { error } = await client.from("movement_items").insert({
             image_url: url, path: path, category: category || "", title: (f.name || "").replace(/\.[^.]+$/, ""),
@@ -5583,6 +5598,10 @@ async removeTrendRecord(id) {
       channel: String(it.channel || o.channel || "").trim(),
       category: String(it.category || o.category || "").trim(),
       periodLabel: String(it.periodLabel || o.periodLabel || "").trim(),
+      /* 20261115E：专区必须一路带到图片服务。
+         上一版这里把 zone 漏掉了，S / P / T 专区的后台上传全部被按「视觉专区」校验，
+         只被授权渠道专区的管理员因此被判 403 —— 图根本传不上去。 */
+      zone: String(it.zone || o.zone || "").trim(),
     }));
     const done = [], failed = [];
     const doc = await chPicLoad(true);
@@ -5603,7 +5622,7 @@ async removeTrendRecord(id) {
         if (!it.category) throw new Error("缺少类目");
         if (!it.periodLabel) throw new Error("缺少月份");
         const m = API._normMonth(it.periodLabel);
-        const path = await API.uploadImage(it.file, it.category || "其他渠道");
+        const path = await API.uploadImage(it.file, it.category || "其他渠道", it.zone || "visual");
         const url = base + "/" + path;
         const rec = { u: url, ch: it.channel, c: it.category, m, t: new Date().toISOString().slice(0, 10) };
         const idx = pos.has(url) ? pos.get(url) : -1;

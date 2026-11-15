@@ -258,7 +258,7 @@ function runApply(role) {
 
 /* ================= 八、版本戳一致性 ================= */
 {
-  const V = "20261115C";
+  const V = "20261115E";
   const files = ["index.html", "admin.html", "rank.html", "rhythm.html", "compare.html", "shein.html", "pinterest.html", "tiktok.html", "fav.html", "trends.html", "movement.html", "marketing.html"];
   const bad = files.filter(f => {
     const s = read(f);

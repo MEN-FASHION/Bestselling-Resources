@@ -202,7 +202,10 @@ const run = async () => {
       || true, "渠道专区上传已传入自己的专区");  // 真实断言在下一行（防止误写断言永远通过）
     const cz = fs.readFileSync("js/admin-channelzone.js", "utf8");
     ok(/zone:\s*st\.zone\.key/.test(cz), "渠道专区上传确实把 st.zone.key 作为 zone 传下去");
-    ok(/const zone = String\(it\.zone \|\| o\.zone \|\| ""\)\.trim\(\) \|\| "visual";/.test(S), "批量上传按条目的 zone 取值，缺省 visual");
+    ok(/zone: String\(it\.zone \|\| o\.zone \|\| ""\)\.trim\(\),/.test(S), "20261115E：批量上传把条目自带的 zone 一路带到图片服务（上一版这里漏了，S/P/T 全被按视觉专区判 403）");
+    const upBlk = S.slice(S.indexOf("API.uploadRankChannelImages"), S.indexOf("API.uploadRankChannelImages") + 3000);
+    ok(/uploadImage\(it\.file, it\.category \|\| "其他渠道", it\.zone \|\| "visual"\)/.test(upBlk), "真正发请求时把 zone 作为第三个参数传下去");
+    ok(/uploadImage\(f, category \|\| "品牌动向", "movement"\)/.test(S), "品牌动向上传声明自己的专区（movement），不再被当成视觉专区");
   }
 
   /* ============ 五、守门员与后台读同一口径（字典优先） ============ */
@@ -210,7 +213,9 @@ const run = async () => {
   {
     ok(/async function getPermDict/.test(W), "图片服务能读站点设置里的暂存授权字典");
     ok(/perm_zones/.test(W), "读的正是 perm_zones 这份字典");
-    ok(/dict && Object\.prototype\.hasOwnProperty\.call\(dict, zone\)/.test(W), "字典里有该专区的记录时以字典为准");
+    ok(/async function getZoneCats/.test(W), "20261115E：类目授权按「字典 ∪ 授权表」合并读取（任一处允许即通过，不再字典优先一票否决）");
+    ok(/async function restRows/.test(W) && /SUPABASE_SERVICE_ROLE_KEY/.test(W.slice(W.indexOf("async function restRows"), W.indexOf("async function restRows") + 1400)), "守门员读权限数据用服务端密钥优先，不被行级策略过滤成空");
+    ok(/function catMatch/.test(W) && /split\(\/\[，,>＞／\\\/\|、;；\]\+\//.test(W), "类目名按「整串 + 全路径逐段」归一后比较（标准名与平台全路径视为同一类目）");
     // 反向验证：只认授权表的旧实现，在「只暂存」的场景下必然判 false
     const oldBody = `
 async function canManageZoneCatOld(userId, role, zone, category, tableRows) {
@@ -223,9 +228,10 @@ async function canManageZoneCatOld(userId, role, zone, category, tableRows) {
     ok(onlyDict === false, "反向验证：只认授权表时，只暂存的授权会被判无权限（正是本次故障）");
   }
   {
-    ok(/const zone = String\(form\.get\("zone"\) \|\| "visual"\)/.test(W), "上传端点读前端带来的 zone，老前端不带时按 visual");
-    ok(/canManageZoneCat\(userId, role, token, env, zone, category\)/.test(W), "类目授权按该 zone 校验（渠道专区不再被当成视觉专区拒掉）");
-    ok(/未授权该专区（" \+ zone \+ "）/.test(W), "拒绝时把专区名带出来，便于定位");
+    ok(/const zone = String\(form\.get\("zone"\) \|\| ""\)\.trim\(\);/.test(W), "上传端点读前端带来的 zone；不带时不再硬塞 visual");
+    ok(/async function checkUploadAccess/.test(W) && /const auto = !z \|\| z === "auto";/.test(W), "专区缺省按「该账号实际拥有的专区」自动判定（auto），避免猜错专区直接 403");
+    ok(/const acc = await checkUploadAccess\(userId, role, token, env, zone, category\);/.test(W), "上传前走统一判定（专区 + 类目一次判清）");
+    ok(/code: acc\.code \|\| "deny"/.test(W) && /allowed: acc\.allowed \|\| \[\]/.test(W), "拒绝时把原因码、已开通专区、判定细节一起返回，便于定位");
   }
 
   /* ============ 五之二、图片服务必须真的被重新部署（否则一切白改） ============ */
@@ -248,7 +254,7 @@ async function canManageZoneCatOld(userId, role, zone, category, tableRows) {
     ok(addIdx > 0, "找得到登记清单的服务端路由（不是注释里的同名字样）");
     const addBlk = W.slice(addIdx, addIdx + 2400);
     ok(/SUPABASE_SERVICE_ROLE_KEY/.test(addBlk), "该接口用服务端密钥写库（不受浏览器写入策略影响）");
-    ok(/canManageZoneCat\(userId, roleA, token, env, zoneA, categoryA\)/.test(addBlk), "服务端代写同样校验类目授权，不越权");
+    ok(/checkUploadAccess\(userId, roleA, token, env, zoneA, categoryA\)/.test(addBlk), "服务端代写同样校验类目授权，不越权");
     const addBody = S.slice(S.indexOf("async addImageRecord"), S.indexOf("async addImageRecord") + 2200);
     ok(/if \(!error\) return;/.test(addBody), "直写成功就不再多发一次请求");
     ok(/admin\/add-image/.test(addBody), "直写失败自动改走服务端登记（后台不会因为这一步看不到图）");
@@ -457,11 +463,11 @@ async function canManageZoneCatOld(userId, role, zone, category, tableRows) {
     const rj = fs.readFileSync("js/rhythm.js", "utf8");
     const b = (rj.match(/var BUILD = "([^"]*)"/) || [])[1] || "";
     ok(/^2026\d{4}[A-Z]$/.test(b), "页面脚本版本戳格式合法，实际：" + b);
-    ok(/20261115C/.test(fs.readFileSync("admin.html", "utf8")), "admin.html 已引用新版本（否则浏览器仍跑旧脚本）");
-    ok(/20261115C/.test(fs.readFileSync("index.html", "utf8")), "前台页面也已升到同一版本");
-    ok(/20261115C/.test(AP), "权限管理脚本带本轮改动标记");
-    ok(/20261115C/.test(S), "数据层脚本带本轮改动标记");
-    ok(/20261115B/.test(W), "图片服务脚本带本轮改动标记");
+    ok(/20261115E/.test(fs.readFileSync("admin.html", "utf8")), "admin.html 已引用新版本（否则浏览器仍跑旧脚本）");
+    ok(/20261115E/.test(fs.readFileSync("index.html", "utf8")), "前台页面也已升到同一版本");
+    ok(/20261115E/.test(AP), "权限管理脚本带本轮改动标记");
+    ok(/20261115E/.test(S), "数据层脚本带本轮改动标记");
+    ok(/20261115E/.test(W), "图片服务脚本带本轮改动标记");
   }
 
   console.log("\n通过 " + pass + " 项，失败 " + fail + " 项");
