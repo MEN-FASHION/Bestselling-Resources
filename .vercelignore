@@ -1,8 +1,0 @@
-# 上线只需要页面 / 脚本 / 样式 / 第三方库，其余不进部署包
-# 文件数从 174 降到 ~84，体积减一半，部署更快
-RELEASE-NOTES*.md
-README.md
-FILES.md
-tools/
-tests/
-build/
