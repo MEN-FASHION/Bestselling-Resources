@@ -461,9 +461,22 @@ const SB = (() => {
       return j.path;
     },
 
+    /* 20261115H · 把一条图片记录的存储地址改成「桶里实际的 key」
+       场景：文件还在，但记录里的 path 和实际文件名差一点点（扩展名、目录、大小写），
+       界面表现为 404 灰底。体检发现这类后调用本方法改正，图片立刻恢复，不必重传。 */
+    async repairImagePath(id, key) {
+      const k = String(key || "").replace(/^\/+/, "").trim();
+      if (!id || !k) throw new Error("参数不完整");
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      const u = base + "/" + k;
+      const { error } = await client.from("images").update({ url: u, path: k }).eq("id", id);
+      if (error) throw new Error(error.message || "写回失败");
+      try { this._urlOfId[id] = u; } catch (e) {}
+      return u;
+    },
+
     // 管理员删除：通过 Worker 从 R2 删除
-    async deleteImage(path) {
-      const res = await workerFetch("/" + path, { method: "DELETE" });
+    async deleteImage(path) {      const res = await workerFetch("/" + path, { method: "DELETE" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(workerErrText(res, j, "删除失败"));
     },
@@ -6073,6 +6086,27 @@ async removeTrendRecord(id) {
       } catch (e) { return 0; }
     }
 
+    /* 20261115H · 问图片服务「这条地址对应的文件到底在哪」
+       返回 null（问不到）或 { exists, resolved, nearby, sameStem, dir }。
+       记录里的地址与桶里的实际文件名差一点点（扩展名被压成 webp、类目名里的「/」被规范化、
+       大小写不同）时，这里能把正确地址拿回来，界面立刻恢复，不必等下次修数据。 */
+    async function diag(u) {
+      const b = base();
+      if (!b) return null;
+      let p = String(u == null ? "" : u).trim();
+      if (!p) return null;
+      if (p.indexOf(b + "/") === 0) p = p.slice(b.length + 1);
+      p = p.split("#")[0].split("?")[0].replace(/^\/+/, "");
+      if (!p) return null;
+      const tok = await token(true);
+      const q = b + "/diag/img?path=" + encodeURIComponent(p) + (tok ? "&token=" + encodeURIComponent(tok) : "");
+      try {
+        const r = await fetch(q, { cache: "no-store" });
+        const j = await r.json().catch(function () { return null; });
+        return j && j.ok ? j : null;
+      } catch (e) { return null; }
+    }
+
     /* 强制续期一次再取令牌：图片加载失败时专走这条路。
        页面开久了令牌会过期（还没到「即将过期」的判定阈值也一样会 401），
        这里直接续期，成功则用新令牌重试；续不上（没刷新令牌 / 会话真失效）就照旧报 401。 */
@@ -6107,6 +6141,28 @@ async removeTrendRecord(id) {
         if (tok) { el.setAttribute("src", withAuth(raw, tok)); return; }   /* 续期后重试一次 */
       }
       const code = raw ? await probe(raw) : 0;
+      /* 20261115H · 404 不等于「文件真的不在」：记录地址和桶里的实际文件名常差一点点。
+         先问图片服务要正确地址，拿到就换上去（用户无感，图直接出来）。 */
+      if (code === 404 && el.getAttribute("data-imgfixd") !== "1") {
+        const d = await diag(raw);
+        if (d && d.resolved) {
+          const nu = base() + "/" + String(d.resolved).replace(/^\/+/, "");
+          const tok2 = await token(true);
+          el.setAttribute("data-imgfixd", "1");
+          el.setAttribute(RAW, nu);
+          el.setAttribute("src", withAuth(nu, tok2));
+          try {
+            console.warn("[IMG-DIAG] 记录地址已过期，已自动改用实际文件：" +
+              stripAuth(raw) + "  →  " + d.resolved);
+          } catch (e) {}
+          return;
+        }
+        try {
+          console.warn("[IMG-DIAG] 文件确实不在存储：" + stripAuth(raw) +
+            "\n  同目录现存：" + JSON.stringify((d && d.nearby) || []) +
+            "\n  同名文件：" + JSON.stringify((d && d.sameStem) || []));
+        } catch (e) {}
+      }
       el.setAttribute("data-imgfail", String(code || 0));
       el.setAttribute("src", placeholder(reason(code)));
       el.setAttribute("title", reason(code) + "　" + stripAuth(raw));
@@ -6148,7 +6204,7 @@ async removeTrendRecord(id) {
     }
 
     return {
-      hook, apply, onError, placeholder, reason, probe,
+      hook, apply, onError, placeholder, reason, probe, diag,
       stripAuth, withAuth, abs, isWorker,
       token,
       /* 页面要自己拼地址时用（异步，带令牌） */
@@ -6156,7 +6212,7 @@ async removeTrendRecord(id) {
       /* 体检：给一批地址逐个探状态，用于「为什么有的不显示」 */
       async audit(urls, onTick) {
         const list = Array.from(new Set((urls || []).map(function (x) { return String(x || "").trim(); }).filter(Boolean)));
-        const out = { total: list.length, ok: 0, auth: 0, denied: 0, missing: 0, other: 0, rebase: 0, rows: [] };
+        const out = { total: list.length, ok: 0, auth: 0, denied: 0, missing: 0, other: 0, rebase: 0, fixable: 0, rows: [], repairs: [] };
         for (let i = 0; i < list.length; i++) {
           const u = list[i];
           let code = await probe(u);
@@ -6174,6 +6230,18 @@ async removeTrendRecord(id) {
                 if (typeof onTick === "function") onTick(i + 1, list.length);
                 continue;
               }
+            }
+          }
+          /* 20261115H：404 先问图片服务「同名文件在哪」，能找回的就是「记录地址写错了」，
+             这类可以一键改正数据库里的 path，改完图片立刻恢复（不用重传）。 */
+          if (code === 404) {
+            const d = await diag(u);
+            if (d && d.resolved) {
+              out.fixable++;
+              out.rows.push({ url: stripAuth(u), code: "地址过期", reason: "文件在，记录地址不对（可一键修复）", fixed: stripAuth(base() + "/" + String(d.resolved).replace(/^\/+/, "")) });
+              out.repairs.push({ url: stripAuth(u), key: String(d.resolved).replace(/^\/+/, "") });
+              if (typeof onTick === "function") onTick(i + 1, list.length);
+              continue;
             }
           }
           if (code === 200) out.ok++;

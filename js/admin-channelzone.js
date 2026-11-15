@@ -1699,10 +1699,28 @@
         var line = "体检完成：正常 " + rep.ok + " 张" +
           (rep.auth ? " · 登录失效 " + rep.auth + " 张（重新登录即可）" : "") +
           (rep.denied ? " · 无权限 " + rep.denied + " 张" : "") +
+          (rep.fixable ? " · 地址过期可修复 " + rep.fixable + " 张" : "") +
           (rep.missing ? " · 文件不存在 " + rep.missing + " 张" : "") +
-          (rep.rebase ? " · 地址过期可修复 " + rep.rebase + " 张" : "") +
+          (rep.rebase ? " · 旧域名可修正 " + rep.rebase + " 张" : "") +
           (rep.other ? " · 其它失败 " + rep.other + " 张" : "");
         say(k, line);
+        /* 20261115H · 地址过期的那一批可以就地改正（文件在、只是记录地址不对），改完立刻恢复 */
+        if (rep.repairs && rep.repairs.length) {
+          var byUrl = {};
+          st.items.forEach(function (r) { byUrl[String(r.image_url || "").split("?")[0]] = r; });
+          var yes = await uiConfirm("有 " + rep.repairs.length + " 张图「文件在、记录地址不对」（扩展名/目录/大小写不一致）。\n现在自动改正这些记录的存储地址？改正后图片立即恢复，不需要重新上传。");
+          if (yes) {
+            var okN = 0, badN = 0;
+            for (var pi = 0; pi < rep.repairs.length; pi++) {
+              var rp = rep.repairs[pi];
+              var rec = byUrl[rp.url] || {};
+              if (!rec.id) { badN++; continue; }
+              try { await SB.repairImagePath(rec.id, rp.key); okN++; } catch (e) { badN++; }
+            }
+            say(k, "地址修复：" + okN + " 条成功" + (badN ? "，" + badN + " 条未改动（可能不是你上传的图）" : ""));
+            if (okN) loadAll(k);
+          }
+        }
         if (rep.rows && rep.rows.length) {
           /* 异常的这一批直接摆出来：类目 / 月份 / 原因，方便逐条对上 */
           var byUrl = {};

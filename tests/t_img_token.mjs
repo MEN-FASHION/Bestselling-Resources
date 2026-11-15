@@ -159,7 +159,7 @@ console.log("\n【7】限流阈值不再误伤正常浏览");
 
 console.log("\n【8】版本戳一致");
 {
-  const ver = "20261115G";
+  const ver = "20261115H";
   ok(new RegExp('WORKER_BUILD = "' + ver + '"').test(workerSrc), "图片服务版本号 = " + ver);
   const idx = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   ok(idx.includes("?v=" + ver), "前台资源版本 = " + ver);

@@ -277,7 +277,7 @@ async function adminDeleteAuthUser(env, uid) {
 }
 
 // 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
-const WORKER_BUILD = "20261115G";
+const WORKER_BUILD = "20261115H";
 
 // CORS 头
 const CORS = {
@@ -323,7 +323,7 @@ async function handleRequest(request, env) {
       service: "TREND BANK 图片服务",
       build: WORKER_BUILD,
       dictAuth: true,
-      routes: ["/ver", "/diag", "/geo", "/uploads/{zone}/{category}/{file}", "/upload", "/admin/add-image"],
+      routes: ["/ver", "/diag", "/diag/img", "/geo", "/uploads/{zone}/{category}/{file}", "/upload", "/admin/add-image"],
     }, 200, CORS);
   }
 
@@ -428,8 +428,65 @@ async function handleRequest(request, env) {
     return json({ ok: true }, 200, CORS);
   }
 
-  // ---------- 0. GET /geo：返回访问者的网络出口信息（国家 / 省州 / 城市 / IP）----------
-  // 供前台「数据看板」记录用户来源地区。只返回调用者自己的信息，不查库、不读他人数据。
+  /* ---------- GET /diag/img?path=xxx：单张图「为什么打不开」的现场报告 ----------
+     返回：这条 path 试过哪些 key、桶里到底有没有、同目录现存哪些文件、有没有同名文件。
+     用途：界面上一张图 404 时，一眼看清是「记录地址写错了」还是「文件真的不在」，
+     不用再靠猜、也不用把整桶清单拉下来找。 */
+  if (method === "GET" && path === "diag/img") {
+    if (!userId) {
+      return json({
+        error: token ? "登录令牌已失效，请退出重新登录" : "请求没有带上登录令牌",
+        code: token ? "token-invalid" : "token-missing",
+        build: WORKER_BUILD,
+      }, 401, CORS);
+    }
+    const p = String(url.searchParams.get("path") || "").replace(/^\/+/, "").trim();
+    if (!p) return json({ error: "缺少 path" }, 400, CORS);
+    const cands = [p];
+    if (p.indexOf("images/") !== 0) cands.push("images/" + p);
+    const tried = [];
+    let exists = false, hitKey = "";
+    for (const k of cands) {
+      let has = false;
+      try { has = !!(await env.IMAGES.head(k)); } catch (e) { has = false; }
+      tried.push({ key: k, exists: has });
+      if (has && !hitKey) { exists = true; hitKey = k; }
+    }
+    const name = _baseOf(p), stem = _stemOf(p);
+    const dir = _dirOf(p);
+    let nearby = [];
+    try {
+      const page = await env.IMAGES.list({ prefix: dir ? dir + "/" : "images/", limit: 200 });
+      nearby = (page.objects || []).map(function (o) { return o.key; }).slice(0, 20);
+    } catch (e) { /* 列不出就不给 */ }
+    let sameStem = [];
+    if (!exists) {
+      let cursor, pages = 0;
+      try {
+        do {
+          const page = await env.IMAGES.list({ prefix: "images/", cursor, limit: 1000 });
+          for (const o of (page.objects || [])) {
+            if (_matchKey(o.key, name, stem) && sameStem.length < 10) sameStem.push(o.key);
+          }
+          cursor = page.truncated ? page.cursor : undefined;
+          pages++;
+        } while (cursor && pages < 30 && sameStem.length < 10);
+      } catch (e) { /* 扫桶失败就不给 */ }
+    }
+    return json({
+      ok: true,
+      build: WORKER_BUILD,
+      path: p,
+      exists: exists,
+      resolved: hitKey || (sameStem[0] || ""),
+      tried: tried,
+      dir: dir,
+      nearby: nearby,
+      sameStem: sameStem,
+    }, 200, CORS);
+  }
+
+  // ---------- 0. GET /geo：返回访问者的网络出口信息（国家 / 省州 / 城市 / IP）----------  // 供前台「数据看板」记录用户来源地区。只返回调用者自己的信息，不查库、不读他人数据。
   if (method === "GET" && path === "geo") {
     const cf = request.cf || {};
     return json({
@@ -509,12 +566,76 @@ function genReadKey() {
     return /\.(jpe?g|png|webp|gif|bmp|avif|svg)$/i.test(p);
   }
 
+  /* 20261115H · 按「同名文件」把丢失的地址找回来
+     ------------------------------------------------------------
+     记录里的 path 和桶里的 key 只要差一点点，以前一律 404，界面就是一块灰底：
+       · 压缩池把 .jpg 转成 .webp 后换了扩展名
+       · 类目名里的「/」被规范化（打底/压缩 → 打底压缩）导致目录层级变了
+       · 文件名大小写、前后空白、多一层少一层目录
+     这里在取不到对象时按「文件名(忽略扩展名、忽略大小写)」在桶里找一遍：
+     先同目录，再 images/ 下，最后整桶（有界）。命中一次就缓存，同 isolate 内不再扫桶。 */
+  const _rescueHit = new Map();
+  const _rescueMiss = new Map();
+  function _dirOf(p) { const i = String(p).lastIndexOf("/"); return i < 0 ? "" : String(p).slice(0, i); }
+  function _baseOf(p) { const s = String(p); return s.slice(s.lastIndexOf("/") + 1).toLowerCase(); }
+  function _stemOf(p) { const b = _baseOf(p); const d = b.lastIndexOf("."); return d > 0 ? b.slice(0, d) : b; }
+  function _matchKey(k, name, stem) {
+    const b = String(k || "").slice(String(k).lastIndexOf("/") + 1).toLowerCase();
+    if (b === name) return true;
+    const d = b.lastIndexOf(".");
+    return (d > 0 ? b.slice(0, d) : b) === stem;
+  }
+  async function _scan(prefix, name, stem, maxPages) {
+    let cursor, pages = 0;
+    try {
+      do {
+        const page = await env.IMAGES.list({ prefix: prefix || "", cursor, limit: 1000 });
+        for (const o of (page.objects || [])) { if (_matchKey(o.key, name, stem)) return o.key; }
+        cursor = page.truncated ? page.cursor : undefined;
+        pages++;
+      } while (cursor && pages < (maxPages || 20));
+    } catch (e) { /* 扫桶失败就当没找到 */ }
+    return "";
+  }
+  async function resolveKey(decodedPath, rawPath) {
+    const cands = [decodedPath];
+    if (rawPath && rawPath !== decodedPath) cands.push(rawPath);
+    if (String(decodedPath).indexOf("images/") !== 0) cands.push("images/" + decodedPath);
+    for (const k of cands) { try { if (await env.IMAGES.head(k)) return k; } catch (e) {} }
+    if (String(decodedPath).indexOf("..") >= 0) return "";
+    if (_rescueHit.has(decodedPath)) return _rescueHit.get(decodedPath);
+    const last = _rescueMiss.get(decodedPath);
+    if (last && Date.now() - last < 60000) return "";
+    const name = _baseOf(decodedPath);
+    const stem = _stemOf(decodedPath);
+    let hit = "";
+    if (name) {
+      const dir = _dirOf(decodedPath);
+      if (dir) hit = await _scan(dir + "/", name, stem, 5);
+      if (!hit) hit = await _scan("images/", name, stem, 30);
+      if (!hit) hit = await _scan("", name, stem, 30);
+    }
+    if (hit) _rescueHit.set(decodedPath, hit);
+    else {
+      _rescueMiss.set(decodedPath, Date.now());
+      if (_rescueMiss.size > 500) _rescueMiss.clear();
+    }
+    return hit;
+  }
+
   // 兼容新旧存储：新图明文存中文路径，旧图曾以编码形式存储，先取解码后路径，取不到再取原始编码路径
   async function getObject(decodedPath, rawPath) {
     let obj = await env.IMAGES.get(decodedPath);
     if (!obj && rawPath && rawPath !== decodedPath) obj = await env.IMAGES.get(rawPath);
     // 缺 images/ 前缀的老记录：补前缀再试一次
     if (!obj && decodedPath.indexOf("images/") !== 0) obj = await env.IMAGES.get("images/" + decodedPath);
+    // 20261115H：仍取不到 → 按同名文件找（扩展名/目录/大小写不一致都能救回来）
+    if (!obj) {
+      const k = await resolveKey(decodedPath, rawPath);
+      if (k && k !== decodedPath && k !== rawPath) {
+        try { obj = await env.IMAGES.get(k); } catch (e) {}
+      }
+    }
     return obj;
   }
 
