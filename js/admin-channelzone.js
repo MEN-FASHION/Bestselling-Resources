@@ -153,6 +153,7 @@
         '<select id="' + id(k, "filter-cat") + '" class="input"><option value="">全部类目</option></select>' +
         '<select id="' + id(k, "filter-month") + '" class="input"><option value="">全部月份</option></select>' +
         '<button id="' + id(k, "refresh") + '" class="btn-ghost" type="button">刷新</button>' +
+        '<button id="' + id(k, "audit") + '" class="btn-ghost" type="button" title="逐张核对图片能否打开：登录失效 / 无权限 / 文件不存在，一次性说清">图片体检</button>' +
         '<button id="' + id(k, "export") + '" class="btn-ghost" type="button">导出打标表</button>' +
         '<button id="' + id(k, "import") + '" class="btn-ghost" type="button">导入打标表</button>' +
         '<input type="file" id="' + id(k, "imp-file") + '" accept=".xlsx,.xls" hidden>' +
@@ -396,13 +397,24 @@
     say(k, "加载中…");
     try {
       var rows = await SB.listRankChannelPics({ periodType: "month" });
+      /* 20261115G：后台图墙也要带令牌。库里很多记录存的是「完整地址」，
+         之前对这些直接 return，令牌就丢了 → 图片服务判未登录 → 整片灰底。 */
+      var _tok = "";
+      try { _tok = await SB.currentToken(); } catch (e) { _tok = ""; }
+      var withTok = function (abs) {
+        if (!abs || !_tok) return abs;
+        if (/[?&]token=/.test(abs)) return abs;
+        return abs + (abs.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(_tok);
+      };
       st.items = (rows || []).filter(function (r) { return sameChannel(r.channel, z.channel); })
         .map(function (r) {
-          var u = String(r.image_url || "");
-          if (u && !/^https?:\/\//i.test(u)) {
+          var raw = String(r.image_url || "");
+          var u = raw;
+          if (raw && !/^https?:\/\//i.test(raw)) {
             var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
-            if (base) u = base + "/" + u.replace(/^\/+/, "");
+            if (base) u = base + "/" + raw.replace(/^\/+/, "");
           }
+          u = withTok(u);
           return {
             id: r.id || ("cp:" + r.image_url),
             image_url: u,
@@ -1671,6 +1683,43 @@
 
     var ref = el(k, "refresh");
     if (ref) ref.onclick = function () { loadAll(k); };
+    /* 20261115G · 图片体检：把「有的图不显示」从猜变成可核对的事实 */
+    var aud = el(k, "audit");
+    if (aud) aud.onclick = async function () {
+      var st = state[k];
+      if (!st || !st.items || !st.items.length) { toast("先刷新一次，让列表出来再体检", false); return; }
+      if (!window.IMFIX || typeof window.IMFIX.audit !== "function") { toast("页面脚本偏旧，请强刷后重试", false); return; }
+      var urls = st.items.map(function (r) { return r.image_url; });
+      aud.disabled = true;
+      say(k, "正在体检 " + urls.length + " 张…");
+      try {
+        var rep = await window.IMFIX.audit(urls, function (n, total) {
+          if (n % 10 === 0 || n === total) say(k, "正在体检 " + n + " / " + total + "…");
+        });
+        var line = "体检完成：正常 " + rep.ok + " 张" +
+          (rep.auth ? " · 登录失效 " + rep.auth + " 张（重新登录即可）" : "") +
+          (rep.denied ? " · 无权限 " + rep.denied + " 张" : "") +
+          (rep.missing ? " · 文件不存在 " + rep.missing + " 张" : "") +
+          (rep.rebase ? " · 地址过期可修复 " + rep.rebase + " 张" : "") +
+          (rep.other ? " · 其它失败 " + rep.other + " 张" : "");
+        say(k, line);
+        if (rep.rows && rep.rows.length) {
+          /* 异常的这一批直接摆出来：类目 / 月份 / 原因，方便逐条对上 */
+          var byUrl = {};
+          st.items.forEach(function (r) { byUrl[r.image_url] = r; });
+          console.warn("[图片体检] 异常清单（前 30 条）\n" + rep.rows.slice(0, 30).map(function (x) {
+            var r = byUrl[x.url] || {};
+            return x.code + " | " + x.reason + " | " + (r.category || "?") + " | " + (r.month || "") + " | " + x.url;
+          }).join("\n"));
+          toast("异常 " + rep.rows.length + " 张，明细已写在控制台；光标悬停图片即可看原因", false);
+        } else {
+          toast("这批图全部能正常打开", true);
+        }
+      } catch (e) {
+        say(k, "体检失败：" + ((e && e.message) || "未知错误"));
+      }
+      aud.disabled = false;
+    };
     var fm = el(k, "filter-month");
     if (fm) fm.onchange = function () { state[k].curMonth = fm.value || ""; renderAll(k); };
     var ex = el(k, "export");

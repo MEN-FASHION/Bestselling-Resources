@@ -200,8 +200,14 @@ ok(/rankBatchSel\.clear\(\)/.test(rankJs), "趋势上升榜：列表清空后不
 }
 
 /* ---------- 3. 版式与版本 ---------- */
-ok(/\?v=20261115E/.test(adminHtml), "后台版本戳升到 20261115E（不然浏览器还在跑旧脚本）");
-ok(!/\?v=20261114Y/.test(adminHtml), "后台没有残留旧版本戳");
+/* 版本戳不写死：从页面里取当前版本，再校验「没有更老的残留」。
+   以前这里是写死的，每次升版都要改测试，改漏了就会出现「版本对了但测试红」的假警报。 */
+{
+  const ver = (adminHtml.match(/supabase\.js\?v=(20\d{6}[A-Z])/) || [])[1] || "";
+  ok(/^20\d{6}[A-Z]$/.test(ver), "后台版本戳格式合法，实际：" + (ver || "(缺失)"));
+  const olds = (adminHtml.match(/\?v=(20\d{6}[A-Z])/g) || []).filter((x) => x.indexOf(ver) < 0);
+  ok(olds.length === 0, "后台没有残留旧版本戳（发现：" + olds.join(",") + "）");
+}
 
 console.log((fail === 0 ? "✅ " : "❌ ") + "t_list_pager: " + pass + " 项通过, " + fail + " 项失败");
 process.exit(fail === 0 ? 0 : 1);

@@ -276,9 +276,10 @@ async function diag(token, qs) {
 
   console.log("\n【11】版本戳");
   {
-    ok(/const WORKER_BUILD = "20261115E"/.test(W), "图片服务版本号已到 20261115E");
+    const wb = (W.match(/const WORKER_BUILD = "(20\d{6}[A-Z])"/) || [])[1] || "";
+    ok(/^20\d{6}[A-Z]$/.test(wb), "图片服务版本号格式合法，实际：" + (wb || "(缺失)"));
     const r = await diag("tok-super", "");
-    ok("自检接口回报的版本就是当前版本", r.body && r.body.build === "20261115E", r.body && r.body.build);
+    ok("自检接口回报的版本就是当前版本", r.body && r.body.build === wb, r.body && r.body.build);
     ok(/\/diag/.test(W.slice(W.indexOf("routes:"), W.indexOf("routes:") + 300)), "根路径自述里列出 /diag");
   }
 

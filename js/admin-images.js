@@ -178,7 +178,7 @@ function fmtSize(n) {
       let path = "";
       try {
         // 1) 上传到 R2（经 Worker，路径由 Worker 生成）
-        path = await SB.uploadImage(file, cat, "visual");   /* 20261115E：视觉专区的图必须声明专区 */
+        path = await SB.uploadImage(file, cat, "visual");   /* 20261115G：视觉专区的图必须声明专区 */
       } catch (e) {
         console.warn(e);
         failed++;

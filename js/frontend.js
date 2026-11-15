@@ -469,6 +469,37 @@
   const LAZY_CONC = 4;
   let lazyInflight = 0;
   const lazyQueue = [];
+  /* 20261115G · 取一张图：令牌过期时自动续期并重试一次
+     ------------------------------------------------------------
+     故障现象：「有的图不显示」—— 已缓存过的图照旧能看，没缓存/新滚出来的图是灰底占位。
+     根因：卡片上的令牌是「页面打开那一刻」写进 dataset 的（window.__guestToken），
+     会话过期后这些令牌就全废了，图片服务回 401；而这里的兜底只拿旧令牌又试一次，
+     依旧 401 就落到 lazy-fallback（灰底）。老的图在浏览器缓存里，所以看起来「有的显示、有的不显示」。
+     现在：401 就调用 DB.currentToken()（内部单飞续期）拿新令牌，重试一次；拿到新令牌后写回
+     dataset，同一批图后续都复用，不会每张都去续期。 */
+  async function fetchImgBlob(au, at) {
+    const tryOnce = async (tok) => {
+      const headers = tok ? { "Authorization": "Bearer " + tok } : {};
+      return await fetch(au, { headers, cache: "no-store" });
+    };
+    let resp = await tryOnce(at);
+    if (resp.status === 401 || resp.status === 403) {
+      let fresh = "";
+      try {
+        if (window.DB && typeof window.DB.currentToken === "function") fresh = await window.DB.currentToken();
+      } catch (e) { /* 续期失败按原样返回，交给上层兜底 */ }
+      if (fresh && fresh !== at) {
+        const retry = await tryOnce(fresh);
+        if (retry.ok) {
+          try { window.__guestToken = fresh; } catch (e) { /* 忽略 */ }
+          retry.__freshToken = fresh;
+        }
+        return retry;
+      }
+    }
+    return resp;
+  }
+
   function lazyPump() {
     while (lazyInflight < LAZY_CONC && lazyQueue.length) {
       const p = lazyQueue.shift();
@@ -480,9 +511,9 @@
         const at = p.dataset.authToken;
         p.removeAttribute("src");
         try {
-          const headers = at ? { "Authorization": "Bearer " + at } : {};
-          const resp = await fetch(au, { headers, cache: "no-store" });
+          const resp = await fetchImgBlob(au, at);
           if (!resp.ok) throw new Error(String(resp.status));
+          if (resp.__freshToken) p.dataset.authToken = resp.__freshToken;
           const blob = await resp.blob();
           const obj = URL.createObjectURL(blob);
           if (!settled) {
@@ -522,9 +553,9 @@
           const at = p.dataset.authToken;
           if (au) {
             try {
-              const headers = at ? { "Authorization": "Bearer " + at } : {};
-              const resp = await fetch(au, { headers, cache: "no-store" });
+              const resp = await fetchImgBlob(au, at);
               if (!resp.ok) throw new Error(String(resp.status));
+              if (resp.__freshToken) p.dataset.authToken = resp.__freshToken;
               const blob = await resp.blob();
               const obj = URL.createObjectURL(blob);
               p.classList.add("loaded");

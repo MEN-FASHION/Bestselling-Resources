@@ -494,6 +494,22 @@ const SB = (() => {
     },
 
     // ============ DB（图片清单） ============
+    /* 20261115G：老记录可能只存了 url、没有 path。<img> 是按 path 拼地址的，
+       path 一空就会拼成「服务根地址」→ 404 → 灰底，于是「有的图不显示」。
+       读出来的每一行都补一次 path（从 url 反推），前台/后台/池子/导出都受益。 */
+    _ensureImgPath(r) {
+      if (!r) return r;
+      const p0 = String(r.path || "").trim();
+      if (p0) return r;
+      const u = String(r.url || "").trim();
+      if (!u) return r;
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      let p = "";
+      if (base && u.indexOf(base + "/") === 0) p = u.slice(base.length + 1).split("?")[0];
+      else if (!/^https?:\/\//i.test(u)) p = u.replace(/^\/+/, "");
+      if (p) r.path = p;
+      return r;
+    },
     async listImages(category, opts) {
       let q = client.from("images").select("*").order("created_at", { ascending: false });
       if (category && category !== "全部") q = q.eq("category", category);
@@ -502,7 +518,7 @@ const SB = (() => {
       }
       const { data, error } = await q;
       if (error) throw new Error(error.message || "读取失败");
-      return data || [];
+      return (data || []).map((r) => API._ensureImgPath(r));
     },
     // 数据看板专用：统计全站图片（含其他管理员上传），仅 admin / super_admin 可调用
     // 图片管理列表仍走 listImages（受 RLS 限制，管理员只看到并只能改自己上传的）
@@ -524,7 +540,7 @@ const SB = (() => {
         const { data, error } = await client.rpc("frontend_list_images_page", { p_limit: pageSize, p_offset: p * pageSize });
         if (error) throw new Error(error.message || "读取失败");
         const rows = data || [];
-        for (const r of rows) out.push(r);
+        for (const r of rows) out.push(API._ensureImgPath(r));
         if (rows.length < pageSize) break;
       }
       return out;
@@ -2220,7 +2236,7 @@ async removeTrendRecord(id) {
     },
     /* 把「只暂存」的授权真正写回授权表。
        onStep(info) 每处理一个「用户 × 专区」回调一次，便于界面边跑边显示。 */
-    /* 20261115E · 一键修复改成「让授权真的生效」，不再把「抄不进数据库」当失败
+    /* 20261115G · 一键修复改成「让授权真的生效」，不再把「抄不进数据库」当失败
        ------------------------------------------------------------
        上一版把「写不进 zone_permissions」渲染成一行红字「被数据库拒绝 N 组」，
        超管点完只看到报错，其实功能是好的：授权已经在站点设置里，前台与图片服务都按它放行。
@@ -2309,7 +2325,7 @@ async removeTrendRecord(id) {
       }
     },
 
-    /* 20261115E · 传图自检：问图片服务「这个人这个专区这个类目能不能传」。
+    /* 20261115G · 传图自检：问图片服务「这个人这个专区这个类目能不能传」。
        返回它自己的判定过程（角色 / 后台白名单 / 站点设置承载 / 授权表），
        管理员说 403 时，超管在这里一点就知道缺哪一环，不用再靠猜。 */
     async workerDiag(opts) {
@@ -5598,7 +5614,7 @@ async removeTrendRecord(id) {
       channel: String(it.channel || o.channel || "").trim(),
       category: String(it.category || o.category || "").trim(),
       periodLabel: String(it.periodLabel || o.periodLabel || "").trim(),
-      /* 20261115E：专区必须一路带到图片服务。
+      /* 20261115G：专区必须一路带到图片服务。
          上一版这里把 zone 漏掉了，S / P / T 专区的后台上传全部被按「视觉专区」校验，
          只被授权渠道专区的管理员因此被判 403 —— 图根本传不上去。 */
       zone: String(it.zone || o.zone || "").trim(),
@@ -5961,6 +5977,219 @@ async removeTrendRecord(id) {
     if (!key) return "未标注专区";
     return API.FAV_SOURCE_LABELS[key] || key;
   };
+
+  /* ============================================================
+   * 20261115G · 图片显示兜底（前台 / 后台通用）
+   * ------------------------------------------------------------
+   * 现象：同一批上传的图，有的显示、有的只剩一块空白，刷新也不一定好。
+   * 以前只能看到「空白」，看不到原因。实际有三类，界面上长得一模一样：
+   *   ① 图片地址要经图片服务鉴权，但不少渲染处没把登录令牌带上 → 401
+   *   ② 页面开久了令牌过期 → 401（换新令牌即可）
+   *   ③ 文件确实不在了（历史删除 / 覆盖写失败）或原站禁止外链 → 404 / 403 / 被拦
+   *
+   * 这里做三件事，页面代码一行都不用改：
+   *   · 渲染时给图片服务的地址补上当前令牌（已有 token 不重复追加）；
+   *   · 加载失败先续期令牌自动重试一次（②能自愈，用户看不到）；
+   *   · 仍失败就在原位把「原因」画出来（401/403/404），不再是一块莫名空白。
+   * 令牌只在站内使用：对外分享 / 以图搜图前会先剥掉，不会带出去。
+   * ============================================================ */
+  const IMGFIX = (function () {
+    const TRY = "data-imgfix-try";       /* 1=已补过令牌  2=已续期重试过 */
+    const RAW = "data-imgraw";           /* 原始地址（不含令牌） */
+    let cachedTok = "", cachedAt = 0, inflight = null;
+
+    const base = () => String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+
+    function abs(u) {
+      const s = String(u == null ? "" : u).trim();
+      if (!s) return "";
+      if (/^(https?:|data:|blob:)/i.test(s)) return s;
+      const b = base();
+      return b ? b + "/" + s.replace(/^\/+/, "") : s;
+    }
+    function isWorker(u) {
+      const b = base(), s = String(u || "");
+      return !!b && /^https?:\/\//i.test(s) && s.indexOf(b + "/") === 0;
+    }
+    function hasAuth(u) { return /[?&](token|read_key)=/.test(String(u || "")); }
+    /* 去掉令牌：对外分享、以图搜图、地址回显时用，避免把登录令牌带出站外 */
+    function stripAuth(u) {
+      const s0 = String(u == null ? "" : u);
+      if (!/[?&](token|read_key)=/.test(s0)) return s0;
+      const qAt = s0.indexOf("?");
+      if (qAt < 0) {
+        return s0.replace(/[&](token|read_key)=[^&#]*/g, "").replace(/[&]+$/, "");
+      }
+      const head = s0.slice(0, qAt);
+      let rest = s0.slice(qAt + 1);
+      let hash = "";
+      const hAt = rest.indexOf("#");
+      if (hAt >= 0) { hash = rest.slice(hAt); rest = rest.slice(0, hAt); }
+      const parts = rest.split("&").filter(function (p) { return p && !/^(token|read_key)=/.test(p); });
+      return head + (parts.length ? "?" + parts.join("&") : "") + hash;
+    }
+    function withAuth(u, tok) {
+      const s = stripAuth(u);
+      if (!s || !tok) return s;
+      return s + (s.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(tok);
+    }
+    async function token(force) {
+      const now = Date.now();
+      if (!force && cachedTok && now - cachedAt < 240000) return cachedTok;
+      if (!inflight) {
+        inflight = (async function () {
+          try { return await currentToken(); } catch (e) { return ""; }
+        })().then(function (t) {
+          inflight = null; cachedTok = t || ""; cachedAt = Date.now(); return cachedTok;
+        });
+      }
+      return inflight;
+    }
+
+    function reason(code) {
+      if (code === 401) return "登录已失效，重新登录后可见";
+      if (code === 403) return "无权限查看这张图";
+      if (code === 404) return "文件已不存在（可能被删除或未存成功）";
+      if (code === 429) return "请求过于频繁，稍后刷新";
+      if (!code) return "网络不通或被原站拦截";
+      return "加载失败 " + code;
+    }
+    /* 占位图用内联 SVG 画（不联网、不占额外请求），尺寸按 3:4 卡位，不会撑破布局 */
+    function placeholder(text) {
+      const t = String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="533" viewBox="0 0 400 533">' +
+        '<rect width="400" height="533" fill="#f1f3f5"/>' +
+        '<text x="200" y="256" text-anchor="middle" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif" font-size="16" fill="#8a9099">图片未显示</text>' +
+        '<text x="200" y="284" text-anchor="middle" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif" font-size="13" fill="#a2a8b0">' + t + '</text>' +
+        '</svg>';
+      return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    }
+
+    async function probe(u) {
+      const tok = await token(true);
+      try {
+        const r = await fetch(withAuth(u, tok), { method: "GET", cache: "no-store" });
+        return r.status;
+      } catch (e) { return 0; }
+    }
+
+    /* 强制续期一次再取令牌：图片加载失败时专走这条路。
+       页面开久了令牌会过期（还没到「即将过期」的判定阈值也一样会 401），
+       这里直接续期，成功则用新令牌重试；续不上（没刷新令牌 / 会话真失效）就照旧报 401。 */
+    async function forceToken() {
+      try { await client.auth.refreshSession(); } catch (e) { /* 续不上就走原令牌 */ }
+      cachedTok = ""; cachedAt = 0; inflight = null;
+      return await token(true);
+    }
+
+    async function apply(el) {
+      if (!el || el.tagName !== "IMG") return;
+      if (el.hasAttribute(TRY) || el.hasAttribute("data-imgfail")) return;
+      const cur = el.getAttribute("src") || "";
+      if (!cur) return;
+      const u = abs(cur);
+      if (!isWorker(u) || hasAuth(u)) return;
+      el.setAttribute(TRY, "1");
+      el.setAttribute(RAW, u);
+      const tok = await token();
+      if (tok && el.isConnected) el.setAttribute("src", withAuth(u, tok));
+    }
+
+    async function onError(el) {
+      if (!el || el.tagName !== "IMG" || el.hasAttribute("data-imgfail")) return;
+      const src = el.getAttribute("src") || "";
+      if (/^data:image\/svg\+xml/.test(src)) return;      /* 已经是我们画的占位图 */
+      const raw = el.getAttribute(RAW) || abs(src);
+      if (el.getAttribute(TRY) !== "2") {
+        el.setAttribute(TRY, "2");
+        el.setAttribute(RAW, raw);
+        const tok = await forceToken();
+        if (tok) { el.setAttribute("src", withAuth(raw, tok)); return; }   /* 续期后重试一次 */
+      }
+      const code = raw ? await probe(raw) : 0;
+      el.setAttribute("data-imgfail", String(code || 0));
+      el.setAttribute("src", placeholder(reason(code)));
+      el.setAttribute("title", reason(code) + "　" + stripAuth(raw));
+    }
+
+    function hook() {
+      if (window.__imgFixHooked || typeof document === "undefined") return;
+      if (!document.addEventListener || !document.querySelectorAll) return;   /* 精简环境（自检 / 老浏览器）直接跳过 */
+      window.__imgFixHooked = true;
+      document.addEventListener("error", function (ev) {
+        const el = ev && ev.target;
+        if (el && el.tagName === "IMG") { try { onError(el); } catch (e) {} }
+      }, true);
+      const scan = function (root) {
+        if (!root) return;
+        if (root.tagName === "IMG") { apply(root); return; }
+        if (!root.querySelectorAll) return;
+        const list = root.querySelectorAll("img");
+        for (let i = 0; i < list.length; i++) apply(list[i]);
+      };
+      const run = function () { scan(document); };
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+      else run();
+      try {
+        new MutationObserver(function (muts) {
+          for (let i = 0; i < muts.length; i++) {
+            const m = muts[i];
+            if (m.type === "attributes") { apply(m.target); continue; }
+            const nodes = m.addedNodes || [];
+            for (let j = 0; j < nodes.length; j++) {
+              const n = nodes[j];
+              if (n && n.nodeType === 1) scan(n);
+            }
+          }
+        }).observe(document.documentElement, {
+          childList: true, subtree: true, attributes: true, attributeFilter: ["src"],
+        });
+      } catch (e) { /* 老环境没有 MutationObserver：至少还有 DOMContentLoaded 那一遍 */ }
+    }
+
+    return {
+      hook, apply, onError, placeholder, reason, probe,
+      stripAuth, withAuth, abs, isWorker,
+      token,
+      /* 页面要自己拼地址时用（异步，带令牌） */
+      async src(u) { return withAuth(abs(u), await token()); },
+      /* 体检：给一批地址逐个探状态，用于「为什么有的不显示」 */
+      async audit(urls, onTick) {
+        const list = Array.from(new Set((urls || []).map(function (x) { return String(x || "").trim(); }).filter(Boolean)));
+        const out = { total: list.length, ok: 0, auth: 0, denied: 0, missing: 0, other: 0, rebase: 0, rows: [] };
+        for (let i = 0; i < list.length; i++) {
+          const u = list[i];
+          let code = await probe(u);
+          /* 一类很隐蔽的情况：图片在，但记录里的地址指向「旧的图片服务域名」。
+             换过图片服务地址 / 绑过自定义域名后，老记录会一直打不开，看着像文件丢了。
+             这里把路径挂到当前图片服务上再探一次，能打开就说明是「地址过期」而非「文件没了」。 */
+          if (code !== 200 && !isWorker(u)) {
+            const m = String(u).match(/\/+(images\/.+)$/);
+            if (m) {
+              const rebased = base() + "/" + m[1];
+              const c2 = await probe(rebased);
+              if (c2 === 200) {
+                out.rebase++;
+                out.rows.push({ url: stripAuth(u), code: "旧地址", reason: "换成当前图片服务地址即可打开（文件没丢）", fixed: stripAuth(rebased) });
+                if (typeof onTick === "function") onTick(i + 1, list.length);
+                continue;
+              }
+            }
+          }
+          if (code === 200) out.ok++;
+          else if (code === 401) out.auth++;
+          else if (code === 403) out.denied++;
+          else if (code === 404) out.missing++;
+          else out.other++;
+          if (code !== 200) out.rows.push({ url: stripAuth(u), code: code, reason: reason(code) });
+          if (typeof onTick === "function") onTick(i + 1, list.length);
+        }
+        return out;
+      },
+    };
+  })();
+  try { window.IMFIX = IMGFIX; } catch (e) {}
+  try { setTimeout(function () { try { IMGFIX.hook(); } catch (e) {} }, 0); } catch (e) {}
 
   return API;
 })();

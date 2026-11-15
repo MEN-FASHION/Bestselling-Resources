@@ -90,6 +90,9 @@
   function imgUrl(it) {
     var u = String(it.image_url || it.u || "");
     if (!u) return "";
+    /* 20261115G：统一走 window.imgSrc（相对路径与本站完整地址都会补令牌）
+       否则关掉「前台公开浏览」后本页图全灰 —— 这就是「有的图不显示」 */
+    if (typeof window.imgSrc === "function") return window.imgSrc(u);
     if (/^https?:\/\//i.test(u)) return u;
     var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
     return base ? base + "/" + u.replace(/^\/+/, "") : u;

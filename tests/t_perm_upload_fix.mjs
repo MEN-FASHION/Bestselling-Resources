@@ -463,11 +463,15 @@ async function canManageZoneCatOld(userId, role, zone, category, tableRows) {
     const rj = fs.readFileSync("js/rhythm.js", "utf8");
     const b = (rj.match(/var BUILD = "([^"]*)"/) || [])[1] || "";
     ok(/^2026\d{4}[A-Z]$/.test(b), "页面脚本版本戳格式合法，实际：" + b);
-    ok(/20261115E/.test(fs.readFileSync("admin.html", "utf8")), "admin.html 已引用新版本（否则浏览器仍跑旧脚本）");
-    ok(/20261115E/.test(fs.readFileSync("index.html", "utf8")), "前台页面也已升到同一版本");
-    ok(/20261115E/.test(AP), "权限管理脚本带本轮改动标记");
-    ok(/20261115E/.test(S), "数据层脚本带本轮改动标记");
-    ok(/20261115E/.test(W), "图片服务脚本带本轮改动标记");
+    /* 版本不写死：从页面取当前版本，再核对后台/前台/脚本/图片服务四处一致 */
+    const adm = fs.readFileSync("admin.html", "utf8");
+    const idx = fs.readFileSync("index.html", "utf8");
+    const V = (adm.match(/supabase\.js\?v=(20\d{6}[A-Z])/) || [])[1] || "";
+    ok(/^20\d{6}[A-Z]$/.test(V), "后台版本戳格式合法，实际：" + (V || "(缺失)"));
+    ok(idx.indexOf("supabase.js?v=" + V) >= 0, "前台页面也已升到同一版本 " + V);
+    ok(AP.indexOf(V) >= 0, "权限管理脚本带本轮改动标记");
+    ok(S.indexOf(V) >= 0, "数据层脚本带本轮改动标记");
+    ok(W.indexOf(V) >= 0, "图片服务脚本带本轮改动标记");
   }
 
   console.log("\n通过 " + pass + " 项，失败 " + fail + " 项");

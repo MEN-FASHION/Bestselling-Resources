@@ -78,6 +78,8 @@
   function imgUrl(u) {
     var s = String(u || "");
     if (!s) return "";
+    /* 20261115G：统一走 window.imgSrc（相对路径与本站完整地址都会补令牌），避免「部分图不显示」 */
+    if (typeof window.imgSrc === "function") return window.imgSrc(s);
     if (/^https?:\/\//i.test(s)) return s;
     var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
     return base ? base + "/" + s.replace(/^\/+/, "") : s;

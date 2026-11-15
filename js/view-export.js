@@ -45,7 +45,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261115E";
+  var BUILD = "20261115G";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -869,7 +869,11 @@
           im.setAttribute("data-full", d);
         } else {
           im.setAttribute("data-miss", "1");
-          if (u) im.setAttribute("data-full", u);
+          /* 20261115G：内嵌失败会退回「原地址」。地址里可能带着站内登录令牌，
+             这份 HTML 是要发给别人的，绝不能把令牌一起带出去 → 一律剥掉。 */
+          var safe = (window.IMFIX && typeof window.IMFIX.stripAuth === "function") ? window.IMFIX.stripAuth(u) : u;
+          if (safe) im.setAttribute("data-full", safe);
+          if (safe) im.setAttribute("src", safe);
         }
         if (im.removeAttribute) { im.removeAttribute("srcset"); im.removeAttribute("data-src"); }
         im.setAttribute("loading", "lazy");

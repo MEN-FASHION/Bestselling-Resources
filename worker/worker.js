@@ -38,7 +38,7 @@ async function getUserId(token, env) {
   return id;
 }
 
-/* 20261115E · 守门员读权限数据一律「服务端密钥优先，用户令牌兜底」
+/* 20261115G · 守门员读权限数据一律「服务端密钥优先，用户令牌兜底」
    ------------------------------------------------------------
    上一版的病根：守门员用「管理员自己的令牌」去读 profiles / site_settings / zone_permissions。
    这三张表的行级策略（RLS）看一眼就把行过滤掉了 —— 返回 200 + 空数组，看上去「这个人什么都没有」，
@@ -86,7 +86,7 @@ function isSuperRole(role) {
 }
 
 // 查询某用户在 profiles 表中的专区白名单（manage_zones 数组）
-// 20261115E：改用服务端密钥优先（见 restRows），不再被 profiles 的行级策略过滤成空数组
+// 20261115G：改用服务端密钥优先（见 restRows），不再被 profiles 的行级策略过滤成空数组
 async function getManageZones(userId, token, env) {
   try {
     const rows = await restRows(env, token, `profiles?user_id=eq.${encodeURIComponent(userId)}&select=manage_zones`);
@@ -95,7 +95,7 @@ async function getManageZones(userId, token, env) {
   } catch (e) { return []; }
 }
 /* ============================================================
- * 20261115E · 上传/改图的权限判定（守门员唯一口径）
+ * 20261115G · 上传/改图的权限判定（守门员唯一口径）
  * ------------------------------------------------------------
  * 上一版有三处会被判成 403，而它们都不是真的没权限：
  *   ① 前台有两条上传路径压根没把「专区」传给守门员，守门员只能按「视觉专区」校验；
@@ -234,7 +234,7 @@ async function canManageZoneCat(userId, role, token, env, zone, category) {
 }
 
 // 读取「站点设置」里的类目授权暂存字典：{ zone: [category...] }
-// 20261115E：改用服务端密钥优先，避免被 site_settings 的行级策略过滤成 null
+// 20261115G：改用服务端密钥优先，避免被 site_settings 的行级策略过滤成 null
 async function getPermDict(userId, token, env) {
   try {
     const rows = await restRows(env, token, "site_settings?id=eq.1&select=frontend_dims");
@@ -277,7 +277,7 @@ async function adminDeleteAuthUser(env, uid) {
 }
 
 // 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
-const WORKER_BUILD = "20261115E";
+const WORKER_BUILD = "20261115G";
 
 // CORS 头
 const CORS = {
@@ -291,7 +291,7 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   const method = request.method;
   // 关键修复：浏览器请求时中文类目会被 URL 编码，这里必须还原成本地字符再查 R2（否则中文类目图片 404）
-  /* 20261115E · 致命顺序缺陷修复：
+  /* 20261115G · 致命顺序缺陷修复：
      上一版把 /ver 与 /admin/add-image 两段处理写在了「方法/路径还没解析」的位置，
      里面引用的 method 在那一刻尚处于暂时性死区（尚未声明），一进函数就抛异常，
      图片服务的所有请求（含正常上传、看图）全部变成 500。
@@ -312,7 +312,7 @@ async function handleRequest(request, env) {
      前端用它判断「这次到底有没有把图片服务重新部署」。案板上的坑：
      站点推 GitHub 只部署前台静态页，图片服务要单独部署；
      没部署时前台已经是新版、图片服务还是旧逻辑，排查会一直在原地打转。
-     注意：本段必须在 method / path 解析之后（20261115E 修复过这里的位置）。 */
+     注意：本段必须在 method / path 解析之后（20261115G 修复过这里的位置）。 */
   if (method === "GET" && (path === "ver" || path === "version")) {
     return json({ ok: true, build: WORKER_BUILD, dictAuth: true }, 200, CORS);
   }
@@ -390,7 +390,7 @@ async function handleRequest(request, env) {
     const bodyA = await request.json().catch(() => ({}));
     const categoryA = String(bodyA.category || "").trim();
     const pathA = String(bodyA.path || "").trim();
-    /* 20261115E：专区缺省不再硬按 visual —— 按该账号实际拥有的专区自动判定 */
+    /* 20261115G：专区缺省不再硬按 visual —— 按该账号实际拥有的专区自动判定 */
     const zoneA = String(bodyA.zone || "").trim();
     if (!categoryA || !pathA) return json({ error: "缺少类目或路径" }, 400, CORS);
     const accA = await checkUploadAccess(userId, roleA, token, env, zoneA, categoryA);
@@ -499,26 +499,43 @@ function genReadKey() {
   return Array.from(b).map(function (x) { return x.toString(16).padStart(2, "0"); }).join("");
 }
 
+  /* 20261115G：老记录里 path 可能缺 "images/" 前缀（早期上传只存了「类目/文件.jpg」）。
+     缺前缀时不会命中 images/ 路由，会落到最后的「未知请求」，表现同样是「图不显示」。
+     这里按「扩展名像图片」一并纳入读图路由，并在取对象时补一次前缀。 */
+  function isImgReadPath(p) {
+    if (!p) return false;
+    if (p.indexOf("images/") === 0) return true;
+    if (/^(admin|trend|trends|trend-covers|diag|ver|geo|agent-read|upload)/.test(p)) return false;
+    return /\.(jpe?g|png|webp|gif|bmp|avif|svg)$/i.test(p);
+  }
+
   // 兼容新旧存储：新图明文存中文路径，旧图曾以编码形式存储，先取解码后路径，取不到再取原始编码路径
   async function getObject(decodedPath, rawPath) {
     let obj = await env.IMAGES.get(decodedPath);
     if (!obj && rawPath && rawPath !== decodedPath) obj = await env.IMAGES.get(rawPath);
+    // 缺 images/ 前缀的老记录：补前缀再试一次
+    if (!obj && decodedPath.indexOf("images/") !== 0) obj = await env.IMAGES.get("images/" + decodedPath);
     return obj;
   }
 
   // ---------- 图片读取限流 + 异常审计（防批量、事后兜底）----------
   // 每 IP 每分钟图片请求上限，超过则 429 并记录审计日志（内存级，零成本）
-  if (method === "GET" && path.startsWith("images/")) {
+  if (method === "GET" && isImgReadPath(path)) {
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
     const now = Date.now();
-    const WLIM = 2000;     // 每分钟上限（每 IP，便于正常列表批量看图；可自行调整）
+    const WLIM = 20000;    // 每分钟上限（每 IP）。原 2000 太低：一屏几十张图 + 多标签翻页很容易撞上，
+                           // 撞上后整屏图变成灰底，表现就是「有的图不显示」「刷新一下又好了」。
     const WWIN = 60000;    // 窗口：1 分钟
     let h = _imgHits.get(ip);
     if (!h || now > h.resetAt) { h = { count: 0, resetAt: now + WWIN }; _imgHits.set(ip, h); }
     h.count++;
     if (h.count > WLIM) {
       console.log("[IMG-AUDIT] rate-limit ip=" + ip + " count=" + h.count + " path=" + path);
-      return json({ error: "请求过于频繁" }, 429, CORS);
+      const hd = new Headers(CORS);
+      hd.set("Retry-After", "15");
+      return new Response(JSON.stringify({ error: "请求过于频繁", code: "rate" }), {
+        status: 429, headers: hd,
+      });
     }
     if (h.count === Math.floor(WLIM * 0.9)) {
       console.log("[IMG-AUDIT] near-limit ip=" + ip + " count=" + h.count);
@@ -526,7 +543,7 @@ function genReadKey() {
   }
 
   // ---------- 1. GET 看图：登录即可；公开浏览模式或外部只读密钥放行 ----------
-  if (method === "GET" && path.startsWith("images/")) {
+  if (method === "GET" && isImgReadPath(path)) {
     if (!userId) {
       const pub = await isPublicAccess(env);
       if (!pub) {
@@ -614,7 +631,7 @@ function genReadKey() {
       return json({ error: "无管理员权限", reason: "当前账号的角色不是管理员", code: "role" }, 403, CORS);
     }
     const form = await request.formData();
-    /* 20261115E：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
+    /* 20261115G：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
        以前前端不带 zone 时一律按 visual 校验 —— 只被授权了 S 专区的管理员，
        上传被按视觉专区判定，必然是 403。
        现在：前端带了 zone 就按那个专区判；没带就按「该账号实际拥有的专区」自动判定，
@@ -959,7 +976,7 @@ function genReadKey() {
 
   // 7. 存量图片压缩池：列出存储全部图片（key + size），仅管理员
   if (method === "GET" && path === "admin/list-imgs") {
-    /* 20261115E：截图里的 401 就是这一行返回的 —— 请求没带令牌（会话过期后前端又没刷新成功）。
+    /* 20261115G：截图里的 401 就是这一行返回的 —— 请求没带令牌（会话过期后前端又没刷新成功）。
        以前只说「未登录」，看不出是没带令牌还是令牌无效，排查会绕圈。
        现在把「有没有带令牌」与「令牌是否有效」分开写清楚，前端也好给出「重新登录」的指引。 */
     if (!userId) {

@@ -546,7 +546,10 @@
       openUrl("https://images.google.com/");
       return;
     }
-    openUrl(engine.url(u));
+    /* 20261115G：图片地址里可能带着站内登录令牌（<img> 走鉴权要带）。
+       发给外部站点前必须剥掉，既不泄露登录态，也免得对方带令牌请求被拒。 */
+    var clean = (window.IMFIX && typeof window.IMFIX.stripAuth === "function") ? window.IMFIX.stripAuth(u) : u;
+    openUrl(engine.url(clean));
   }
 
   function download(u) {

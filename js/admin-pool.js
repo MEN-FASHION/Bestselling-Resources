@@ -75,7 +75,18 @@ async function imgPoolRender() {
       im.draggable = false;
       im.addEventListener("contextmenu", (e) => e.preventDefault());
       im.classList.add("loaded");
-      im.onerror = () => { im.classList.remove("loaded"); };
+      /* 20261115G：会话过期后这里会整片灰底（令牌是渲染那一刻取的）。401 时续期一次再重试，
+         续期后写回 tok 无效（tok 是局部常量），所以直接重算地址。 */
+      let _retried = false;
+      im.onerror = async () => {
+        im.classList.remove("loaded");
+        if (_retried) return;
+        _retried = true;
+        try {
+          const t2 = await SB.currentToken();
+          if (t2 && t2 !== tok) im.src = urlOfPath(it.key, t2);
+        } catch (e) { /* 续期失败则保持灰底 */ }
+      };
       wrap.appendChild(im);
       card.appendChild(wrap);
       // 左上角：大小 + 格式 标签

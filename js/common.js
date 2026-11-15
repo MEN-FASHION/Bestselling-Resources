@@ -826,3 +826,54 @@ window.Common = (function () {
     authConfirm, notices, zones, visit
   };
 })();
+/* ============================================================
+ * 20261115G · 图片地址统一出口（带令牌）
+ * ------------------------------------------------------------
+ * 现象：同一页里「有的图能看、有的图不显示」，且关掉「前台公开浏览」后整页图全灰。
+ * 根因：<img> 无法携带 Authorization 头，图片服务只能靠 URL 上的 ?token= 认人。
+ *       可有些页面拼地址时压根没带令牌（渠道专区 / 渠道对比 / P·S·T 专区），
+ *       这些图一律被图片服务判「未登录」→ 401 → 灰底占位；
+ *       而视觉专区（frontend.js）带了令牌，所以同一个人打开两个页面，一个能看一个不能。
+ * 做法：提供唯一出口 window.imgSrc()，任何拼图片地址的地方都调它，统一带上当前令牌。
+ * ============================================================ */
+(function () {
+  function readToken() {
+    try {
+      var best = "";
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf("-auth-token") < 0) continue;
+        var raw = localStorage.getItem(k) || "";
+        var o = JSON.parse(raw);
+        var t = (o && (o.access_token || (o.currentSession && o.currentSession.access_token))) || "";
+        if (t) { best = t; break; }
+      }
+      return best;
+    } catch (e) { return ""; }
+  }
+
+  window.imgToken = readToken;
+
+  /* 把库里的 path / 相对地址 / 本服务的完整地址拼成可访问的图片地址，并带上当前令牌
+     —— 注意：库里很多记录存的是「完整地址」（例如渠道图 rank_channel_pics 的 u 字段），
+        如果对这些地址直接 return，就丢掉了令牌，图片服务一律判「未登录」→ 灰底。
+        这正是「有的图不显示」的主要来源：同一个人，视觉专区的图能看、渠道专区的图不能看。 */
+  window.imgSrc = function (p) {
+    var s = String(p == null ? "" : p).trim();
+    if (!s) return "";
+    var base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+    var abs;
+    if (/^https?:\/\//i.test(s)) {
+      /* 外链（榜单首图等）原样返回；只有指向本站图片服务时才补令牌 */
+      if (!base || s.indexOf(base + "/") !== 0) return s;
+      abs = s;
+    } else {
+      if (!base) return s;
+      abs = base + "/" + s.replace(/^\/+/, "");
+    }
+    var t = readToken();
+    if (!t) return abs;
+    if (/[?&]token=/.test(abs)) return abs;
+    return abs + (abs.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(t);
+  };
+})();
