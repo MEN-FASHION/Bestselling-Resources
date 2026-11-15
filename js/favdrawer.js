@@ -335,6 +335,10 @@
         try { ST.cats = (await SB.ensureDefaultFavCats(DEFAULT_CATS)) || []; } catch (e) { /* 建不了也能继续浏览 */ }
       }
       ST.items = (await SB.listFavItems({ limit: MAX_ITEMS })) || [];
+      /* 视觉专区的图要带会话 token 才显示；一次性补好，渲染时直接用 */
+      if (typeof SB.favResolveDisplay === "function") {
+        try { await SB.favResolveDisplay(ST.items.map(function (x) { return x && x.image_url; })); } catch (e) { /* 显示原地址 */ }
+      }
     } catch (e) {
       ST.error = (e && e.message) ? String(e.message) : "读取收藏失败";
       ST.items = [];
@@ -739,7 +743,7 @@
       + ' data-cid="' + esc(cid == null ? "" : cid) + '"'
       + ' style="--i:' + (opts.i || 0) + '"'
       + ' title="' + esc(full) + '">'
-      + '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" decoding="async">'
+      + '<img src="' + esc((SBX() && SBX().favDisplayUrl) ? SBX().favDisplayUrl(it.image_url) : it.image_url) + '" alt="" loading="lazy" decoding="async">'
       + (cname ? '<span class="fv-d-tag" style="background:' + esc(catColor(cid)) + '">' + esc(cname) + '</span>' : '')
       /* 左侧竖排小标签：已归了上装/下装的图，进抽屉一眼就能看出是哪一类。
          未分的不挂标签——不挂才是"还没归"，挂个"未分"反而显脏。 */

@@ -288,6 +288,13 @@
     if (fi) fi.onchange = function () { addFiles(fi.files); fi.value = ""; };
     if (clr) clr.onclick = function () { state.pending = []; renderPending(); };
     if (up) up.onclick = doUpload;
+    var cancel = document.getElementById("mv-cancel-btn");
+    if (cancel) cancel.onclick = function () {
+      state.cancel = true;
+      cancel.disabled = true;
+      cancel.textContent = "取消中…";
+      say("正在取消，已开始的几张会传完");
+    };
     if (drop) {
       ["dragenter", "dragover"].forEach(function (ev) {
         drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); });
@@ -349,10 +356,13 @@
       }
     }
     var btn = document.getElementById("mv-upload-btn");
+    var cancelBtn = document.getElementById("mv-cancel-btn");
     var prog = document.getElementById("mv-progress");
     var bar = document.getElementById("mv-progress-bar");
     if (btn) btn.disabled = true;
+    if (cancelBtn) { cancelBtn.classList.remove("hidden"); cancelBtn.disabled = false; cancelBtn.textContent = "取消上传"; }
     if (prog) prog.classList.remove("hidden");
+    state.cancel = false;
     var files = state.pending.slice();
     /* 发布会年度/季节：整批统一带上，上传时指定一次，省得逐张补 */
     var yEl = document.getElementById("mv-upload-year");
@@ -362,8 +372,8 @@
     try {
       var res = await SB.uploadMovementImages(files, cat, function (done, total) {
         if (bar) bar.style.width = Math.round(done / total * 100) + "%";
-        say("上传中 " + done + "/" + total);
-      }, { seasonYear: seasonYear, season: season });
+        say(state.cancel ? "正在取消…（已处理 " + done + "/" + total + "）" : "上传中 " + done + "/" + total);
+      }, { seasonYear: seasonYear, season: season, isCancelled: function () { return state.cancel === true; } });
       /* 20261114G：登记上传归属 —— 前台「上传看板」靠它算「谁在几号传了多少张」。
          归属模块没加载或写库失败都不影响上传本身（与其它专区同一口径）。 */
       try {
@@ -372,19 +382,30 @@
           await window.UO.claim("i", myUrls);
         }
       } catch (e) { /* 忽略：图已经传上去了，归属缺一条不影响使用 */ }
-      state.pending = [];
+      /* 取消时没轮到的留在待传里，下次接着传 */
+      var okNames = {}, tried = {};
+      (res.ok || []).forEach(function (x) { if (x && x.name) okNames[x.name] = 1; });
+      (res.failed || []).forEach(function (x) { if (x && x.name) tried[x.name] = 1; });
+      state.pending = res.cancelled ? files.filter(function (f) { return !okNames[f.name] && !tried[f.name]; }) : [];
       renderPending();
-      say("已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));
+      var line = (res.cancelled ? "已取消：" : "") + "已上传 " + res.ok.length + " 张" +
+        (res.failed.length ? "，失败 " + res.failed.length + " 张" : "") +
+        (state.pending.length ? "，还剩 " + state.pending.length + " 张待传" : "");
+      say(line);
       if (res.failed.length) {
         toast("部分失败：" + res.failed.slice(0, 3).map(function (x) { return x.name; }).join("、"), false);
+      } else if (res.cancelled) {
+        toast("已取消上传" + (state.pending.length ? "，还剩 " + state.pending.length + " 张待传" : ""), true);
       }
       await loadAll();
     } catch (e) {
       toast("上传失败：" + ((e && e.message) || "未知错误"), false);
     } finally {
+      state.cancel = false;
       if (prog) prog.classList.add("hidden");
       if (bar) bar.style.width = "0%";
-      if (btn) btn.disabled = false;
+      if (cancelBtn) { cancelBtn.classList.add("hidden"); cancelBtn.disabled = false; cancelBtn.textContent = "取消上传"; }
+      if (btn) btn.disabled = !state.pending.length;
     }
   }
 
@@ -844,17 +865,34 @@
   }
 
   /* ---------- 初始化 ---------- */
-  function fillCatSelects() {
-    var opts = (window.CONFIG && window.CONFIG.CATEGORY_OPTIONS) || [];
+  /* 20261114V：类目候选与「趋势上升榜」同源（后台「类目管理」的 categories 表），
+     并给上传下拉加搜索框；读不到类目表时才退回内置清单。 */
+  async function fillCatSelects() {
+    var SB = SBx();
+    var opts = [];
+    try { if (SB && typeof SB.listActiveCats === "function") opts = await SB.listActiveCats(); } catch (e) { opts = []; }
+    if (!opts || !opts.length) opts = (window.CONFIG && window.CONFIG.CATEGORY_OPTIONS) || [];
+    var favs = [];
+    try { if (SB && typeof SB.myFavCats === "function") favs = await SB.myFavCats(); } catch (e) { favs = []; }
+    var CATS = window.CAT_SEARCH;
+    var ordered = CATS ? CATS.sortCats(opts, favs) : opts.map(function (n) { return { name: n, fav: false }; });
     ["mv-upload-cat", "mv-filter-cat"].forEach(function (id) {
       var sel = document.getElementById(id);
       if (!sel) return;
       var keep = sel.value;
       sel.innerHTML = "";
       sel.add(new Option(id === "mv-filter-cat" ? "全部类目" : "选择类目…", ""));
-      opts.forEach(function (c) { sel.add(new Option(c, c)); });
+      ordered.forEach(function (o) { sel.add(new Option((o.fav ? "★ " : "") + o.name, o.name)); });
       if (keep) sel.value = keep;
     });
+    var up = document.getElementById("mv-upload-cat");
+    if (up && CATS) {
+      CATS.mountBox(up, "cat-search-mv-upload", "搜索类目…", function (v) {
+        CATS.kw("mvUpload", v);
+        CATS.filterSelect(up, v);
+      });
+      CATS.filterSelect(up, CATS.kw("mvUpload"));
+    }
     var f = document.getElementById("mv-filter-cat");
     if (f) f.onchange = function () { state.curCat = f.value; loadAll(); };
   }

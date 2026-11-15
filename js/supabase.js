@@ -189,22 +189,22 @@ const SB = (() => {
         canvas.toBlob(resolve, "image/webp", q);
       });
 
-      // 梯度1：保持原尺寸，逐步降质量
+      /* 20261114V：压缩从「逐个试」改成「估算一步到位」。
+         以前最多要编码 11 次（6 个质量档 + 4 个尺寸档 + 兜底），每张图光压缩就要几百毫秒；
+         现在先按原尺寸压一次，超限就按体积比估个缩放尺寸再压一次，绝大多数图 1~2 次搞定。
+         画质口径不变：目标体积仍是 TARGET（默认 200KB），达不到就缩尺寸，不放大不糊图。 */
       let best = null;
-      const qualities = [0.82, 0.7, 0.6, 0.5, 0.4, 0.3];
-      for (const q of qualities) {
-        const blob = await encode(w0, h0, q);
-        if (blob && blob.size <= limit && (!best || blob.size < best.size)) best = blob;
-        if (blob && blob.size <= limit) break;
-      }
-      // 梯度2：若降质量仍超限，按比例缩小尺寸再压
-      if (!best) {
-        const ratios = [0.7, 0.5, 0.38, 0.28];
-        for (const r of ratios) {
-          const cw = Math.max(1, Math.round(w0 * r));
-          const ch = Math.max(1, Math.round(h0 * r));
-          const blob = await encode(cw, ch, 0.75);
-          if (blob && blob.size <= limit) { best = blob; break; }
+      const first = await encode(w0, h0, 0.82);
+      if (first && first.size <= limit) best = first;
+      if (!best && first) {
+        const r = Math.max(0.16, Math.min(1, Math.sqrt(limit / first.size) * 0.95));
+        const cw = Math.max(1, Math.round(w0 * r));
+        const ch = Math.max(1, Math.round(h0 * r));
+        const b2 = await encode(cw, ch, 0.8);
+        if (b2 && b2.size <= limit) best = b2;
+        else if (b2) {
+          const b3 = await encode(cw, ch, 0.6);
+          if (b3 && b3.size <= limit) best = b3;
         }
       }
       // 兜底：若仍然超限，取当前最小可用的一个，且确保小于原图
@@ -218,6 +218,37 @@ const SB = (() => {
     } catch (e) {
       return file;
     }
+  }
+
+  /* ============================================================
+   * 并发执行池（20261114V）
+   * ------------------------------------------------------------
+   * 传图以前是一张一张排队：压缩 → 上传 → 写库，再来下一张。
+   * 一百张图就要等一百个来回，绝大部分时间都耗在等网络。
+   * 这里给一个通用的「多路并行」工具：同时跑 N 路，任一张失败都不影响其它张。
+   * 取消：isCancelled() 返回 true 时不再领新任务（已在跑的让它跑完，不会留半张图）。
+   * ============================================================ */
+  async function runPool(list, limit, worker, isCancelled) {
+    const items = Array.from(list || []);
+    const total = items.length;
+    if (!total) return { done: 0, cancelled: false };
+    const width = Math.max(1, Math.min(Number(limit) || 4, 8, total));
+    const cancel = typeof isCancelled === "function" ? isCancelled : function () { return false; };
+    let cursor = 0, done = 0, stopped = false;
+    async function lane() {
+      for (;;) {
+        if (stopped) return;
+        if (cancel()) { stopped = true; return; }
+        const i = cursor++;
+        if (i >= total) return;
+        try { await worker(items[i], i); } catch (e) { /* 单张失败已在 worker 内记账 */ }
+        done++;
+      }
+    }
+    const lanes = [];
+    for (let i = 0; i < width; i++) lanes.push(lane());
+    await Promise.all(lanes);
+    return { done: done, cancelled: stopped || cursor < total };
   }
 
   const API = {
@@ -4334,11 +4365,16 @@ async removeTrendRecord(id) {
       const seasonYear = Number(o.seasonYear) > 0 ? Number(o.seasonYear) : 0;
       const season = String(o.season || "").trim();
       const ok = [], bad = [];
-      for (let i = 0; i < list.length; i++) {
-        const f = list[i];
+      const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+      const isCancel = () => {
+        try { return typeof o.isCancelled === "function" && !!o.isCancelled(); } catch (e) { return false; }
+      };
+      let finished = 0;
+      /* 20261114V：串行改并行（默认 4 路），并能中途取消 */
+      await runPool(list, o.concurrency || 4, async (f) => {
         try {
           const path = await this.uploadImage(f, category || "品牌动向");
-          const url = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "") + "/" + path;
+          const url = base + "/" + path;
           const { error } = await client.from("movement_items").insert({
             image_url: url, path: path, category: category || "", title: (f.name || "").replace(/\.[^.]+$/, ""),
             season_year: seasonYear, season: season,
@@ -4348,9 +4384,10 @@ async removeTrendRecord(id) {
         } catch (e) {
           bad.push({ name: f.name, reason: String((e && e.message) || e) });
         }
-        if (typeof onProgress === "function") onProgress(i + 1, list.length);
-      }
-      return { ok: ok, failed: bad };
+        finished++;
+        if (typeof onProgress === "function") onProgress(finished, list.length);
+      }, isCancel);
+      return { ok: ok, failed: bad, cancelled: isCancel() || finished < list.length, remaining: Math.max(0, list.length - finished) };
     },
     /* 补设/修改单张图的发布会年度与季节 */
     async setMovementSeason(id, seasonYear, season) {
@@ -5054,11 +5091,19 @@ async removeTrendRecord(id) {
       const BASE = BASE_NOSUB + ",sub_cat";
       const WITH_TAGS = BASE + ",tags,rank_pos";
       const WITH_TAGS_NOSUB = BASE_NOSUB + ",tags,rank_pos";
-      const ATTEMPTS = [WITH_TAGS, BASE, WITH_TAGS_NOSUB, BASE_NOSUB];
+      /* 20261114U：source（收藏来源专区）也是后加补丁，同样按富到简降级，
+         缺这一列只影响「按专区看」，不该让整个收藏读不出来。 */
+      const ATTEMPTS = [
+        WITH_TAGS + ",source", WITH_TAGS,
+        BASE + ",source", BASE,
+        WITH_TAGS_NOSUB + ",source", WITH_TAGS_NOSUB,
+        BASE_NOSUB + ",source", BASE_NOSUB,
+      ];
       const run = (cols) => {
         let q = client.from("fav_items").select(cols).eq("user_id", uid);
         if (o.period) q = q.eq("period_label", o.period);
         if (o.categoryId != null && o.categoryId !== "") q = q.eq("category_id", o.categoryId);
+        if (o.source != null && o.source !== "") q = q.eq("source", o.source);
         return q
           .order("period_label", { ascending: false })
           .order("created_at", { ascending: false })
@@ -5070,7 +5115,7 @@ async removeTrendRecord(id) {
         data = r.data; error = r.error;
         if (!error) break;
         /* 只有"列不存在"才降级；权限/网络问题必须原样抛出，别悄悄吞掉 */
-        if (!/column .*(tags|rank_pos|sub_cat)/i.test(String(error.message || "") + String(error.details || ""))) break;
+        if (!/column .*(tags|rank_pos|sub_cat|source)/i.test(String(error.message || "") + String(error.details || ""))) break;
       }
       if (error) throw new Error(this.favErrMsg(error) || "读取收藏失败");
       return data || [];
@@ -5141,6 +5186,8 @@ async removeTrendRecord(id) {
         rank_abs: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
         tags: Array.isArray(r.tags) ? r.tags.filter((x) => String(x || "").trim()).map((x) => String(x).trim()) : [],
         rank_pos: (r.rank_abs == null || r.rank_abs === "") ? null : Number(r.rank_abs),
+        /* 20261114U：记下这张图是从哪个专区收藏的，供「我的收藏 · 按专区」成列对比 */
+        source: (r.source == null || String(r.source).trim() === "") ? null : String(r.source).trim(),
         created_at: now,
       }));
       let n = 0;
@@ -5150,11 +5197,11 @@ async removeTrendRecord(id) {
         let { error } = await client.from("fav_items")
           .upsert(chunk, { onConflict: "user_id,period_label,image_url", ignoreDuplicates: false });
         /* 老库还没执行 patch_20261021Y（缺 tags / rank_pos 列）→ 去掉这两列重试，
-           保证"能不能存标签"不影响"能不能收藏"。 */
-        if (error && /column .*(tags|rank_pos)|'(tags|rank_pos)'/i.test(String(error.message || "") + " " + String(error.details || ""))) {
+           保证"能不能存标签"不影响"能不能收藏"。source 同属后加列，一并降级。 */
+        if (error && /column .*(tags|rank_pos|source)|'(tags|rank_pos|source)'/i.test(String(error.message || "") + " " + String(error.details || ""))) {
           const slim = chunk.map((it) => {
             const o = Object.assign({}, it);
-            delete o.tags; delete o.rank_pos;
+            delete o.tags; delete o.rank_pos; delete o.source;
             return o;
           });
           const r2 = await client.from("fav_items")
@@ -5331,7 +5378,12 @@ async removeTrendRecord(id) {
     return out;
   };
 
-  /* 批量传图：先上图床，再整体写进文档（一次写清，避免逐张写一半） */
+  /* 批量传图：先上图床，再整体写进文档（一次写清，避免逐张写一半）
+     20261114V：
+       · 串行改并行（默认 4 路，可用 opts.concurrency 调），批量传图快数倍；
+       · 支持中途取消：opts.isCancelled() 为真就不再领新图，已传完的照常入档，
+         没传的留在待传列表里；返回 cancelled / remaining 让界面说清楚；
+       · 进度按「已处理张数」回调，取消后不再涨。 */
   API.uploadRankChannelImages = async function (items, opts, onProgress) {
     const o = opts || {};
     const list = Array.from(items || []).map((it) => ({
@@ -5342,9 +5394,17 @@ async removeTrendRecord(id) {
     }));
     const done = [], failed = [];
     const doc = await chPicLoad(true);
+    /* 地址 → 文档下标：避免每张图都从头 findIndex（几百张时是平方级开销） */
+    const pos = new Map();
+    doc.forEach((x, i) => { const u = String(x.u || ""); if (u) pos.set(u, i); });
     let changed = false;
-    for (let i = 0; i < list.length; i++) {
-      const it = list[i];
+    const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+    const isCancel = () => {
+      try { return typeof o.isCancelled === "function" && !!o.isCancelled(); } catch (e) { return false; }
+    };
+    let finished = 0;
+
+    await runPool(list, o.concurrency || 4, async (it) => {
       try {
         if (!it.file) throw new Error("缺少图片文件");
         if (!it.channel) throw new Error("缺少渠道");
@@ -5352,18 +5412,20 @@ async removeTrendRecord(id) {
         if (!it.periodLabel) throw new Error("缺少月份");
         const m = API._normMonth(it.periodLabel);
         const path = await API.uploadImage(it.file, it.category || "其他渠道");
-        const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
         const url = base + "/" + path;
-        const idx = doc.findIndex((x) => String(x.u || "") === url);
         const rec = { u: url, ch: it.channel, c: it.category, m, t: new Date().toISOString().slice(0, 10) };
-        if (idx >= 0) doc[idx] = rec; else doc.push(rec);
+        const idx = pos.has(url) ? pos.get(url) : -1;
+        if (idx >= 0) doc[idx] = rec; else { doc.push(rec); pos.set(url, doc.length - 1); }
         changed = true;
         done.push({ name: it.file.name, url, channel: it.channel });
       } catch (e) {
         failed.push({ name: (it.file && it.file.name) || "", reason: String((e && e.message) || e || "失败") });
       }
-      if (typeof onProgress === "function") { try { onProgress(i + 1, list.length); } catch (e0) {} }
-    }
+      finished++;
+      if (typeof onProgress === "function") { try { onProgress(finished, list.length); } catch (e0) {} }
+    }, isCancel);
+
+    const cancelled = isCancel() || finished < list.length;
     if (changed) {
       try {
         await chPicSave(doc);
@@ -5375,8 +5437,9 @@ async removeTrendRecord(id) {
         done.splice(0).forEach((d) => failed.push({ name: d.name, reason: why }));
       }
     }
-    return { ok: done, failed };
+    return { ok: done, failed, cancelled, remaining: Math.max(0, list.length - finished) };
   };
+
 
   API.updateRankChannelItem = async function (id, patch) {
     if (isCpId(id)) {
@@ -5643,6 +5706,49 @@ async removeTrendRecord(id) {
       if (c) byChannel[c] = (byChannel[c] || 0) + 1;
     });
     return { total: doc.length, byMonth, byChannel };
+  };
+
+  /* 20261114U：视觉专区的图是鉴权路径 —— 同一路径必须带当前会话 token 才出图。
+     收藏里存的是不带 token 的稳定地址（换会话也不会失效），显示时统一补一次 token。
+     收藏页 / 侧边抽屉都走这里，避免两处各写一套。取不到 token 就按原地址显示，不假装成功。 */
+  API._favDisp = {};
+  API.favDisplayUrl = function (u) {
+    const k = String(u == null ? "" : u);
+    return API._favDisp[k] || k;
+  };
+  API.favResolveDisplay = async function (urls) {
+    const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
+    if (!base) return API._favDisp;
+    const need = (urls || []).map(function (u) { return String(u || ""); })
+      .filter(function (u) { return u.indexOf(base) === 0 && u.indexOf("token=") < 0; });
+    if (!need.length) return API._favDisp;
+    let token = "";
+    try { token = await API.currentToken(); } catch (e) { token = ""; }
+    if (!token) return API._favDisp;
+    need.forEach(function (u) {
+      API._favDisp[u] = u + (u.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    });
+    return API._favDisp;
+  };
+
+  /* 20261114U：收藏来源专区口径 —— 前台各专区的星标、收藏页的按专区成列都用这一份，
+     避免各页面各写一套名字。渠道专区按用户要求用首字母（S / P / T），不写全称。 */
+  API.FAV_SOURCE_LABELS = {
+    rank: "趋势上升榜",
+    rhythm: "上新节奏",
+    vision: "视觉专区",
+    trends: "趋势专区",
+    shein: "S 专区",
+    pinterest: "P 专区",
+    tiktok: "T 专区",
+    compare: "渠道对比",
+    movement: "品牌动向",
+    marketing: "营销日历",
+  };
+  API.favSourceLabel = function (k) {
+    const key = String(k == null ? "" : k).trim();
+    if (!key) return "未标注专区";
+    return API.FAV_SOURCE_LABELS[key] || key;
   };
 
   return API;

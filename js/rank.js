@@ -57,7 +57,7 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
-  var BUILD = "20261114T";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261114V";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
@@ -3981,7 +3981,9 @@
       rank_abs: fig.getAttribute("data-rank") || null,
       rank_pos: fig.getAttribute("data-rank") || null,
       tags: String(fig.getAttribute("data-tags") || "").split("|")
-        .filter(function (x) { return x && x.trim(); })
+        .filter(function (x) { return x && x.trim(); }),
+      /* 20261114V：记下来源专区，收藏页才能按专区成列 */
+      source: "rank"
     };
   }
 

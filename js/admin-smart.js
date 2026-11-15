@@ -57,6 +57,7 @@ let smartPending = [];
 
 // 待上传文件（含预览）
 let smartUploading = false;
+let smartCancel = false;   /* 20261114V：上传中途取消标记 */
 (function () {
 
 function openSmartModal() {
@@ -1254,9 +1255,22 @@ function smartRenderPending() {
     }
     smartUploading = true;
     const btn = document.querySelector("#smart-upload-btn");
+    const cancelBtn = document.querySelector("#smart-cancel-btn");
     const prog = document.querySelector("#smart-progress");
     const bar = document.querySelector("#smart-progress-bar");
     if (btn) btn.disabled = true;
+    /* 20261114V：上传可以中途取消 —— 已在传的几张照常传完，没开始的留下次再传 */
+    smartCancel = false;
+    if (cancelBtn) {
+      cancelBtn.classList.remove("hidden");
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = "取消上传";
+      cancelBtn.onclick = () => {
+        smartCancel = true;
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = "取消中…";
+      };
+    }
     if (prog) prog.classList.remove("hidden");
     const files = smartPending.map(it => it.file);
     const total = files.length;
@@ -1272,6 +1286,7 @@ function smartRenderPending() {
     let cursor = 0;
     async function worker() {
       while (cursor < files.length) {
+        if (smartCancel) return;                     /* 取消后不再领新图 */
         const i = cursor++;
         const file = files[i];
         const cleanName = file.name.replace(/[^\w.\-]/g, "_");
@@ -1288,12 +1303,20 @@ function smartRenderPending() {
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
     results.forEach(r => { if (!r) return; if (r.dup) dup++; else if (r.fail) failed++; });
     const okCount = total - failed - dup;
-    let msg = `上传完成：成功 ${okCount}，失败 ${failed}`;
+    const wasCancelled = smartCancel || results.some(r => r === null);
+    let msg = (wasCancelled ? "已取消：" : "上传完成：") + `成功 ${okCount}，失败 ${failed}`;
     if (dup) msg += `，重复跳过 ${dup}`;
     sbToast(msg, failed === 0 && dup === 0);
     setTimeout(() => { if (prog) prog.classList.add("hidden"); if (bar) bar.style.width = "0%"; }, 800);
-    smartPending.forEach(it => { if (it.url) URL.revokeObjectURL(it.url); });
-    smartPending = [];
+    /* 取消时：没轮到的图留在待传里（缩略图保留），下次点上传接着传 */
+    const keep = [];
+    results.forEach((r, i) => {
+      if (r === null) keep.push(smartPending[i]);
+      else if (smartPending[i] && smartPending[i].url) URL.revokeObjectURL(smartPending[i].url);
+    });
+    smartPending = keep;
+    smartCancel = false;
+    if (cancelBtn) { cancelBtn.classList.add("hidden"); cancelBtn.disabled = false; cancelBtn.textContent = "取消上传"; }
     smartUploading = false;
     smartRenderPending();
     // 仅在图片列表已加载过时才刷新它，避免为刷新而额外拉取图片

@@ -193,6 +193,12 @@
       var sea = seasonLabel(it);
       var card = document.createElement("div");
       card.className = "mv-card";
+      /* 20261114U：把收藏需要的字段挂到卡片上（地址 / 类目 / 季节），
+         否则从品牌动向收藏时只能猜到图片地址，收藏页的专区对比会缺类目和期次 */
+      card.setAttribute("data-url", imgUrl(it) || "");
+      card.setAttribute("data-cat", it.category || "");
+      card.setAttribute("data-period", sea || "");
+      card.setAttribute("data-title", it.title || "");
       card.innerHTML =
         '<div class="mv-card-img"><img loading="lazy" src="' + esc(imgUrl(it)) + '" alt="' + esc(it.title || "") + '">' +
         (sea ? '<span class="mv-season-badge">' + esc(sea) + "</span>" : "") +

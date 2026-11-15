@@ -138,6 +138,7 @@
           '<label class="mv-field"><span>月份</span><input id="' + id(k, "upload-month") + '" class="input" type="month"></label>' +
           '<button id="' + id(k, "pick") + '" class="btn-primary" type="button">选择图片（可多选）</button>' +
           '<button id="' + id(k, "upload") + '" class="btn-primary" type="button" disabled>上传（0）</button>' +
+          '<button id="' + id(k, "cancel") + '" class="btn-ghost hidden" type="button">取消上传</button>' +
           '<button id="' + id(k, "clear") + '" class="btn-ghost" type="button">清空待传</button>' +
           '<span id="' + id(k, "tip") + '" class="hint-inline"></span>' +
         '</div>' +
@@ -303,10 +304,15 @@
       '</div>';
   }
 
-  /* ---------- 类目候选项：站点类目表 ∪ 本专区已用过的类目 ---------- */
-  function catOptions(k) {
-    var out = ((window.CONFIG && window.CONFIG.CATEGORY_OPTIONS) || []).slice();
-    var st = state[k];
+  /* ---------- 类目候选项（20261114V） ----------
+     口子统一到「趋势上升榜」那一套：候选只来自后台「类目管理」的 categories 表
+     （SB.listActiveCats，与趋势上升榜导入时的类目下拉同源），不再拿内置大表凑数，
+     免得两边名字对不上、传进去的类目在榜单里查不着。
+     例外：筛选 / 打标下拉要能选中历史已用的类目（否则老图无法筛、无法改），
+     所以只给这两个下拉补上「本专区已用过的类目」；上传下拉严格按后台那一套。
+     读不到 categories 表时才退回旧口径，保证任何情况下都能选到东西。 */
+  function usedCats(k) {
+    var st = state[k], out = [];
     (st ? st.items : []).forEach(function (r) {
       var c = String(r.category || "").trim();
       if (c && out.indexOf(c) < 0) out.push(c);
@@ -314,22 +320,55 @@
     return out;
   }
 
+  function catOptions(k, mode) {
+    var st = state[k];
+    var active = (st && st.activeCats && st.activeCats.length) ? st.activeCats.slice() : [];
+    var fallback = ((window.CONFIG && window.CONFIG.CATEGORY_OPTIONS) || []).slice();
+    var base = active.length ? active : fallback;
+    var out = base.slice();
+    if (mode !== "upload") {
+      usedCats(k).forEach(function (c) { if (out.indexOf(c) < 0) out.push(c); });
+    }
+    return out;
+  }
+
   function fillCatSelects(k) {
-    var opts = catOptions(k);
     ["upload-cat", "filter-cat", "tag-cat"].forEach(function (s) {
       var sel = el(k, s);
       if (!sel) return;
       var keep = sel.value;
       var isFilter = s === "filter-cat";
+      var opts = catOptions(k, isFilter || s === "tag-cat" ? "any" : "upload");
       sel.innerHTML = "";
       sel.add(new Option(isFilter ? "全部类目" : "选择类目…", ""));
       opts.forEach(function (c) { sel.add(new Option(c, c)); });
+      /* 已选的值若已不在候选里（历史类目 / 后台刚删掉），补一个选项保住它，不静默清空 */
+      var has = false;
+      if (keep && sel.options) {
+        for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === keep) { has = true; break; }
+        if (!has) sel.add(new Option(keep, keep));
+      }
       if (keep) sel.value = keep;
     });
     var f = el(k, "filter-cat");
     if (f && !f._bound) {
       f._bound = 1;
       f.onchange = function () { state[k].curCat = f.value || ""; renderAll(k); };
+    }
+    /* 类目很多时先搜再选：上传 / 筛选两个下拉都挂搜索框（与榜单导入同一套模糊匹配） */
+    var CATS = window.CAT_SEARCH;
+    if (CATS) {
+      [["upload-cat", "-upload"], ["tag-cat", "-tag"]].forEach(function (pair) {
+        var sel = el(k, pair[0]);
+        /* 真 select 才有 options：非 select / 精简 DOM 环境下不加搜索框，避免报错 */
+        if (!sel || !sel.options) return;
+        var key = "cz" + pair[1] + "-" + k;
+        CATS.mountBox(sel, "cat-search" + key, "搜索类目…", function (v) {
+          CATS.kw(key, v);
+          CATS.filterSelect(sel, v);
+        });
+        CATS.filterSelect(sel, CATS.kw(key));
+      });
     }
   }
 
@@ -396,6 +435,13 @@
       st.own[String(r.id)] = canOwn(u);
       st.ownerLabel[String(r.id)] = ownerOf(u);
     });
+    /* 20261114V：上传类目候选 = 后台「类目管理」那一套（与趋势上升榜导入同源）。
+       一次面板会话读一次就够，刷新时重新读，避免每次重绘都发请求。 */
+    if (!st.activeCats || !st.activeCats.length) {
+      if (typeof SB.listActiveCats === "function") {
+        try { st.activeCats = await SB.listActiveCats(); } catch (e) { st.activeCats = st.activeCats || []; }
+      } else { st.activeCats = []; }
+    }
     st.ready = true;
     fillCatSelects(k);
     fillMonthSelects(k);
@@ -759,7 +805,7 @@
     var dl = el(k, "batch-cat-list");
     if (dl) {
       dl.innerHTML = "";
-      catOptions(k).forEach(function (c) {
+      catOptions(k, "any").forEach(function (c) {
         var o = document.createElement("option");
         o.value = c;
         dl.appendChild(o);
@@ -823,11 +869,14 @@
     }
   }
 
-  /* ---------- 上传去重 ----------
-     同一张图不要再传第二次。三层判断（命中任一层就跳过）：
-       1) 本批内部重复（同一文件被选了两次 / 同一张图存了两个名字）
-       2) 本浏览器传过的（按内容指纹记在本地，改名也认得出）
-       3) 库里已有的（上传后的地址里保留了原文件名，按文件名比对；跨浏览器也有效）
+  /* ---------- 上传去重（20261114V：按月判重） ----------
+     规则：同一个月里同一张图只留一张；换一个月可以再传一次
+     （1 月的图 2 月再传属于两次上新，必须放行）。
+     三层判断，命中任一层就跳过：
+       1) 本批内部重复（同一文件被选了两次 / 同一张图存了两个名字）——只看当月
+       2) 本浏览器当月传过的（按内容指纹记在本地，改名也认得出）
+       3) 库里当月已有的（上传后的地址里保留了原文件名，按文件名比对；跨浏览器也有效）
+     判重键一律带上月份：指纹存成 "<月份>|<指纹>"，文件名按月份分组比对。
      全部在前端完成：不改上传接口、不加表字段。 */
   var FP_KEY = "cz_img_fp_v1";
   var FP_MAX = 6000;
@@ -879,30 +928,55 @@
     return set;
   }
 
+  /* 按月分组的已有文件名：{ "2026-01": { "a.jpg": 1 } } */
+  function namesByMonth(k) {
+    var st = state[k];
+    var out = {};
+    (st.items || []).forEach(function (r) {
+      var m = normMonth(r.month || r.period_label || "");
+      var n = nameFromUrl(r.image_url);
+      if (!m || !n) return;
+      (out[m] || (out[m] = {}))[n] = 1;
+    });
+    return out;
+  }
+
+  /* 指纹靠月份分区：同月命中才算重复，换月一律放行 */
+  function fpKey(month, fp) { return String(month || "") + "|" + String(fp || ""); }
+
+  function pickMonth(k) {
+    var mEl = el(k, "upload-month");
+    return normMonth(mEl ? mEl.value : "") || curMonthNow();
+  }
+
   async function addFiles(k, list) {
     var imgs = Array.prototype.slice.call(list || []).filter(function (f) { return /^image\//.test(f.type); });
     if (!imgs.length) { toast("请选择图片文件", false); return; }
 
     var st = state[k];
     var have = fpLoad();
-    var names = existingNames(k);
+    var month = pickMonth(k);
+    var byMonth = namesByMonth(k);
+    var names = byMonth[month] || (byMonth[month] = {});
 
-    /* 本批已排队的也参与比对 */
+    /* 本批已排队的也参与比对（同一月内） */
     var seen = {};
-    (st.pending || []).forEach(function (f) { if (f.__fp) seen[f.__fp] = 1; });
+    (st.pending || []).forEach(function (f) { if (f.__fp) seen[fpKey(f.__month || month, f.__fp)] = 1; });
 
     var add = [], dupLocal = 0, dupCloud = 0, dupBatch = 0;
     for (var i = 0; i < imgs.length; i++) {
       var f = imgs[i];
       var fp = await fingerprint(f);
       f.__fp = fp;
+      f.__month = month;
       var nm = normName(f.name);
+      var fk = fpKey(month, fp);
 
-      if (seen[fp]) { dupBatch++; continue; }
-      if (have[fp]) { dupLocal++; continue; }
+      if (seen[fk]) { dupBatch++; continue; }
+      if (have[fk]) { dupLocal++; continue; }
       if (nm && names[nm]) { dupCloud++; continue; }
 
-      seen[fp] = 1;
+      seen[fk] = 1;
       if (nm) names[nm] = 1;
       add.push(f);
     }
@@ -916,19 +990,22 @@
     if (skip) {
       var why = [];
       if (dupBatch) why.push("本批重复 " + dupBatch);
-      if (dupLocal) why.push("之前传过 " + dupLocal);
-      if (dupCloud) why.push("库里已有 " + dupCloud);
-      toast("已跳过 " + skip + " 张重复图片（" + why.join("、") + "）", true);
+      if (dupLocal) why.push(month + " 已传过 " + dupLocal);
+      if (dupCloud) why.push("库里 " + month + " 已有 " + dupCloud);
+      toast("已跳过 " + skip + " 张重复图片（" + why.join("、") + "）；换个月份可以再传一次", true);
     } else if (add.length) {
-      toast("已加入 " + add.length + " 张", true);
+      toast("已加入 " + add.length + " 张（" + month + "）", true);
     }
   }
 
-  /* 上传成功后登记指纹，下次同一张图（哪怕改名）也能认出来 */
-  function rememberFps(files) {
+  /* 上传成功后登记指纹，下次同一张图（哪怕改名）在同一月也能认出来 */
+  function rememberFps(files, month) {
     var map = fpLoad();
     var now = Date.now();
-    (files || []).forEach(function (f) { if (f && f.__fp) map[f.__fp] = { at: now, n: String(f.name || "") }; });
+    var m = month || "";
+    (files || []).forEach(function (f) {
+      if (f && f.__fp) map[fpKey(f.__month || m, f.__fp)] = { at: now, n: String(f.name || ""), m: f.__month || m };
+    });
     fpSave(map);
   }
 
@@ -941,7 +1018,7 @@
       btn.disabled = !st.pending.length;
       btn.textContent = "上传（" + st.pending.length + "）";
     }
-    if (tip) tip.textContent = st.pending.length ? "待传 " + st.pending.length + " 张" : "";
+    if (tip) tip.textContent = st.pending.length ? ("待传 " + st.pending.length + " 张（按 " + pickMonth(k) + " 上传）") : "";
     if (!box) return;
     box.innerHTML = "";
     st.pending.forEach(function (f, i) {
@@ -984,40 +1061,89 @@
     }
 
     var btn = el(k, "upload");
+    var cancelBtn = el(k, "cancel");
     var prog = el(k, "prog");
     var bar = el(k, "progbar");
     if (btn) btn.disabled = true;
+    if (cancelBtn) { cancelBtn.classList.remove("hidden"); cancelBtn.disabled = false; cancelBtn.textContent = "取消上传"; }
     if (prog) prog.classList.remove("hidden");
+    st.cancel = false;
+
+    /* 20261114V：月份可能在「加入待传」之后被改过，这里按最终月份再挡一次同月重复，
+       避免把 1 月传过的图当新图塞进 1 月（换月则照常放行）。 */
+    var byMonth = namesByMonth(k);
+    var mNames = byMonth[month] || {};
+    var fps = fpLoad();
+    var pending = [], skippedSameMonth = 0;
+    st.pending.forEach(function (f) {
+      var nm = normName(f.name);
+      if (nm && mNames[nm]) { skippedSameMonth++; return; }
+      if (f.__fp && fps[fpKey(month, f.__fp)]) { skippedSameMonth++; return; }
+      if (nm) mNames[nm] = 1;     /* 同一批里重名的也挡掉 */
+      pending.push(f);
+    });
+    if (skippedSameMonth) {
+      st.pending = pending;
+      renderPending(k);
+      if (!pending.length) {
+        if (btn) btn.disabled = true;
+        if (cancelBtn) cancelBtn.classList.add("hidden");
+        if (prog) prog.classList.add("hidden");
+        say(k, "这 " + skippedSameMonth + " 张在 " + month + " 已经传过了（换个月份可以再传）");
+        toast(skippedSameMonth + " 张已在 " + month + " 传过，已跳过；换个月份可以再传一次", false);
+        return;
+      }
+    }
+
     /* 传图接口收的是 { file } 记录，裸 File 会被判成「缺少图片文件」 */
     var items = st.pending.map(function (f) { return { file: f }; });
     try {
-      var res = await SB.uploadRankChannelImages(items, { channel: st.zone.channel, category: cat, periodLabel: month },
-        function (done, total) {
+      var res = await SB.uploadRankChannelImages(items, {
+        channel: st.zone.channel, category: cat, periodLabel: month,
+        isCancelled: function () { return st.cancel === true; },
+      }, function (done, total) {
           if (bar) bar.style.width = Math.round(done / total * 100) + "%";
-          say(k, "上传中 " + done + "/" + total);
+          say(k, st.cancel ? "正在取消…（已处理 " + done + "/" + total + "）" : "上传中 " + done + "/" + total);
         });
       /* 只登记真正传成功的，避免失败的那些以后被当成"已传" */
       var okNames = {};
       (res.ok || []).forEach(function (x) { if (x && x.name) okNames[normName(x.name)] = 1; });
-      rememberFps(st.pending.filter(function (f) { return okNames[normName(f.name)]; }));
+      var triedNames = {};
+      (res.failed || []).forEach(function (x) { if (x && x.name) triedNames[normName(x.name)] = 1; });
+      rememberFps(st.pending.filter(function (f) { return okNames[normName(f.name)]; }), month);
       /* 20261113L：登记上传归属（按图片地址）。这一步失败不影响上传结果，
          只是这批图会显示成「历史数据」，只有超管能改 —— 宁可收紧也不放开。 */
       try {
         var myUrls = (res.ok || []).map(function (x) { return x && x.url ? x.url : ""; }).filter(Boolean);
         if (myUrls.length && uoOk()) await window.UO.claim("i", myUrls);
       } catch (e) { /* 忽略 */ }
-      st.pending = [];
+      /* 取消时把还没轮到的留在待传里，下次一键接着传，不用重新选图 */
+      var left = [];
+      if (res.cancelled) {
+        left = st.pending.filter(function (f) {
+          var n = normName(f.name);
+          return !okNames[n] && !triedNames[n];
+        });
+      }
+      st.pending = left;
       renderPending(k);
-      say(k, "已上传 " + res.ok.length + " 张" + (res.failed.length ? "，失败 " + res.failed.length + " 张" : ""));
+      var line = (res.cancelled ? "已取消：" : "") + "已上传 " + res.ok.length + " 张" +
+        (res.failed.length ? "，失败 " + res.failed.length + " 张" : "") +
+        (left.length ? "，还剩 " + left.length + " 张待传" : "");
+      say(k, line);
       if (res.failed.length) {
         toast("部分失败：" + res.failed.slice(0, 3).map(function (x) { return x.name; }).join("、"), false);
+      } else if (res.cancelled) {
+        toast("已取消上传" + (left.length ? "，还剩 " + left.length + " 张待传" : ""), true);
       }
       await loadAll(k);
     } catch (e) {
       toast("上传失败：" + ((e && e.message) || "未知错误"), false);
     } finally {
+      st.cancel = false;
       if (prog) prog.classList.add("hidden");
       if (bar) bar.style.width = "0%";
+      if (cancelBtn) { cancelBtn.classList.add("hidden"); cancelBtn.disabled = false; }
       if (btn) btn.disabled = !st.pending.length;
     }
   }
@@ -1033,6 +1159,13 @@
     if (fi) fi.onchange = function () { addFiles(k, fi.files); fi.value = ""; };
     if (clr) clr.onclick = function () { st.pending = []; renderPending(k); };
     if (up) up.onclick = function () { doUpload(k); };
+    var cancel = el(k, "cancel");
+    if (cancel) cancel.onclick = function () {
+      st.cancel = true;
+      cancel.disabled = true;
+      cancel.textContent = "取消中…";
+      say(k, "正在取消，已开始的几张会传完");
+    };
     if (drop) {
       ["dragenter", "dragover"].forEach(function (ev) {
         drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); });
@@ -1046,6 +1179,7 @@
     }
     var mon = el(k, "upload-month");
     if (mon && !mon.value) mon.value = curMonthNow();
+    if (mon) mon.onchange = function () { renderPending(k); };
   }
 
   /* ---------- 打标面板 ---------- */

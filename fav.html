@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>我的收藏 · TREND BANK</title>
 <link rel="icon" href="favicon.svg">
-<link rel="stylesheet" href="css/style.css?v=20261114T">
+<link rel="stylesheet" href="css/style.css?v=20261114V">
 </head>
 <body class="front">
   <div id="toast" class="toast"></div>
@@ -55,6 +55,10 @@
       <main class="fv-main">
         <div class="fv-bar">
           <div class="fv-bar-l" id="fv-sum">加载中…</div>
+          <div class="fv-viewseg" id="fv-viewseg" role="group" aria-label="收藏视图">
+            <button type="button" class="fv-vs is-on" data-fvview="week" title="按时序看：期次 → 分类 → 图">按期次</button>
+            <button type="button" class="fv-vs" data-fvview="source" title="每个专区一列，并给出各专区维度分布对比">按专区</button>
+          </div>
           <div class="fv-bar-r">
           <div class="imgsize-bar" data-imgsize></div>
             <button type="button" class="fv-btn" id="fv-expand-all" title="把所有周里已分类的图全部平铺：同类相邻排在一起，下方一条框写类别名与张数">展开全部周（平铺）</button>
@@ -78,14 +82,14 @@
     <footer class="fv-foot">© 2026 TREND BANK · 我的收藏 · 构建 20261030J</footer>
   </section>
 
-  <script src="vendor/supabase.js?v=20261114T"></script>
-  <script src="js/site-norm.js?v=20261114T"></script>
-  <script src="js/config.js?v=20261114T"></script>
-  <script src="js/supabase.js?v=20261114T"></script>
-  <script src="js/common.js?v=20261114T"></script>
-  <script src="js/favexport.js?v=20261114T"></script>
-  <script src="js/fav.js?v=20261114T"></script>
-  <script src="js/ui-dialog.js?v=20261114T"></script>
-  <script src="js/find-similar.js?v=20261114T"></script>
+  <script src="vendor/supabase.js?v=20261114V"></script>
+  <script src="js/site-norm.js?v=20261114V"></script>
+  <script src="js/config.js?v=20261114V"></script>
+  <script src="js/supabase.js?v=20261114V"></script>
+  <script src="js/common.js?v=20261114V"></script>
+  <script src="js/favexport.js?v=20261114V"></script>
+  <script src="js/fav.js?v=20261114V"></script>
+  <script src="js/ui-dialog.js?v=20261114V"></script>
+  <script src="js/find-similar.js?v=20261114V"></script>
 </body>
 </html>

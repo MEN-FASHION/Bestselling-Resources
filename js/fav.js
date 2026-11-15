@@ -96,8 +96,97 @@
     colorOf: colorOf,
     groupWeeks: groupWeeks,
     flatGroups: flatGroups,
-    weekStat: weekStat
+    weekStat: weekStat,
+    labelOf: labelOf,
+    sourceStats: sourceStats,
+    sourceOrderKeys: sourceOrderKeys,
+    topN: topN,
+    groupBySource: groupBySource
   };
+
+  /* ============================================================
+   * 一·二、按专区成列（20261114U）
+   *
+   * 背景：收藏不再只来自趋势上升榜 —— S / P / T、视觉专区、渠道对比、品牌动向
+   *       都能收进来。用户要的是"每个专区一列，横向比较各维度差异"，
+   *       所以这里只做两件事：① 按来源分组（列）② 每个来源内的维度分布。
+   * 口径：来源为空的旧收藏一律归到「未标注专区」，不丢图、不假装有来源。
+   * ============================================================ */
+  function labelOf(key) {
+    var k = String(key == null ? "" : key).trim();
+    var SB = window.SB;
+    if (SB && typeof SB.favSourceLabel === "function") return SB.favSourceLabel(k);
+    return k || "未标注专区";
+  }
+
+  /* 专区列的固定顺序：先榜单/节奏这两个主专区，再渠道三兄弟，再其余；
+     没用到的专区不出现，顺序只决定"谁在左边"。 */
+  var SRC_ORDER = ["rank", "rhythm", "shein", "pinterest", "tiktok", "compare", "movement", "vision", "trends", "marketing", ""];
+
+  function sourceOrderKeys(keys) {
+    return (keys || []).slice().sort(function (a, b) {
+      var ia = SRC_ORDER.indexOf(a), ib = SRC_ORDER.indexOf(b);
+      if (ia < 0) ia = SRC_ORDER.length;
+      if (ib < 0) ib = SRC_ORDER.length;
+      if (ia !== ib) return ia - ib;
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+  }
+
+  /* 取分布里的前 n 项：[{k, n, pct}]，pct 为占该专区总数的百分比 */
+  function topN(map, total, n) {
+    var list = Object.keys(map || {}).map(function (k) { return { k: k, n: map[k] }; });
+    list.sort(function (a, b) {
+      if (b.n !== a.n) return b.n - a.n;
+      return a.k < b.k ? -1 : (a.k > b.k ? 1 : 0);
+    });
+    return list.slice(0, n == null ? 3 : n).map(function (x) {
+      return { k: x.k, n: x.n, pct: total ? Math.round(x.n * 100 / total) : 0 };
+    });
+  }
+
+  /* 每个专区一份维度分布：类目 / 站点 / 期次 / 上装下装 / 标签 */
+  function sourceStats(items) {
+    var out = {};
+    (items || []).forEach(function (it) {
+      var key = String(it.source == null ? "" : it.source).trim();
+      var s = out[key];
+      if (!s) {
+        s = out[key] = {
+          key: key, name: labelOf(key), n: 0,
+          leaf: {}, site: {}, period: {}, tags: {},
+          sub: { top: 0, bottom: 0, none: 0 }
+        };
+      }
+      s.n++;
+      var lf = String(it.leaf_category || it.rank_category || "").trim() || "未分类";
+      s.leaf[lf] = (s.leaf[lf] || 0) + 1;
+      var st = String(it.site || "").trim() || "未标注站点";
+      s.site[st] = (s.site[st] || 0) + 1;
+      var pd = String(it.period_label || "").trim() || "未标注期次";
+      s.period[pd] = (s.period[pd] || 0) + 1;
+      var sb = subOf(it);
+      s.sub[sb] = (s.sub[sb] || 0) + 1;
+      (Array.isArray(it.tags) ? it.tags : []).forEach(function (t) {
+        var v = String(t || "").trim();
+        if (v) s.tags[v] = (s.tags[v] || 0) + 1;
+      });
+    });
+    return out;
+  }
+
+  /* 按来源分组：{ key, name, n, items: [...] }，顺序按 SRC_ORDER */
+  function groupBySource(items) {
+    var map = {};
+    (items || []).forEach(function (it) {
+      var key = String(it.source == null ? "" : it.source).trim();
+      if (!map[key]) map[key] = [];
+      map[key].push(it);
+    });
+    return sourceOrderKeys(Object.keys(map)).map(function (k) {
+      return { key: k, name: labelOf(k), n: map[k].length, items: map[k] };
+    });
+  }
 
   /* ============================================================
    * 二、状态
@@ -112,7 +201,9 @@
     flat: {},         // week -> true（该周平铺）
     folded: {},       // week -> true（该周整体折叠）
     sel: {},          // item id -> 1
-    openNone: {}      // week -> true（平铺时未分类折叠区是否展开）
+    openNone: {},     // week -> true（平铺时未分类折叠区是否展开）
+    view: "week",     // "week" 按期次 | "source" 按专区（20261114U）
+    disp: {}          // 图片地址 -> 可直接显示的地址（视觉专区的图需要带会话 token）
   };
 
   function catIdKey(v) { return (v == null || v === "") ? "" : "c" + v; }
@@ -133,6 +224,9 @@
    * ============================================================ */
   function cardHtml(it) {
     var cap = [it.period_label, it.site].filter(Boolean).join(" · ");
+    var srcName = it.source ? labelOf(it.source) : "";
+    /* 视觉专区的图是鉴权路径：显示地址在 reload 时已换成带会话 token 的那一份 */
+    var showUrl = (ST.disp && ST.disp[it.image_url]) || it.image_url;
     /* 保留收藏当时的「排位」与「标签」快照（趋势爆款 / 上升 12 位 / 共 3 国同款…） */
     var rk = (it.rank_pos != null && it.rank_pos !== "") ? it.rank_pos
       : ((it.rank_abs != null && it.rank_abs !== "") ? it.rank_abs : null);
@@ -151,11 +245,13 @@
     var tips = [it.title || it.leaf_category || "",
       rk != null ? ("第 " + rk + " 位") : "",
       it.rank_category ? ("榜单类目 " + it.rank_category) : "",
+      srcName ? ("来源 " + srcName) : "",
       tags.join(" ")].filter(Boolean).join("\n");
     return ''
       + '<figure class="fv-card" draggable="true" data-id="' + it.id + '" data-cat="' + (it.category_id || "") + '"'
-      + ' data-url="' + esc(it.image_url) + '" title="' + esc(tips) + '">'
-      +   '<img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
+      + ' data-url="' + esc(it.image_url) + '" data-src-name="' + esc(srcName) + '" title="' + esc(tips) + '">'
+      +   '<img loading="lazy" src="' + esc(showUrl) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
+      +   (srcName ? '<span class="fv-src">' + esc(srcName) + '</span>' : '')
       +   (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
             + subName(subOf(it)) + '</span>' : '')
       +   '<span class="fv-pick" data-pick="0" title="选中，可批量移动"></span>'
@@ -276,6 +372,86 @@
     return h;
   }
 
+  /* ---------- 按专区视图：一列一个专区 + 上方维度对比 ---------- */
+  function cmpLetHtml(x, total) {
+    return '<span class="fv-cmpv">'
+      + '<em>' + esc(x.k) + '</em>'
+      + '<i class="fv-cmpbar"><b style="width:' + Math.max(3, Math.min(100, x.pct)) + '%"></b></i>'
+      + '<u>' + x.pct + '%</u></span>';
+  }
+
+  function cmpCellHtml(map, total, n) {
+    var list = topN(map, total, n == null ? 3 : n);
+    if (!list.length) return '<span class="fv-cmpnone">—</span>';
+    return list.map(function (x) { return cmpLetHtml(x, total); }).join("");
+  }
+
+  function subCellHtml(s) {
+    var names = { top: "上装", bottom: "下装", none: "未分" };
+    var parts = ["top", "bottom", "none"].filter(function (k) { return s.sub && s.sub[k]; }).map(function (k) {
+      var pct = s.n ? Math.round(s.sub[k] * 100 / s.n) : 0;
+      return '<span class="fv-cmpv"><em>' + names[k] + '</em>'
+        + '<i class="fv-cmpbar"><b style="width:' + Math.max(3, Math.min(100, pct)) + '%"></b></i>'
+        + '<u>' + pct + '%</u></span>';
+    });
+    return parts.join("") || '<span class="fv-cmpnone">—</span>';
+  }
+
+  function compareHtml(srcs) {
+    var rows = [
+      { k: "收藏张数", get: function (s) { return '<b class="fv-cmpnum">' + s.n + '</b>'; } },
+      { k: "类目 Top3", get: function (s) { return cmpCellHtml(s.leaf, s.n, 3); } },
+      { k: "站点 Top3", get: function (s) { return cmpCellHtml(s.site, s.n, 3); } },
+      { k: "期次 Top3", get: function (s) { return cmpCellHtml(s.period, s.n, 3); } },
+      { k: "上装 / 下装", get: function (s) { return subCellHtml(s); } },
+      { k: "标签 Top3", get: function (s) { return cmpCellHtml(s.tags, s.n, 3); } }
+    ];
+    var h = '<section class="fv-cmp">'
+      + '<div class="fv-cmp-h"><b>各专区维度对比</b>'
+      + '<span>同一批收藏在不同专区的类目 / 站点 / 期次 / 上下装 / 标签分布；百分比是该专区内部的占比，横向比较即为差异</span></div>'
+      + '<div class="fv-cmp-scroll"><table class="fv-cmpt"><thead><tr><th class="fv-cmp-corner">维度</th>'
+      + srcs.map(function (s) {
+        return '<th><span class="fv-cmp-th">' + esc(s.name) + '</span><em>' + s.n + ' 张</em></th>';
+      }).join("")
+      + '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      h += '<tr><th class="fv-cmp-rk">' + r.k + '</th>';
+      h += srcs.map(function (s) { return '<td>' + r.get(s) + '</td>'; }).join("");
+      h += '</tr>';
+    });
+    h += '</tbody></table></div></section>';
+    return h;
+  }
+
+  /* 一列 = 一个专区：列内按期次分段，图按分类顺序排 */
+  function sourceColHtml(g) {
+    var weeks = groupWeeks(g.items, ST.cats);
+    var h = '<section class="fv-srccol" data-src="' + esc(g.key) + '">';
+    h += '<div class="fv-srccol-h"><span class="fv-srccol-n">' + esc(g.name) + '</span>'
+      + '<em class="fv-srccol-num">' + g.n + ' 张</em></div>';
+    h += '<div class="fv-srccol-b">';
+    weeks.forEach(function (wd) {
+      var list = [];
+      flatGroups(wd).forEach(function (x) { list = list.concat(x.items); });
+      list = list.concat(wd.none || []);
+      h += '<div class="fv-srcweek">'
+        + '<div class="fv-srcweek-h"><span>' + esc(wd.week) + '</span><em>' + list.length + ' 张</em></div>'
+        + '<div class="fv-grid fv-srcgrid">' + list.map(cardHtml).join("") + '</div>'
+        + '</div>';
+    });
+    if (!weeks.length) h += '<div class="fv-empty-s">这一列还没有收藏。</div>';
+    h += '</div></section>';
+    return h;
+  }
+
+  function sourceBoardHtml(items) {
+    var groups = groupBySource(items);
+    if (!groups.length) return '<div class="fv-empty">这个范围下还没有收藏。</div>';
+    var stats = sourceStats(items);
+    var srcs = groups.map(function (g) { return stats[g.key]; }).filter(Boolean);
+    return compareHtml(srcs) + '<div class="fv-srcboard">' + groups.map(sourceColHtml).join("") + '</div>';
+  }
+
   function renderCats() {
     var el = $("#fv-cats");
     if (!el) return;
@@ -346,6 +522,11 @@
       return;
     }
     var weeks = groupWeeks(items, ST.cats);
+    if (ST.view === "source") {
+      box.innerHTML = sourceBoardHtml(items);
+      syncSelUI();
+      return;
+    }
     box.innerHTML = subBarHtml() + weeks.map(weekHtml).join("");
     syncSelUI();
   }
@@ -431,7 +612,9 @@
     var catN = ST.cats.length;
     var noneN = ST.items.filter(function (it) { return it.category_id == null || it.category_id === ""; }).length;
     var selN = Object.keys(ST.sel).length;
+    var srcN = groupBySource(ST.items).length;
     var t = '共 <b>' + ST.items.length + '</b> 张 · <b>' + weeks.length + '</b> 周 · <b>' + catN + '</b> 个分类'
+      + (srcN > 1 ? ' · <b>' + srcN + '</b> 个专区' : "")
       + (noneN ? ' · 未分类 <b>' + noneN + '</b>' : "");
     if (selN) t += ' · 已选 <b>' + selN + '</b>';
     el.innerHTML = t;
@@ -471,7 +654,26 @@
     } catch (e) { /* 忽略 */ }
   }
 
-  function render() { renderCats(); renderBody(); renderSummary(); syncUrl(); }
+  function render() { renderCats(); renderBody(); renderSummary(); renderViewSeg(); syncUrl(); }
+
+  /* ---------------- 视图切换：按期次 / 按专区（20261114U） ---------------- */
+  function renderViewSeg() {
+    $$("#fv-viewseg [data-fvview]").forEach(function (b) {
+      b.classList.toggle("is-on", b.getAttribute("data-fvview") === ST.view);
+      b.setAttribute("aria-pressed", b.getAttribute("data-fvview") === ST.view ? "true" : "false");
+    });
+  }
+  function setView(v) {
+    ST.view = (v === "source") ? "source" : "week";
+    try { localStorage.setItem("fv-view", ST.view); } catch (e) { /* 隐私模式忽略 */ }
+    render();
+  }
+  function readView() {
+    try {
+      var v = localStorage.getItem("fv-view");
+      if (v === "source" || v === "week") ST.view = v;
+    } catch (e) { /* 忽略 */ }
+  }
 
   function syncSelUI() {
     var box = $("#fv-body");
@@ -503,7 +705,19 @@
       try { ST.cats = (await SBX.ensureDefaultFavCats(["印花", "面料", "图案", "工艺", "视觉"])) || []; } catch (e) { /* 忽略 */ }
     }
     try { ST.items = await SBX.listFavItems(); } catch (e) { ST.items = []; toast((e && e.message) || "读取收藏失败"); }
+    await fillDisplayUrls();
     render();
+  }
+
+  /* 视觉专区的图是鉴权路径（要带会话 token 才出图）。收藏里存的是不带 token 的稳定地址，
+     显示时统一补上当前会话 token；取不到 token 就按原地址显示，不假装成功。 */
+  async function fillDisplayUrls() {
+    ST.disp = {};
+    if (!SBX || typeof SBX.favResolveDisplay !== "function") return;
+    try {
+      await SBX.favResolveDisplay((ST.items || []).map(function (it) { return it.image_url; }));
+      ST.disp = SBX._favDisp || {};
+    } catch (e) { ST.disp = {}; }
   }
 
   async function createCat(name) {
@@ -1004,6 +1218,9 @@
     ensureScopeUI();
 
     /* 顶部按钮 */
+    $$("#fv-viewseg [data-fvview]").forEach(function (b) {
+      b.onclick = function () { setView(b.getAttribute("data-fvview")); };
+    });
     var ea = $("#fv-expand-all");
     if (ea) ea.onclick = function () { expandAll(true); };
     var ca = $("#fv-collapse-all");
@@ -1101,6 +1318,7 @@
 
   async function boot() {
     readUrl();
+    readView();
     if (!SBX) {
       var body = $("#fv-body");
       if (body) body.innerHTML = '<div class="fv-empty">数据服务未就绪，请刷新页面重试。</div>';

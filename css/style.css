@@ -7749,3 +7749,130 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 .updash-mx-t { color: #111827; font-weight: 600; padding: 0 6px !important; }
 .updash-tbwrap { margin-top: 2px; }
 
+
+/* ==========================================================================
+ * 20261114U · 各专区「收藏星标」与收藏来源弹层
+ * 星标挂在卡片右上角：不遮挡悬停搜同款（居中）与右下角角标，
+ * 卡片本身不位移；触屏设备常显，桌面悬停才出现，避免一屏几十个星星干扰选图。
+ * ========================================================================== */
+.fs-host { position: relative; }
+.fs-star {
+  position: absolute; top: 6px; right: 6px; z-index: 4;
+  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .72);
+  background: rgba(20, 18, 15, .42); color: #fff;
+  font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  transition: opacity .15s, background .15s, transform .15s;
+}
+.fs-host:hover .fs-star,
+.fs-star.is-on,
+.fs-star:focus-visible { opacity: 1; }
+.fs-star:hover { transform: scale(1.08); background: rgba(20, 18, 15, .62); }
+.fs-star.is-on { color: #f2c14e; border-color: rgba(242, 193, 78, .75); }
+/* 触屏没有 hover：星标常显，否则点不到。
+   用 @supports 而非媒体查询 —— 与网格密度无关，不该干扰末尾那条「每行张数统一规则」的位置断言。 */
+@supports not (hover: hover) { .fs-star { opacity: 1; } }
+
+.fs-wrap { position: fixed; inset: 0; z-index: 9999; }
+.fs-mask { position: absolute; inset: 0; background: rgba(20, 18, 15, .42); }
+.fs-box {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(430px, calc(100vw - 32px)); max-height: min(78vh, 620px); overflow: auto;
+  background: #fff; border-radius: 14px; padding: 18px 18px 14px;
+  box-shadow: 0 24px 60px rgba(20, 18, 15, .28);
+}
+.fs-hd { font-size: 15px; font-weight: 600; color: #1f1c18; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fs-src { font-style: normal; font-size: 12px; font-weight: 400; color: #8a7f70; }
+.fs-sub { margin-top: 6px; font-size: 12px; color: #6b6257; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-cats { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.fs-cat {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border: 1px solid #e6e0d6; background: #fbf9f5; border-radius: 999px;
+  font-size: 13px; color: #3d372f; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.fs-cat:hover { border-color: #c9a45f; background: #fff; }
+.fs-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.fs-dot.is-empty { background: #d8d2c6; }
+.fs-none-tip { font-size: 12px; color: #8a7f70; }
+.fs-newrow { margin-top: 12px; display: flex; gap: 8px; }
+.fs-newin { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #e6e0d6; border-radius: 8px; font-size: 13px; }
+.fs-newin:focus { outline: none; border-color: #c9a45f; }
+.fs-newok {
+  flex: none; padding: 8px 12px; border: 1px solid #c9a45f; background: #c9a45f; color: #fff;
+  border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.fs-newok:disabled { opacity: .6; cursor: default; }
+.fs-ft { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }
+.fs-btn { padding: 7px 14px; border: 1px solid #e6e0d6; background: #fff; border-radius: 8px; font-size: 13px; cursor: pointer; color: #3d372f; }
+.fs-btn.is-danger { color: #b4443c; border-color: #ecd3cf; }
+
+/* ==========================================================================
+ * 20261114U · 我的收藏「按专区」视图 + 各专区维度对比
+ * ========================================================================== */
+.fv-bar { flex-wrap: wrap; }
+.fv-viewseg {
+  display: inline-flex; align-items: center; gap: 2px; padding: 2px;
+  background: #f2efe9; border: 1px solid var(--line); border-radius: 999px;
+}
+.fv-vs {
+  padding: 5px 13px; border: 0; background: transparent; border-radius: 999px;
+  font-size: 12.5px; color: var(--sub); cursor: pointer; transition: background .15s, color .15s;
+}
+.fv-vs:hover { color: var(--txt); }
+.fv-vs.is-on { background: #fff; color: var(--txt); box-shadow: 0 1px 3px rgba(60, 52, 42, .12); }
+
+/* 来源角标不进卡片：卡片四角已被标签、勾选、收藏、取消占满，
+   而「按专区」视图的列头已经写明了来源，再压一层只会挡图。 */
+.fv-src { display: none; }
+
+/* 维度对比：一张表，列=专区，行=维度 */
+.fv-cmp {
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px 14px; margin-bottom: 14px;
+}
+.fv-cmp-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.fv-cmp-h b { font-size: 14px; color: var(--txt); }
+.fv-cmp-h span { font-size: 11.5px; color: var(--sub); }
+.fv-cmp-scroll { overflow-x: auto; }
+.fv-cmpt { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-size: 12px; }
+.fv-cmpt thead th {
+  text-align: left; padding: 4px 10px; font-weight: 600; color: var(--txt);
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.fv-cmpt thead th em { display: block; font-style: normal; font-weight: 400; font-size: 11px; color: var(--sub); }
+.fv-cmp-corner { color: var(--sub) !important; font-weight: 400 !important; }
+.fv-cmpt tbody th {
+  text-align: left; padding: 6px 10px; font-weight: 500; color: var(--sub);
+  white-space: nowrap; vertical-align: top; width: 92px;
+}
+.fv-cmpt tbody td {
+  padding: 6px 10px; vertical-align: top; min-width: 150px;
+  background: #fff; border-radius: 8px;
+}
+.fv-cmpv { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.fv-cmpv em { font-style: normal; color: var(--txt); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-cmpbar { flex: 1; min-width: 40px; height: 5px; background: #f0ece4; border-radius: 3px; overflow: hidden; }
+.fv-cmpbar b { display: block; height: 100%; background: linear-gradient(90deg, #c9a45f, #e0c795); border-radius: 3px; }
+.fv-cmpv u { text-decoration: none; color: var(--sub); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+.fv-cmpnum { font-size: 16px; color: var(--txt); }
+.fv-cmpnone { color: #c9c2b6; }
+
+/* 专区列：一列一个专区，列内按期次分段；列多时横向滚动 */
+.fv-srcboard { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
+.fv-srccol {
+  flex: 0 0 min(320px, 82vw); max-width: min(320px, 82vw); background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+}
+.fv-srccol-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; background: #fbfaf8; border-bottom: 1px solid var(--line);
+}
+.fv-srccol-n { font-size: 13px; font-weight: 600; color: var(--txt); }
+.fv-srccol-num { font-style: normal; font-size: 11.5px; color: var(--sub); }
+.fv-srccol-b { padding: 10px; display: flex; flex-direction: column; gap: 10px; max-height: 72vh; overflow-y: auto; }
+.fv-srcweek-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; color: var(--sub); margin-bottom: 6px;
+}
+.fv-srcgrid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; }

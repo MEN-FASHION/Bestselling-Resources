@@ -379,7 +379,7 @@
   }          // { key, items }
   var ITEMS_BY_URL = {};     // 灯箱用：url → 条目
 
-  var BUILD = "20261114T";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261114V";   /* 前台脚本版本：界面上会显示，用于核对是不是旧缓存 */
 
   /* ---------------- 期次排序 ---------------- */
   function periodKey(p) {
@@ -3828,7 +3828,9 @@
       rank_abs: fig.getAttribute("data-rank") || null,
       rank_pos: fig.getAttribute("data-rank") || null,
       tags: String(fig.getAttribute("data-tags") || "").split("|")
-        .filter(function (x) { return x && x.trim(); })
+        .filter(function (x) { return x && x.trim(); }),
+      /* 20261114V：记下来源专区，收藏页才能按专区成列 */
+      source: "rhythm"
     };
   }
 
