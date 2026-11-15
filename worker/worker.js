@@ -87,7 +87,12 @@ async function canManageZone(userId, role, token, env, zone) {
   if (!isAdminRole(role)) return false;
   const zones = await getManageZones(userId, token, env);
   if (!zones.length) return true;   // 未配置用户级专区：按全局放行（兼容）
-  return zones.indexOf(zone) !== -1;
+  if (zones.indexOf(zone) !== -1) return true;
+  /* 20261115B：渠道专区的 key（shein/pinterest/tiktok/compare）与「视觉专区」的 key（visual）
+     在历史数据里混用过 —— 有些管理员的后台白名单里只有 visual，却一直在传 S/P/T 的图。
+     严格按新 key 校验会把这类管理员挡在门外（表现为「未授权该专区」）。
+     这里保留一条兼容通道：只要该管理员被授权了视觉专区，就允许其上传图片到渠道专区。 */
+  return zones.indexOf("visual") !== -1;
 }
 
 // 类目授权判定：超管放行；非管理员拒绝；管理员需专区授权 + 该类目在其 zone_permissions 内（类目为空则回退专区级）
@@ -97,7 +102,7 @@ async function canManageZoneCat(userId, role, token, env, zone, category) {
   if (!(await canManageZone(userId, role, token, env, zone))) return false;
   if (!category || !String(category).trim()) return true;
   const cat = String(category).trim().toLowerCase();
-  /* 20261115A：类目授权有两个来源 ——
+  /* 20261115B：类目授权有两个来源 ——
        ① zone_permissions 表（权威，数据库行级策略也只认这张表）；
        ② site_settings.frontend_dims.perm_zones 字典（授权表被数据库拒收时的暂存区）。
      以前守门员只认 ①，后台页面却按 ② 放行，于是「后台看着有权限、点上传就 403」。
@@ -165,6 +170,9 @@ async function adminDeleteAuthUser(env, uid) {
   }
 }
 
+// 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
+const WORKER_BUILD = "20261115B";
+
 // CORS 头
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -178,6 +186,55 @@ async function handleRequest(request, env) {
   // 关键修复：浏览器请求时中文类目会被 URL 编码，这里必须还原成本地字符再查 R2（否则中文类目图片 404）
   let path;
   try {
+  /* ---------- GET /ver：图片服务自己的版本号 ----------
+     前端用它判断「这次到底有没有把图片服务重新部署」。案板上的坑：
+     站点推 GitHub 只部署前台静态页，图片服务要单独部署；
+     没部署时前台已经是新版、图片服务还是旧逻辑，排查会一直在原地打转。 */
+  if (method === "GET" && (path === "ver" || path === "version")) {
+    return json({ ok: true, build: WORKER_BUILD, dictAuth: true }, 200, CORS);
+  }
+
+  /* ---------- POST /admin/add-image：登记一条图片清单（服务端写，绕开行级策略）----------
+     故障背景：图片已经存进对象存储，但浏览器直接往数据库插这条记录被拒（400/401），
+     结果「后台看不到这张图」。图片服务用服务端密钥写入，不受浏览器会话的写入策略影响。
+     鉴权与直接上传一致：必须是管理员，且对该专区、该类目有权限。 */
+  if (method === "POST" && path === "admin/add-image") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role = await getRole(userId, token, env);
+    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
+    const body = await request.json().catch(() => ({}));
+    const category = String(body.category || "").trim();
+    const p = String(body.path || "").trim();
+    const zone = String(body.zone || "visual").trim() || "visual";
+    if (!category || !p) return json({ error: "缺少类目或路径" }, 400, CORS);
+    if (!(await canManageZoneCat(userId, role, token, env, zone, category))) {
+      return json({ error: "未授权该分类（" + category + " / " + zone + "）" }, 403, CORS);
+    }
+    const row = {
+      category,
+      name: String(body.name || p.split("/").pop() || "").trim(),
+      path: p,
+      url: body.url || null,
+      uploaded_by: userId,
+    };
+    const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/images`, {
+      method: "POST",
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(row),
+    });
+    if (!ins.ok) {
+      const t = await ins.text().catch(() => "");
+      return json({ error: "写入清单失败：" + (t || ins.status) }, 500, CORS);
+    }
+    return json({ ok: true }, 200, CORS);
+  }
+
+
     path = decodeURIComponent(url.pathname).replace(/^\//, "");
   } catch (e) {
     path = url.pathname.replace(/^\//, "");
@@ -378,7 +435,7 @@ function genReadKey() {
     const role = await getRole(userId, token, env);
     if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
     const form = await request.formData();
-    /* 20261115A：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
+    /* 20261115B：这个端点同时服务「视觉专区」和「渠道专区（S/P/T/渠道对比）」。
        以前一律按 visual 校验，导致只被授权了渠道专区的管理员传图必被拒（403）。
        现在由前端带上所属专区 key，按该专区校验；老前端不带时仍然按 visual。 */
     const zone = String(form.get("zone") || "visual").trim() || "visual";

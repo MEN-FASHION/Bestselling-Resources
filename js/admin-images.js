@@ -171,7 +171,7 @@ function fmtSize(n) {
         bar.style.width = Math.round(done / total * 100) + "%";
         continue;
       }
-      /* 20261115A：失败不再静默 +1。
+      /* 20261115B：失败不再静默 +1。
          以前任何一步失败只记一个数字，管理员只看到「失败 3」，
          根本不知道是「没权限被拒(403)」还是「图存进去了但清单写不进去」。
          现在分成两类记清原因，并直接摆到界面上。 */
@@ -189,7 +189,7 @@ function fmtSize(n) {
       }
       try {
         // 2) 记录到 DB 清单
-        await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "" });
+        await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "", zone: "visual" });
         existingNames.add(cleanName); // 本次会话后续相同文件也不再重复上传
       } catch (e) {
         console.warn(e);
@@ -213,7 +213,7 @@ function fmtSize(n) {
           failList.slice(0, 8).map(x => "· " + x.replace(/</g, "&lt;")).join("<br>") +
           (failList.length > 8 ? '<br>· …等共 ' + failList.length + ' 张' : "") +
           (orphan ? '<br><b>提示：</b>上面标注「已存进图床」的 ' + orphan + ' 张，图其实已经上传成功，只是没被登记进清单，所以后台看不到。修好权限后重新上传同一批即可（同名会自动跳过已成功的）。' : "") +
-          (failList.some(x => /没有权限|未授权|403/.test(x)) ? '<br><b>下一步：</b>让超管打开「超管权限 → 权限管理 → 授权体检 / 修复」，把类目授权真正写进数据库；或确认该账号已被授予「' + (cat || "") + '」这个类目。' : "");
+          (failList.some(x => /没有权限|未授权|403/.test(x)) ? '<br><b>下一步：</b>让超管打开「超管权限 → 权限管理 → 授权体检 / 修复」：先看顶部「图片服务」那行，若显示旧版本，需在 Cloudflare 重新部署图片服务（推 GitHub 不会更新它）；再点「一键修复」。或确认该账号已被授予「' + (cat || "") + '」这个类目。' : "");
       } else {
         failBox.classList.add("hidden");
         failBox.innerHTML = "";

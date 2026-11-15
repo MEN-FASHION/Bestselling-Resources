@@ -873,7 +873,7 @@ function bindPermission() {
     bindPermAudit();
   }
 
-/* ===== 20261115A · 类目授权体检 / 一键修复 =====
+/* ===== 20261115B · 类目授权体检 / 一键修复 =====
    为什么需要它：保存类目授权时若数据库拒收（专区列的 CHECK 约束、缺列、RLS），
    授权会被「暂存」到站点设置里。后台页面按暂存放行 → 超管以为设好了；
    但图片服务（守门员）和数据库行级策略只认授权表 → 管理员点上传就 403、
@@ -894,10 +894,10 @@ async function runPermAudit(repair) {
   if (!box) return;
   box.style.display = "block";
   box.innerHTML = '<h4>授权体检</h4><p class="pa-tip">' + (repair ? "正在把暂存的授权写回数据库…" : "正在读取授权表与暂存区…") + '</p>';
-  let table = null, dict = null;
+  let table = null, dict = null, wv = null;
   try {
-    const r = await Promise.all([SB.permTableSnapshot(), SB.permDictSnapshot()]);
-    table = r[0]; dict = r[1] || {};
+    const r = await Promise.all([SB.permTableSnapshot(), SB.permDictSnapshot(), SB.workerVersion ? SB.workerVersion() : Promise.resolve(null)]);
+    table = r[0]; dict = r[1] || {}; wv = r[2];
   } catch (e) {
     box.innerHTML = '<h4>授权体检</h4><p class="pa-bad">读取失败：' + escHtml(e.message || "未知错误") + '</p>';
     return;
@@ -910,7 +910,20 @@ async function runPermAudit(repair) {
   let dRows = 0, dPairs = 0;
   dictUsers.forEach(u => zonesOf(dict[u]).forEach(z => { dRows += (dict[u][z] || []).length; dPairs++; }));
 
-  let html = '<h4>授权体检</h4><div class="pa-sum">' +
+  let html = '<h4>授权体检</h4>';
+  /* 图片服务版本：这是最容易漏的一环 —— 推送 GitHub 只更新前台页面，
+     图片服务是单独部署的。它没更新，前台再新、上传依旧会被判无权限。 */
+  if (wv === null) {
+    html += '';
+  } else if (!wv.ok) {
+    html += '<p class="pa-bad">图片服务连通性异常（版本查询失败），上传一定不成功。请确认图片服务已部署、地址配置正确。</p>';
+  } else if (!wv.dictAuth) {
+    html += '<p class="pa-bad">当前图片服务是<b>旧版本</b>（' + escHtml(wv.build || "无版本号") +
+      '）：它还不认识「暂存授权」，管理员上传仍会被判无权限。<b>请重新部署图片服务</b>（不是推 GitHub，是部署 worker）。</p>';
+  } else {
+    html += '<p class="pa-ok">图片服务：' + escHtml(wv.build || "已更新") + '（已支持暂存授权，上传通道正常）</p>';
+  }
+  html += '<div class="pa-sum">' +
     '<span>授权表（数据库）：<b>' + tRows + '</b> 条</span>' +
     '<span>仅暂存（未入库）：<b class="' + (dPairs ? "pa-bad" : "pa-ok") + '">' + dPairs + '</b> 组 / ' + dRows + ' 条</span>' +
     '</div>';
@@ -945,9 +958,17 @@ async function runPermAudit(repair) {
 
   if (repairResult) {
     const rr = repairResult;
-    html += '<p style="margin-top:8px">修复结果：成功 <b class="pa-ok">' + rr.fixed.length + '</b> 组' +
-      (rr.blocked.length ? '，仍被数据库拒绝 <b class="pa-bad">' + rr.blocked.length + '</b> 组' : '') +
+    html += '<p style="margin-top:8px">修复结果：写回数据库成功 <b class="pa-ok">' + rr.fixed.length + '</b> 组' +
+      (rr.blocked.length ? '，被数据库拒绝 <b class="pa-bad">' + rr.blocked.length + '</b> 组' : '') +
       (rr.failed.length ? '，出错 <b class="pa-bad">' + rr.failed.length + '</b> 组' : '') + '</p>';
+    if (rr.needsSql) {
+      /* 关键说明：旧约束拦着的这部分不影响使用 ——
+         前台与图片服务都已按「暂存授权」放行，被拒的只是「镜像回数据库」这一步。 */
+      html += '<p class="pa-bad">数据库那条「专区允许值」的旧约束还在，它只挡「把授权再抄一份进数据库」这一步。<br>' +
+        '<b>不影响使用</b>：前台和图片服务都已按上面这份暂存授权放行，管理员现在就能正常传图、后台也能看到图。<br>' +
+        '想让数据库也同步（可选）：执行仓库里 <b>sql/patch_20261110A_zone_constraint.sql</b>（只删这条校验，不动数据），再点一次「一键修复」即可。' +
+        (rr.stoppedEarly ? '<br>（已自动停止后续尝试，避免刷出一屏报错）' : '') + '</p>';
+    }
     const bad = rr.blocked.concat(rr.failed.map(x => Object.assign({}, x, { reason: "（" + x.reason + "）" })));
     if (bad.length) {
       html += '<p class="pa-bad">这些还是写不进授权表：授权表的「专区」列上有一条旧的允许值约束（或缺少列）。' +

@@ -23,7 +23,7 @@
      规则：所有人的图都能看见；但删除 / 改期次 / 批量清理只能对自己传的那批做，超管不限。
      归属记在 site_settings.frontend_dims.upload_owners 里（按批次 ID），不改表结构、不用跑 SQL。
      模块没加载时按旧行为放行，避免一次脚本加载失败让整个面板不能操作。 */
-  /* 20261115A · 长列表分页
+  /* 20261115B · 长列表分页
      期次清单与已上传记录一行一条，期次越积越多会把整页拉得很长。
      这里给两个列表各一个分页 key，列表本身的排序 / 取数口径一点没动，只是少画几行。
      选中态按批次 ID 记在 rankBatchSel 里，翻页不会丢——「删除选中」能一次覆盖跨页选中的项。 */
@@ -1530,7 +1530,7 @@
     if (uoOk() && window.UO.isSuper()) bar.appendChild(adoptBtn);
     host.insertBefore(bar, box);
 
-    /* 20261115A：列表已分页，选中的批次可能不在当前页 —— 选中态由列表侧（bar._picked）统一给，
+    /* 20261115B：列表已分页，选中的批次可能不在当前页 —— 选中态由列表侧（bar._picked）统一给，
        拿不到时才退回「只看当前页 DOM」的老做法。 */
     const picked = () => (typeof bar._picked === "function" ? bar._picked()
       : Array.from(box.querySelectorAll(".rank-batch-pick:checked")).map((el) => el.value));
@@ -1583,7 +1583,7 @@
     };
     selAll.onclick = () => {
       /* 20261113L：只勾「自己能改的」，别人的批次不给勾上，避免批量删除时才发现删不掉
-         20261115A：列表分页后，全选覆盖所有页（不是只勾当前页），所以勾完要重画当前页 */
+         20261115B：列表分页后，全选覆盖所有页（不是只勾当前页），所以勾完要重画当前页 */
       const can = pickable();
       if (!can.length) return;
       const ids = picked();
@@ -1972,7 +1972,7 @@
     checkRankTitleColumn(box);
     if (!list.length) {
       box.innerHTML = '<div class="rkadm-empty">还没有上传记录。若类目仍存在，点上方「类目清理…」查看并删除。</div>';
-      /* 20261115A：清空后不能留着上一次的选中态，否则「删除选中」会指向已经不存在的批次 */
+      /* 20261115B：清空后不能留着上一次的选中态，否则「删除选中」会指向已经不存在的批次 */
       rankBatchIds = [];
       rankBatchSel.clear();
       const tb = document.getElementById("rank-batch-toolbar") || ensureBatchToolbar(box);
@@ -1986,7 +1986,7 @@
     }
     const bar = ensureBatchToolbar(box);
     if (bar) bar.style.display = "";
-    /* 20261115A：批次越积越多，改成按页画。
+    /* 20261115B：批次越积越多，改成按页画。
        选中态存在 rankBatchSel 里（按批次 ID），翻页不丢；数据刷新时把已经不存在的 ID 清掉。 */
     rankBatchIds = list.map((b) => String(b.id));
     const alive = new Set(rankBatchIds);
@@ -2083,7 +2083,7 @@
       box.innerHTML = '<div class="rkadm-empty">还没有期次。上传榜单表格后会自动生成（如 W41）。</div>';
       return;
     }
-    /* 20261115A：期次多了只画当前页，页脚给出页码与「每页条数」 */
+    /* 20261115B：期次多了只画当前页，页脚给出页码与「每页条数」 */
     const Pg = pgSlices();
     const pg = Pg ? Pg.slice(rankPeriods, PG_PERIODS)
       : { items: rankPeriods, page: 1, pages: 1, size: 0, total: rankPeriods.length, from: 1, to: rankPeriods.length };

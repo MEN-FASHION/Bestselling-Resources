@@ -1281,7 +1281,7 @@ function smartRenderPending() {
       let mineCats = [];
       let permReadOk = true;
       try { mineCats = await SB.myZonePermissions("visual"); } catch (e) { mineCats = []; permReadOk = false; }
-      /* 20261115A：以前「读到空授权」被当成「不限制」直接放行，
+      /* 20261115B：以前「读到空授权」被当成「不限制」直接放行，
          结果图片服务照样 403，管理员只看到一句「失败 N」。
          现在按真实的鉴权口径处理：没有任何类目授权 → 明确告知，不再放行一次必然失败的请求。 */
       if (!mineCats.length) {
@@ -1331,7 +1331,7 @@ function smartRenderPending() {
         const file = files[i];
         const cleanName = file.name.replace(/[^\w.\-]/g, "_");
         if (existingNames.has(cleanName)) { results[i] = { ok: false, dup: true }; done++; setBar(); continue; }
-        /* 20261115A：分清「没存进图床」和「存进去了但清单写不进」——
+        /* 20261115B：分清「没存进图床」和「存进去了但清单写不进」——
            后者是管理员「传了图后台却看不到」的真正原因，必须告诉他。 */
         let path = "";
         try {
@@ -1342,7 +1342,7 @@ function smartRenderPending() {
           done++; setBar(); continue;
         }
         try {
-          await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "" });
+          await SB.addImageRecord({ category: cat, name: cleanName, path, url: file._url || "", zone: "visual" });
           existingNames.add(cleanName);
           results[i] = { ok: true };
         } catch (e) {
@@ -1369,7 +1369,7 @@ function smartRenderPending() {
           uniq.slice(0, 4).map(x => "· " + String(x).replace(/</g, "&lt;")).join("<br>") +
           (uniq.length > 4 ? '<br>· …另有 ' + (uniq.length - 4) + ' 种原因' : "") +
           (orphan ? '<br><b>注意：</b>其中 ' + orphan + ' 张其实已经上传成功，只是没登记进图片清单，所以后台看不到。修好权限后把同一批再传一次即可（同名会自动跳过已成功的）。' : "") +
-          (/没有权限|未授权|403/.test(uniq.join(" ")) ? '<br><b>怎么修：</b>让超管打开「超管权限 → 权限管理 → 授权体检 / 修复」，把类目授权真正写进数据库；或者给这个账号勾上「' + (cat || "") + '」这个可管理类目。' : "");
+          (/没有权限|未授权|403/.test(uniq.join(" ")) ? '<br><b>怎么修：</b>让超管打开「超管权限 → 权限管理 → 授权体检 / 修复」：先看面板顶部那行「图片服务」，若显示旧版本，必须在 Cloudflare 重新部署图片服务（只推 GitHub 不会更新它）；再点「一键修复」把类目授权写进去。也可以直接给这个账号勾上「' + (cat || "") + '」这个可管理类目。' : "");
       } else {
         failBox.classList.add("hidden");
         failBox.innerHTML = "";

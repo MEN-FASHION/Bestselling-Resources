@@ -1173,7 +1173,7 @@
         (left.length ? "，还剩 " + left.length + " 张待传" : "");
       say(k, line);
       if (res.failed.length) {
-        /* 20261115A：失败必须说清原因（403 未授权 / 401 登录失效 / 写入被拒），
+        /* 20261115B：失败必须说清原因（403 未授权 / 401 登录失效 / 写入被拒），
            否则管理员只看到「失败 3 张」，无从判断是权限还是网络。 */
         var r0 = ((res.failed.filter(function (x) { return x && x.reason; })[0]) || {}).reason || "";
         say(k, line + (r0 ? "｜首个原因：" + r0 : ""));

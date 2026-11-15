@@ -20,7 +20,7 @@
   /* 20261113L · 上传归属（同趋势上升榜）
      看得见所有人传的，改只能改自己传的；超管不限；本功能上线前的数据=历史数据，仅超管可改。 */
   let rankPeriodGate = {};
-  /* 20261115A · 长列表分页（与趋势上升榜同一套 Pager，页码各自独立）
+  /* 20261115B · 长列表分页（与趋势上升榜同一套 Pager，页码各自独立）
      期次清单与上传记录按月累积会很长，改成按页画；取数口径一点没动。 */
   const PG_PERIODS = "rhythm.periods";
   const PG_BATCHES = "rhythm.batches";
@@ -1023,7 +1023,7 @@
 
     if (!box) return;
     if (!list.length) { box.innerHTML = '<div class="rkadm-empty">还没有上传记录</div>'; return; }
-    /* 20261115A：上传记录按月累积会很长，改成按页画 */
+    /* 20261115B：上传记录按月累积会很长，改成按页画 */
     const Pg = (typeof window !== "undefined" && window.Pager) ? window.Pager : null;
     let drawRows = () => {};
     const drawBatches = () => {
@@ -1098,7 +1098,7 @@
       box.innerHTML = '<div class="rkadm-empty">还没有期次。上传榜单表格后会自动生成（如 W41）。</div>';
       return;
     }
-    /* 20261115A：月份期次也会越积越多（每月每类目一批），按页画，页脚给页码与「每页条数」 */
+    /* 20261115B：月份期次也会越积越多（每月每类目一批），按页画，页脚给页码与「每页条数」 */
     const Pg = (typeof window !== "undefined" && window.Pager) ? window.Pager : null;
     const pg = Pg ? Pg.slice(rankPeriods, PG_PERIODS)
       : { items: rankPeriods, page: 1, pages: 1, size: 0, total: rankPeriods.length, from: 1, to: rankPeriods.length };

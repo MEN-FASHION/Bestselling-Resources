@@ -141,7 +141,7 @@ const SB = (() => {
     };
     let sess = await readSess();
     if (isStale(sess)) {
-      /* 20261115A：并发上传时多路请求会同时发现令牌过期。
+      /* 20261115B：并发上传时多路请求会同时发现令牌过期。
          Supabase 的刷新令牌只能用一次，各刷各的会有几路拿到旧令牌 → 401
          （控制台表现为「图片服务 401」，表现出来是「传图报错 / 清单读不到」）。
          这里做成单飞：同一时刻只允许一次续期，其余请求等同一个结果。 */
@@ -161,7 +161,7 @@ const SB = (() => {
     return await freshAccessToken();
   }
 
-  /* 20261115A：访问图片服务（Worker）的统一入口。
+  /* 20261115B：访问图片服务（Worker）的统一入口。
      遇到 401（令牌过期 / 并发续期抢跑）先强制续期再重试一次，
      避免一次性的令牌问题被当成「没有权限」直接判失败。 */
   async function workerFetch(pathAndQuery, init) {
@@ -780,7 +780,7 @@ const SB = (() => {
       } catch (e) { }
       return 0;
     },
-    async addImageRecord({ category, name, path, url }) {
+    async addImageRecord({ category, name, path, url, zone }) {
       const token = await currentToken();
       const s = await client.auth.getSession();
       /* 20261102E：没带外链时用 path 拼出可用地址再入库，
@@ -788,12 +788,30 @@ const SB = (() => {
       const base = String((window.CONFIG && window.CONFIG.WORKER_URL) || "").replace(/\/$/, "");
       const given = (url || "").trim();
       const derived = given || (base && path ? base + "/" + String(path).replace(/^\//, "") : "");
+      const uid = s?.data?.session?.user?.id || null;
       const { error } = await client.from("images").insert({
         category, name, path,
         url: derived || null,
-        uploaded_by: s?.data?.session?.user?.id || null,
+        uploaded_by: uid,
       });
-      if (error) throw new Error(error.message || "写入失败");
+      if (!error) return;
+      /* 20261115B：浏览器直写被数据库拒收（行级策略 / 缺列 / 400）时，
+         改由图片服务用服务端密钥登记 —— 图片已经在对象存储里了，
+         不能因为这一步失败就让「后台看不到这张图」。
+         服务端登记同样会校验该用户对该专区该类目的权限。 */
+      try {
+        const res = await workerFetch("/admin/add-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category, name, path, url: derived || "", zone: zone || "visual" }),
+        });
+        if (res.ok) return;
+        const j = await res.json().catch(() => ({}));
+        throw new Error(workerErrText(res, j, "登记清单失败"));
+      } catch (e2) {
+        // 两条路都失败：把数据库那句原始原因带上，便于定位是哪一条策略/缺列
+        throw new Error((e2 && e2.message) ? e2.message : (error.message || "写入失败"));
+      }
     },
     async removeImageRecord(id) {
       const { error } = await client.from("images").delete().eq("id", id);
@@ -2162,7 +2180,7 @@ async removeTrendRecord(id) {
       return code === "23514" || code === "PGRST204" || code === "42501" ||
         /check constraint|violates check|schema cache|does not exist|permission denied for table/i.test(msg);
     },
-    /* ---------- 20261115A · 类目授权体检与修复 ----------
+    /* ---------- 20261115B · 类目授权体检与修复 ----------
        背景：保存类目授权时，如果数据库拒绝（专区列上的 CHECK 约束 / 缺列 / RLS），
        旧版会把整份授权改存到「站点设置」字典里，后台页面按字典放行，
        但**图片服务（守门员）和数据库 RLS 只认 zone_permissions 表**。
@@ -2205,24 +2223,49 @@ async removeTrendRecord(id) {
     async repairPermDict(onStep) {
       const snap = await this.permDictSnapshot();
       const users = Object.keys(snap);
-      const result = { fixed: [], blocked: [], failed: [], total: 0 };
+      const result = { fixed: [], blocked: [], failed: [], total: 0, needsSql: false, stoppedEarly: false };
       for (const uid of users) {
         const zones = Object.keys(snap[uid] || {});
         for (const zone of zones) {
           const cats = snap[uid][zone] || [];
           result.total++;
+          if (result.needsSql) {
+            /* 20261115B：数据库那条「专区允许值」旧约束一旦拦下一条，后面每条都会一样被拦。
+               继续硬写只会刷出一屏 400、把控制台和网络面板全糊住，没有任何意义。
+               这里直接记下来、跳过早停，把控制权交给用户（要不要解约束由他决定）。 */
+            result.stoppedEarly = true;
+            continue;
+          }
           try {
             const r = await this.setUserPermissions(uid, zone, cats);
             if (r && r.via === "table") result.fixed.push({ uid, zone, n: cats.length });
-            else result.blocked.push({ uid, zone, n: cats.length, reason: (r && r.reason) || "" });
+            else {
+              result.blocked.push({ uid, zone, n: cats.length, reason: (r && r.reason) || "" });
+              if (/check constraint|violates check|23514|schema cache|does not exist/i.test(String((r && r.reason) || ""))) {
+                result.needsSql = true;
+              }
+            }
           } catch (e) {
-            result.failed.push({ uid, zone, n: cats.length, reason: (e && e.message) || "" });
+            const msg = String((e && e.message) || "");
+            result.failed.push({ uid, zone, n: cats.length, reason: msg });
+            if (/check constraint|violates check|23514|schema cache|does not exist/i.test(msg)) result.needsSql = true;
           }
           if (typeof onStep === "function") { try { onStep(result); } catch (e0) {} }
         }
       }
       this._permDict = null; this._permDictAt = 0;   // 让下次读取重新拉一遍
       return result;
+    },
+    // 图片服务的版本与能力自述（用于判断「这次到底有没有把图片服务重新部署」）
+    async workerVersion() {
+      try {
+        const res = await workerFetch("/ver", { method: "GET" });
+        if (!res.ok) return { ok: false, status: res.status };
+        const j = await res.json().catch(() => ({}));
+        return { ok: true, build: String(j.build || ""), dictAuth: !!j.dictAuth };
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || "") };
+      }
     },
     // 读取某管理员被授权的类目名列表（按专区；不传 zone 则取全部专区并集）
     async listUserPermissions(userId, zone) {
