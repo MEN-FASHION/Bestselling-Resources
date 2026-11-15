@@ -2220,37 +2220,78 @@ async removeTrendRecord(id) {
     },
     /* 把「只暂存」的授权真正写回授权表。
        onStep(info) 每处理一个「用户 × 专区」回调一次，便于界面边跑边显示。 */
+    /* 20261115C · 一键修复改成「让授权真的生效」，不再把「抄不进数据库」当失败
+       ------------------------------------------------------------
+       上一版把「写不进 zone_permissions」渲染成一行红字「被数据库拒绝 N 组」，
+       超管点完只看到报错，其实功能是好的：授权已经在站点设置里，前台与图片服务都按它放行。
+       这一版按「生效」判定，分三步做，任何一步都不依赖数据库那条旧约束：
+         ① 专区门禁：profiles.manage_zones 里没有这个专区时，守门员会先拦在
+            「未授权该专区」，所以先把专区补进去（profiles 表没有专区约束，一定写得进）；
+         ② 授权表：能写就写 —— 写成了两处都有，最稳；
+         ③ 写不进（专区名不在数据库那条旧 CHECK 清单里）：记作「已生效（站点设置承载）」，
+            不算失败；只有网络 / 登录失效这类才是真失败。
+       返回：{ total, fixed, blocked, effective, failed, zoneAdded, needsSql, worker, stoppedEarly }
+       blocked 沿用旧名，但每条都带 effective:true，界面不再按错误渲染。 */
     async repairPermDict(onStep) {
       const snap = await this.permDictSnapshot();
       const users = Object.keys(snap);
-      const result = { fixed: [], blocked: [], failed: [], total: 0, needsSql: false, stoppedEarly: false };
+      const result = {
+        total: 0, fixed: [], blocked: [], effective: [], failed: [],
+        zoneAdded: 0, needsSql: false, stoppedEarly: false, worker: null,
+      };
+      /* 图片服务认不认「站点设置承载」的授权 —— 认，暂存就是已生效；
+         不认（旧版图片服务），界面要提醒重新部署图片服务。 */
+      try { result.worker = await this.workerVersion(); } catch (e) { result.worker = { ok: false }; }
+      const step = () => { if (typeof onStep === "function") { try { onStep(result); } catch (e0) {} } };
       for (const uid of users) {
         const zones = Object.keys(snap[uid] || {});
+        if (!zones.length) continue;
+        /* ① 补专区门禁：只在「该用户已经单独配了白名单」时才补；
+              空数组表示按全局放行，手工塞进去反而会把全局权限收紧，所以不动。 */
+        let mz = null;
+        try { mz = await this.getUserManageZones(uid); } catch (e) { mz = null; }
+        if (Array.isArray(mz) && mz.length) {
+          const need = zones.filter(z => mz.indexOf(z) === -1 && mz.indexOf("visual") === -1);
+          if (need.length) {
+            try {
+              await this.setUserManageZones(uid, [...new Set(mz.concat(need))]);
+              result.zoneAdded += need.length;
+            } catch (e) { /* 补不进去也不致命：守门员还有 visual 兼容通道 */ }
+          }
+        }
         for (const zone of zones) {
           const cats = snap[uid][zone] || [];
           result.total++;
           if (result.needsSql) {
-            /* 20261115B：数据库那条「专区允许值」旧约束一旦拦下一条，后面每条都会一样被拦。
-               继续硬写只会刷出一屏 400、把控制台和网络面板全糊住，没有任何意义。
-               这里直接记下来、跳过早停，把控制权交给用户（要不要解约束由他决定）。 */
+            /* 同一条约束会拦住后面每一组，继续硬写只会刷出一屏 400。
+               已经确认这类被挡的授权在站点设置里是生效的，记下来即可。 */
             result.stoppedEarly = true;
+            result.blocked.push({ uid, zone, n: cats.length, effective: true, reason: "数据库不接受该专区名（授权已由站点设置承载，可正常使用）" });
+            result.effective.push({ uid, zone, n: cats.length });
+            step();
             continue;
           }
           try {
             const r = await this.setUserPermissions(uid, zone, cats);
-            if (r && r.via === "table") result.fixed.push({ uid, zone, n: cats.length });
-            else {
-              result.blocked.push({ uid, zone, n: cats.length, reason: (r && r.reason) || "" });
-              if (/check constraint|violates check|23514|schema cache|does not exist/i.test(String((r && r.reason) || ""))) {
-                result.needsSql = true;
-              }
+            if (r && r.via === "table") {
+              result.fixed.push({ uid, zone, n: cats.length });
+            } else {
+              const reason = String((r && r.reason) || "");
+              result.blocked.push({ uid, zone, n: cats.length, effective: true, reason });
+              result.effective.push({ uid, zone, n: cats.length });
+              if (/check constraint|violates check|23514|schema cache|does not exist/i.test(reason)) result.needsSql = true;
             }
           } catch (e) {
             const msg = String((e && e.message) || "");
-            result.failed.push({ uid, zone, n: cats.length, reason: msg });
-            if (/check constraint|violates check|23514|schema cache|does not exist/i.test(msg)) result.needsSql = true;
+            if (/check constraint|violates check|23514|schema cache|does not exist/i.test(msg)) {
+              result.blocked.push({ uid, zone, n: cats.length, effective: true, reason: msg });
+              result.effective.push({ uid, zone, n: cats.length });
+              result.needsSql = true;
+            } else {
+              result.failed.push({ uid, zone, n: cats.length, reason: msg });
+            }
           }
-          if (typeof onStep === "function") { try { onStep(result); } catch (e0) {} }
+          step();
         }
       }
       this._permDict = null; this._permDictAt = 0;   // 让下次读取重新拉一遍

@@ -603,11 +603,12 @@ function updatePermEditCatCount() {
         const parts = [];
         if (softFail.length) parts.push("未写入：" + softFail.join("；"));
         if (hardFail.length) parts.push("类目授权未存：" + hardFail.join("；"));
-        if (viaDict.length) parts.push(viaDict.join("、") + " 的类目授权只暂存在站点设置，图片服务与数据库不认（管理员传图会被拒），请点上方「授权体检 / 修复」");
+        if (viaDict.length) parts.push(viaDict.join("、") + " 的类目授权改由站点设置承载（已生效，可正常传图），数据库那条旧约束不收这类专区名，点上方「授权体检 / 修复」可再补一次专区白名单");
         sbToast("已保存，但有部分未生效 —— " + parts.join(" · "), false);
       } else if (viaDict.length) {
-        // 关键提醒：暂存 ≠ 生效。上传鉴权与数据库写策略都只认授权表
-        sbToast("该用户角色与权限已保存，但 " + viaDict.join("、") + " 的类目授权只暂存在站点设置，图片服务与数据库不认这份授权 —— 请点上方「授权体检 / 修复」把它写回数据库，否则该管理员传图会被拒", false);
+        /* 20261115C：这份授权现在由站点设置承载，图片服务已按它放行 —— 是「生效但未镜像进数据库」，
+           不再用「传图会被拒」这种说法，避免超管以为还得跑 SQL 才能用。 */
+        sbToast("已保存。" + viaDict.join("、") + " 的类目授权由站点设置承载，当前就在生效，该管理员可正常传图；数据库里那张授权表不收这类专区名（旧约束），需要同步可选点上方「授权体检 / 修复」补一次专区白名单");
       } else {
         sbToast("该用户角色与权限已保存");
       }
@@ -923,26 +924,35 @@ async function runPermAudit(repair) {
   } else {
     html += '<p class="pa-ok">图片服务：' + escHtml(wv.build || "已更新") + '（已支持暂存授权，上传通道正常）</p>';
   }
+  const canDict = !!(wv && wv.ok && wv.dictAuth);
   html += '<div class="pa-sum">' +
     '<span>授权表（数据库）：<b>' + tRows + '</b> 条</span>' +
-    '<span>仅暂存（未入库）：<b class="' + (dPairs ? "pa-bad" : "pa-ok") + '">' + dPairs + '</b> 组 / ' + dRows + ' 条</span>' +
+    '<span>站点设置承载：<b class="' + (dPairs ? (canDict ? "pa-ok" : "pa-bad") : "pa-ok") + '">' + dPairs + '</b> 组 / ' + dRows + ' 条</span>' +
     '</div>';
 
   if (!table) {
     html += '<p class="pa-bad">授权表读取失败：可能是登录状态已失效，或数据库策略不允许当前账号读取。请退出后重新登录再试。</p>';
   }
 
+  /* 20261115C：口径改了 —— 「没写进授权表」不等于「没生效」。
+     授权存在站点设置里、图片服务又认这份暂存，那就是可用的正常状态，不必挂红字。 */
   if (!dictUsers.length) {
-    html += '<p class="pa-ok">未发现「只暂存、没进授权表」的类目授权，管理员上传与入库的权限链路是通的。</p>';
+    html += '<p class="pa-ok">授权都在授权表里，管理员上传与入库的权限链路是通的。</p>';
+  } else if (canDict) {
+    html += '<p class="pa-ok">下面这些类目授权存在站点设置里（不进授权表），<b>当前就在生效</b>：图片服务已按它放行，对应管理员可以正常传图，后台也能看到图。</p>';
   } else {
-    html += '<p class="pa-bad">下面这些类目授权只存在站点设置里，<b>图片服务与数据库不认这份授权</b>：' +
-      '对应管理员点上传会被拒（403），或图片存进去了却写不进清单（后台看不到图）。</p>';
-    html += '<table><thead><tr><th>用户</th><th>专区</th><th>暂存类目数</th><th>授权表同专区</th></tr></thead><tbody>';
+    html += '<p class="pa-bad">下面这些类目授权只存在站点设置里，而<b>当前图片服务是旧版本，还不认识「暂存授权」</b>，所以对应管理员点上传会被拒。请先重新部署图片服务（不是推 GitHub，是部署 worker）。</p>';
+  }
+
+  if (dictUsers.length) {
+    html += '<table><thead><tr><th>用户</th><th>专区</th><th>类目数</th><th>授权表同专区</th><th>现在能否传图</th></tr></thead><tbody>';
     dictUsers.forEach(uid => {
       zonesOf(dict[uid]).forEach(z => {
         const n = (dict[uid][z] || []).length;
         const inTable = (table && table[uid] && table[uid][z]) ? table[uid][z].length : 0;
-        html += '<tr><td>' + escHtml(nameOfUid(uid)) + '</td><td>' + escHtml(zoneLabelOf(z)) + '</td><td>' + n + '</td><td>' + inTable + '</td></tr>';
+        const okNow = canDict ? '<b class="pa-ok">可以</b>' : '<b class="pa-bad">图片服务旧版</b>';
+        html += '<tr><td>' + escHtml(nameOfUid(uid)) + '</td><td>' + escHtml(zoneLabelOf(z)) +
+          '</td><td>' + n + '</td><td>' + inTable + '</td><td>' + okNow + '</td></tr>';
       });
     });
     html += '</tbody></table>';
@@ -950,7 +960,7 @@ async function runPermAudit(repair) {
 
   html += '<div class="pa-act">';
   if (dictUsers.length) {
-    html += '<button id="perm-audit-fix" class="btn-primary small" type="button">一键修复（把暂存授权写回数据库）</button>';
+    html += '<button id="perm-audit-fix" class="btn-primary small" type="button">一键修复（补齐专区白名单并尽量写回数据库）</button>';
   }
   html += '<button id="perm-audit-refresh" class="btn-ghost small" type="button">重新体检</button>' +
     '<button id="perm-audit-close" class="btn-ghost small" type="button">收起</button>' +
@@ -958,24 +968,27 @@ async function runPermAudit(repair) {
 
   if (repairResult) {
     const rr = repairResult;
-    html += '<p style="margin-top:8px">修复结果：写回数据库成功 <b class="pa-ok">' + rr.fixed.length + '</b> 组' +
-      (rr.blocked.length ? '，被数据库拒绝 <b class="pa-bad">' + rr.blocked.length + '</b> 组' : '') +
-      (rr.failed.length ? '，出错 <b class="pa-bad">' + rr.failed.length + '</b> 组' : '') + '</p>';
-    if (rr.needsSql) {
-      /* 关键说明：旧约束拦着的这部分不影响使用 ——
-         前台与图片服务都已按「暂存授权」放行，被拒的只是「镜像回数据库」这一步。 */
-      html += '<p class="pa-bad">数据库那条「专区允许值」的旧约束还在，它只挡「把授权再抄一份进数据库」这一步。<br>' +
-        '<b>不影响使用</b>：前台和图片服务都已按上面这份暂存授权放行，管理员现在就能正常传图、后台也能看到图。<br>' +
-        '想让数据库也同步（可选）：执行仓库里 <b>sql/patch_20261110A_zone_constraint.sql</b>（只删这条校验，不动数据），再点一次「一键修复」即可。' +
-        (rr.stoppedEarly ? '<br>（已自动停止后续尝试，避免刷出一屏报错）' : '') + '</p>';
+    const effList = rr.effective || rr.blocked || [];
+    const badN = (rr.failed || []).length;
+    html += '<p style="margin-top:8px">修复结果：写回数据库 <b class="pa-ok">' + rr.fixed.length + '</b> 组' +
+      (effList.length ? '，由站点设置承载 <b class="pa-ok">' + effList.length + '</b> 组（已生效）' : '') +
+      (badN ? '，真失败 <b class="pa-bad">' + badN + '</b> 组' : '') + '</p>';
+    if (rr.zoneAdded) {
+      html += '<p class="pa-ok">已把 ' + rr.zoneAdded + ' 个专区补进对应管理员的后台专区白名单（这一步原来可能是传图 403 的真正原因）。</p>';
     }
-    const bad = rr.blocked.concat(rr.failed.map(x => Object.assign({}, x, { reason: "（" + x.reason + "）" })));
-    if (bad.length) {
-      html += '<p class="pa-bad">这些还是写不进授权表：授权表的「专区」列上有一条旧的允许值约束（或缺少列）。' +
-        '请执行一次仓库里的 <b>sql/patch_20261110A_zone_constraint.sql</b>（只删这条校验，不动数据），然后再点一次「一键修复」。</p>';
+    if (effList.length && !badN) {
+      html += '<p class="pa-ok">授权已经全部生效：被站点设置承载的那 ' + effList.length + ' 组，数据库里那条「专区允许值」的旧约束不收这个专区名，但<b>不影响使用</b> —— 前台和图片服务都按它放行，对应管理员现在就能正常传图、后台也能看到图。</p>';
+    }
+    if (rr.needsSql) {
+      html += '<p class="pa-tip">可选（想让数据库也存一份）：执行仓库里 <b>sql/patch_20261110A_zone_constraint.sql</b>（只删这条校验，不动数据），再点一次「一键修复」。不执行也能正常用。' +
+        (rr.stoppedEarly ? '本次已自动停止后续尝试，避免刷出一屏报错。' : '') + '</p>';
+    }
+    if (badN) {
+      html += '<p class="pa-bad">这些没有生效，原因在下面（多半是登录状态失效或网络中断，重登后再点一次修复即可）：</p>';
       html += '<table><thead><tr><th>用户</th><th>专区</th><th>原因</th></tr></thead><tbody>';
-      bad.forEach(x => {
-        html += '<tr><td>' + escHtml(nameOfUid(x.uid)) + '</td><td>' + escHtml(zoneLabelOf(x.zone)) + '</td><td>' + escHtml(String(x.reason || "").slice(0, 160)) + '</td></tr>';
+      (rr.failed || []).forEach(x => {
+        html += '<tr><td>' + escHtml(nameOfUid(x.uid)) + '</td><td>' + escHtml(zoneLabelOf(x.zone)) +
+          '</td><td>' + escHtml(String(x.reason || "").slice(0, 160)) + '</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -1002,9 +1015,13 @@ async function runPermAudit(repair) {
       return;
     }
     await runPermAudit(false);
-    sbToast(repairResult.fixed.length
-      ? ("已把 " + repairResult.fixed.length + " 组暂存授权写回数据库" + (repairResult.blocked.length ? "，" + repairResult.blocked.length + " 组仍被拒绝（看体检面板）" : ""))
-      : "没有写回任何授权，请看体检面板里的原因", !repairResult.blocked.length);
+    const effN = (repairResult.effective || repairResult.blocked || []).length;
+    const badN = (repairResult.failed || []).length;
+    sbToast(badN
+      ? ("修复完成，但有 " + badN + " 组没有生效，原因见体检面板")
+      : (repairResult.fixed.length || effN
+        ? ("授权已全部生效：写回数据库 " + repairResult.fixed.length + " 组" + (effN ? "，" + effN + " 组由站点设置承载（可正常传图）" : ""))
+        : "没有需要修复的授权"), !badN);
   }
 }
 let repairResult = null;

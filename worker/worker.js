@@ -171,7 +171,7 @@ async function adminDeleteAuthUser(env, uid) {
 }
 
 // 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
-const WORKER_BUILD = "20261115B";
+const WORKER_BUILD = "20261115C";
 
 // CORS 头
 const CORS = {
@@ -183,16 +183,48 @@ const CORS = {
 
 async function handleRequest(request, env) {
   const url = new URL(request.url);
+  const method = request.method;
   // 关键修复：浏览器请求时中文类目会被 URL 编码，这里必须还原成本地字符再查 R2（否则中文类目图片 404）
+  /* 20261115C · 致命顺序缺陷修复：
+     上一版把 /ver 与 /admin/add-image 两段处理写在了「方法/路径还没解析」的位置，
+     里面引用的 method 在那一刻尚处于暂时性死区（尚未声明），一进函数就抛异常，
+     图片服务的所有请求（含正常上传、看图）全部变成 500。
+     规则：先解析 method/path，再挂路由。下面任何新增路由都必须在这两行之后。 */
   let path;
   try {
+    path = decodeURIComponent(url.pathname).replace(/^\//, "");
+  } catch (e) {
+    path = url.pathname.replace(/^\//, "");
+  }
+
+  // 预检
+  if (method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
   /* ---------- GET /ver：图片服务自己的版本号 ----------
      前端用它判断「这次到底有没有把图片服务重新部署」。案板上的坑：
      站点推 GitHub 只部署前台静态页，图片服务要单独部署；
-     没部署时前台已经是新版、图片服务还是旧逻辑，排查会一直在原地打转。 */
+     没部署时前台已经是新版、图片服务还是旧逻辑，排查会一直在原地打转。
+     注意：本段必须在 method / path 解析之后（20261115C 修复过这里的位置）。 */
   if (method === "GET" && (path === "ver" || path === "version")) {
     return json({ ok: true, build: WORKER_BUILD, dictAuth: true }, 200, CORS);
   }
+  // 根路径也给一份自述：浏览器直接打开域名就能看到版本，不必记具体路径
+  if (method === "GET" && path === "") {
+    return json({
+      ok: true,
+      service: "TREND BANK 图片服务",
+      build: WORKER_BUILD,
+      dictAuth: true,
+      routes: ["/ver", "/geo", "/uploads/{zone}/{category}/{file}", "/upload", "/admin/add-image"],
+    }, 200, CORS);
+  }
+
+  // 登录令牌：优先 Authorization，其次 query 的 token（<img> 无法带头）
+  const auth = request.headers.get("Authorization") || "";
+  let token = auth.startsWith("Bearer ") ? auth.slice(7) : (url.searchParams.get("token") || "");
+  const userId = await getUserId(token, env);
 
   /* ---------- POST /admin/add-image：登记一条图片清单（服务端写，绕开行级策略）----------
      故障背景：图片已经存进对象存储，但浏览器直接往数据库插这条记录被拒（400/401），
@@ -200,24 +232,24 @@ async function handleRequest(request, env) {
      鉴权与直接上传一致：必须是管理员，且对该专区、该类目有权限。 */
   if (method === "POST" && path === "admin/add-image") {
     if (!userId) return json({ error: "未登录" }, 401, CORS);
-    const role = await getRole(userId, token, env);
-    if (!isAdminRole(role)) return json({ error: "无管理员权限" }, 403, CORS);
-    const body = await request.json().catch(() => ({}));
-    const category = String(body.category || "").trim();
-    const p = String(body.path || "").trim();
-    const zone = String(body.zone || "visual").trim() || "visual";
-    if (!category || !p) return json({ error: "缺少类目或路径" }, 400, CORS);
-    if (!(await canManageZoneCat(userId, role, token, env, zone, category))) {
-      return json({ error: "未授权该分类（" + category + " / " + zone + "）" }, 403, CORS);
+    const roleA = await getRole(userId, token, env);
+    if (!isAdminRole(roleA)) return json({ error: "无管理员权限" }, 403, CORS);
+    const bodyA = await request.json().catch(() => ({}));
+    const categoryA = String(bodyA.category || "").trim();
+    const pathA = String(bodyA.path || "").trim();
+    const zoneA = String(bodyA.zone || "visual").trim() || "visual";
+    if (!categoryA || !pathA) return json({ error: "缺少类目或路径" }, 400, CORS);
+    if (!(await canManageZoneCat(userId, roleA, token, env, zoneA, categoryA))) {
+      return json({ error: "未授权该分类（" + categoryA + " / " + zoneA + "）" }, 403, CORS);
     }
-    const row = {
-      category,
-      name: String(body.name || p.split("/").pop() || "").trim(),
-      path: p,
-      url: body.url || null,
+    const rowA = {
+      category: categoryA,
+      name: String(bodyA.name || pathA.split("/").pop() || "").trim(),
+      path: pathA,
+      url: bodyA.url || null,
       uploaded_by: userId,
     };
-    const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/images`, {
+    const insA = await fetch(`${env.SUPABASE_URL}/rest/v1/images`, {
       method: "POST",
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -225,31 +257,14 @@ async function handleRequest(request, env) {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify(row),
+      body: JSON.stringify(rowA),
     });
-    if (!ins.ok) {
-      const t = await ins.text().catch(() => "");
-      return json({ error: "写入清单失败：" + (t || ins.status) }, 500, CORS);
+    if (!insA.ok) {
+      const tA = await insA.text().catch(() => "");
+      return json({ error: "写入清单失败：" + (tA || insA.status) }, 500, CORS);
     }
     return json({ ok: true }, 200, CORS);
   }
-
-
-    path = decodeURIComponent(url.pathname).replace(/^\//, "");
-  } catch (e) {
-    path = url.pathname.replace(/^\//, "");
-  }
-  const method = request.method;
-
-  // 预检
-  if (method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
-
-  // 登录令牌：优先 Authorization，其次 query 的 token（<img> 无法带头）
-  const auth = request.headers.get("Authorization") || "";
-  let token = auth.startsWith("Bearer ") ? auth.slice(7) : (url.searchParams.get("token") || "");
-  const userId = await getUserId(token, env);
 
   // ---------- 0. GET /geo：返回访问者的网络出口信息（国家 / 省州 / 城市 / IP）----------
   // 供前台「数据看板」记录用户来源地区。只返回调用者自己的信息，不查库、不读他人数据。

@@ -25,7 +25,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261115B";
+  var BUILD = "20261115C";
 
   /* 各专区的按钮挂点（工具条）与取景范围（内容区） */
   var ZONES = {
