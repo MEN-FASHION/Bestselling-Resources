@@ -26,7 +26,7 @@ const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("  ✗ " + 
 
 /* ================= 一、代码层硬约束 ================= */
 console.log("一、取数结构");
-ok(/Promise\.all\(\[pCh, pCfg, pRk\]\)/.test(SRC), "三条取数必须并行（Promise.all）发出，不能串行等待");
+ok(/Promise\.all\(\[pCh, pCfg, pRk(, pReg)?\]\)/.test(SRC), "取数必须并行（Promise.all）发出，不能串行等待");
 ok(!/await SB\.listRankChannelPics/.test(SRC), "不应再逐个 await 取数（那是串行的写法）");
 ok(/function loadTags\(/.test(SRC) && /loadTags\(\);\s*\n\s*\}\)();|loadTags\(\);/.test(SRC),
   "打标结果应在首屏之后异步补，不挡列表");
@@ -130,11 +130,20 @@ function srcChips() {
   const grp = box.children.filter((g) => g.children && g.children[0] && g.children[0].textContent === "渠道")[0];
   return grp ? grp.children[1] : null;
 }
-function chipByLabel(part) {
-  const c = srcChips();
+/* 20261114Q：chip 外壳 = 开关按钮 + ✕，断言取里面的开关按钮 */
+function chipBtn(c) {
   if (!c) return null;
-  return c.children.filter((x) => String(x.textContent).indexOf(part) >= 0)[0];
+  return String(c.className || "").indexOf("cmp-chip-wrap") >= 0 ? c.children[0] : c;
 }
+function chipList() {
+  const c = srcChips();
+  if (!c) return [];
+  return c.children.map((x) => ({ wrap: x, btn: chipBtn(x), text: String((chipBtn(x) || {}).textContent || "") }));
+}
+function chipByLabel(part) {
+  return (chipList().filter((x) => x.text.indexOf(part) >= 0)[0] || {}).btn || null;
+}
+const hasCol = (key) => bodyHtml().indexOf('data-src="' + key + '"') >= 0;
 
 (async () => {
   await sleep(80);
@@ -144,9 +153,9 @@ function chipByLabel(part) {
   ok(!/加载中/.test(bodyHtml()), "首屏不应停留在「加载中」");
   ok(tagCalled >= 1, "打标结果应被异步发起（只是不挡首屏）");
 
-  /* 三种写法应归成一列 */
-  const chips = srcChips().children.map((c) => String(c.textContent));
-  const sheinChips = chips.filter((t) => /shein/i.test(t));
+  /* 三种写法应归成一列（20261114Q：列名按渠道短名显示，SHEIN → S） */
+  const chips = chipList().map((x) => x.text);
+  const sheinChips = chips.filter((t) => /^S(\s|$)/.test(t));
   ok(sheinChips.length === 1, "SHEIN / shein / SHE-IN 应归为同一列，实际：" + JSON.stringify(sheinChips));
 
   /* 类目：长路径应归到「套装」，不能把菜单撑出长名字 */
@@ -162,9 +171,10 @@ function chipByLabel(part) {
   ok(/其它月份/.test(summary), "摘要应写明这些渠道在其它月份有图（否则看起来像图丢了）");
 
   /* 点开该渠道：必须真的出图，而不是「该列暂无数据」 */
-  const shein = chipByLabel("SHEIN");
-  ok(!!shein, "「渠道」筛选里应能找到 SHEIN");
+  const shein = chipByLabel("S");
+  ok(!!shein, "「渠道」筛选里应能找到 SHEIN（显示为 S）");
   shein.onclick();
+  ok(hasCol("ch:shein"), "点开后应按统一键出列（ch:shein）");
   ok(bodyHtml().indexOf("s1.jpg") >= 0 && bodyHtml().indexOf("s2.jpg") >= 0 && bodyHtml().indexOf("s3.jpg") >= 0,
     "点开后应摆出该渠道的图（本月没有就摆它自己的全部）");
   ok(/没有图/.test(bodyHtml()) && /2026-10/.test(bodyHtml()), "应注明这一列在本月没有图、图片是哪个月份的");

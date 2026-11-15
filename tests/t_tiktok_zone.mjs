@@ -18,8 +18,8 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log("  ✗ " + m); 
 
 /* ---------- 1. 前台页面 ---------- */
 const h = read("tiktok.html");
-ok(h.indexOf('<title>TikTok 专区 · TREND BANK</title>') >= 0, "tiktok.html 标题不对");
-ok(h.indexOf('window.CZONE = { key: "tiktok", label: "TikTok 专区", channel: "TikTok" }') >= 0,
+ok(h.indexOf('<title>T 专区 · TREND BANK</title>') >= 0, "tiktok.html 标题不对");
+ok(h.indexOf('window.CZONE = { key: "tiktok", label: "T 专区", channel: "TikTok" }') >= 0,
   "tiktok.html 未声明专区配置（key/label/channel）");
 ok(h.indexOf('class="sidebar"') >= 0 && h.indexOf("服装类目") >= 0, "左侧菜单应与趋势上升榜一致");
 ok(h.indexOf('id="cz-cats"') >= 0, "缺少类目菜单容器");
@@ -47,28 +47,28 @@ ok(/data-target="tiktok-card"/.test(admin), "后台侧栏缺少 TikTok 入口");
 ok(admin.indexOf("admin-channelzone.js") >= 0, "后台未引用渠道专区脚本");
 
 const adm = read("js/admin-channelzone.js");
-ok(/key:\s*"tiktok",\s*label:\s*"TikTok 专区",\s*channel:\s*"TikTok"/.test(adm), "后台 ZONES 未登记 tiktok");
+ok(/key:\s*"tiktok",\s*label:\s*"T 专区",\s*channel:\s*"TikTok"/.test(adm), "后台 ZONES 未登记 tiktok");
 ok(/guardZone/.test(adm), "写操作仍应做专区权限守门");
 
 const adminJs = read("js/admin.js");
 ok(/"tiktok-card":\s*"tiktok"/.test(adminJs), "PANEL_ZONE 未绑定 tiktok");
-ok(/key:\s*"tiktok",\s*label:\s*"TikTok 专区",\s*href:\s*"tiktok\.html"/.test(adminJs), "前台访问设置未含 TikTok");
+ok(/key:\s*"tiktok",\s*label:\s*"T 专区",\s*href:\s*"tiktok\.html"/.test(adminJs), "前台访问设置未含 TikTok");
 ok(/"tiktok-card":\s*"tiktok"\s*\}/.test(adminJs), "切换面板时应按 tiktok 触发加载");
 
 /* ---------- 4. 专区定义 / 权限 ---------- */
 const cfg = read("js/config.js");
-ok(/key:\s*"tiktok",\s*label:\s*"TikTok 专区",\s*href:\s*"tiktok\.html"/.test(cfg), "专区定义缺少 TikTok");
+ok(/key:\s*"tiktok",\s*label:\s*"T 专区",\s*href:\s*"tiktok\.html"/.test(cfg), "专区定义缺少 TikTok");
 
 const perm = read("js/admin-perm.js");
 const m = perm.match(/ALL_CAT_ZONES\s*=\s*\[([^\]]*)\]/);
 const zones = m ? m[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")) : [];
 ok(zones.includes("tiktok"), "类目授权应覆盖 tiktok");
-ok((perm.match(/key:\s*"tiktok",\s*label:\s*"TikTok 专区"/g) || []).length >= 2, "权限勾选应含 TikTok（可见 + 导出）");
-ok(/TikTok 专区 \(tiktok\.html\)/.test(perm), "专区管理里应能选到 tiktok.html");
+ok((perm.match(/key:\s*"tiktok",\s*label:\s*"T 专区"/g) || []).length >= 2, "权限勾选应含 TikTok（可见 + 导出）");
+ok(/T 专区 \(tiktok\.html\)/.test(perm), "专区管理里应能选到 tiktok.html");
 
 /* ---------- 5. 导出与统计 ---------- */
-ok(/tiktok:\s*"TikTok 专区"/.test(read("js/view-export.js")), "单页网页/海报导出未登记 tiktok");
-ok(/tiktok:\s*\{\s*label:\s*"TikTok 专区",\s*bar:\s*"#cz-bar"/.test(read("js/page-shot.js")), "导出高清图未登记 tiktok 挂点");
+ok(/tiktok:\s*"T 专区"/.test(read("js/view-export.js")), "单页网页/海报导出未登记 tiktok");
+ok(/tiktok:\s*\{\s*label:\s*"T 专区",\s*bar:\s*"#cz-bar"/.test(read("js/page-shot.js")), "导出高清图未登记 tiktok 挂点");
 const dash = read("js/upload-dash.js");
 ok(/tiktok:\s*\{[^}]*channels:\s*\["TIKTOK"\]/.test(dash), "数据统计未登记 tiktok 渠道");
 ok(/ORDER\s*=\s*\[[^\]]*"tiktok"/.test(dash), "数据统计页签顺序缺少 tiktok");

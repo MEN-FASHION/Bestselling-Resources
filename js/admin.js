@@ -43,9 +43,9 @@ const PANEL_ZONE = {
   "rank-card": "",          // 站内趋势上升榜单：任一管理员均可进入（不限专区）
   "rhythm-card": "",        // 上新节奏（月度趋势榜）：与趋势上升榜同口径，任一管理员均可进入
   "movement-card": "movement", // 品牌动向：独立专区，按「后台可管理专区」授权管控
-  "pinterest-card": "pinterest", // Pinterest 专区：纯图片专区（只传图 + 打标），按专区授权管控
-  "shein-card": "shein",         // SHEIN 专区：同上
-  "tiktok-card": "tiktok",       // TikTok 专区：同上
+  "pinterest-card": "pinterest", // P 专区：纯图片专区（只传图 + 打标），按专区授权管控
+  "shein-card": "shein",         // S 专区：同上
+  "tiktok-card": "tiktok",       // T 专区：同上
   "compare-card": "compare",     // 渠道对比：只读聚合页的列配置（按专区授权管控）
   "tools-card": "",          // 实用工具（思维导图等）：不属于任何专区，任一管理员可用
   "mk-card": "super",       // 营销日历（节庆库）：全站共用的基础数据，仅超管维护
@@ -83,9 +83,9 @@ const CAT_VIS_ZONES = [
   { key: "fav", label: "我的收藏" },
   { key: "notice", label: "公告" },
   { key: "rank", label: "趋势上升榜" },
-  { key: "pinterest", label: "Pinterest 专区", href: "pinterest.html" },
-  { key: "shein", label: "SHEIN 专区", href: "shein.html" },
-  { key: "tiktok", label: "TikTok 专区", href: "tiktok.html" },
+  { key: "pinterest", label: "P 专区", href: "pinterest.html" },
+  { key: "shein", label: "S 专区", href: "shein.html" },
+  { key: "tiktok", label: "T 专区", href: "tiktok.html" },
   { key: "compare", label: "渠道对比", href: "compare.html" }
 ];
 

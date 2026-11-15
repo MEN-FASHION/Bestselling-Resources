@@ -1254,6 +1254,50 @@ async removeTrendRecord(id) {
       return dims.compare_sources;
     },
 
+    // ============ 渠道清单（20261114T） ============
+    // 存在 site_settings.frontend_dims.compare_channels：一个字符串数组，
+    // 就是「后台能配置的渠道有哪些」。加/删渠道改的是它，不碰任何图片数据。
+    //   · 以前候选渠道只能从「库里已经出现过的渠道名」推出来，没传过图的渠道
+    //     根本不在候选里，看起来就像「只能配那四个」；
+    //   · 现在清单自己就是一份可编辑的名单，想加多少加多少，删掉只是不再出现在
+    //     配置与对比页的候选里 —— 已有图片的渠道名还在数据里，图不会丢。
+    async getCompareChannels() {
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        const raw = d.compare_channels;
+        if (!Array.isArray(raw)) return null;
+        const out = [];
+        const seen = {};
+        raw.forEach((x) => {
+          const n = String(x == null ? "" : x).trim();
+          const k = n.replace(/[\s_\-]/g, "").toLowerCase();
+          if (!n || seen[k]) return;
+          seen[k] = 1;
+          out.push(n);
+        });
+        return out;
+      } catch (e) { return null; }
+    },
+    async setCompareChannels(list) {
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      const out = [];
+      const seen = {};
+      (Array.isArray(list) ? list : []).forEach((x) => {
+        const n = String(x == null ? "" : x).trim().slice(0, 24);
+        const k = n.replace(/[\s_\-]/g, "").toLowerCase();
+        if (!n || seen[k]) return;
+        seen[k] = 1;
+        out.push(n);
+      });
+      dims.compare_channels = out;
+      const { error } = await client.from("site_settings")
+        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(errHint(error, "保存渠道清单失败"));
+      return out;
+    },
+
     // ============ 实用工具 · 思维导图（20261112C） ============
     // 存在 site_settings.frontend_dims.tools_mindmaps，不改表结构：
     //   { list:[{ id, title, updated, root:{...} }] }

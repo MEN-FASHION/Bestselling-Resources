@@ -16,8 +16,8 @@ const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log("  
 
 /* ---------- 1. 前台页面 ---------- */
 const pages = [
-  { file: "pinterest.html", key: "pinterest", channel: "Pinterest", label: "Pinterest 专区" },
-  { file: "shein.html", key: "shein", channel: "SHEIN", label: "SHEIN 专区" },
+  { file: "pinterest.html", key: "pinterest", channel: "Pinterest", label: "P 专区" },
+  { file: "shein.html", key: "shein", channel: "SHEIN", label: "S 专区" },
 ];
 for (const p of pages) {
   ok(fs.existsSync(path.join(ROOT, p.file)), `${p.file} 缺失`);
@@ -63,29 +63,29 @@ const adminJs = read("js/admin.js");
 ok(/"pinterest-card":\s*"pinterest"/.test(adminJs), "PANEL_ZONE 未绑定 pinterest");
 ok(/"shein-card":\s*"shein"/.test(adminJs), "PANEL_ZONE 未绑定 shein");
 ok(/ChannelZoneAdmin\.reload/.test(adminJs), "切换面板时应触发数据加载");
-ok(/key:\s*"pinterest",\s*label:\s*"Pinterest 专区"/.test(adminJs), "前台访问设置应可开关 Pinterest 专区");
-ok(/key:\s*"shein",\s*label:\s*"SHEIN 专区"/.test(adminJs), "前台访问设置应可开关 SHEIN 专区");
+ok(/key:\s*"pinterest",\s*label:\s*"P 专区"/.test(adminJs), "前台访问设置应可开关 Pinterest 专区");
+ok(/key:\s*"shein",\s*label:\s*"S 专区"/.test(adminJs), "前台访问设置应可开关 SHEIN 专区");
 
 /* ---------- 4. 专区定义与权限 ---------- */
 const cfg = read("js/config.js");
-ok(/key:\s*"pinterest",\s*label:\s*"Pinterest 专区",\s*href:\s*"pinterest\.html"/.test(cfg), "专区定义缺少 Pinterest");
-ok(/key:\s*"shein",\s*label:\s*"SHEIN 专区",\s*href:\s*"shein\.html"/.test(cfg), "专区定义缺少 SHEIN");
+ok(/key:\s*"pinterest",\s*label:\s*"P 专区",\s*href:\s*"pinterest\.html"/.test(cfg), "专区定义缺少 Pinterest");
+ok(/key:\s*"shein",\s*label:\s*"S 专区",\s*href:\s*"shein\.html"/.test(cfg), "专区定义缺少 SHEIN");
 
 const perm = read("js/admin-perm.js");
 const m = perm.match(/ALL_CAT_ZONES\s*=\s*\[([^\]]*)\]/);
 const zones = m ? m[1].split(",").map(s => s.trim().replace(/^["']|["']$/g, "")) : [];
 ok(zones.includes("pinterest"), "类目授权应覆盖 pinterest");
 ok(zones.includes("shein"), "类目授权应覆盖 shein");
-ok(/key:\s*"pinterest",\s*label:\s*"Pinterest 专区"/.test(perm), "权限勾选应含 Pinterest 专区");
-ok(/key:\s*"shein",\s*label:\s*"SHEIN 专区"/.test(perm), "权限勾选应含 SHEIN 专区");
-ok(/Pinterest 专区 \(pinterest\.html\)/.test(perm), "专区管理的前台链接预设应含 Pinterest");
+ok(/key:\s*"pinterest",\s*label:\s*"P 专区"/.test(perm), "权限勾选应含 Pinterest 专区");
+ok(/key:\s*"shein",\s*label:\s*"S 专区"/.test(perm), "权限勾选应含 SHEIN 专区");
+ok(/P 专区 \(pinterest\.html\)/.test(perm), "专区管理的前台链接预设应含 Pinterest");
 
 /* ---------- 5. 各前台页面导航 ---------- */
 const navPages = ["index.html", "rank.html", "rhythm.html", "trends.html", "marketing.html", "fav.html", "movement.html"];
 for (const f of navPages) {
   const h = read(f);
-  ok(h.includes('href="pinterest.html"'), `${f} 顶部菜单缺少 Pinterest 专区入口`);
-  ok(h.includes('href="shein.html"'), `${f} 顶部菜单缺少 SHEIN 专区入口`);
+  ok(h.includes('href="pinterest.html"'), `${f} 顶部菜单缺少 P 专区入口`);
+  ok(h.includes('href="shein.html"'), `${f} 顶部菜单缺少 S 专区入口`);
 }
 
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);

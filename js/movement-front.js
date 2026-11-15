@@ -189,7 +189,7 @@
     }
     body.innerHTML = "";
     list.forEach(function (it) {
-      /* 20261114G：卡片右下角不再显示「已打标 n/13」，理由同 SHEIN / Pinterest 专区 */
+      /* 20261114G：卡片右下角不再显示「已打标 n/13」，理由同 SHEIN / P 专区 */
       var sea = seasonLabel(it);
       var card = document.createElement("div");
       card.className = "mv-card";

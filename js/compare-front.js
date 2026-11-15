@@ -25,6 +25,16 @@
   function SBx() { return window.SB || null; }
   function pad2(n) { return String(n).length < 2 ? "0" + n : String(n); }
 
+  /* 渠道显示名（20261114Q）：SHEIN → S、Pinterest → P、TikTok → T，
+     别的渠道原样。只改显示，不改库里的值，筛选口径不受影响。 */
+  var CH_SHORT = { shein: "S", pinterest: "P", tiktok: "T" };
+  function chShort(name) {
+    var raw = String(name == null ? "" : name).trim();
+    if (!raw) return "";
+    var k = raw.replace(/[\s_\-]/g, "").toLowerCase();
+    return CH_SHORT[k] || raw;
+  }
+
   var state = {
     cfg: null,          // 后台配置 { list, showEmpty, perRow }
     sources: [],        // 归一后的列 [{key,label,type,channel}]
@@ -40,7 +50,107 @@
     loading: false,
     srcOn: {},          // 用户手动打开的列 key（默认按「有没有图」自动决定）
     srcOff: {},         // 用户手动关掉的列 key
+    cols: { add: [], del: [] },   // 用户自定义增 / 减的渠道（记忆在本机）
+    base: [],           // 后台配置（或自动发现）算出来的原始列，不含用户自定义增删
+    zoneVis: null,      // 全站「前台可见专区」开关（后台关掉的专区，它的渠道列不应出现）
+    myZones: null,      // 当前账号的专区白名单（未配置 = 跟随全站）
+    zoneHidden: 0,      // 因为对应专区被关闭而没摆出来的渠道列数（用于提示，不摆空列）
   };
+
+  function baseSources() { return state.base || []; }
+
+  /* ---------- 自定义增删渠道（20261114Q） ----------
+     需求：渠道不再由库里现有的数据「定死」——想比哪个渠道就加哪一列，
+     不想看的就从这一页删掉，不用去后台改全局配置。
+     口径：
+       · 只影响「这一页、这个浏览器」看哪几列（localStorage），
+         不改全局对比列配置，也不动任何数据；
+       · 加进来的渠道即使现在没有图，也会占一列并写明「无图」，
+         等它的图进库后自动出现，不用再加一次；
+       · 删掉的列记在 del 里，后台就算配了也不会再冒出来，直到点「恢复默认」。 */
+  var COLS_KEY = "bs_cmp_cols";
+  function readColsPref() {
+    var out = { add: [], del: [] };
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return out;
+      var raw = localStorage.getItem(COLS_KEY);
+      if (!raw) return out;
+      var o = JSON.parse(raw) || {};
+      if (Array.isArray(o.add)) out.add = o.add.map(function (x) { return String(x || "").trim(); }).filter(Boolean);
+      if (Array.isArray(o.del)) out.del = o.del.map(function (x) { return String(x || "").trim(); }).filter(Boolean);
+    } catch (e) { /* 解析失败按「没自定义过」处理 */ }
+    return out;
+  }
+  function writeColsPref() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return;
+      localStorage.setItem(COLS_KEY, JSON.stringify({ add: state.cols.add, del: state.cols.del }));
+    } catch (e) { /* 记不住不影响本次使用 */ }
+  }
+  /* 把「用户自定义」叠到后台配置算出来的列上：
+     先剔掉用户删掉的，再补上用户加的（已存在的不重复加）。 */
+  function applyColsPref(sources) {
+    var prefs = state.cols || { add: [], del: [] };
+    var out = (sources || []).filter(function (s) { return prefs.del.indexOf(s.key) < 0; });
+    var have = {};
+    out.forEach(function (s) { have[s.key] = 1; });
+    prefs.add.forEach(function (name) {
+      var raw = String(name || "").trim();
+      var k = "ch:" + chKey(raw);
+      if (!raw || k === "ch:" || have[k]) return;
+      have[k] = 1;
+      out.push({ key: k, label: chShort(raw), type: "channel", channel: raw, custom: true });
+    });
+    return out;
+  }
+  /* 最终要摆出来的列 = 后台配置/自动发现 + 本机自定义增删 + 专区开关过滤 */
+  function computeSources() {
+    return applyColsPref(baseSources()).filter(function (s) { return srcZoneOpen(s); });
+  }
+  function addChannel(name) {
+    var raw = String(name || "").trim().slice(0, 24);
+    if (!raw) return false;
+    var k = "ch:" + chKey(raw);
+    if (!k || k === "ch:") return false;
+    /* 所属专区已在后台关闭：不加（否则「关了还在」的错觉又会回来） */
+    var z = chZone(raw);
+    if (z && !zoneOpen(z)) {
+      toast("「" + chShort(raw) + "」所属专区已在后台关闭，请先在后台开启该专区", false);
+      return false;
+    }
+    if (state.sources.some(function (s) { return s.key === k; })) { toast("已经有这一列了"); return false; }
+    state.cols.del = (state.cols.del || []).filter(function (x) { return x !== k; });
+    if ((state.cols.add || []).indexOf(raw) < 0) state.cols.add.push(raw);
+    writeColsPref();
+    /* 重新按「后台配置 + 自定义」算一遍，保证顺序稳定 */
+    state.sources = computeSources();
+    state.srcOn[k] = 1;
+    delete state.srcOff[k];
+    return true;
+  }
+  function removeChannel(key) {
+    if (!key) return false;
+    /* 至少留一列，否则整页空白（点「重置渠道」可恢复） */
+    if ((state.sources || []).length <= 1) { toast("至少要保留一列", false); return false; }
+    var wasCustom = false;
+    state.cols.add = (state.cols.add || []).filter(function (name) {
+      var k = "ch:" + chKey(name);
+      if (k === key) { wasCustom = true; return false; }
+      return true;
+    });
+    if (!wasCustom && (state.cols.del || []).indexOf(key) < 0) state.cols.del.push(key);
+    writeColsPref();
+    delete state.srcOn[key];
+    delete state.srcOff[key];
+    state.sources = computeSources();
+    return true;
+  }
+  function resetColsPref() {
+    state.cols = { add: [], del: [] };
+    writeColsPref();
+    state.sources = computeSources();
+  }
+
 
   function normMonth(v) {
     var SB = SBx();
@@ -70,6 +180,16 @@
   }
 
   /* ---------- 列（来源） ---------- */
+  /* 列名：如果列名就是渠道名（没被人改过），显示首字母 S / P / T；
+     管理员在后台把列名改成别的（比如「S · 女装」），就照他写的显示。 */
+  function srcLabel(label, channel) {
+    var l = String(label == null ? "" : label).trim();
+    var c = String(channel == null ? "" : channel).trim();
+    if (!l) return chShort(c);
+    if (!c) return l;
+    return chKey(l) === chKey(c) ? chShort(l) : l;
+  }
+
   /* 默认列：上新节奏 + 数据里出现过的每个渠道（按渠道名排序，保证每次打开顺序一致） */
   function defaultSources(channelRows) {
     var out = [{ key: "rank:month", label: "上新节奏", type: "rank" }];
@@ -79,7 +199,7 @@
       var k = chKey(raw);
       if (!k || seen[k]) return;
       seen[k] = 1;
-      out.push({ key: "ch:" + k, label: raw, type: "channel", channel: raw });
+      out.push({ key: "ch:" + k, label: chShort(raw), type: "channel", channel: raw });
     });
     return out;
   }
@@ -140,7 +260,7 @@
 
   /* ---------- 归一（渠道名 / 类目名） ----------
      · 渠道名：库里可能同时存在 SHEIN / Shein / shein / SHE-IN。严格按原文分组，
-       同一个渠道会裂成几列；而「SHEIN 专区」那边是忽略大小写和分隔符比较的，
+       同一个渠道会裂成几列；而「S 专区」那边是忽略大小写和分隔符比较的，
        于是会出现「专区里有图，对比页这一列却空」。这里跟专区对齐。
      · 类目名（20261114G）：一律原样，不做任何归并改写。
        以前这里会把类目名再过一遍关键词规则，后台选 A、这里显示 B，
@@ -148,6 +268,40 @@
   function chKey(v) {
     return String(v == null ? "" : v).replace(/[\s_\-]/g, "").toLowerCase();
   }
+
+  /* ---------- 专区开关（20261114T） ----------
+     问题：后台把 S 专区 / T 专区这类专区关掉以后，渠道对比里因为这些渠道还有历史图，
+     仍然会摆出一列 —— 前台看起来就像「关了也没关」。
+     口径：一个渠道列能不能出现，看它所属专区是否对当前用户可见；
+           「上新节奏」列跟随 rhythm 专区；后台自己加的渠道（Amazon、独立站等）没有对应专区，
+           一律照常显示，不受影响。
+     · 只影响「默认就摆出来」的列，不影响你在本页手动加的那一列；
+     · 不删任何数据，重新打开专区后列自动回来。 */
+  var CH_ZONE = {
+    shein: "shein", pinterest: "pinterest", tiktok: "tiktok",
+    s: "shein", p: "pinterest", t: "tiktok",
+  };
+  function chZone(raw) {
+    var k = chKey(String(raw == null ? "" : raw).replace(/^ch:/i, ""));
+    if (!k) return "";
+    return CH_ZONE[k] || "";
+  }
+  /* 某专区的列到底摆不摆：全站开关关了就是不摆；账号白名单非空时还必须在白名单里 */
+  function zoneOpen(zone) {
+    if (!zone) return true;
+    if (state.zoneVis && state.zoneVis[zone] === false) return false;
+    if (Array.isArray(state.myZones) && state.myZones.length) {
+      return state.myZones.indexOf(zone) !== -1;
+    }
+    return true;
+  }
+  function srcZoneOf(s) {
+    if (!s) return "";
+    if (s.type === "rank") return "rhythm";
+    return chZone(s.channel || s.key || "");
+  }
+  function srcZoneOpen(s) { return zoneOpen(srcZoneOf(s)); }
+
   function normCat(v) {
     return String(v == null ? "" : v).replace(/\s+/g, " ").trim();
   }
@@ -194,23 +348,31 @@
           cols: "id,image_url,category,period_label,period_type,site,channel,title",
         })).catch(function () { return []; })
         : Promise.resolve([]);
+      /* ①.3 后台「渠道清单」（20261114T）：清单里登记过的渠道，即使还没有图，
+         也要出现在「渠道」筛选里。以前只看数据里出现过的渠道，后台加了一个
+         还没传图的渠道，前台就像没加一样。 */
+      var pReg = (typeof SB.getCompareChannels === "function")
+        ? Promise.resolve(SB.getCompareChannels()).catch(function () { return null; })
+        : Promise.resolve(null);
 
-      var got = await Promise.all([pCh, pCfg, pRk]);
+      var got = await Promise.all([pCh, pCfg, pRk, pReg]);
       var chRows = got[0] || [];
       state.cfg = got[1] || null;
       var rankRows = got[2] || [];
+      var regChannels = Array.isArray(got[3]) ? got[3] : [];
 
       /* ① 列（来源）：后台配了就以配置为准，没配就按实际渠道自动生成 */
       var conf = state.cfg && Array.isArray(state.cfg.list) ? state.cfg.list : null;
+      var base = [];
       if (conf && conf.length) {
         var seenSrc = {};
-        state.sources = conf.map(function (x) {
+        base = conf.map(function (x) {
           var t = x.type === "rank" ? "rank" : "channel";
           /* 配置里存的是渠道原文；这里按归一键对齐，写法差异不会把一列变成空列 */
           var k = t === "rank" ? "rank:month" : "ch:" + chKey(x.channel || x.label || x.key);
           return {
             key: k,
-            label: x.label || (t === "rank" ? "上新节奏" : x.channel),
+            label: srcLabel(x.label, t === "rank" ? "上新节奏" : x.channel),
             type: t, channel: x.channel || "",
           };
         }).filter(function (s) {
@@ -219,8 +381,45 @@
           return true;
         });
       } else {
-        state.sources = defaultSources(chRows);
+        base = defaultSources(chRows);
       }
+      /* ①.2 清单里登记过、但数据里还没有图的渠道：补成一列（显示「无图」，点开可看）
+         口径：清单是「能配置哪些渠道」的唯一来源；数据里出现的渠道名只要还在清单里
+         就照常出列，不在清单里的按原有自动发现逻辑照旧，不会突然消失。 */
+      if (regChannels.length) {
+        var haveKey = {};
+        base.forEach(function (s) { haveKey[s.key] = 1; });
+        regChannels.forEach(function (raw) {
+          var c = String(raw || "").trim();
+          if (!c) return;
+          var k = "ch:" + chKey(c);
+          if (!k || k === "ch:" || haveKey[k]) return;
+          haveKey[k] = 1;
+          base.push({ key: k, label: chShort(c), type: "channel", channel: c, fromList: true });
+        });
+      }
+
+      /* ①.5 后台关掉的专区：它的渠道列不摆（20261114T）
+         以前这里只看「库里有没有这个渠道的图」，后台关掉 S / T 专区后，
+         历史图仍在库里，于是照样多出一列 —— 现在按专区开关先剔一遍。 */
+      var zoneOff = 0;
+      base = base.filter(function (s) {
+        if (srcZoneOpen(s)) return true;
+        zoneOff++;
+        return false;
+      });
+      state.zoneHidden = zoneOff;
+
+      state.base = base;
+      /* 叠上「本机自定义增删的渠道」（20261114Q）：想比哪个加哪个，不想看的直接删掉 */
+      state.cols = readColsPref();
+      /* 叠完之后再按专区开关过一遍：以前手动加过的 SHEIN / TikTok，
+         后台关掉专区之后也不能再冒出来（20261114T） */
+      state.sources = applyColsPref(base).filter(function (s) {
+        if (srcZoneOpen(s)) return true;
+        state.zoneHidden++;
+        return false;
+      });
 
       /* ② 渠道图 URL 集合：榜单行里与渠道图重复的地址不再进「上新节奏」列 */
       var chUrls = {};
@@ -402,16 +601,18 @@
     var shownKey = {};
     shown.forEach(function (s) { shownKey[s.key] = 1; });
 
-    /* 全部：回到默认（有图的都显示），并清掉手动开关 */
+    /* 全部：回到默认（有图的都显示），并清掉手动开关 + 本机自定义增删 */
     var allBtn = document.createElement("button");
     allBtn.type = "button";
     allBtn.className = "tag-chip" + (shown.length === state.sources.length ? " active" : "");
     allBtn.textContent = "全部";
-    allBtn.title = "恢复默认：显示这个月份下有图的全部渠道";
+    allBtn.title = "恢复默认：清掉自定义增删的渠道，显示这个月份下有图的全部渠道";
     allBtn.onclick = function () {
       state.srcOn = {};
       state.srcOff = {};
-      renderFilter(); renderCats(); renderPools(); loadTags();
+      resetColsPref();
+      repaint();
+      toast("已恢复默认渠道");
     };
     chips.appendChild(allBtn);
 
@@ -422,9 +623,14 @@
       }).length;
       var other = every.length - n;
       var on = !!shownKey[s.key];
+      /* 一个 chip = 开关按钮 + 右侧小 ✕（把这一列从本页删掉）。
+         ✕ 只对「渠道」列有：上新节奏是必留的一列，没有 ✕。 */
+      var wrap = document.createElement("span");
+      wrap.className = "cmp-chip-wrap";
       var b = document.createElement("button");
       b.type = "button";
       b.className = "tag-chip" + (on ? " active" : "");
+      b.setAttribute("data-src", s.key);
       b.title = on ? "点一下隐藏这一列" : (n ? "点一下显示这一列" : "这个月份下没有图，点一下仍可显示");
       /* 本月没图但别的月份有图 —— 必须写出来，否则看起来就像「传了图却没了」 */
       b.textContent = s.label + (n ? " " + n : " 无图") + (other > 0 ? "（其它月份 " + other + "）" : "");
@@ -442,12 +648,61 @@
         }
         renderFilter(); renderCats(); renderPools(); loadTags();
       };
-      chips.appendChild(b);
+      wrap.appendChild(b);
+      if (s.type !== "rank") {
+        var x = document.createElement("button");
+        x.type = "button";
+        x.className = "cmp-chip-x";
+        x.textContent = "✕";
+        x.title = "把「" + s.label + "」从对比里去掉（只影响本机，随时可加回来）";
+        x.onclick = function (e) {
+          if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+          dropChannel(s.key);
+        };
+        wrap.appendChild(x);
+      }
+      chips.appendChild(wrap);
     });
+
+    /* ＋ 添加渠道：渠道不再是「库里有什么就只能看什么」，想比哪个就加哪个 */
+    var addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "tag-chip cmp-add-chip";
+    addBtn.id = "cmp-add-channel";
+    addBtn.textContent = "＋ 添加渠道";
+    addBtn.title = "输入渠道名，把它加成一列；暂无数图也可以先加，进入库后自动出现";
+    addBtn.onclick = function () { promptAddChannel(); };
+    chips.appendChild(addBtn);
 
     g.appendChild(name);
     g.appendChild(chips);
     return g;
+  }
+
+  /* 「＋ 添加渠道」的唯一入口：筛选里那个按钮和顶部工具条上的按钮都走它 */
+  function promptAddChannel() {
+    if (typeof window.uiPrompt !== "function") {
+      toast("输入框组件未加载，请刷新页面重试", false);
+      return;
+    }
+    Promise.resolve(window.uiPrompt("输入要对比的渠道名（例如 S / P / T，或 Amazon、独立站）", "", {
+      title: "添加对比渠道", okText: "添加",
+    })).then(function (v) {
+      if (v == null) return;
+      var raw = String(v).trim();
+      if (!raw) { toast("渠道名不能为空", false); return; }
+      if (!addChannel(raw)) return;
+      repaint();
+      toast("已添加「" + chShort(raw) + "」这一列");
+    }).catch(function () { /* 取消 */ });
+  }
+  /* 只重画界面，不重新取数（增删列是本地行为） */
+  function repaint() {
+    renderFilter(); renderCats(); renderPools(); loadTags();
+  }
+  function dropChannel(key) {
+    if (removeChannel(key) === false) return;
+    repaint();
   }
 
   function syncSummary() {
@@ -463,7 +718,8 @@
     });
     sum.textContent = (state.month || "全部月份") + " · " + n + " 列对比" +
       (hid.length ? "（已隐藏 " + hid.length + " 个无图渠道" +
-        (other ? "，其中 " + other + " 个在其它月份有 " + otherN + " 张，点它即可查看" : "") + "）" : "");
+        (other ? "，其中 " + other + " 个在其它月份有 " + otherN + " 张，点它即可查看" : "") + "）" : "") +
+      (state.zoneHidden ? "（另有 " + state.zoneHidden + " 个渠道因其专区已在后台关闭而未显示）" : "");
   }
 
   /* ---------- 左侧：服装类目 ---------- */
@@ -567,23 +823,30 @@
     return 2;
   }
 
-  /* 插入 DOM 后按每列实测宽度重算，保证「页面实际多宽就摆多少张」 */
+  /* 插入 DOM 后按每列实测宽度重算，保证「页面实际多宽就摆多少张」。
+     20261114Q 提速：原来「读宽度 → 写样式」在循环里交替进行，每一轮都会强制
+     浏览器重排一次；列多、卡片多时切「小/中/大」要等好几百毫秒。
+     现在先一次性把宽度读完，再统一写，只触发一次重排。 */
   function fitPools() {
     var body = $("#cmp-body");
     if (!body) return;
     var cg = window.CardGrid;
     var fixed = state.cfg && Number(state.cfg.perRow);
     var grids = body.querySelectorAll(".rk-pool-grid");
+    var list = [];
     for (var i = 0; i < grids.length; i++) {
-      var g = grids[i];
-      var w = g.clientWidth || 0;
-      if (!w) continue;
-      var n = g.querySelectorAll(".rk-card").length;
+      var w = grids[i].clientWidth || 0;   /* 先读完 */
+      list.push({ el: grids[i], w: w });
+    }
+    for (var j = 0; j < list.length; j++) {
+      if (!list[j].w) continue;
+      var el = list[j].el;
+      var n = el.querySelectorAll(".rk-card").length;
       var c = fixed >= 1 ? Math.min(6, Math.max(1, fixed))
-                         : (cg && cg.cols ? cg.cols(w) : 0);
+                         : (cg && cg.cols ? cg.cols(list[j].w) : 0);
       if (!c) continue;
       if (n) c = Math.min(c, Math.max(1, n));
-      g.style.setProperty("--rk-r", String(c));
+      el.style.setProperty("--rk-r", String(c));   /* 再统一写 */
     }
   }
 
@@ -592,9 +855,19 @@
     if (_fitTimer) clearTimeout(_fitTimer);
     _fitTimer = setTimeout(function () { _fitTimer = null; try { fitPools(); } catch (e) {} }, 50);
   }
+  /* 20261114Q · 图幅「小 / 中 / 大」即时生效
+     以前切档只重排别的专区，这一页的每行张数要等窗口尺寸变化才更新，
+     表现就是「点了半天没反应」。现在监听图幅变化，只按已有列宽重算每列的
+     --rk-r：不重新取数、不重画卡片、不动筛选，所以是瞬时的。 */
+  function onImgSizeChange() {
+    if (_fitTimer) clearTimeout(_fitTimer);
+    _fitTimer = setTimeout(function () { _fitTimer = null; try { fitPools(); } catch (e) {} }, 0);
+  }
   if (window && typeof window.addEventListener === "function") {
     window.addEventListener("resize", fitPoolsSoon);
     window.addEventListener("load", fitPoolsSoon);
+    window.addEventListener("cardgrid:size", onImgSizeChange);
+    try { if (window.CardGrid && window.CardGrid.onChange) window.CardGrid.onChange(onImgSizeChange); } catch (e) {}
   }
 
   function renderPools() {
@@ -612,11 +885,18 @@
     if (bar) {
       bar.innerHTML = '<span class="rk-bar-info">共 <b>' + total + "</b> 张 · " + srcs.length + " 列" +
         (state.month ? " · " + esc(state.month) : " · 全部月份") + (cat !== ALL ? " · " + esc(cat) : "") + "</span>" +
-        '<button type="button" class="cmi-btn cmi-btn-ghost" id="cmp-insight-all" title="按当前类目与月份，对比各来源的打标结构差异">渠道差异分析</button>';
+        '<span class="cmp-bar-actions">' +
+        '<button type="button" class="cmi-btn" id="cmp-add-channel-bar" title="输入渠道名，把它加成一列（只影响本机显示）">＋ 添加渠道</button>' +
+        '<button type="button" class="cmi-btn cmi-btn-ghost" id="cmp-reset-channels" title="清掉本机增删过的渠道，回到后台配置 / 自动发现的样子">重置渠道</button>' +
+        '<button type="button" class="cmi-btn cmi-btn-ghost" id="cmp-insight-all" title="按当前类目与月份，对比各来源的打标结构差异">渠道差异分析</button>' +
+        "</span>";
     }
 
     if (!srcs.length) {
-      body.innerHTML = '<div class="rk-empty">还没有可对比的来源。去后台「渠道对比」勾选要对比的专区，<br>或先在「Pinterest 专区 / SHEIN 专区 / TikTok 专区 / 上新节奏」里传图。</div>';
+      body.innerHTML = '<div class="rk-empty">还没有可对比的来源。点右上「＋ 添加渠道」自己加一列，<br>或先在「P 专区 / S 专区 / T 专区 / 上新节奏」里传图。' +
+        (state.zoneHidden ? '<br><br>' + state.zoneHidden + ' 个渠道没有摆出来：它们对应的专区已在后台关闭。' +
+          '<br>想看到它们，请让超管在后台「前台访问设置」里重新开启该专区。' : "") +
+        "</div>";
       return;
     }
     if (!total) {
@@ -640,6 +920,8 @@
         (state.month ? " · " + esc(state.month) : "") +
         (list.length ? ' <button type="button" class="cmi-btn" data-insight="' + esc(s.key) +
           '" title="看这一列与其它来源的打标结构差异">详细分析</button>' : "") +
+        (s.type === "rank" ? "" : ' <button type="button" class="cmi-btn cmi-btn-ghost cmp-col-x" data-rmcol="' +
+          esc(s.key) + '" title="从对比里去掉这一列（只影响本机，随时可加回来）">✕</button>') +
         "</div></div>";
       if (got.monthFallback) {
         html += '<div class="rk-pool-note">这一列在 ' + esc(state.month) + " 没有图，下面是它全部的 " +
@@ -674,6 +956,22 @@
     });
     var allBtn = $("#cmp-insight-all");
     if (allBtn) allBtn.onclick = function () { openInsight(""); };
+    var addBar = $("#cmp-add-channel-bar");
+    if (addBar) addBar.onclick = function () { promptAddChannel(); };
+    var rstBar = $("#cmp-reset-channels");
+    if (rstBar) rstBar.onclick = function () {
+      state.srcOn = {}; state.srcOff = {};
+      resetColsPref();
+      repaint();
+      toast("已恢复默认渠道");
+    };
+    /* 列头右侧的 ✕：直接从对比里去掉这一列（只影响本机） */
+    Array.prototype.forEach.call(body.querySelectorAll(".cmp-col-x[data-rmcol]"), function (btn) {
+      btn.onclick = function (e) {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        dropChannel(btn.getAttribute("data-rmcol"));
+      };
+    });
 
     /* 首屏按实测列宽再校正一次（渲染前只能估算） */
     fitPools();
@@ -768,6 +1066,9 @@
       var vis = null, myz = null;
       try { vis = await SB.getFrontendZoneVisibility(); } catch (e) { vis = null; }
       try { myz = await SB.myFrontendZones(); } catch (e) { myz = null; }
+      /* 渠道列也要受这些开关约束（20261114T）：关掉的专区不该再在对比里出现一列 */
+      state.zoneVis = vis || null;
+      state.myZones = Array.isArray(myz) ? myz : null;
       if (window.Common && Common.zones) {
         Common.zones.setVis(vis || {});
         Common.zones.setMine(Array.isArray(myz) ? myz : null);

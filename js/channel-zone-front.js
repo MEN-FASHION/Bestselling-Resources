@@ -18,7 +18,7 @@
 
   var CFG = window.CZONE || {};
   var KEY = String(CFG.key || "pinterest");
-  var LABEL = String(CFG.label || "Pinterest 专区");
+  var LABEL = String(CFG.label || "P 专区");
   var CH = String(CFG.channel || "Pinterest");
 
   var $ = function (s) { return document.querySelector(s); };

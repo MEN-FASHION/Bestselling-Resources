@@ -1,15 +1,18 @@
 /* ============================================================================
- * admin-compare.js —— 渠道对比 · 列配置（20261112B）
+ * admin-compare.js —— 渠道对比 · 列配置 + 渠道清单（20261114T）
  * ----------------------------------------------------------------------------
- * 渠道对比页本身是只读聚合页（把各专区的图按月并排展示），后台要管的是
- * 「对比哪几列、叫什么名字、什么顺序、空列显不显示」。
+ * 渠道对比页本身是只读聚合页（把各专区的图按月并排展示），后台要管两件事：
+ *   ① 渠道清单：能配置哪些渠道（想加多少加多少、想删哪个删哪个）
+ *   ② 对比列：其中哪些列要真的摆到前台、叫什么名字、什么顺序
  *
- * 配置存 site_settings.frontend_dims.compare_sources，不改表结构：
- *   { list:[{key,label,type,channel}], showEmpty:bool, perRow:number }
- *   type = "rank"（上新节奏·月度榜单） | "channel"（某个渠道的图）
+ * 20261114T 改动：以前「可加入的专区 / 渠道」只能从「库里已经出现过的渠道名」
+ * 推出来，没传过图的渠道根本不在候选里，看起来就像「只有四个能配」。
+ * 现在清单自己就是一份可编辑名单，存在 site_settings.frontend_dims.compare_channels，
+ * 增删只动名单，不删任何图片。
  *
- * 新增渠道不用改代码：本面板每次打开都会去读「渠道图里出现过的渠道名」，
- * 勾上即成一列；前台也做了同样的自动发现，两处口径一致。
+ * 配置键：
+ *   compare_channels : ["SHEIN","Pinterest","TikTok","Amazon", ...]  渠道清单
+ *   compare_sources  : { list:[{key,label,type,channel}], showEmpty, perRow }  对比列
  * ==========================================================================*/
 (function () {
   var $ = function (s) { return document.querySelector(s); };
@@ -27,55 +30,86 @@
   function say(t) { var m = $("#cmpa-msg"); if (m) m.textContent = t || ""; }
 
   var state = {
-    list: [],        // 当前列配置（有序）
-    pool: [],        // 可选项：上新节奏 + 所有渠道名
+    list: [],        // 当前对比列（有序）
+    channels: [],    // 渠道清单（有序，来自 compare_channels）
     showEmpty: true,
     perRow: 0,
     ready: false,
+    dirty: false,    // 清单/列有没有改过还没保存
   };
 
   var RANK_KEY = "rank:month";
 
-  function keyOf(ch) { return "ch:" + ch; }
+  /* 渠道显示名（20261114Q）：SHEIN → S、Pinterest → P、TikTok → T，其它原样 */
+  var CH_SHORT = { shein: "S", pinterest: "P", tiktok: "T" };
+  function chShort(name) {
+    var raw = String(name == null ? "" : name).trim();
+    if (!raw) return "";
+    var k = raw.replace(/[\s_\-]/g, "").toLowerCase();
+    return CH_SHORT[k] || raw;
+  }
+  function normCh(name) {
+    return String(name == null ? "" : name).replace(/[\s_\-]/g, "").toLowerCase();
+  }
+
+  function keyOf(ch) { return "ch:" + normCh(ch); }
+
+  function mkChannel(name) {
+    var raw = String(name == null ? "" : name).trim().slice(0, 24);
+    if (!raw) return null;
+    return { key: keyOf(raw), label: chShort(raw), type: "channel", channel: raw };
+  }
+  function mkRank() { return { key: RANK_KEY, label: "上新节奏", type: "rank", channel: "" }; }
 
   async function load() {
     var SB = SBx();
     if (!SB) { say("数据层未就绪，请强刷页面重试"); return; }
     say("加载中…");
 
-    /* 可选项：上新节奏 + 渠道名（渠道图存储 + 榜单里出现过的渠道） */
+    /* ① 渠道清单：优先用已保存的名单；没保存过就用「库里出现过的渠道 + 已配置的列」生成一次 */
     var names = [];
     try {
       if (typeof SB.listRankChannelNames === "function") names = (await SB.listRankChannelNames()) || [];
     } catch (e) { names = []; }
-    /* 已配置但当前没数据的渠道也要留着，否则用户配置过的一列会被静默吃掉 */
     var conf = null;
     try { conf = (typeof SB.getCompareSources === "function") ? await SB.getCompareSources() : null; }
     catch (e) { conf = null; }
+    var saved = null;
+    try { saved = (typeof SB.getCompareChannels === "function") ? await SB.getCompareChannels() : null; }
+    catch (e) { saved = null; }
 
-    var pool = [{ key: RANK_KEY, label: "上新节奏", type: "rank", channel: "" }];
-    var seen = {};
-    names.forEach(function (n) {
-      var c = String(n || "").trim();
-      if (!c || seen[c]) return;
-      seen[c] = 1;
-      pool.push({ key: keyOf(c), label: c, type: "channel", channel: c });
-    });
-    (conf && conf.list ? conf.list : []).forEach(function (x) {
-      if (x.type !== "channel") return;
-      var c = String(x.channel || "").trim();
-      if (!c || seen[c]) return;
-      seen[c] = 1;
-      pool.push({ key: keyOf(c), label: c, type: "channel", channel: c });
-    });
+    var channels = [];
+    var seenCh = {};
+    function pushCh(n) {
+      var c = String(n == null ? "" : n).trim();
+      var k = normCh(c);
+      if (!c || seenCh[k]) return;
+      seenCh[k] = 1;
+      channels.push(c);
+    }
+    if (Array.isArray(saved)) {
+      /* 已经是一份明确的名单：以它为准（删掉的渠道不会因为历史图又被补回来） */
+      saved.forEach(pushCh);
+    } else {
+      /* 首次：把「库里出现过的」和「已配置过的列」并进来，作为初始名单 */
+      names.forEach(pushCh);
+      (conf && conf.list ? conf.list : []).forEach(function (x) {
+        if (x.type !== "channel") return;
+        pushCh(x.channel || x.label || "");
+      });
+    }
+    state.channels = channels;
 
-    state.pool = pool;
-    state.list = (conf && conf.list && conf.list.length) ? conf.list.map(function (x) {
-      return { key: x.key, label: x.label, type: x.type, channel: x.channel };
-    }) : pool.slice();
+    var pool = [mkRank()].concat(channels.map(mkChannel).filter(Boolean));
+    state.list = (conf && conf.list && conf.list.length)
+      ? conf.list.map(function (x) {
+        return { key: x.key, label: x.label, type: x.type, channel: x.channel };
+      })
+      : pool.slice();
     state.showEmpty = conf ? conf.showEmpty !== false : true;
     state.perRow = conf ? Number(conf.perRow) || 0 : 0;
     state.ready = true;
+    state.dirty = false;
 
     render();
     say("");
@@ -103,32 +137,41 @@
           "</span>";
         row.querySelector(".cmpa-label").onchange = function (e) {
           state.list[i].label = String(e.target.value || "").trim() || state.list[i].key;
+          state.dirty = true;
         };
         row.querySelector(".cmpa-up").onclick = function () {
           if (i === 0) return;
           var t = state.list[i - 1]; state.list[i - 1] = state.list[i]; state.list[i] = t;
+          state.dirty = true;
           render();
         };
         row.querySelector(".cmpa-down").onclick = function () {
           if (i >= state.list.length - 1) return;
           var t = state.list[i + 1]; state.list[i + 1] = state.list[i]; state.list[i] = t;
+          state.dirty = true;
           render();
         };
         row.querySelector(".cmpa-del").onclick = function () {
           state.list.splice(i, 1);
+          state.dirty = true;
           render();
         };
         box.appendChild(row);
       });
     }
 
+    /* 可加入的专区 / 渠道：清单里的每一个都在这儿，勾上就进对比列；右侧 ✕ 从清单里删掉 */
     var chips = $("#cmpa-pool");
     if (chips) {
       chips.innerHTML = "";
       var used = {};
       state.list.forEach(function (s) { used[s.key] = 1; });
-      state.pool.forEach(function (p) {
+      var pool = [mkRank()].concat(state.channels.map(mkChannel).filter(Boolean));
+      pool.forEach(function (p) {
         var on = !!used[p.key];
+        var wrap = document.createElement("span");
+        wrap.className = "cmpa-chip-wrap";
+
         var b = document.createElement("button");
         b.type = "button";
         b.className = "cmpa-chip" + (on ? " is-on" : "");
@@ -140,17 +183,57 @@
           } else {
             state.list.push({ key: p.key, label: p.label, type: p.type, channel: p.channel });
           }
+          state.dirty = true;
           render();
         };
-        chips.appendChild(b);
+        wrap.appendChild(b);
+
+        /* ✕ 只对渠道清单里的项：把它从名单里删掉（不删图，也不影响已有数据） */
+        if (p.type !== "rank") {
+          var x = document.createElement("button");
+          x.type = "button";
+          x.className = "cmpa-chip-x";
+          x.textContent = "✕";
+          x.title = "把「" + p.label + "」从渠道清单里删掉（不删任何图片）";
+          x.onclick = function (e) {
+            if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+            dropChannel(p.channel, p.label);
+          };
+          wrap.appendChild(x);
+        }
+        chips.appendChild(wrap);
       });
-      if (!state.pool.length) chips.innerHTML = '<p class="hint">还没有任何渠道数据。</p>';
+      if (!pool.length) chips.innerHTML = '<p class="hint">还没有任何渠道。</p>';
     }
+
+    var cnt = $("#cmpa-pool-count");
+    if (cnt) cnt.textContent = "共 " + state.channels.length + " 个渠道（不含上新节奏）";
 
     var se = $("#cmpa-show-empty");
     if (se) se.checked = state.showEmpty !== false;
     var pr = $("#cmpa-per-row");
     if (pr) pr.value = String(state.perRow || 0);
+  }
+
+  /* 从渠道清单里删掉一个渠道：同时把它从对比列里移走。
+     不删图、不删历史数据 —— 以后想加回来，重新填一遍名字即可。 */
+  function dropChannel(raw, label) {
+    var k = normCh(raw);
+    if (!k) return;
+    var nm = String(label || raw || "");
+    var ask = window.uiConfirm
+      ? Promise.resolve(window.uiConfirm("从渠道清单里删掉「" + nm + "」？\n\n只影响这里能配置哪些渠道，不删任何图片；以后要加回来，重新填一次名字即可。", {
+        title: "删除渠道", okText: "删除",
+      }))
+      : Promise.resolve(true);
+    Promise.resolve(ask).then(function (yes) {
+      if (yes === false) return;
+      state.channels = state.channels.filter(function (c) { return normCh(c) !== k; });
+      state.list = state.list.filter(function (s) { return normCh(s.channel || "") !== k; });
+      state.dirty = true;
+      render();
+      toast("已从渠道清单删除「" + nm + "」，记得点「保存配置」");
+    });
   }
 
   async function save() {
@@ -163,6 +246,11 @@
         showEmpty: !!state.showEmpty,
         perRow: Number(state.perRow) || 0,
       });
+      if (typeof SB.setCompareChannels === "function") {
+        try { await SB.setCompareChannels(state.channels); }
+        catch (e) { toast("对比列已保存，但渠道清单没存上：" + ((e && e.message) || "未知错误"), false); return; }
+      }
+      state.dirty = false;
       toast("已保存，前台刷新即生效");
       say("已保存 " + new Date().toLocaleTimeString());
     } catch (e) {
@@ -170,16 +258,47 @@
     }
   }
 
+  /* 自定义新增渠道：填一个名字就进清单，并直接加成一列 */
+  function addPoolChannel(name) {
+    var raw = String(name == null ? "" : name).trim().slice(0, 24);
+    if (!raw) { toast("渠道名不能为空", false); return false; }
+    var k = normCh(raw);
+    var exist = state.channels.filter(function (c) { return normCh(c) === k; })[0];
+    if (exist) {
+      /* 已经在清单里：不重复加，但把它勾回对比列（用户可能只是想让这一列出图） */
+      var key0 = keyOf(exist);
+      if (!state.list.some(function (x) { return x.key === key0; })) {
+        state.list.push({ key: key0, label: chShort(exist), type: "channel", channel: exist });
+        state.dirty = true;
+        render();
+        toast("「" + chShort(exist) + "」已在渠道清单里，已勾回对比列（记得保存）");
+        return false;
+      }
+      toast("「" + chShort(exist) + "」已经在渠道清单里了", false);
+      return false;
+    }
+    state.channels.push(raw);
+    exist = raw;
+    var key = keyOf(exist);
+    if (!state.list.some(function (x) { return x.key === key; })) {
+      state.list.push({ key: key, label: chShort(exist), type: "channel", channel: exist });
+    }
+    state.dirty = true;
+    render();
+    toast("已加入渠道清单与对比列，记得点「保存配置」");
+    return true;
+  }
+
   async function resetDefault() {
     var SB = SBx();
-    state.list = state.pool.slice();
+    state.list = [mkRank()].concat(state.channels.map(mkChannel).filter(Boolean));
     state.showEmpty = true;
     state.perRow = 0;
     render();
     try {
       if (SB && typeof SB.setCompareSources === "function") {
         await SB.setCompareSources({ list: state.list, showEmpty: true, perRow: 0 });
-        toast("已恢复默认：全部列都参与对比");
+        toast("已恢复默认：清单里的渠道全部参与对比");
       }
     } catch (e) { toast("恢复失败：" + ((e && e.message) || "未知错误"), false); }
   }
@@ -193,16 +312,29 @@
     var d = $("#cmpa-reset");
     if (d) d.onclick = resetDefault;
     var se = $("#cmpa-show-empty");
-    if (se) se.onchange = function () { state.showEmpty = !!se.checked; };
+    if (se) se.onchange = function () { state.showEmpty = !!se.checked; state.dirty = true; };
     var pr = $("#cmpa-per-row");
-    if (pr) pr.onchange = function () { state.perRow = Number(pr.value) || 0; };
+    if (pr) pr.onchange = function () { state.perRow = Number(pr.value) || 0; state.dirty = true; };
     var open = $("#cmpa-open-front");
     if (open) open.onclick = function () { window.open("compare.html", "_blank"); };
+    /* 自定义新增渠道：回车或点按钮都能加 */
+    var addBtn = $("#cmpa-add-btn");
+    var addInput = $("#cmpa-add-input");
+    function doAdd() {
+      if (!addInput) return;
+      if (addPoolChannel(addInput.value)) addInput.value = "";
+    }
+    if (addBtn) addBtn.onclick = doAdd;
+    if (addInput) {
+      addInput.onkeydown = function (e) {
+        if (e && (e.key === "Enter" || e.keyCode === 13)) { e.preventDefault(); doAdd(); }
+      };
+    }
     load();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 
-  window.CompareAdmin = { reload: load, state: state };
+  window.CompareAdmin = { reload: load, state: state, addChannel: addPoolChannel };
 })();

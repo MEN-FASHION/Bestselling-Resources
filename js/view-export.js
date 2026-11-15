@@ -34,7 +34,7 @@
  *       window.VX.runPoster()     —— 导出高清海报
  *       window.VX.available()     —— 当前账号是否有本页导出权限
  *
- * 20261114P：「对比的列」也要跟着走。
+ * 20261114M：「对比的列」也要跟着走。
  *   页面上的详细报告（逐列画像 / 横向对照表 / 核心结论）默认是折叠的，
  *   而且内容是首次展开才生成 —— 以前导出的网页里因此根本没有这几块，
  *   选了 3 列、拿到的只有 3 列图。现在导出前先在真实页面展开一次、克隆完立刻折回，
@@ -45,14 +45,14 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114P";
+  var BUILD = "20261114T";
 
   var LABELS = {
     rank: "趋势上升榜",
     rhythm: "上新节奏",
-    pinterest: "Pinterest 专区",
-    shein: "SHEIN 专区",
-    tiktok: "TikTok 专区",
+    pinterest: "P 专区",
+    shein: "S 专区",
+    tiktok: "T 专区",
     compare: "渠道对比",
     movement: "品牌动向"
   };
@@ -60,6 +60,11 @@
   var CONCURRENCY = 4;       // 同时下载的图片数，太大反而容易被打回
   var INLINE_MAX_W = 1000;   // 内嵌进网页/海报的图片最长边，够看清又不至于让文件爆掉
   var INLINE_Q = 0.86;
+
+  /* 20261114T：只有这两个专区的导出要带文字（列头、期次、位次角标、类目/月度），
+     其余专区导出的网页与海报一律「只出图、不出字」—— 拿去做图集/对外素材时，
+     屏幕上的类目名、张数、筛选摘要都是噪音。 */
+  var TEXT_KEEP_ZONES = { rank: 1, rhythm: 1 };
 
   var state = {
     zone: "",
@@ -69,6 +74,7 @@
     busy: false,
     board: false,     // 当前页面是否为「多列并排看板」（渠道对比等）
     withRep: true,    // 导出是否带上「对比的列」（逐列画像 / 横向对照表 / 结论）
+    textless: false,  // 导出物是否去掉所有文字（boot 时按专区设定：只有榜单/上新节奏保留文字）
     dock: null,
     htmlBtn: null,
     posterBtn: null,
@@ -162,6 +168,8 @@
     lab.appendChild(cbx);
     cb.onchange = function () { state.withRep = !!cb.checked; writeRepOpt(state.withRep); };
     d.appendChild(lab);
+    /* 只出图的专区：对比分析整块本身就是文字，导不出也不需要，开关一并隐藏 */
+    if (state.textless) lab.style.display = "none";
     d.appendChild(b1);
     d.appendChild(b2);
     document.body.appendChild(d);
@@ -529,10 +537,11 @@
   function cardFigure(c, s, compact) {
     var src = c.data || c.url;
     var tip = [c.title, c.cat, c.period].filter(Boolean).join(" · ");
-    var cap = (c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
-      (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
-        return "<span>" + esc(x) + "</span>";
-      }).join("") + "</span>" : "");
+    var cap = state.textless ? "" :
+      ((c.title ? '<span class="t">' + esc(c.title) + "</span>" : "") +
+        (c.tags && c.tags.length ? '<span class="g">' + c.tags.map(function (x) {
+          return "<span>" + esc(x) + "</span>";
+        }).join("") + "</span>" : ""));
     var hasCap = !compact || !!cap;
     return '<figure class="c">' +
       '<div class="ph">' +
@@ -549,6 +558,14 @@
   /* 排版 A：每个分组一个区块，纵向堆叠（榜单 / 上新节奏 / 纯图墙） */
   function bodyStack(secs) {
     var body = "";
+    if (state.textless) {
+      /* 只出图：分组标题与筛选摘要都不出现，只剩图片网格 */
+      body += '<section class="sec"><div class="grid">';
+      secs.forEach(function (sp) {
+        sp.cards.forEach(function (c) { body += cardFigure(c, sp, false); });
+      });
+      return body + "</div></section>";
+    }
     secs.forEach(function (s) {
       body += '<section class="sec">' +
         "<h2>" + esc(s.name || "未命名分组") + "</h2>" +
@@ -567,11 +584,11 @@
     secs.forEach(function (s) {
       var r = s.cols || 4;
       body += '<section class="col">' +
-        '<div class="col-h"><span class="col-n">' + esc(s.name || "未命名列") + '</span>' +
-        '<span class="col-c">' + s.cards.length + " 张</span></div>" +
-        (s.meta ? '<div class="col-m">' + esc(s.meta) + "</div>" : "") +
+        (state.textless ? "" : ('<div class="col-h"><span class="col-n">' + esc(s.name || "未命名列") + '</span>' +
+          '<span class="col-c">' + s.cards.length + " 张</span></div>" +
+          (s.meta ? '<div class="col-m">' + esc(s.meta) + "</div>" : ""))) +
         '<div class="cgrid" style="grid-template-columns:repeat(' + r + ',minmax(0,1fr))">';
-      if (!s.cards.length) {
+      if (!s.cards.length && !state.textless) {
         body += '<div class="col-e">该列暂无数据</div>';
       }
       s.cards.forEach(function (c) { body += cardFigure(c, s, true); });
@@ -654,8 +671,8 @@
     return "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
       '<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
       "<title>" + esc(ctx.title) + "</title>\n<style>\n" + css + "\n</style>\n</head>\n<body>\n" +
-      '<header class="hd"><h1>' + esc(ctx.title) + "</h1><div class=\"sub\">" + subHtml + "</div></header>\n" +
-      note + "\n" + body +
+      (state.textless ? "" : ('<header class="hd"><h1>' + esc(ctx.title) + "</h1><div class=\"sub\">" + subHtml + "</div></header>\n" +
+        note + "\n")) + body +
       "\n<div class=\"lb\" id=\"lb\"><img id=\"lb-img\" alt=\"\"><button type=\"button\" class=\"x\">×</button>" +
       "<button type=\"button\" class=\"p\">‹</button><button type=\"button\" class=\"n\">›</button>" +
       '<div class="cap" id="lb-cap"></div></div>\n' +
@@ -739,6 +756,49 @@
     };
   }
 
+  /* 20261114T：「只出图」时把克隆体里的文字彻底摘掉。
+     两步：
+       ① 先把「只装文字、没有图」的元素整块删掉（列头、张数、列底、筛选摘要、
+          类目/月度角标、空列提示……），删掉它们顺带收掉留下的空白条；
+       ② 再删掉仍然存在的文字节点（图卡里和图共处一格的说明文字）。
+     只动克隆体，真实页面一个字都不改。 */
+  function dropTextOnlyEls(root) {
+    var cands = [];
+    Array.prototype.forEach.call(root.querySelectorAll("*"), function (el) {
+      if (el.querySelector && el.querySelector("img")) return;   /* 里面有图：是容器，留着 */
+      if (!trim(el.textContent)) return;
+      cands.push(el);
+    });
+    /* 倒序遍历（子先于父），避免父节点先被删、子节点再多跑一遍 */
+    for (var i = cands.length - 1; i >= 0; i--) removeNode(cands[i]);
+  }
+
+  function stripTextNodes(root) {
+    var all = [root];
+    Array.prototype.forEach.call(root.querySelectorAll("*"), function (el) { all.push(el); });
+    all.forEach(function (el) {
+      if (!el) return;
+      /* 有子节点：只摘掉「自己直接持有的文字节点」，不碰子元素 */
+      if (el.childNodes && el.childNodes.length) {
+        Array.prototype.slice.call(el.childNodes).forEach(function (n) {
+          if (n && (n.nodeType === 3 || n.nodeType === 4) && el.removeChild) {
+            try { el.removeChild(n); } catch (e) {}
+          }
+        });
+        return;
+      }
+      /* 没有子元素，只剩文字：直接清空 */
+      if ((!el.children || !el.children.length) && trim(el.textContent)) el.textContent = "";
+    });
+  }
+
+  function stripAllText(root) {
+    if (!root || !state.textless) return root;
+    dropTextOnlyEls(root);
+    stripTextNodes(root);
+    return root;
+  }
+
   function sanitizeClone(clone) {
     var kill = clone.querySelectorAll(DROP_SEL);
     Array.prototype.forEach.call(kill, function (el) { removeNode(el); });
@@ -765,6 +825,8 @@
       el.removeAttribute("data-pick");
       el.removeAttribute("data-fav");
     });
+    /* 20261114T：只出图的专区，最后把文字统统摘掉 */
+    stripAllText(clone);
     return clone;
   }
 
@@ -879,12 +941,18 @@
     var html = clone && clone.outerHTML ? clone.outerHTML : "";
     if (!html) return "";
 
+    /* 20261114T：只出图的专区，网页上除图片外一个字都不放——
+       页头标题、筛选摘要、未抓取提示全部省略，拿到手就是一张图集。 */
+    var hdHtml = state.textless ? "" :
+      ('<header class="vx-hd"><h1>' + esc(ctx.title) + '</h1><div class="sub">' + subHtml + "</div></header>\n");
+    var noteHtml = state.textless ? "" : (note + "\n");
+
     return "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
       '<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
       "<title>" + esc(ctx.title) + "</title>\n<style>\n" + (css || "") + "\n" + extra + "\n</style>\n</head>\n" +
       '<body class="front vx-export">\n' +
-      '<header class="vx-hd"><h1>' + esc(ctx.title) + '</h1><div class="sub">' + subHtml + "</div></header>\n" +
-      note + "\n" +
+      hdHtml +
+      noteHtml +
       '<div class="vx-wrap" style="' + (wrapW ? ("width:" + wrapW + "px;min-width:" + Math.min(wrapW, 720) + "px;") : "") + 'margin:0 auto">\n' +
       html + "\n</div>\n" +
       '<div id="vx-lb"><img id="vx-lb-img" alt=""><button type="button" class="x" id="vx-x">×</button>' +
@@ -907,6 +975,15 @@
   };
   var SCALE = 2;    // 2 → 输出宽 2480px
 
+  /* 20261114T：「只出图」的专区，海报上所有文字位一律收掉——
+     页头、分组标题、列头（期次/张数/副标题）、列底（已展示 N/总数）、
+     图下标题与标签、图上角标、页脚，全都不画，版面高度也按 0 计，不留空带。 */
+  function pH() { return state.textless ? 18 : POSTER.HEAD_H; }        /* 页头高 */
+  function pSecH() { return state.textless ? 0 : POSTER.SEC_H; }       /* 分组标题高 */
+  function pCapH() { return state.textless ? 0 : POSTER.CAP_H; }       /* 图下文字区高 */
+  function pColHeadH() { return state.textless ? 0 : COL_HEAD_H; }     /* 列头高 */
+  function pColFootH() { return state.textless ? 0 : COL_FOOT_H; }     /* 列底高 */
+
   function posterFont(weight, size) {
     return weight + " " + size + 'px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif';
   }
@@ -917,8 +994,8 @@
     return {
       cardW: cardW,
       imgH: imgH,
-      cardH: imgH + POSTER.CAP_H,
-      rowH: imgH + POSTER.CAP_H + POSTER.GAP
+      cardH: imgH + pCapH(),
+      rowH: imgH + pCapH() + POSTER.GAP
     };
   }
 
@@ -930,7 +1007,7 @@
     function open() {
       cur = { no: sheets.length + 1, blocks: [], h: 0 };
       sheets.push(cur);
-      y = POSTER.HEAD_H;
+      y = pH();
       cur.h = y;
     }
     open();
@@ -938,8 +1015,8 @@
     secs.forEach(function (s) {
       var idx = 0, onSheetStart = false, shownBefore = false;
       while (idx < s.cards.length) {
-        var headH = onSheetStart ? 0 : POSTER.SEC_H;
-        if (y + headH + m.rowH > POSTER.MAX_H && y > POSTER.HEAD_H) {
+        var headH = onSheetStart ? 0 : pSecH();
+        if (y + headH + m.rowH > POSTER.MAX_H && y > pH()) {
           open();                 // 换页，本组在下一页要重画标题
           onSheetStart = false;
           continue;
@@ -950,7 +1027,7 @@
             name: s.name + (shownBefore ? "（续）" : ""),
             meta: s.meta
           });
-          y += POSTER.SEC_H;
+          y += pSecH();
           onSheetStart = true;
           shownBefore = true;
         }
@@ -962,7 +1039,7 @@
     });
 
     sheets.forEach(function (sh) {
-      sh.h = Math.max(POSTER.HEAD_H + 40, sh.h + POSTER.M - POSTER.GAP);
+      sh.h = Math.max(pH() + 40, sh.h + POSTER.M - POSTER.GAP);
     });
     return sheets;
   }
@@ -985,7 +1062,7 @@
   function layoutCols(secs) {
     var C = Math.max(1, secs.length);
     var colW = (POSTER.W - POSTER.M * 2 - (C - 1) * POSTER.GAP) / C;
-    var top = POSTER.HEAD_H + COL_HEAD_H;
+    var top = pH() + pColHeadH();
 
     var geo = secs.map(function (s) {
       var R = colGridR(s);
@@ -1003,7 +1080,7 @@
       var any = false, left = false;
       for (var i = 0; i < C; i++) {
         var s = secs[i], g0 = geo[i];
-        var room = POSTER.MAX_H - POSTER.M - COL_FOOT_H - top;
+        var room = POSTER.MAX_H - POSTER.M - pColFootH() - top;
         var maxRows = Math.max(1, Math.floor((room + COL_CGAP) / g0.rowH));
         var take = Math.min(Math.max(0, s.cards.length - idx[i]), maxRows * g0.R);
         var slice = take > 0 ? s.cards.slice(idx[i], idx[i] + take) : [];
@@ -1011,7 +1088,7 @@
         if (take) any = true;
         if (idx[i] < s.cards.length) left = true;
         var rows = Math.ceil(slice.length / g0.R);
-        var ch = rows ? top + rows * g0.rowH - COL_CGAP + COL_FOOT_H : top + COL_FOOT_H;
+        var ch = rows ? top + rows * g0.rowH - COL_CGAP + pColFootH() : top + pColFootH();
         sh.cols.push({
           name: s.name,
           meta: s.meta,
@@ -1038,14 +1115,14 @@
           return {
             name: s.name, meta: s.meta, nText: s.nText, foot: s.foot, cards: [],
             R: R, cw: cw, ih: Math.round(cw * 4 / 3), rowH: Math.round(cw * 4 / 3) + COL_CGAP,
-            cont: false, h: top + COL_FOOT_H
+            cont: false, h: top + pColFootH()
           };
         }),
-        h: top + COL_FOOT_H + 20
+        h: top + pColFootH() + 20
       });
     }
     sheets.forEach(function (sh) {
-      sh.h = Math.max(top + COL_FOOT_H, sh.h + POSTER.M - 6);
+      sh.h = Math.max(top + pColFootH(), sh.h + POSTER.M - 6);
     });
     return sheets;
   }
@@ -1205,6 +1282,7 @@
 
   /* 图上角标：取卡片第一个标签（「上升 12 位」「新上榜」「美国」），画在图内左下 */
   function drawCardOverTag(g, c, x, y, cardW, imgH) {
+    if (state.textless) return;                 /* 只出图：图上角标也不画 */
     var t = (c && c.tags && c.tags[0]) || (c && c.title) || "";
     t = String(t).trim();
     if (!t) return;
@@ -1234,7 +1312,7 @@
     g.fillStyle = "#0b0f14";
     g.fillRect(x, y, cardW, imgH);
     var drawn = c._im ? coverDraw(g, c._im, x, y, cardW, imgH) : false;
-    if (!drawn) {
+    if (!drawn && !state.textless) {
       g.fillStyle = "#39445a";
       g.font = posterFont("400", 13);
       g.textAlign = "center";
@@ -1247,6 +1325,9 @@
     g.strokeStyle = "#1f2733";
     g.lineWidth = 1;
     g.stroke();
+
+    /* 只出图的专区：图下方一个字都不留 */
+    if (state.textless) return;
 
     /* 紧凑卡（与页面同样的小格子）：不画标题，但页面上压在图上的
        「上升 12 位 / 新上榜 / 站点头」这类角标要跟着画，否则导出后信息就丢了 */
@@ -1297,14 +1378,14 @@
 
     g.fillStyle = "#0e1116";
     g.fillRect(0, 0, W, H);
-    drawHeader(g, ctx, W);
+    if (!state.textless) drawHeader(g, ctx, W);
 
     if (sheet.colMode) {
       /* 与页面同构：每一列内部再按 --rk-r 铺成小格子，不是一列一张大图 */
       sheet.cols.forEach(function (col, i) {
         var x = POSTER.M + i * (sheet.colW + POSTER.GAP);
-        drawColHead(g, col, x, POSTER.HEAD_H, sheet.colW);
-        var y0 = POSTER.HEAD_H + COL_HEAD_H;
+        if (!state.textless) drawColHead(g, col, x, pH(), sheet.colW);
+        var y0 = pH() + pColHeadH();
         var R = Math.max(1, col.R || 4);
         col.cards.forEach(function (c, k) {
           var r = Math.floor(k / R), q = k % R;
@@ -1313,20 +1394,22 @@
           });
         });
         var rows = Math.ceil(col.cards.length / R);
-        drawColFoot(g, col, x, rows ? y0 + rows * col.rowH + 12 : y0 + 14, sheet.colW);
+        if (!state.textless) drawColFoot(g, col, x, rows ? y0 + rows * col.rowH + 12 : y0 + 14, sheet.colW);
       });
 
-      g.font = posterFont("400", 12);
-      g.fillStyle = "#5c6779";
-      g.fillText(ctx.footer + (sheet.no > 1 ? " · 第 " + sheet.no + " 张" : ""), POSTER.M, H - 12);
+      if (!state.textless) {
+        g.font = posterFont("400", 12);
+        g.fillStyle = "#5c6779";
+        g.fillText(ctx.footer + (sheet.no > 1 ? " · 第 " + sheet.no + " 张" : ""), POSTER.M, H - 12);
+      }
       return cv;
     }
 
-    var y = POSTER.HEAD_H;
+    var y = pH();
     sheet.blocks.forEach(function (b) {
       if (b.type === "sec") {
-        drawSec(g, b, y, W);
-        y += POSTER.SEC_H;
+        if (!state.textless) drawSec(g, b, y, W);
+        y += pSecH();
         return;
       }
       b.cards.forEach(function (c, i) {
@@ -1335,10 +1418,12 @@
       y += m.rowH;
     });
 
-    /* 页脚：来源 + 页码 */
-    g.font = posterFont("400", 12);
-    g.fillStyle = "#5c6779";
-    g.fillText(ctx.footer + (sheet.no > 1 ? " · 第 " + sheet.no + " 张" : ""), POSTER.M, H - 18);
+    /* 页脚：来源 + 页码（只出图时连页脚也不画） */
+    if (!state.textless) {
+      g.font = posterFont("400", 12);
+      g.fillStyle = "#5c6779";
+      g.fillText(ctx.footer + (sheet.no > 1 ? " · 第 " + sheet.no + " 张" : ""), POSTER.M, H - 18);
+    }
 
     return cv;
   }
@@ -1618,6 +1703,10 @@
     if (!key) return Promise.resolve(false);
     state.zone = key;
     state.withRep = readRepOpt();
+    /* 20261114T：除趋势上升榜 / 上新节奏外，导出物一律不带文字 */
+    state.textless = !TEXT_KEEP_ZONES[key];
+    /* 只出图时「带对比分析」没有意义（那一块全是文字），一律不带走 */
+    if (state.textless) state.withRep = false;
     /* 专区名不再写死在 LABELS 里才有救：漏登记新专区时用页面标题兜底，
        否则新开的专区永远拿不到导出按钮（以前就是这个坑）。 */
     state.label = labelOf(key);

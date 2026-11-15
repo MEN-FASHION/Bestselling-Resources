@@ -22,9 +22,9 @@ let PERM_ZONES = [
   { key: "rank", label: "趋势上升榜" },
   { key: "rhythm", label: "上新节奏" },
   { key: "movement", label: "品牌动向" },
-  { key: "pinterest", label: "Pinterest 专区" },
-  { key: "shein", label: "SHEIN 专区" },
-  { key: "tiktok", label: "TikTok 专区" },
+  { key: "pinterest", label: "P 专区" },
+  { key: "shein", label: "S 专区" },
+  { key: "tiktok", label: "T 专区" },
   { key: "compare", label: "渠道对比" },
 ];
 
@@ -40,9 +40,9 @@ function syncPermZones() {
 const PERM_EXPORT_ZONES = [
   { key: "rank", label: "趋势上升榜" },
   { key: "rhythm", label: "上新节奏" },
-  { key: "pinterest", label: "Pinterest 专区" },
-  { key: "shein", label: "SHEIN 专区" },
-  { key: "tiktok", label: "TikTok 专区" },
+  { key: "pinterest", label: "P 专区" },
+  { key: "shein", label: "S 专区" },
+  { key: "tiktok", label: "T 专区" },
   { key: "compare", label: "渠道对比" },
   { key: "movement", label: "品牌动向" },
   { key: "visual", label: "视觉专区" },
@@ -764,9 +764,9 @@ const ZDEF_HREF_PRESETS = [
   { label: "趋势上升榜 (rank.html)", href: "rank.html" },
   { label: "上新节奏 · 月度趋势 (rhythm.html)", href: "rhythm.html" },
   { label: "营销日历 (marketing.html)", href: "marketing.html" },
-  { label: "Pinterest 专区 (pinterest.html)", href: "pinterest.html" },
-  { label: "SHEIN 专区 (shein.html)", href: "shein.html" },
-  { label: "TikTok 专区 (tiktok.html)", href: "tiktok.html" },
+  { label: "P 专区 (pinterest.html)", href: "pinterest.html" },
+  { label: "S 专区 (shein.html)", href: "shein.html" },
+  { label: "T 专区 (tiktok.html)", href: "tiktok.html" },
   { label: "渠道对比 (compare.html)", href: "compare.html" },
 ];
 

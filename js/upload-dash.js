@@ -24,16 +24,16 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114P";
+  var BUILD = "20261114T";
 
   /* 每个专区一条独立通道；channels 用大写比较，写错大小写不影响。
      ptype：该专区默认按「周次」还是「月份」看。 */
   var ZONES = {
     rank: { label: "趋势上升榜", batches: ["rank"], ptype: "week" },
     rhythm: { label: "上新节奏", batches: ["rhythm"], ptype: "month" },
-    shein: { label: "SHEIN 专区", channels: ["SHEIN"], ptype: "month" },
-    pinterest: { label: "Pinterest 专区", channels: ["PINTEREST"], ptype: "month" },
-    tiktok: { label: "TikTok 专区", channels: ["TIKTOK"], ptype: "month" },
+    shein: { label: "S 专区", channels: ["SHEIN"], ptype: "month" },
+    pinterest: { label: "P 专区", channels: ["PINTEREST"], ptype: "month" },
+    tiktok: { label: "T 专区", channels: ["TIKTOK"], ptype: "month" },
     compare: { label: "渠道对比", channels: ["*"], ptype: "month" },
     movement: { label: "品牌动向", movement: true, ptype: "month" },
     visual: { label: "视觉专区", images: true, ptype: "month" }

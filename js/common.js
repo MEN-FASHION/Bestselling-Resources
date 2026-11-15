@@ -719,15 +719,22 @@ window.Common = (function () {
       var list;
       try { list = document.querySelectorAll(SEL); } catch (e) { return; }
       try { document.body.setAttribute("data-img-size", SIZE); } catch (e) {}
+      /* 20261114Q 提速：先把所有宽度读完，再统一写属性。
+         原来「读 clientWidth → 写 style/setAttribute」在同一个循环里交替，
+         每个元素都强制浏览器重排一次；图多的专区切「小/中/大」会明显卡。 */
+      var plan = [];
       for (var i = 0; i < list.length; i++) {
-        var el = list[i];
-        var w = el.clientWidth || 0;
+        var w = list[i].clientWidth || 0;
         if (!w) continue;                     /* 隐藏容器（未切到该专区）先跳过 */
         var n = cols(w);
         if (!n) continue;
-        if (el.getAttribute("data-card-cols") === String(n)) continue;
-        el.setAttribute("data-card-cols", String(n));
-        try { el.style.setProperty("--card-cols", String(n)); } catch (e) {}
+        plan.push({ el: list[i], n: n });
+      }
+      for (var j = 0; j < plan.length; j++) {
+        var el = plan[j].el;
+        if (el.getAttribute("data-card-cols") === String(plan[j].n)) continue;
+        el.setAttribute("data-card-cols", String(plan[j].n));
+        try { el.style.setProperty("--card-cols", String(plan[j].n)); } catch (e) {}
       }
       syncChips();
     }
@@ -793,8 +800,27 @@ window.Common = (function () {
   })();
   try { window.CardGrid = cardGrid; } catch (e) {}
 
+  /* ============================================================
+   * 20261114Q · 渠道显示名：只写首字母，不写全称
+   * ------------------------------------------------------------
+   * 前台 / 后台任何要显示「渠道」的地方统一走这里：
+   *   SHEIN / Shein / shein → S      Pinterest / PINTEREST → P
+   *   TikTok / TIKTOK       → T
+   *   其它渠道（Amazon、AliExpress、「其它渠道」自己填的）原样返回，
+   *   因为首字母对它们没有辨识度（A 到底是 Amazon 还是 AliExpress）。
+   * 只影响「显示」，不改库里的渠道值，筛选 / 统计口径一个字都不动。
+   * ============================================================ */
+  var CH_SHORT = { shein: "S", pinterest: "P", tiktok: "T" };
+  function chShort(name) {
+    var raw = String(name == null ? "" : name).trim();
+    if (!raw) return "";
+    var k = raw.replace(/[\s_\-]/g, "").toLowerCase();
+    return CH_SHORT[k] || raw;
+  }
+
   return {
     cardGrid,
+    chShort,
     setToast, toast, escHtml, fmtTime,
     downloadWatermarked, setupAntiDownload,
     authConfirm, notices, zones, visit

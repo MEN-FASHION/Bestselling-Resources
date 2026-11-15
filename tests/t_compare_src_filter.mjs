@@ -128,13 +128,25 @@ function srcChips() {
   if (!grp) return null;
   return grp.children[1];
 }
+/* 20261114Q：一个 chip 现在是「开关按钮 + 右侧 ✕」的包一层（只影响本机显示），
+   断言时统一拆出里面的开关按钮，避免把外壳当成 chip。 */
+function chipBtn(c) {
+  if (!c) return null;
+  return String(c.className || "").indexOf("cmp-chip-wrap") >= 0 ? c.children[0] : c;
+}
+function chipList() {
+  const c = srcChips();
+  if (!c) return [];
+  return c.children.map((x) => ({ wrap: x, btn: chipBtn(x), text: String((chipBtn(x) || {}).textContent || "") }));
+}
 function chipByLabel(part) {
-  const chips = srcChips();
-  if (!chips) return null;
-  return chips.children.filter((c) => String(c.textContent).indexOf(part) === 0 ||
-    String(c.textContent).indexOf(part) >= 0)[0];
+  return (chipList().filter((x) => x.text.indexOf(part) >= 0)[0] || {}).btn || null;
+}
+function chipWrapByLabel(part) {
+  return (chipList().filter((x) => x.text.indexOf(part) >= 0)[0] || {}).wrap || null;
 }
 const bodyHtml = () => q("#cmp-body").innerHTML;
+const hasCol = (key) => bodyHtml().indexOf('data-src="' + key + '"') >= 0;
 
 (async () => {
   await sleep(60);
@@ -142,50 +154,57 @@ const bodyHtml = () => q("#cmp-body").innerHTML;
   ok(requests >= 2, "取数确实发生了（否则下面的断言没有意义）");
 
   /* 默认：TikTok 当月无图 → 不出列 */
-  ok(bodyHtml().indexOf("TikTok") < 0, "默认不应显示当月没有图的渠道（TikTok）");
-  ok(bodyHtml().indexOf("Pinterest") >= 0, "有图的渠道应正常出列（Pinterest）");
-  ok(bodyHtml().indexOf("SHEIN") >= 0, "有图的渠道应正常出列（SHEIN）");
+  ok(!hasCol("ch:tiktok"), "默认不应显示当月没有图的渠道（TikTok）");
+  ok(hasCol("ch:pinterest"), "有图的渠道应正常出列（Pinterest）");
+  ok(hasCol("ch:shein"), "有图的渠道应正常出列（SHEIN）");
   ok(/已隐藏 1 个无图渠道/.test(q("#cmp-summary").textContent), "摘要应写明隐藏了 1 个无图渠道");
 
   const before = requests;
 
   /* 渠道筛选里应能看到被隐藏的 TikTok（否则用户没法打开它） */
-  const tik = chipByLabel("TikTok");
+  const tik = chipByLabel("T");
   ok(!!tik, "「渠道」筛选里应列出被隐藏的 TikTok，方便手动打开");
-  ok(/无图/.test(tik.textContent), "无图渠道的 chip 应标注「无图」");
+  ok(tik && /无图/.test(tik.textContent), "无图渠道的 chip 应标注「无图」");
 
   /* 手动打开 TikTok */
   tik.onclick();
-  ok(bodyHtml().indexOf("TikTok") >= 0, "点开后应强制显示该渠道（即使当月无图）");
-  ok(/active/.test(chipByLabel("TikTok").className), "被打开的 chip 应处于选中态");
+  ok(hasCol("ch:tiktok"), "点开后应强制显示该渠道（即使当月无图）");
+  ok(/active/.test(chipByLabel("T").className), "被打开的 chip 应处于选中态");
 
   /* 手动关掉一个有图的渠道 */
-  const pin = chipByLabel("Pinterest");
+  const pin = chipByLabel("P");
   pin.onclick();
-  ok(bodyHtml().indexOf("Pinterest") < 0, "关掉后该渠道不应再出列");
-  ok(!/active/.test(chipByLabel("Pinterest").className), "被关掉的 chip 不应是选中态");
+  ok(!hasCol("ch:pinterest"), "关掉后该渠道不应再出列");
+  ok(!/active/.test(chipByLabel("P").className), "被关掉的 chip 不应是选中态");
 
   /* 全部关掉时至少留一列 */
   let guard = 0;
   while (guard++ < 12) {
-    const chips = srcChips().children.slice(1);        // 跳过「全部」
-    const on = chips.filter((c) => /active/.test(c.className));
+    const on = chipList().slice(1).filter((c) => /active/.test((c.btn || {}).className));
     if (on.length <= 1) break;
-    on[0].onclick();
+    on[0].btn.onclick();
   }
-  const last = srcChips().children.slice(1).filter((c) => /active/.test(c.className));
+  const last = chipList().slice(1).filter((c) => /active/.test((c.btn || {}).className));
   ok(last.length === 1, "应只剩一列仍然显示");
-  last[0].onclick();
-  const afterClose = srcChips().children.slice(1).filter((c) => /active/.test(c.className)).length;
+  last[0].btn.onclick();
+  const afterClose = chipList().slice(1).filter((c) => /active/.test((c.btn || {}).className)).length;
   ok(afterClose === 1, "关最后一列时不应生效（至少保留一列）");
   /* 剩下那列可能本来就没图（例如只剩 TikTok）：只要有内容或空态提示即可，不能是白屏 */
-  ok(/rk-pool|rk-empty/.test(bodyHtml()), "至少保留一列时不应渲染成空白页");
+  ok(/rk-pool|rk-empty|该列暂无数据/.test(bodyHtml()), "至少保留一列时不应渲染成空白页");
 
   /* 「全部」恢复默认 */
   srcChips().children[0].onclick();
-  ok(bodyHtml().indexOf("Pinterest") >= 0 && bodyHtml().indexOf("SHEIN") >= 0,
-    "「全部」应恢复有图的列");
-  ok(bodyHtml().indexOf("TikTok") < 0, "「全部」后无图渠道仍默认隐藏");
+  ok(hasCol("ch:pinterest") && hasCol("ch:shein"), "「全部」应恢复有图的列");
+  ok(!hasCol("ch:tiktok"), "「全部」后无图渠道仍默认隐藏");
+
+  /* 20261114Q：每个渠道列都能「✕ 去掉」，去掉后同一列不再出现 */
+  const wrap = chipWrapByLabel("S");
+  ok(!!wrap && wrap.children.length >= 2, "渠道 chip 右侧应有「✕ 去掉」按钮");
+  const xBtn = wrap && wrap.children[1];
+  ok(!!xBtn && xBtn.textContent === "✕", "✕ 按钮文案应为 ✕");
+  xBtn.onclick({ stopPropagation() {} });
+  ok(!hasCol("ch:shein"), "点 ✕ 后该渠道应从对比里消失");
+  ok(!chipList().some((c) => c.text.indexOf("S ") === 0), "点 ✕ 后筛选里也不应再有这一列");
 
   /* 整个过程不应增加取数请求：筛选只在内存里过滤 */
   ok(requests === before, "筛选不应触发任何取数请求（否则又会变慢）");

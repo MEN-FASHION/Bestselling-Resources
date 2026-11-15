@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261114P">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261114P">
+<link rel="stylesheet" href="css/style.css?v=20261114T">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261114T">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -116,9 +116,9 @@
         <a class="nav-item" data-target="movement-card">品牌动向</a>
         <a class="nav-item" data-target="rank-card">趋势上升榜</a>
         <a class="nav-item" data-target="rhythm-card">上新节奏</a>
-        <a class="nav-item" data-target="pinterest-card">Pinterest 专区</a>
-        <a class="nav-item" data-target="shein-card">SHEIN 专区</a>
-        <a class="nav-item" data-target="tiktok-card">TikTok 专区</a>
+        <a class="nav-item" data-target="pinterest-card">P 专区</a>
+        <a class="nav-item" data-target="shein-card">S 专区</a>
+        <a class="nav-item" data-target="tiktok-card">T 专区</a>
         <a class="nav-item" data-target="compare-card">渠道对比</a>
         <a class="nav-item" data-target="uploaddash-card">数据统计</a>
         <a class="nav-item" data-target="tools-card">实用工具</a>
@@ -1339,9 +1339,9 @@
         <div>
           <h3>渠道对比 · 对比列配置</h3>
           <p class="hint">
-            前台 <b>渠道对比</b> 页把各个来源的图并排摆开，一眼看差异。这里决定<b>对比哪几列、叫什么名字、谁在左边</b>。
-            新增渠道不用改代码：只要图进了「渠道图」（其它渠道传图 / Pinterest 专区 / SHEIN 专区），
-            下面就会自动出现这个渠道，勾上即成一列。
+            前台 <b>渠道对比</b> 页把各个来源的图并排摆开，一眼看差异。这里决定<b>能配置哪些渠道、对比哪几列、叫什么名字、谁在左边</b>。
+            渠道清单是一份<b>可编辑名单</b>（② 里随时增删，不限个数），不再由「库里已有的渠道」定死；
+            还没传过图的渠道也能先加，图进库后这一列自动出图。
           </p>
         </div>
         <div class="rkadm-head-act">
@@ -1355,8 +1355,18 @@
       </section>
 
       <section class="rkadm-sec">
-        <h4>② 可加入的专区 / 渠道</h4>
+        <h4>② 渠道清单（可任意增减）<span id="cmpa-pool-count" class="hint-inline"></span></h4>
+        <p class="hint">
+          这里就是「能配置的渠道」清单，<b>想加多少加多少</b>：下面填个名字回车即可新增一列，点渠道右侧的 <b>✕</b> 从清单里删掉。
+          删渠道<b>不会删任何图片</b>，只是它不再出现在配置与前台对比的候选里；以后要加回来，重新填一次名字即可。
+          勾上（✓）表示这一列会真的摆到前台对比页。
+        </p>
         <div id="cmpa-pool" class="cmpa-pool"></div>
+        <div class="cmpa-addrow">
+          <input id="cmpa-add-input" class="input" placeholder="输入渠道名，例如 Amazon、AliExpress、独立站、Temu" maxlength="24">
+          <button id="cmpa-add-btn" class="btn-ghost" type="button">＋ 新增渠道</button>
+          <span class="hint">还没传过图的渠道也能先加：图进库后这一列会自动出图。</span>
+        </div>
       </section>
 
       <section class="rkadm-sec">
@@ -1712,50 +1722,50 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261114P"></script>
-  <script src="vendor/quill.js?v=20261114P"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261114P"></script>
-  <script src="vendor/jszip.min.js?v=20261114P"></script>
-  <script src="vendor/qrcode.min.js?v=20261114P"></script>
-  <script src="js/site-norm.js?v=20261114P"></script>
-  <script src="js/config.js?v=20261114P"></script>
-  <script src="js/supabase.js?v=20261114P"></script>
+  <script src="vendor/supabase.js?v=20261114T"></script>
+  <script src="vendor/quill.js?v=20261114T"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261114T"></script>
+  <script src="vendor/jszip.min.js?v=20261114T"></script>
+  <script src="vendor/qrcode.min.js?v=20261114T"></script>
+  <script src="js/site-norm.js?v=20261114T"></script>
+  <script src="js/config.js?v=20261114T"></script>
+  <script src="js/supabase.js?v=20261114T"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261114P"></script>
+  <script src="js/admin-dialog.js?v=20261114T"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261114P"></script>
-  <script src="js/admin.js?v=20261114P"></script>
-  <script src="js/admin-images.js?v=20261114P"></script>
-  <script src="js/rank-enums.js?v=20261114P"></script>
-  <script src="js/imageexport.js?v=20261114P"></script>
-  <script src="js/admin-imageimport.js?v=20261114P"></script>
-  <script src="js/admin-movement.js?v=20261114P"></script>
-  <script src="js/admin-smart.js?v=20261114P"></script>
-  <script src="js/admin-trend.js?v=20261114P"></script>
-  <script src="js/admin-notice.js?v=20261114P"></script>
-  <script src="js/marketing-data.js?v=20261114P"></script>
-  <script src="js/admin-festival.js?v=20261114P"></script>
-  <script src="js/admin-tasks.js?v=20261114P"></script>
-  <script src="js/admin-bestseller.js?v=20261114P"></script>
-  <script src="js/ipgeo.js?v=20261114P"></script>
-  <script src="js/upload-owner.js?v=20261114P"></script>
-  <script src="js/admin-perm.js?v=20261114P"></script>
-  <script src="js/admin-pool.js?v=20261114P"></script>
-  <script src="js/rankexport.js?v=20261114P"></script>
-  <script src="js/admin-rankimport.js?v=20261114P"></script>
-<script src="js/mindmap.js?v=20261114P"></script>
-  <script src="js/flowchart.js?v=20261114P"></script>
-  <script src="js/gantt.js?v=20261114P"></script>
-<script src="js/admin-tools.js?v=20261114P"></script>
-<script src="js/admin-channelzone.js?v=20261114P"></script>
-<script src="js/admin-compare.js?v=20261114P"></script>
-  <script src="js/rank-cat-norm.js?v=20261114P"></script>
-<script src="js/rank-period-norm.js?v=20261114P"></script>
-  <script src="js/rhythm-calc.js?v=20261114P"></script>
-  <script src="js/admin-rank.js?v=20261114P"></script>
-  <script src="js/admin-rhythm.js?v=20261114P"></script>
-  <script src="js/admin-backup.js?v=20261114P"></script>
-  <script src="js/upload-dash.js?v=20261114P"></script>
+  <script src="js/find-similar.js?v=20261114T"></script>
+  <script src="js/admin.js?v=20261114T"></script>
+  <script src="js/admin-images.js?v=20261114T"></script>
+  <script src="js/rank-enums.js?v=20261114T"></script>
+  <script src="js/imageexport.js?v=20261114T"></script>
+  <script src="js/admin-imageimport.js?v=20261114T"></script>
+  <script src="js/admin-movement.js?v=20261114T"></script>
+  <script src="js/admin-smart.js?v=20261114T"></script>
+  <script src="js/admin-trend.js?v=20261114T"></script>
+  <script src="js/admin-notice.js?v=20261114T"></script>
+  <script src="js/marketing-data.js?v=20261114T"></script>
+  <script src="js/admin-festival.js?v=20261114T"></script>
+  <script src="js/admin-tasks.js?v=20261114T"></script>
+  <script src="js/admin-bestseller.js?v=20261114T"></script>
+  <script src="js/ipgeo.js?v=20261114T"></script>
+  <script src="js/upload-owner.js?v=20261114T"></script>
+  <script src="js/admin-perm.js?v=20261114T"></script>
+  <script src="js/admin-pool.js?v=20261114T"></script>
+  <script src="js/rankexport.js?v=20261114T"></script>
+  <script src="js/admin-rankimport.js?v=20261114T"></script>
+<script src="js/mindmap.js?v=20261114T"></script>
+  <script src="js/flowchart.js?v=20261114T"></script>
+  <script src="js/gantt.js?v=20261114T"></script>
+<script src="js/admin-tools.js?v=20261114T"></script>
+<script src="js/admin-channelzone.js?v=20261114T"></script>
+<script src="js/admin-compare.js?v=20261114T"></script>
+  <script src="js/rank-cat-norm.js?v=20261114T"></script>
+<script src="js/rank-period-norm.js?v=20261114T"></script>
+  <script src="js/rhythm-calc.js?v=20261114T"></script>
+  <script src="js/admin-rank.js?v=20261114T"></script>
+  <script src="js/admin-rhythm.js?v=20261114T"></script>
+  <script src="js/admin-backup.js?v=20261114T"></script>
+  <script src="js/upload-dash.js?v=20261114T"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1817,6 +1827,6 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261114P"></script>
+  <script src="js/ui-dialog.js?v=20261114T"></script>
 </body>
 </html>

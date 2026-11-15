@@ -25,16 +25,16 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261114P";
+  var BUILD = "20261114T";
 
   /* 各专区的按钮挂点（工具条）与取景范围（内容区） */
   var ZONES = {
     rank: { label: "趋势上升榜", bar: "#rk-bar", root: "#rk-body" },
     rhythm: { label: "上新节奏", bar: "#rk-bar", root: "#rk-body" },
     compare: { label: "渠道对比", bar: "#cmp-bar", root: "#cmp-body" },
-    shein: { label: "SHEIN 专区", bar: "#cz-bar", root: "#cz-body" },
-    pinterest: { label: "Pinterest 专区", bar: "#cz-bar", root: "#cz-body" },
-    tiktok: { label: "TikTok 专区", bar: "#cz-bar", root: "#cz-body" },
+    shein: { label: "S 专区", bar: "#cz-bar", root: "#cz-body" },
+    pinterest: { label: "P 专区", bar: "#cz-bar", root: "#cz-body" },
+    tiktok: { label: "T 专区", bar: "#cz-bar", root: "#cz-body" },
     movement: { label: "品牌动向", bar: "#mv-bar", root: "#mv-body" },
     visual: { label: "视觉专区", bar: "#grid-bar", root: "#grid" }
   };
@@ -43,7 +43,11 @@
   var CAP = { scale: 2, minScale: 1, maxPixels: 44e6, maxW: 6000, maxH: 30000 };
   var FONT = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
 
-  var ST = { key: "", cfg: null, allowed: false, btn: null, obs: null, busy: false };
+  /* 20261114T：只有趋势上升榜 / 上新节奏的整页图要带文字；
+     其余专区（渠道对比 / S / P / T 专区 / 品牌动向 / 视觉专区）只出图，一个字不画。 */
+  var TEXT_KEEP = { rank: 1, rhythm: 1 };
+
+  var ST = { key: "", cfg: null, allowed: false, btn: null, obs: null, busy: false, textless: true };
 
   function $(s, r) { return (r || document).querySelector(s); }
   function trim(s) { return String(s == null ? "" : s).trim(); }
@@ -305,6 +309,7 @@
       }
       /* 只画叶子节点的文字，避免父节点把同一句重复画一遍 */
       var txt = trim(el.textContent);
+      if (ST.textless) return;               /* 只出图：任何文字都不进快照 */
       if (txt && (!el.children || !el.children.length)) {
         var fs = parseFloat(cs.fontSize) || 12;
         var lh = parseFloat(cs.lineHeight) || fs * 1.4;
@@ -581,6 +586,8 @@
     ST.key = (typeof arg === "string") ? arg : (cfg.key || cfg.label || "");
     if (!cfg.key) cfg.key = ST.key;
     ST.cfg = cfg;
+    /* 20261114T：除趋势上升榜 / 上新节奏，整页图一律只出图不出字 */
+    ST.textless = !TEXT_KEEP[ST.key] && !TEXT_KEEP[cfg.key || ""];
     allowedNow().then(function (ok) {
       ST.allowed = !!ok;
       if (!ok) return;

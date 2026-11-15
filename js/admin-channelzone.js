@@ -16,9 +16,9 @@
   "use strict";
 
   var ZONES = [
-    { key: "pinterest", label: "Pinterest 专区", channel: "Pinterest" },
-    { key: "shein", label: "SHEIN 专区", channel: "SHEIN" },
-    { key: "tiktok", label: "TikTok 专区", channel: "TikTok" },
+    { key: "pinterest", label: "P 专区", channel: "Pinterest" },
+    { key: "shein", label: "S 专区", channel: "SHEIN" },
+    { key: "tiktok", label: "T 专区", channel: "TikTok" },
   ];
 
   var DIMS = [

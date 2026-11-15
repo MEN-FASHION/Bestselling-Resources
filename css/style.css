@@ -622,6 +622,25 @@ select.input {
 }
 .tag-chip.zero { opacity: .45; }
 .tag-chip.zero:hover { opacity: .75; }
+
+/* 20261114Q · 渠道对比「自定义增删渠道」：
+   一个 chip = 开关按钮 + 右侧小 ✕；✕ 只删本机这一列，不影响别人、不动数据。 */
+.cmp-chip-wrap { display: inline-flex; align-items: stretch; gap: 0; }
+.cmp-chip-wrap .tag-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cmp-chip-x {
+  border: 1px solid var(--line); border-left: none; background: #fff; color: #a8a29a;
+  border-top-right-radius: 999px; border-bottom-right-radius: 999px;
+  padding: 0 8px; font-size: 11px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.cmp-chip-x:hover { color: #c0392b; background: #fff6f4; border-color: #e7bdb5; }
+.cmp-add-chip { border-style: dashed; color: #6b7280; }
+.cmp-add-chip:hover { color: var(--txt); border-color: var(--gold); }
+
+/* 20261114T · 渠道对比：工具条常驻「添加 / 重置渠道」，列头常驻 ✕ */
+.cmp-bar-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cmp-bar-actions .cmi-btn { white-space: nowrap; }
+.rk-pool-meta .cmp-col-x { padding: 1px 7px; font-size: 11px; margin-left: 2px; color: #a8a29a; }
+.rk-pool-meta .cmp-col-x:hover { color: #c0392b; border-color: #e7bdb5; background: #fff6f4; }
 .tc-count {
   font-size: 11px; background: rgba(255,255,255,.12); border-radius: 999px;
   padding: 0 6px; line-height: 15px;
@@ -6725,6 +6744,9 @@ html, body{
 .cmpa-ops { flex: 0 0 auto; display: flex; gap: 4px; margin-left: auto; }
 .cmpa-ops .btn-ghost.small { padding: 2px 8px; font-size: 12px; }
 .cmpa-pool { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 20261114Q · 自定义新增渠道行 */
+.cmpa-addrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.cmpa-addrow .input { flex: none; width: 280px; max-width: 100%; }
 .cmpa-chip {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
@@ -6733,6 +6755,15 @@ html, body{
 .cmpa-chip:hover { border-color: var(--gold); }
 .cmpa-chip.is-on { background: #f6f1e9; border-color: var(--gold); color: #8a6d33; font-weight: 600; }
 .cmpa-chip i { font-style: normal; font-size: 11px; color: var(--sub); font-weight: 400; }
+/* 20261114T · 渠道清单：chip 右侧带「✕ 从清单删除」 */
+.cmpa-chip-wrap { display: inline-flex; align-items: center; }
+.cmpa-chip-wrap .cmpa-chip { border-radius: 999px 0 0 999px; }
+.cmpa-chip-x {
+  cursor: pointer; padding: 6px 9px; margin-left: -1px; font-size: 11px; line-height: 1.5;
+  border: 1px solid var(--line); border-left: none; border-radius: 0 999px 999px 0;
+  background: #fff; color: var(--sub);
+}
+.cmpa-chip-x:hover { color: #b23b3b; border-color: #e0b4b4; background: #fdf5f5; }
 .cmpa-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
 .cmpa-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 
