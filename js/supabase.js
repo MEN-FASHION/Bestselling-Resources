@@ -1041,7 +1041,7 @@ const SB = (() => {
        这里按 20 条并发推送，单条失败不中断整批，返回 { ok, fail, errors }。
        patch 形如 { style_tags:[...], craft_tags:[...], ... }，只带要写的字段。 */
     async batchUpdateImageTags(updates, concurrency) {
-      var list = (updates || []).filter/* 20261121A：收藏写入口径未变；本轮修复在 js/favstar.js（点击时重确认 + 失败不静默） */
+      var list = (updates || []).filter/* 20261121B：本轮未改收藏写入；修复在 admin-channelzone.js（删图清指纹 + 即时重绘） */
 (function (u) { return u && u.id != null && u.patch && Object.keys(u.patch).length; });
       if (!list.length) return { ok: 0, fail: 0, errors: [] };
       /* 20261030A：改写到 rank_image_tags（按图片地址）。

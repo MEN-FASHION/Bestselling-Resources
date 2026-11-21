@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261121A";
+  var BUILD = "20261121B";
 
   /* 每个专区一条独立通道；channels 用大写比较，写错大小写不影响。
      ptype：该专区默认按「周次」还是「月份」看。 */

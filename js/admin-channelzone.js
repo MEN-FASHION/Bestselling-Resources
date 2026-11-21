@@ -792,24 +792,43 @@
     try {
       var res = await SB.deleteRankChannelItems(list);
       list.forEach(function (id) { delete st.sel[id]; });
+      /* 20261121B：删成功就地更新内存，网格 / 类目菜单 / 「共 N 张」立刻变，
+         不用等重新取数回来（取数要串几条接口，慢的时候看着就像「没删掉」）。
+         随后的 loadAll 只做对账：万一某张其实没删掉，它会重新出现。 */
+      var goneItems = (st.items || []).filter(function (r) { return list.indexOf(String(r.id)) >= 0; });
+      if (goneItems.length) {
+        var goneIds = {};
+        goneItems.forEach(function (r) { goneIds[String(r.id)] = 1; });
+        st.items = st.items.filter(function (r) { return !goneIds[String(r.id)]; });
+        goneItems.forEach(function (r) {
+          delete st.sel[String(r.id)];
+          try { delete st.tagMap[r.image_url]; } catch (e0) { /* 忽略 */ }
+          try { delete st.own[String(r.id)]; } catch (e0) { /* 忽略 */ }
+        });
+        /* 指纹同步清掉：不清的话，同一批图重新上传会被判「已经传过」而整批跳过 */
+        try { fpForget(k, goneItems); } catch (e0) { /* 忽略 */ }
+        renderAll(k);
+      }
       /* 20261114W：删除成功后先把这几张从图墙上拿掉，再去重新取数。
          以前全靠重新取数，取数慢一点就看着像「没删掉，非要刷新整页才消失」。 */
       try {
         var gbox = el(k, "grid");
         if (gbox) {
-          var goneIds = {};
-          list.forEach(function (id) { goneIds[String(id)] = 1; });
+          var goneIds2 = {};
+          list.forEach(function (id) { goneIds2[String(id)] = 1; });
           Array.prototype.slice.call(gbox.querySelectorAll(".cz-card")).forEach(function (card) {
-            if (goneIds[String(card.getAttribute("data-id"))] && card.parentNode) card.parentNode.removeChild(card);
+            if (goneIds2[String(card.getAttribute("data-id"))] && card.parentNode) card.parentNode.removeChild(card);
           });
         }
       } catch (e) { /* 忽略：随后的 loadAll 会重绘 */ }
+      /* 本页读图用的文档缓存也要清，否则对账时会把刚删的读回来 */
+      try { if (SB && typeof SB.invalidateCaches === "function") SB.invalidateCaches(); } catch (e0) { /* 忽略 */ }
       if (window.DataSync) { try { window.DataSync.bump("channelpics"); } catch (e) { /* 忽略 */ } }
-      /* 图删了，归属记录一并清掉，避免归属表越积越大 */
+      /* 图删了，归属记录一并清掉，避免归属表越积越大
+         （20261121B：必须用删除前抓下来的 goneItems，st.items 里已经拿掉了） */
       try {
         if (uoOk()) {
-          var gone = st.items.filter(function (r) { return list.indexOf(String(r.id)) >= 0; })
-            .map(function (r) { return r.image_url; });
+          var gone = goneItems.map(function (r) { return r.image_url; }).filter(Boolean);
           if (gone.length) await window.UO.forget("i", gone);
         }
       } catch (e) { /* 忽略 */ }
@@ -941,6 +960,57 @@
     } catch (e) { /* 存不下就算了，不影响上传 */ }
   }
 
+  /* 20261121B：把「原始文件名」换算成图片服务实际存下来的名字。
+     图片服务的命名是 <时间戳>_<随机>_<fileName 里非 [A-Za-z0-9_.-] 的字符换成 _>，
+     所以中文名（如「背心1.jpg」）在地址里会变成「__1.jpg」。
+     删图清指纹时必须按这个换算后的名字比对，否则中文名的图永远清不掉，
+     重新上传就会一直被「已经传过」挡住。 */
+  function urlName(name) {
+    return normName(String(name || "").replace(/[^\w.\-]/g, "_"));
+  }
+
+  /* 20261121B：删图时同步清掉本地指纹。
+     以前的漏洞：指纹是「本浏览器 + 本专区 + 本科目 + 本月已传过」的记录（存在 localStorage），
+     删图时没有清，于是图已经从库里删掉了，指纹还在 → 重新上传被整批判成「已经传过」而跳过，
+     但库里一张都没有，菜单自然也是空的。这就是「误删后重传，提示已传过却看不到图」的原因。 */
+  function fpForget(k, items) {
+    var map = fpLoad();
+    var wants = (items || []).map(function (r) {
+      return {
+        c: catKey(r && r.category),
+        m: normMonth((r && (r.month || r.period_label)) || ""),
+        n: nameFromUrl(r && r.image_url),
+      };
+    }).filter(function (w) { return w.c && w.m; });
+    if (!wants.length) return 0;
+    var hit = 0;
+    Object.keys(map).forEach(function (key) {
+      var e = map[key];
+      if (!e || String(e.z || "") !== String(k || "")) return;
+      var ec = catKey(e.c), em = normMonth(e.m || ""), en = urlName(e.n || "");
+      var gone = wants.some(function (w) {
+        if (w.c !== ec || w.m !== em) return false;
+        /* 名字能对上就是这张；名字对不上（老记录、改名过）不硬删，交给「库里为空就放行」兜底 */
+        return !!en && !!w.n && en === w.n;
+      });
+      if (gone) { delete map[key]; hit++; }
+    });
+    if (hit) fpSave(map);
+    return hit;
+  }
+
+  /* 20261121B：库里的「本专区 + 本科目 + 本月」还剩多少张。
+     为 0 说明这个组合下什么都没有，本地指纹一律视为过期（图被删光了）。
+     注意只在「列表已经取回来」之后才敢这么判（ready），
+     否则加载未完成时 items 是空的，会把本来有效的指纹全当成过期。 */
+  function dbGroupCount(k, cat, month) {
+    var st = state[k];
+    if (!st || !st.ready || !st.items) return -1;
+    return st.items.filter(function (r) {
+      return catKey(r.category) === catKey(cat) && normMonth(r.month || "") === normMonth(month);
+    }).length;
+  }
+
   /* 内容指纹：文件大小 + 前 64KB 的 SHA-256。浏览器不支持摘要时退化为「名字+大小+改时间」 */
   async function fingerprint(file) {
     var head = file.slice(0, Math.min(65536, file.size));
@@ -1022,7 +1092,10 @@
       if (f.__fp) seen[fpKey(k, f.__cat || cat, f.__month || month, f.__fp)] = 1;
     });
 
-    var add = [], dupLocal = 0, dupCloud = 0, dupBatch = 0;
+    var add = [], dupLocal = 0, dupCloud = 0, dupBatch = 0, staleFp = 0;
+    /* 20261121B：库里这个「类目 + 月份」一张都没有时，本地指纹一定是残留（图早被删了），
+       这时不能拿指纹挡人 —— 否则就是「提示已传过、菜单里却一张都没有」的死局。 */
+    var dbN = dbGroupCount(k, cat, month);
     for (var i = 0; i < imgs.length; i++) {
       var f = imgs[i];
       var fp = await fingerprint(f);
@@ -1036,7 +1109,10 @@
       /* 还没选类目时，只挡「本批重复」；选完类目点上传时再按三键做最后一道判定，
          免得把「先选图、后选类目」的顺序误判成重复 */
       if (cat) {
-        if (have[fk]) { dupLocal++; continue; }
+        if (have[fk]) {
+          if (dbN !== 0) { dupLocal++; continue; }
+          delete have[fk]; staleFp++;      /* 库里已经没有这张 → 指纹作废，照常放行 */
+        }
         if (nm && names[nm]) { dupCloud++; continue; }
       }
 
@@ -1044,6 +1120,7 @@
       if (nm) names[nm] = 1;
       add.push(f);
     }
+    if (staleFp) fpSave(have);
 
     if (add.length) {
       st.pending = st.pending.concat(add);
@@ -1143,14 +1220,20 @@
     var gKey = catKey(cat) + "|" + month;
     var mNames = byCM[gKey] || {};
     var fps = fpLoad();
-    var pending = [], skippedSameMonth = 0;
+    var pending = [], skippedSameMonth = 0, staleFp2 = 0;
+    /* 20261121B：库里这个「类目 + 月份」一张都没有 → 本地指纹一律作废，不再拦人 */
+    var dbN2 = dbGroupCount(k, cat, month);
     st.pending.forEach(function (f) {
       var nm = normName(f.name);
       if (nm && mNames[nm]) { skippedSameMonth++; return; }
-      if (f.__fp && fps[fpKey(k, cat, month, f.__fp)]) { skippedSameMonth++; return; }
+      if (f.__fp && fps[fpKey(k, cat, month, f.__fp)]) {
+        if (dbN2 !== 0) { skippedSameMonth++; return; }
+        delete fps[fpKey(k, cat, month, f.__fp)]; staleFp2++;
+      }
       if (nm) mNames[nm] = 1;     /* 同一批里重名的也挡掉 */
       pending.push(f);
     });
+    if (staleFp2) fpSave(fps);
     if (skippedSameMonth) {
       st.pending = pending;
       renderPending(k);
@@ -1412,6 +1495,17 @@
     if (!(await uiConfirm("删除这张图？删掉后前台立即不再展示（打标记录保留）。"))) return;
     try {
       await SB.deleteRankChannelItem(item.id);
+      /* 20261121B：单张删除也先就地更新内存，网格 / 菜单 / 计数立刻变 */
+      try {
+        var sti = state[k];
+        var idn = String(item.id);
+        sti.items = (sti.items || []).filter(function (r) { return String(r.id) !== idn; });
+        delete sti.sel[idn];
+        try { delete sti.tagMap[item.image_url]; } catch (e0) { /* 忽略 */ }
+        try { delete sti.own[idn]; } catch (e0) { /* 忽略 */ }
+        fpForget(k, [item]);
+        renderAll(k);
+      } catch (e0) { /* 忽略：随后的 loadAll 兜底 */ }
       /* 20261114W：立刻从图墙上拿掉这一张，再重取（原因同 delMany） */
       try {
         var gbox2 = el(k, "grid");
@@ -1421,6 +1515,7 @@
           });
         }
       } catch (e) { /* 忽略 */ }
+      try { if (SB && typeof SB.invalidateCaches === "function") SB.invalidateCaches(); } catch (e0) { /* 忽略 */ }
       if (window.DataSync) { try { window.DataSync.bump("channelpics"); } catch (e) { /* 忽略 */ } }
       try { if (uoOk()) await window.UO.forget("i", [item.image_url]); } catch (e) { /* 忽略 */ }
       closeTag(k);

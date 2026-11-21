@@ -566,6 +566,14 @@
     if (!(await uiConfirm("删除这张图？打标记录会一并清空。"))) return;
     try {
       await SB.deleteMovementItem(item.id);
+      /* 20261121B：先就地更新内存，网格 / 类目菜单 / 计数立刻变，
+         不用等重新取数回来（取数慢时看着就像「删了还在，非要刷新」） */
+      try {
+        var idn = String(item.id);
+        state.items = (state.items || []).filter(function (r) { return String(r.id) !== idn; });
+        try { delete state.tagMap[item.image_url]; } catch (e0) { /* 忽略 */ }
+        renderMenu(); renderGrid(); renderCount();
+      } catch (e0) { /* 忽略：随后的 loadAll 兜底 */ }
       /* 20261114W：告诉其它已打开的页面「图删了」，前台立刻重取，不用手动刷新 */
       if (window.DataSync) { try { window.DataSync.bump("images"); } catch (e) { /* 忽略 */ } }
       try {
