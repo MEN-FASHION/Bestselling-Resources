@@ -85,6 +85,11 @@
     return base ? base + "/" + s.replace(/^\/+/, "") : s;
   }
 
+  /* 20261116B：卡片用缩略图（图片服务缩到 340px，约 20KB），点开大图仍用原图 */
+  function thumbOf(u) {
+    try { return window.imgThumb ? window.imgThumb(u) : u; } catch (e) { return u; }
+  }
+
   function toast(msg, ok) {
     var el = $("#toast");
     if (!el) return;
@@ -836,7 +841,7 @@
         list.forEach(function (it) {
           html += '<figure class="rk-card cmp-card" data-url="' + esc(it.image_url) + '" title="' +
             esc([it.category, it.month, it.site].filter(Boolean).join(" · ")) + '">' +
-            '<img loading="lazy" decoding="async" src="' + esc(it.image_url) + '" alt="' + esc(it.category) + '">' +
+            '<img loading="lazy" decoding="async" src="' + esc(thumbOf(it.image_url)) + '" data-full="' + esc(it.image_url) + '" alt="' + esc(it.category) + '">' +
             (taggedOf(it.image_url) ? '<span class="cmp-tagged" title="已打标">●</span>' : "") +
             "</figure>";
         });

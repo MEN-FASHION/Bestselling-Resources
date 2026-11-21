@@ -200,13 +200,19 @@
       card.setAttribute("data-period", sea || "");
       card.setAttribute("data-title", it.title || "");
       card.innerHTML =
-        '<div class="mv-card-img"><img loading="lazy" src="' + esc(imgUrl(it)) + '" alt="' + esc(it.title || "") + '">' +
+        '<div class="mv-card-img"><img loading="lazy" decoding="async" src="' + esc(thumbUrl(it)) + '" data-full="' + esc(imgUrl(it)) + '" alt="' + esc(it.title || "") + '">' +
         (sea ? '<span class="mv-season-badge">' + esc(sea) + "</span>" : "") +
         "</div>" +
         '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(it.category || "未分类") + "</span></div>";
       card.onclick = function () { openModal(it); };
       body.appendChild(card);
     });
+  }
+
+  /* 20261116B：卡片图走缩略图（约 20KB），点开大图 / 导出仍用原图 */
+  function thumbUrl(it) {
+    var u = imgUrl(it);
+    try { return window.imgThumbOf ? window.imgThumbOf(u) : u; } catch (e) { return u; }
   }
 
   function seasonLabel(it) {

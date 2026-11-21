@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261115H";
+  var BUILD = "20261121A";
 
   /* 每个专区一条独立通道；channels 用大写比较，写错大小写不影响。
      ptype：该专区默认按「周次」还是「月份」看。 */
@@ -127,9 +127,17 @@
     } catch (e) { return []; }
   }
 
+  /* 20261116A：后台改过的上传日期（优先级高于归属登记时间） */
+  function dateOv(kind, key) {
+    try {
+      var U = window.UO;
+      if (!U || typeof U.dateOf !== "function") return "";
+      return U.dateOf(kind, key) || "";
+    } catch (e) { return ""; }
+  }
+
   /* 一个槽位只认最早登记的人（见文件头「归属口径」） */
-  function firstOwner(list) {
-    var best = null, bestT = null;
+  function firstOwner(list) {    var best = null, bestT = null;
     (list || []).forEach(function (o) {
       if (!o || !o.u) return;
       var t = trim(o.t);
@@ -189,7 +197,8 @@
         var n = Number(b && b.rows);
         if (!n || n < 0) return;
         var own = firstOwner(ownersOf("b", String(b.id)));
-        var day = own ? dayOf(own.t) : "";
+        /* 20261116A：优先用「更正上传日期」，没有才回退到归属登记时间 */
+        var day = dateOv("b", b.id) || (own ? dayOf(own.t) : "");
         var label = trim(b && (b.period_label || b.period));
         var pt = (trim(b && b.period_type) || "week").toLowerCase();
         var week = pt === "month" ? isoWeekOf(day) : (label ? normWeek(label) : isoWeekOf(day));
@@ -218,7 +227,7 @@
       if (!ch) return;
       if (!all && want.indexOf(ch) < 0) return;
       var own = firstOwner(ownersOf("i", String(r.image_url || "")));
-      var day = own ? dayOf(own.t) : "";
+      var day = dateOv("i", r.image_url) || (own ? dayOf(own.t) : "");
       var label = trim(r && (r.period_label || r.month));
       out.push({
         who: resolveName(own, names),
@@ -238,7 +247,7 @@
     var rows = await s.listMovementItems(null);
     (rows || []).forEach(function (r) {
       var own = firstOwner(ownersOf("i", String(r.image_url || "")));
-      var day = own ? dayOf(own.t) : dayOf(r.created_at);
+      var day = dateOv("i", r.image_url) || (own ? dayOf(own.t) : dayOf(r.created_at));
       out.push({
         who: resolveName(own, names),
         day: day,
@@ -262,7 +271,8 @@
     } catch (e) { return false; }
     (rows || []).forEach(function (r) {
       var uid = trim(r && r.uploaded_by);
-      var day = dayOf(r && (r.created_at || ""));
+      /* 20261116A：视觉专区的日期更正同样优先（写入 images.created_at 之外还留一份覆盖值） */
+      var day = dateOv("i", (r && (r.url || r.path)) || "") || dayOf(r && (r.created_at || ""));
       out.push({
         who: uid ? (names[uid] || uidLabel(uid)) : HIST,
         day: day,

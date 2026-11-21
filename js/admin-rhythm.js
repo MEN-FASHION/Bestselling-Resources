@@ -49,6 +49,34 @@
       ? "其中 " + n + " 项不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动，已跳过"
       : "这条不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动";
   }
+
+  /* 20261116A：被更正过的上传日期（没有就不显示） */
+  function batchDayText(b) {
+    try {
+      if (!uoOk() || !window.UO.dateOf || !b || b.id == null) return "";
+      var v = window.UO.dateOf("b", b.id);
+      return v ? " · 上传日 " + v : "";
+    } catch (e) { return ""; }
+  }
+
+  /* 20261116A：更正这一批的上传日期（只影响后台数据统计的日期 / 月份） */
+  async function backdateBatch(b) {
+    if (!b || b.id == null) return false;
+    if (!uoOk() || !window.UO.setDate) { sbToast("上传归属模块没加载，请强刷后重试", false); return false; }
+    if (!batchCanRun(b)) { sbToast(denyTip(1), false); return false; }
+    var cur = window.UO.dateOf("b", b.id) || "";
+    var d0 = await window.UO.askDate("把这一批（" + b.period_label + " · " + (b.category || "未填类目") + "）的上传日期改为：", cur);
+    if (d0 == null) return false;
+    var d = String(d0).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { sbToast("日期格式不对，应为 年-月-日", false); return false; }
+    var res = await window.UO.setDate("b", [b.id], d);
+    if (!res.ok.length) { sbToast("日期没写进去，请刷新后重试", false); return false; }
+    try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e) { /* 忽略 */ }
+    await loadRankBatches();
+    rankPreviewRefresh();
+    sbToast("这一批的上传日期已改为 " + d, true);
+    return true;
+  }
   const rankPv = { cat: "", site: "", period: "", mode: "h", size: "m" };
   /* 站点名归一：交给公共模块，认不出时原样返回（绝不瞎猜） */
   function siteNormResolve(v, list) {
@@ -1038,7 +1066,7 @@
       const main = document.createElement("span");
       main.className = "rank-batch-main";
       if (!can) main.classList.add("is-readonly");
-      main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+      main.textContent = (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "") + batchDayText(b);
       const own = document.createElement("span");
       own.className = "rank-batch-owner" + (can ? "" : " is-other");
       own.textContent = " · 上传人 " + (batchOwner(b) || "历史数据") + (can ? "" : "（不可改动）");
@@ -1047,6 +1075,11 @@
 
       const act = document.createElement("span");
       act.className = "rkadm-row-act";
+
+      const dtBtn = document.createElement("button");
+      dtBtn.type = "button"; dtBtn.className = "btn-ghost small"; dtBtn.textContent = "改上传日期";
+      dtBtn.disabled = !can; dtBtn.title = can ? "只改后台数据统计里的日期，不动榜单数据" : denyTip(1);
+      dtBtn.onclick = async () => { await backdateBatch(b); };
 
       const ren = document.createElement("button");
       ren.type = "button"; ren.className = "btn-ghost small"; ren.textContent = "改期次名";
@@ -1078,7 +1111,7 @@
         catch (e) { sbToast("删除失败", false); }
       };
 
-      act.appendChild(ren); act.appendChild(del);
+      act.appendChild(dtBtn); act.appendChild(ren); act.appendChild(del);
       row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });

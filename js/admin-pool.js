@@ -69,9 +69,11 @@ async function imgPoolRender() {
       const wrap = document.createElement("div");
       wrap.className = "holder";
       const im = document.createElement("img");
-      im.src = url;
+      /* 20261116B：卡片用缩略图 + 懒加载。以前这里是 eager + 原图，几百张图一进面板就全量下载 */
+      im.src = (window.imgThumbOf ? window.imgThumbOf(url) : url);
+      im.setAttribute("data-full", url);
       im.alt = it.key || "";
-      im.loading = "eager";
+      im.loading = "lazy";
       im.draggable = false;
       im.addEventListener("contextmenu", (e) => e.preventDefault());
       im.classList.add("loaded");
@@ -273,10 +275,86 @@ async function imgPoolCompressBatch(keys) {
     sbToast("批量压缩完成：成功 " + ok + "，失败 " + fail, fail === 0);
   }
 
+/* 20261116B · 存量图补缩略图
+   ------------------------------------------------------------
+   老图上传时还没有缩略图，卡片只能下整张（约 200KB）。这里一键回填：
+   拉原图 → 缩到 340px WebP（约 20KB）→ 存到图片服务 thumbs/。
+   已存在缩略图的跳过；原图本来就小的跳过。3 路并行，可随时点停止。 */
+let thumbBusy = false;
+let thumbStop = false;
+
+async function thumbExists(key) {
+  const base = (window.CONFIG.WORKER_URL || "").replace(/\/$/, "");
+  const tk = (key.match(/\.[a-z0-9]+$/i) || [])[0] || "";
+  const tkey = "thumbs/" + key.replace(/\.[a-z0-9]+$/i, "") + ".webp";
+  if (!tk) return false;
+  let tok = "";
+  try { tok = await SB.currentToken(); } catch (e) { tok = ""; }
+  try {
+    const r = await fetch(base + "/" + tkey + (tok ? "?token=" + encodeURIComponent(tok) : ""), { method: "HEAD" });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+async function thumbOne(it) {
+  if (it.size && it.size <= 60 * 1024) return "skip";     /* 本来就小，没必要再存一份 */
+  if (await thumbExists(it.key)) return "skip";
+  let tok = "";
+  try { tok = await SB.currentToken(); } catch (e) { tok = ""; }
+  const r = await fetch(urlOfPath(it.key, tok), { headers: { Authorization: "Bearer " + tok } });
+  if (!r.ok) throw new Error("拉图失败 " + r.status);
+  const blob = await r.blob();
+  const file = new File([blob], "img.jpg", { type: (blob.type && /^image\//i.test(blob.type)) ? blob.type : "image/jpeg" });
+  const th = await SB.makeThumb(file, 400);
+  if (!th) return "skip";
+  await SB.saveThumb(it.key, th);
+  return "ok";
+}
+
+async function imgPoolThumbBackfill() {
+  if (thumbBusy) { thumbStop = true; return; }
+  if (!imgPoolItems.length) { await imgPoolLoad(); }
+  if (!imgPoolItems.length) { sbToast("清单为空，先点「刷新清单」", false); return; }
+  const total = imgPoolItems.length;
+  thumbBusy = true; thumbStop = false;
+  const btn = $("#imgpool-thumb");
+  if (btn) btn.textContent = "停止";
+  const box = $("#imgpool-progress");
+  const bar = $("#imgpool-progress-bar"), txt = $("#imgpool-progress-text");
+  if (box) box.classList.remove("hidden");
+  let ok = 0, skip = 0, fail = 0, i = 0;
+
+  const lane = async () => {
+    for (;;) {
+      if (thumbStop) return;
+      const idx = i++;
+      if (idx >= total) return;
+      const it = imgPoolItems[idx];
+      try {
+        const r = await thumbOne(it);
+        if (r === "ok") ok++; else skip++;
+      } catch (e) { fail++; }
+      const done = ok + skip + fail;
+      if (bar) bar.style.width = Math.round((done / total) * 100) + "%";
+      if (txt) txt.textContent = "缩略图回填中…（" + done + "/" + total + "）成功 " + ok + " · 跳过 " + skip + " · 失败 " + fail;
+    }
+  };
+  try {
+    await Promise.all([lane(), lane(), lane()]);
+  } finally {
+    thumbBusy = false;
+    if (btn) btn.textContent = "生成缩略图";
+    if (txt) txt.textContent = (thumbStop ? "已停止：" : "完成：") + "新生成 " + ok + " 张，跳过 " + skip + " 张（已有缩略图或图太小），失败 " + fail + " 张";
+    sbToast("缩略图回填" + (thumbStop ? "已停止" : "完成") + "：成功 " + ok + "，跳过 " + skip + "，失败 " + fail, fail === 0);
+  }
+}
+
 function bindImagePool() {
     const refresh = $("#imgpool-refresh");
     if (!refresh) return;
     refresh.addEventListener("click", imgPoolLoad);
+    const thumbBtn = $("#imgpool-thumb");
+    if (thumbBtn) thumbBtn.addEventListener("click", imgPoolThumbBackfill);
     const selall = $("#imgpool-selall");
     const selnone = $("#imgpool-selnone");
     const compress = $("#imgpool-compress");
@@ -310,7 +388,7 @@ function bindImagePool() {
 
   /* 暴露给其它模块 / 事件绑定 */
   Object.assign(window, {
-    imgPoolImgUrl, imgPoolStat, poolFormatOf, imgPoolRender, imgPoolRenderCheck, bindImgPoolDrag, imgPoolLoad, imgPoolCompressOne, imgPoolConvertOne, imgPoolCompressBatch, bindImagePool
+    imgPoolThumbBackfill, imgPoolImgUrl, imgPoolStat, poolFormatOf, imgPoolRender, imgPoolRenderCheck, bindImgPoolDrag, imgPoolLoad, imgPoolCompressOne, imgPoolConvertOne, imgPoolCompressBatch, bindImagePool
   });
 
 })();

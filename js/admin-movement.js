@@ -41,6 +41,11 @@
     return out;
   }
 
+  /* 20261116B：后台图墙用缩略图（约 20KB） */
+  function adminThumb(u) {
+    try { return window.imgThumbOf ? window.imgThumbOf(u) : u; } catch (e) { return u; }
+  }
+
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -264,7 +269,7 @@
       var card = document.createElement("div");
       card.className = "gcard";
       card.innerHTML =
-        '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
+        '<div class="gthumb"><img loading="lazy" decoding="async" src="' + esc(adminThumb(r.image_url)) + '" data-full="' + esc(r.image_url) + '" alt="">' +
         (sea ? '<span class="mv-season-badge">' + esc(sea) + "</span>" : "") +
         "</div>" +
         '<div class="gmeta">' +
@@ -527,8 +532,35 @@
     }
   }
 
-  async function delItem() {
+  /* 20261116A：更正这张图的上传日期（只影响后台数据统计里的日期 / 月份）
+     权限同其它改动：本人或超管；没有归属的历史数据只有超管能改。 */
+  async function backdateCur() {
     var SB = SBx();
+    var item = curItem();
+    if (!SB || !item) return;
+    var U = window.UO;
+    if (!U || typeof U.setDate !== "function") { toast("上传归属模块没加载，请强刷后重试", false); return; }
+    var ok = (typeof U.isSuper === "function" && U.isSuper()) || (typeof U.canManage === "function" && U.canManage("i", item.image_url));
+    if (!ok) { toast("这张图不是你上传的（或属于历史数据），只有上传人本人或超级管理员可以改动", false); return; }
+    if (typeof U.ensure === "function") { try { await U.ensure(); } catch (e) { /* 忽略 */ } }
+    var cur = (typeof U.dateOf === "function" ? U.dateOf("i", item.image_url) : "") || String(item.created_at || "").slice(0, 10);
+    var d0 = await U.askDate("把这张图的上传日期改为：", cur);
+    if (d0 == null) return;
+    var d = String(d0).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast("日期格式不对，应为 年-月-日", false); return; }
+    try {
+      if (typeof SB.setMovementDate === "function") await SB.setMovementDate([item.image_url], d);
+      await U.setDate("i", [item.image_url], d);
+      item.created_at = d + "T12:00:00.000Z";
+      try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e2) { /* 忽略 */ }
+      toast("上传日期已改为 " + d);
+      await loadAll();
+    } catch (e) {
+      toast("修改失败：" + ((e && e.message) || "未知错误"), false);
+    }
+  }
+
+  async function delItem() {    var SB = SBx();
     var item = curItem();
     if (!SB || !item) return;
     if (!(await uiConfirm("删除这张图？打标记录会一并清空。"))) return;
@@ -942,6 +974,8 @@
     if (sv) sv.onclick = saveTag;
     var dl = document.getElementById("mv-tag-del");
     if (dl) dl.onclick = delItem;
+    var dtd = document.getElementById("mv-tag-date");
+    if (dtd) dtd.onclick = backdateCur;
     var cl = document.getElementById("mv-tag-close");
     if (cl) cl.onclick = closeTag;
     renderPending();

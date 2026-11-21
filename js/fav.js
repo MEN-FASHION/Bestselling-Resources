@@ -206,6 +206,10 @@
     disp: {}          // 图片地址 -> 可直接显示的地址（视觉专区的图需要带会话 token）
   };
 
+  /* 20261116B：收藏页卡片也用缩略图（约 20KB），点开大图 / 导出仍用原图 */
+  function fvThumb(u) {
+    try { return window.imgThumbOf ? window.imgThumbOf(u) : u; } catch (e) { return u; }
+  }
   function catIdKey(v) { return (v == null || v === "") ? "" : "c" + v; }
   /* 二分类：只认 top / bottom，其余（含老数据）都算未分——与抽屉同一口径 */
   function subOf(it) {
@@ -250,7 +254,7 @@
     return ''
       + '<figure class="fv-card" draggable="true" data-id="' + it.id + '" data-cat="' + (it.category_id || "") + '"'
       + ' data-url="' + esc(it.image_url) + '" data-src-name="' + esc(srcName) + '" title="' + esc(tips) + '">'
-      +   '<img loading="lazy" src="' + esc(showUrl) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
+      +   '<img loading="lazy" decoding="async" src="' + esc(fvThumb(showUrl)) + '" data-full="' + esc(showUrl) + '" alt="' + esc(it.leaf_category || "收藏图片") + '">'
       +   (srcName ? '<span class="fv-src">' + esc(srcName) + '</span>' : '')
       +   (subOf(it) ? '<span class="fv-subtag is-' + subOf(it) + '" title="已归为' + subName(subOf(it)) + '">'
             + subName(subOf(it)) + '</span>' : '')

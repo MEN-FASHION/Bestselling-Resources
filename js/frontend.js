@@ -466,7 +466,7 @@
 
   // 标签筛选栏（吸顶）：类目/渠道/风格/元素 四组，每组可单选，四维组合过滤
   // ---------- 图片懒加载并发池（模块级，供分页追加复用）----------
-  const LAZY_CONC = 4;
+  const LAZY_CONC = 8;   /* 20261116B：4 → 8 路并行，首屏铺满更快（每张已是缩略图，带宽压力小） */
   let lazyInflight = 0;
   const lazyQueue = [];
   /* 20261115G · 取一张图：令牌过期时自动续期并重试一次
@@ -480,7 +480,7 @@
   async function fetchImgBlob(au, at) {
     const tryOnce = async (tok) => {
       const headers = tok ? { "Authorization": "Bearer " + tok } : {};
-      return await fetch(au, { headers, cache: "no-store" });
+      return await fetch(au, { headers, cache: "default" });   /* 20261116B：允许命中 HTTP 缓存，别每张都回源 */
     };
     let resp = await tryOnce(at);
     if (resp.status === 401 || resp.status === 403) {
@@ -756,7 +756,10 @@
     const holder = document.createElement("div");
     holder.className = "holder";
     const imgEl = document.createElement("img");
-    imgEl.dataset.src = base + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+    const fullSrc = base + "/" + img.path + (guestToken ? "?token=" + encodeURIComponent(guestToken) : "");
+    /* 20261116B：卡片下缩略图（约 20KB），大图 / 导出 / 搜同款用 data-full 里的原图 */
+    imgEl.dataset.src = (window.imgThumbOf ? window.imgThumbOf(fullSrc) : fullSrc);
+    imgEl.dataset.full = fullSrc;
     imgEl.dataset.authUrl = base + "/" + img.path;
     imgEl.dataset.authToken = guestToken || "";
     imgEl.alt = img.name || "";
@@ -801,7 +804,7 @@
             obs.unobserve(en.target);
           }
         });
-      }, { rootMargin: "300px" });
+      }, { rootMargin: "700px" });   /* 20261116B：提前 700px 预取，滚动时不出现空白格 */
       io.observe(imgEl);
     } else {
       imgEl.setAttribute("data-started", "1");

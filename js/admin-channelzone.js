@@ -57,6 +57,11 @@
     if (!uoOk()) return "";
     return window.UO.label("i", url);
   }
+  /* 20261116B：后台图墙也用缩略图，几百张图的面板不再整屏下原图 */
+  function adminThumb(u) {
+    try { return window.imgThumbOf ? window.imgThumbOf(u) : u; } catch (e) { return u; }
+  }
+
   function ownerHint(url) {
     if (!uoOk()) return "";
     return window.UO.hint("i", url);
@@ -191,6 +196,7 @@
           '<div class="mtag-actions">' +
             '<label class="mv-field" style="margin-right:8px;"><span>类目</span><select id="' + id(k, "tag-cat") + '" class="input"></select></label>' +
             '<label class="mv-field" style="margin-right:8px;"><span>月份</span><input id="' + id(k, "tag-month") + '" class="input" type="month"></label>' +
+            '<label class="mv-field" style="margin-right:8px;"><span>上传日期</span><input id="' + id(k, "tag-date") + '" class="input" type="date" title="只影响后台数据统计里的日期"></label>' +
             '<button id="' + id(k, "tag-save") + '" class="btn-primary" type="button">保存打标</button>' +
             '<button id="' + id(k, "tag-del") + '" class="btn-danger" type="button">删除这张图</button>' +
             '<button id="' + id(k, "tag-close") + '" class="btn-ghost" type="button">关闭</button>' +
@@ -213,7 +219,7 @@
             '<label class="cz-batch-field"><span>月份（前台展示的上传期次）</span>' +
               '<input id="' + id(k, "batch-month") + '" class="input" type="month">' +
             '</label>' +
-            '<label class="cz-batch-field"><span>上传日期（记录日期，可留空）</span>' +
+            '<label class="cz-batch-field"><span>上传日期（只影响后台数据统计里的日期）</span>' +
               '<input id="' + id(k, "batch-date") + '" class="input" type="date">' +
             '</label>' +
             '<label class="cz-batch-field"><span>类目</span>' +
@@ -415,13 +421,16 @@
             if (base) u = base + "/" + raw.replace(/^\/+/, "");
           }
           u = withTok(u);
+          /* 20261116A：后台更正过的上传日期优先显示 */
+          var ovDay = "";
+          try { if (uoOk() && window.UO.dateOf) ovDay = window.UO.dateOf("i", raw) || ""; } catch (e0) { ovDay = ""; }
           return {
             id: r.id || ("cp:" + r.image_url),
             image_url: u,
             category: String(r.category || "").trim(),
             month: normMonth(r.period_label || r.m || ""),
             channel: String(r.channel || "").trim(),
-            uploaded: String(r.created_at || r.t || "").slice(0, 10),
+            uploaded: ovDay || String(r.created_at || r.t || "").slice(0, 10),
           };
         })
         .filter(function (r) { return r.image_url && r.category; });
@@ -670,7 +679,7 @@
       '<label class="cz-pick" title="' + (mine ? "勾选后可批量编辑 / 批量删除" : "这张图不是你上传的，不能改动") + '">' +
         '<input type="checkbox"' + (st.sel[String(r.id)] ? " checked" : "") + (mine ? "" : " disabled") + "></label>" +
       '<button type="button" class="cz-card-del" title="' + (mine ? "删除这张图" : denyMsg()) + '"' + (mine ? "" : " disabled") + ">×</button>" +
-      '<div class="gthumb"><img loading="lazy" src="' + esc(r.image_url) + '" alt="">' +
+      '<div class="gthumb"><img loading="lazy" decoding="async" src="' + esc(adminThumb(r.image_url)) + '" data-full="' + esc(r.image_url) + '" alt="">' +
       (r.month ? '<span class="mv-season-badge">' + esc(r.month) + "</span>" : "") +
       (mine ? "" : '<span class="cz-lock-badge" title="' + esc(ownerHint(r.image_url)) + '">仅查看 · ' + esc(st.ownerLabel[String(r.id)] || "历史数据") + "</span>") +
       "</div>" +
@@ -879,6 +888,14 @@
     say(k, "修改中…");
     try {
       var res = await SB.updateRankChannelItems(ids, patch);
+      /* 20261116A：日期要同时记进「日期更正」，否则后台数据统计仍按登记时间统计 */
+      if (patch.uploaded && uoOk() && window.UO.setDate) {
+        var urlById = {};
+        (st.items || []).forEach(function (r) { urlById[String(r.id)] = r.image_url; });
+        var urls = ids.map(function (id) { return urlById[String(id)] || ""; }).filter(Boolean);
+        if (urls.length) await window.UO.setDate("i", urls, patch.uploaded);
+        try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e2) { /* 忽略 */ }
+      }
       closeBatch(k);
       await loadAll(k);
       var msg = "已修改 " + res.ok + " 张";
@@ -1259,6 +1276,8 @@
     if (cs) cs.value = item.category || "";
     var ms = el(k, "tag-month");
     if (ms) ms.value = item.month || "";
+    var ds = el(k, "tag-date");
+    if (ds) ds.value = item.uploaded || "";
     renderDims(k, item);
     /* 20261113L：不是我传的图 → 打标只读，保存 / 删除 / 改类目全部禁用，并说明原因 */
     var mine = !(st.own && st.own[String(item.id)] === false);
@@ -1273,7 +1292,7 @@
       b.disabled = !mine;
       b.title = mine ? "" : denyMsg();
     });
-    ["tag-cat", "tag-month"].forEach(function (s) {
+    ["tag-cat", "tag-month", "tag-date"].forEach(function (s) {
       var b = el(k, s);
       if (b) b.disabled = !mine;
     });
@@ -1360,12 +1379,20 @@
     var meta = {};
     if (newCat && newCat !== item.category) meta.category = newCat;
     if (newMon && newMon !== item.month) meta.period_label = newMon;
+    /* 20261116A：上传日期（只影响后台数据统计，不动图与打标） */
+    var ds = el(k, "tag-date");
+    var newDay = ds ? String(ds.value || "").trim() : "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(newDay) && newDay !== String(item.uploaded || "")) meta.uploaded = newDay;
 
     try {
       if (typeof SB.saveMovementTags === "function") await SB.saveMovementTags(item.image_url, patch);
       else if (typeof SB.saveImageTagsByUrl === "function") await SB.saveImageTagsByUrl(item.image_url, patch);
       if (Object.keys(meta).length && typeof SB.updateRankChannelItem === "function") {
         await SB.updateRankChannelItem(item.id, meta);
+      }
+      if (meta.uploaded && uoOk() && window.UO.setDate) {
+        await window.UO.setDate("i", [item.image_url], meta.uploaded);
+        try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e2) { /* 忽略 */ }
       }
       closeTag(k);
       await loadAll(k);
@@ -1704,7 +1731,7 @@
           (rep.rebase ? " · 旧域名可修正 " + rep.rebase + " 张" : "") +
           (rep.other ? " · 其它失败 " + rep.other + " 张" : "");
         say(k, line);
-        /* 20261115H · 地址过期的那一批可以就地改正（文件在、只是记录地址不对），改完立刻恢复 */
+        /* 20261116A · 地址过期的那一批可以就地改正（文件在、只是记录地址不对），改完立刻恢复 */
         if (rep.repairs && rep.repairs.length) {
           var byUrl = {};
           st.items.forEach(function (r) { byUrl[String(r.image_url || "").split("?")[0]] = r; });

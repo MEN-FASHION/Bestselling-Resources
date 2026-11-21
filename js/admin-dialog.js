@@ -68,6 +68,8 @@
     desc.classList.toggle("hidden", !o.desc);
     const inp = l.querySelector(".sbd-input");
     inp.classList.toggle("hidden", mode !== "ask");
+    /* 20261116A：支持日期输入（改上传日期用），其余情况仍是文本 */
+    inp.type = (mode === "ask" && o.inputType === "date") ? "date" : "text";
     inp.value = mode === "ask" ? (o.value || "") : "";
     inp.placeholder = o.placeholder || "";
     const ok = l.querySelector(".sbd-ok");
@@ -83,6 +85,8 @@
 
   window.sbAsk = (opts) => open(opts, "ask");
   window.sbConfirm = (opts) => open(opts, "confirm");
+  /* 20261116A：日期选择弹窗（改上传日期用）——返回 "YYYY-MM-DD" 或 null（取消） */
+  window.sbAskDate = (opts) => open(Object.assign({}, opts || {}, { inputType: "date" }), "ask");
   // 兼容写法：传字符串
   window.sbAskText = (title, desc, value) => open({ title: title, desc: desc, value: value }, "ask");
 })();

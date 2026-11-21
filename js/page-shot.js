@@ -25,7 +25,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261115H";
+  var BUILD = "20261121A";
 
   /* 各专区的按钮挂点（工具条）与取景范围（内容区） */
   var ZONES = {
@@ -289,7 +289,8 @@
       if (!rr) return;
 
       if (tag === "img") {
-        var src = el.currentSrc || el.getAttribute("src") || "";
+        /* 20261116B：卡片显示的是缩略图，导出高清图要用原图（data-full） */
+        var src = el.getAttribute("data-full") || el.currentSrc || el.getAttribute("src") || "";
         if (src) imgs.push({
           k: "img", x: rr.x, y: rr.y, w: rr.w, h: rr.h, url: src,
           radius: parseFloat(cs.borderTopLeftRadius) || 0

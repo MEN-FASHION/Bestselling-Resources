@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261115H">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261115H">
+<link rel="stylesheet" href="css/style.css?v=20261121A">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261121A">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -146,6 +146,7 @@
           <span id="manage-count" class="hint-inline">加载中…</span>
           <button id="select-all-btn" class="btn-ghost">全选</button>
           <button id="batch-tag-btn" class="btn-ghost">批量打标签（0）</button>
+          <button id="batch-date-btn" class="btn-ghost">改上传日期（0）</button>
           <button id="smart-tag-btn" class="btn-ghost">智能打标</button>
           <button id="batch-del-btn" class="btn-danger">批量删除（0）</button>
         </div>
@@ -633,6 +634,7 @@
           <h3 class="tbs-title">存量图片压缩池 <span class="hint-inline">（超级管理员 · 查看/压缩存储内已有图片，左＝已压缩(≤200KB)，右＝待压缩(&gt;200KB)）</span></h3>
           <div class="imgpool-toolbar">
             <button id="imgpool-refresh" class="btn-ghost" type="button">刷新清单</button>
+            <button id="imgpool-thumb" class="btn-ghost" type="button" title="给老图补一张卡片缩略图（约 20KB），前台打开这些专区会快很多">生成缩略图</button>
             <span class="imgpool-batch">
               <span class="imgpool-tglabel">目标</span>
               <select id="imgpool-global-target" class="imgpool-target" title="批量压缩统一目标档位">
@@ -1473,6 +1475,7 @@
         </div>
         <div class="mtag-actions">
           <button id="mv-tag-save" class="btn-primary" type="button">保存</button>
+          <button id="mv-tag-date" class="btn-ghost" type="button" title="只改后台数据统计里的日期，不动图片与打标">改上传日期</button>
           <button id="mv-tag-del" class="btn-danger" type="button">删除这张图</button>
           <button id="mv-tag-close" class="btn-ghost" type="button">关闭</button>
         </div>
@@ -1729,53 +1732,54 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261115H"></script>
-  <script src="vendor/quill.js?v=20261115H"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261115H"></script>
-  <script src="vendor/jszip.min.js?v=20261115H"></script>
-  <script src="vendor/qrcode.min.js?v=20261115H"></script>
-  <script src="js/site-norm.js?v=20261115H"></script>
-  <script src="js/config.js?v=20261115H"></script>
-  <script src="js/supabase.js?v=20261115H"></script>
-  <script src="js/data-sync.js?v=20261115H"></script>
+  <script src="vendor/supabase.js?v=20261121A"></script>
+  <script src="vendor/quill.js?v=20261121A"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261121A"></script>
+  <script src="vendor/jszip.min.js?v=20261121A"></script>
+  <script src="vendor/qrcode.min.js?v=20261121A"></script>
+  <script src="js/site-norm.js?v=20261121A"></script>
+  <script src="js/config.js?v=20261121A"></script>
+  <script src="js/supabase.js?v=20261121A"></script>
+  <script src="js/data-sync.js?v=20261121A"></script>
+  <script src="js/imgfast.js?v=20261121A"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261115H"></script>
+  <script src="js/admin-dialog.js?v=20261121A"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261115H"></script>
-  <script src="js/admin.js?v=20261115H"></script>
-  <script src="js/admin-images.js?v=20261115H"></script>
-  <script src="js/rank-enums.js?v=20261115H"></script>
-  <script src="js/imageexport.js?v=20261115H"></script>
-  <script src="js/admin-imageimport.js?v=20261115H"></script>
-  <script src="js/admin-movement.js?v=20261115H"></script>
-  <script src="js/admin-smart.js?v=20261115H"></script>
-  <script src="js/admin-trend.js?v=20261115H"></script>
-  <script src="js/admin-notice.js?v=20261115H"></script>
-  <script src="js/marketing-data.js?v=20261115H"></script>
-  <script src="js/admin-festival.js?v=20261115H"></script>
-  <script src="js/admin-tasks.js?v=20261115H"></script>
-  <script src="js/admin-bestseller.js?v=20261115H"></script>
-  <script src="js/ipgeo.js?v=20261115H"></script>
-  <script src="js/upload-owner.js?v=20261115H"></script>
-  <script src="js/admin-perm.js?v=20261115H"></script>
-  <script src="js/admin-pool.js?v=20261115H"></script>
-  <script src="js/rankexport.js?v=20261115H"></script>
-  <script src="js/admin-rankimport.js?v=20261115H"></script>
-<script src="js/mindmap.js?v=20261115H"></script>
-  <script src="js/flowchart.js?v=20261115H"></script>
-  <script src="js/gantt.js?v=20261115H"></script>
-<script src="js/admin-tools.js?v=20261115H"></script>
-<script src="js/admin-channelzone.js?v=20261115H"></script>
-<script src="js/admin-compare.js?v=20261115H"></script>
-  <script src="js/rank-cat-norm.js?v=20261115H"></script>
-<script src="js/rank-period-norm.js?v=20261115H"></script>
-  <script src="js/rhythm-calc.js?v=20261115H"></script>
+  <script src="js/find-similar.js?v=20261121A"></script>
+  <script src="js/admin.js?v=20261121A"></script>
+  <script src="js/admin-images.js?v=20261121A"></script>
+  <script src="js/rank-enums.js?v=20261121A"></script>
+  <script src="js/imageexport.js?v=20261121A"></script>
+  <script src="js/admin-imageimport.js?v=20261121A"></script>
+  <script src="js/admin-movement.js?v=20261121A"></script>
+  <script src="js/admin-smart.js?v=20261121A"></script>
+  <script src="js/admin-trend.js?v=20261121A"></script>
+  <script src="js/admin-notice.js?v=20261121A"></script>
+  <script src="js/marketing-data.js?v=20261121A"></script>
+  <script src="js/admin-festival.js?v=20261121A"></script>
+  <script src="js/admin-tasks.js?v=20261121A"></script>
+  <script src="js/admin-bestseller.js?v=20261121A"></script>
+  <script src="js/ipgeo.js?v=20261121A"></script>
+  <script src="js/upload-owner.js?v=20261121A"></script>
+  <script src="js/admin-perm.js?v=20261121A"></script>
+  <script src="js/admin-pool.js?v=20261121A"></script>
+  <script src="js/rankexport.js?v=20261121A"></script>
+  <script src="js/admin-rankimport.js?v=20261121A"></script>
+<script src="js/mindmap.js?v=20261121A"></script>
+  <script src="js/flowchart.js?v=20261121A"></script>
+  <script src="js/gantt.js?v=20261121A"></script>
+<script src="js/admin-tools.js?v=20261121A"></script>
+<script src="js/admin-channelzone.js?v=20261121A"></script>
+<script src="js/admin-compare.js?v=20261121A"></script>
+  <script src="js/rank-cat-norm.js?v=20261121A"></script>
+<script src="js/rank-period-norm.js?v=20261121A"></script>
+  <script src="js/rhythm-calc.js?v=20261121A"></script>
   <!-- 长列表分页（20261115B）：已上传记录 / 期次清单按页画，页面不再被撑得很长 -->
-  <script src="js/pager.js?v=20261115H"></script>
-  <script src="js/admin-rank.js?v=20261115H"></script>
-  <script src="js/admin-rhythm.js?v=20261115H"></script>
-  <script src="js/admin-backup.js?v=20261115H"></script>
-  <script src="js/upload-dash.js?v=20261115H"></script>
+  <script src="js/pager.js?v=20261121A"></script>
+  <script src="js/admin-rank.js?v=20261121A"></script>
+  <script src="js/admin-rhythm.js?v=20261121A"></script>
+  <script src="js/admin-backup.js?v=20261121A"></script>
+  <script src="js/upload-dash.js?v=20261121A"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1837,6 +1841,6 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261115H"></script>
+  <script src="js/ui-dialog.js?v=20261121A"></script>
 </body>
 </html>

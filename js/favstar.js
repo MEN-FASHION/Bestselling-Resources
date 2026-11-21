@@ -43,17 +43,33 @@
     });
   }
   var toastTimer = null;
+  /* 20261121A · 提示条必须真的看得见
+     ------------------------------------------------------------
+     故障现象：S / P / T 专区（以及渠道对比、品牌动向）点星标"没反应"。
+     根因之一：Common.toast 是个空壳 —— 只有页面自己调过 Common.setToast(fn)
+     才会真正弹提示（榜单 / 视觉专区调了，渠道专区没调），所以这里的
+     「请先登录」「收藏失败：xxx」全部被吞掉，界面上看不出任何原因。
+     现在：公共提示条只在确实弹出来时才算数，否则直接写页面自己的 #toast。 */
   function toast(msg) {
-    if (typeof global.toast === "function") { try { global.toast(msg); return; } catch (e) { /* 走下面的兜底 */ } }
-    if (global.Common && typeof global.Common.toast === "function") {
-      try { global.Common.toast(msg); return; } catch (e) { /* 兜底 */ }
+    var text = String(msg == null ? "" : msg);
+    var shown = false;
+    if (typeof global.toast === "function") {
+      try {
+        var r = global.toast(text);
+        if (r !== false) shown = true;
+      } catch (e) { shown = false; }
     }
     var t = $("#toast");
-    if (!t) return;
-    t.textContent = msg;
-    t.classList.add("show");
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2200);
+    if (t) {
+      t.textContent = text;
+      t.className = "toast show";
+      t.classList.add("show");
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { t.className = "toast"; }, 2400);
+      shown = true;
+    }
+    if (!shown && global.console && console.warn) console.warn("[FAV] " + text);
+    try { if (global.Common && typeof global.Common.toast === "function" && !t) global.Common.toast(text); } catch (e) { /* 忽略 */ }
   }
 
   function labelOf(k) {
@@ -91,6 +107,9 @@
     /* 视觉专区的图是鉴权路径：优先取不带临时 token 的 authUrl，换 token 也不会变地址 */
     var au = img.getAttribute("data-auth-url") || img.dataset.authUrl || "";
     if (au) return stripToken(String(au).trim());
+    /* 20261116B：卡片现在是缩略图（?w=340），收藏要存原图地址，否则以后看大图是糊的 */
+    var fu = img.getAttribute("data-full");
+    if (fu) return stripToken(String(fu).trim());
     return stripToken(String(img.dataset.src || img.getAttribute("src") || "").trim());
   }
 
@@ -194,9 +213,37 @@
     if (!row.image_url) { toast("这张图没有可收藏的地址"); return; }
     var SB = SBX();
     if (!SB) { toast("数据服务未就绪，请刷新页面"); return; }
-    if (!ST.uid) { toast("请先登录后再收藏"); return; }
-    if (!ST.ready) { toast("收藏功能还没启用，请先执行建表脚本"); return; }
+    /* 20261121A：别再用「进页面那一刻」的状态一票否决。
+       页面刚打开、会话刚续期、收藏清单还在读的时候点星标，旧逻辑会直接
+       弹一句被吞掉的提示就返回 —— 表现就是「点了没反应」。
+       这里在点击时重新确认一次登录与收藏表，再决定能不能打开弹层。 */
+    return ensureReady().then(function (ok) {
+      if (!ok) return;
+      showPick(card, row);
+    }).catch(function (e) {
+      toast((e && e.message) || "收藏功能暂时不可用，请刷新页面重试");
+    });
+  }
 
+  /* 点击时重新确认：登录态 + 收藏表可用。最多等 2.5 秒让首次加载跑完。 */
+  async function ensureReady() {
+    var SB = SBX();
+    if (!SB) { toast("数据服务未就绪，请刷新页面"); return false; }
+    var wait = 0;
+    while (ST.loading && wait < 2500) {
+      await new Promise(function (r) { setTimeout(r, 120); });
+      wait += 120;
+    }
+    if (ST.uid && ST.ready) return true;
+    try { if (typeof SB.currentToken === "function") await SB.currentToken(); } catch (e) { /* 续期失败下面按未登录处理 */ }
+    try { await load(); } catch (e) { /* 读失败下面按未就绪处理 */ }
+    if (!ST.uid) { toast("登录状态已失效：请重新登录后再收藏"); return false; }
+    if (!ST.ready) { toast("收藏功能还没启用：数据库里缺 fav_items 表"); return false; }
+    return true;
+  }
+
+  function showPick(card, row) {
+    if (ST.pickEl) return;
     var existed = ST.keys[keyOf(row.period_label, row.image_url)];
     var wrap = document.createElement("div");
     wrap.className = "fs-wrap";
@@ -232,14 +279,16 @@
       var cbtn = t.closest("[data-cid]");
       if (cbtn) {
         var cid = cbtn.getAttribute("data-cid");
-        await save(card, cid === "" ? null : Number(cid));
-        closePick();
+        /* 20261121A：保存失败不要关弹层 —— 以前一关，界面上只剩一句被吞掉的
+           错误，看起来就是「点了没反应」。失败时留在原地，提示写在弹层上方。 */
+        var saved = await save(card, cid === "" ? null : Number(cid));
+        if (saved) closePick();
         return;
       }
       var ok = t.closest(".fs-newok");
       if (ok) { await createAndSave(card, wrap); return; }
       var un = t.closest("[data-fs-unfav]");
-      if (un) { await unfav(card); closePick(); }
+      if (un) { var done = await unfav(card); if (done) closePick(); }
     });
     var inp = $(".fs-newin", wrap);
     if (inp) {
@@ -255,32 +304,43 @@
     var SB = SBX();
     var inp = wrap && $(".fs-newin", wrap);
     var name = inp ? String(inp.value || "").trim() : "";
-    if (!name) { toast("先写一个分类名"); return; }
+    if (!name) { toast("先写一个分类名"); return false; }
     if (inp) inp.disabled = true;
     try {
       var c = await SB.createFavCategory(name, "#8b7355");
       try { ST.cats = await SB.listFavCategories(); } catch (e) { ST.cats = (ST.cats || []).concat([c]); }
-      await save(card, c && c.id != null ? c.id : null);
-      closePick();
+      var ok = await save(card, c && c.id != null ? c.id : null);
+      if (ok) closePick();
+      else if (inp) inp.disabled = false;
+      return ok;
     } catch (e) {
       if (inp) inp.disabled = false;
       toast((e && e.message) ? e.message : "新建分类失败");
+      return false;
     }
   }
 
   async function save(card, cid) {
     var SB = SBX();
     var row = rowOf(card);
-    if (!row.image_url) { toast("这张图没有可收藏的地址"); return; }
+    if (!row.image_url) { toast("这张图没有可收藏的地址"); return false; }
     try {
       await SB.addFavItems([row], cid);
       ST.keys[keyOf(row.period_label, row.image_url)] = 1;
       paint(card);
-      try { if (global.FavDrawer && global.FavDrawer.refresh) global.FavDrawer.refresh(); } catch (e) { /* 忽略 */ }
+      /* 20261121A：侧边栏若正筛着别的分类，新收藏会「看不见」—— 先让范围放开再刷新 */
+      try {
+        if (global.FavDrawer && typeof global.FavDrawer.reveal === "function") await global.FavDrawer.reveal(cid == null ? null : Number(cid));
+        else if (global.FavDrawer && global.FavDrawer.refresh) global.FavDrawer.refresh();
+      } catch (e) { /* 侧边栏异常不影响收藏本身 */ }
       toast("已收藏" + (labelOf(ST.source) ? " · " + labelOf(ST.source) : ""));
       load();  /* 后台刷新一次真实 id，取消收藏才用得上 */
+      return true;
     } catch (e) {
-      toast((e && e.message) ? e.message : "收藏失败");
+      var msg = (e && e.message) ? e.message : "收藏失败";
+      if (global.console && console.warn) console.warn("[FAV-DIAG] 收藏写入失败：" + msg, { period: row.period_label, url: row.image_url, source: row.source });
+      toast("收藏失败：" + msg);
+      return false;
     }
   }
 
@@ -302,8 +362,10 @@
       paint(card);
       try { if (global.FavDrawer && global.FavDrawer.refresh) global.FavDrawer.refresh(); } catch (e) { /* 忽略 */ }
       toast("已取消收藏");
+      return true;
     } catch (e) {
       toast((e && e.message) ? e.message : "取消收藏失败");
+      return false;
     }
   }
 
@@ -369,6 +431,8 @@
       cardUrl: cardUrl,
       state: function () { return ST; },
       scheduleScan: scheduleScan,
+      ensureReady: ensureReady,
+      toast: toast,
     },
   };
 })(typeof window !== "undefined" ? window : this);

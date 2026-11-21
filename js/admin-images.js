@@ -517,6 +517,8 @@ function bindManage() {
     $("#select-all-btn").onclick = toggleSelectAll;
     $("#batch-del-btn").onclick = batchDelete;
     $("#batch-tag-btn").onclick = openTagModal;
+    const bd = $("#batch-date-btn");
+    if (bd) bd.onclick = batchBackdate;
     $("#tag-apply").onclick = () => applyTags();
     $("#tag-remove").onclick = () => applyTags(true);
     $("#tag-clear").onclick = clearTags;
@@ -645,7 +647,9 @@ async function buildManageCell(img) {
     const holder = document.createElement("div");
     holder.className = "holder";
     const imgEl = document.createElement("img");
-    imgEl.dataset.src = thumb;
+    /* 20261116B：卡片下缩略图（约 20KB），点开预览 / 导出仍用原图 */
+    imgEl.dataset.src = (window.imgThumbOf ? window.imgThumbOf(thumb) : thumb);
+    imgEl.dataset.full = thumb;
     imgEl.alt = img.name || "";
     imgEl.loading = "lazy";
     imgEl.draggable = false;
@@ -808,6 +812,11 @@ async function renderManageGrid(allImgs, usedCats) {
   function updateBatchBtn() {
     $("#batch-del-btn").textContent = "批量删除（" + selectedImages.size + "）";
     $("#batch-del-btn").disabled = selectedImages.size === 0;
+    const dtBtn = $("#batch-date-btn");
+    if (dtBtn) {
+      dtBtn.textContent = "改上传日期（" + selectedImages.size + "）";
+      dtBtn.disabled = selectedImages.size === 0;
+    }
     const tagBtn = $("#batch-tag-btn");
     if (tagBtn) {
       tagBtn.textContent = "批量打标签（" + selectedImages.size + "）";
@@ -1535,9 +1544,57 @@ function renderHBars(el, rows, total, color, label) {
     updateBatchBtn();
   }
 
+// 20261116A：批量更正上传日期（只影响后台数据统计里的日期 / 月份）
+// 视觉专区的统计读 images.created_at，所以这里写这一列；同时留一份日期更正，
+// 万一某张图的记录写不进去（行级策略/网络），统计里仍按改后的日期显示。
+  async function batchBackdate() {
+    if (!selectedImages.size) { sbToast("请先勾选要改日期的图片", false); return; }
+    let allImgs = [];
+    try { allImgs = await SB.listImages(null); } catch (e) { allImgs = []; }
+    const targets = allImgs.filter(i => selectedImages.has(i.id));
+    if (!targets.length) { sbToast("未找到对应图片记录", false); return; }
+    const U = window.UO;
+    let day = "";
+    if (U && typeof U.askDate === "function") {
+      const cur = String((targets[0] && (targets[0].created_at || "")) || "").slice(0, 10);
+      const v = await U.askDate("把选中的 " + targets.length + " 张图的上传日期改为：", cur);
+      if (v == null) return;
+      day = String(v).trim();
+    } else {
+      const v = await uiPrompt("把选中的 " + targets.length + " 张图的上传日期改为（YYYY-MM-DD）：", new Date().toISOString().slice(0, 10));
+      if (v == null) return;
+      day = String(v).trim();
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { sbToast("日期格式不对，应为 年-月-日", false); return; }
+    const p = day.split("-").map(x => parseInt(x, 10));
+    const iso = new Date(p[0], p[1] - 1, p[2], 12, 0, 0).toISOString();
+
+    const btn = $("#batch-date-btn");
+    if (btn) btn.disabled = true;
+    let ok = 0, bad = 0;
+    const okKeys = [];
+    for (const img of targets) {
+      try {
+        await SB.setImageSingleField(img.id, "created_at", iso);
+        ok++;
+        okKeys.push(img.url || img.path || "");
+      } catch (e) { bad++; }
+    }
+    /* 日期更正也写一份：统计优先读它，写不进 created_at 的图也能纠正过来 */
+    try {
+      if (U && typeof U.setDate === "function" && okKeys.filter(Boolean).length) {
+        await U.setDate("i", okKeys.filter(Boolean), day);
+      }
+    } catch (e) { /* 覆盖值失败不影响 created_at 已写入的那部分 */ }
+    try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e) { /* 忽略 */ }
+    if (window.DataSync) { try { window.DataSync.bump("images"); } catch (e) { /* 忽略 */ } }
+    sbToast("上传日期已改为 " + day + "：成功 " + ok + (bad ? "，失败 " + bad : ""), bad === 0);
+    updateBatchBtn();
+    await refreshAfterImageChange();
+  }
+
 // 批量删除
-  async function batchDelete() {
-    if (!selectedImages.size) return;
+  async function batchDelete() {    if (!selectedImages.size) return;
     if (!(await uiConfirm("确认删除选中的 " + selectedImages.size + " 张图片？此操作不可恢复。"))) return;
     // 拿当前网格对应的完整图片记录
     let allImgs = [];

@@ -87,6 +87,11 @@
     return !!a && !!b && a === b;
   }
 
+  /* 20261116B：卡片图走缩略图；点开大图、导出、搜同款仍用原图（data-full） */
+  function thumbOf(u) {
+    try { return window.imgThumb ? window.imgThumb(u) : u; } catch (e) { return u; }
+  }
+
   function imgUrl(it) {
     var u = String(it.image_url || it.u || "");
     if (!u) return "";
@@ -276,7 +281,7 @@
       card.setAttribute("data-period", mon);
       card.setAttribute("data-title", cat + (mon ? " · " + mon : ""));
       card.innerHTML =
-        '<div class="mv-card-img"><img loading="lazy" src="' + esc(it.image_url) + '" alt="' + esc(cat) + '">' +
+        '<div class="mv-card-img"><img loading="lazy" decoding="async" src="' + esc(thumbOf(it.image_url)) + '" data-full="' + esc(it.image_url) + '" alt="' + esc(cat) + '">' +
         (mon ? '<span class="mv-season-badge">' + esc(mon) + "</span>" : "") + "</div>" +
         '<div class="mv-card-meta"><span class="mv-card-cat">' + esc(cat) + "</span></div>";
       card.onclick = function () { openModal(it); };

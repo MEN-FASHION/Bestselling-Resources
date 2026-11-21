@@ -417,6 +417,16 @@
       !(r.bottom < 40 || r.top > window.innerHeight - 40);
   }
 
+  /* 20261116B：卡片图现在是缩略图（?w=340），搜同款要用原图 —— 优先读 data-full。
+     所有比较 / 取图都走这一个出口，保证「点哪张」与「扫到哪张」判据一致。 */
+  function imgFullSrc(im) {
+    try {
+      var f = im && im.getAttribute ? im.getAttribute("data-full") : "";
+      if (f) return f;
+    } catch (e) { /* 忽略 */ }
+    return (im && (im.currentSrc || im.src)) || "";
+  }
+
   /* 优先看「刚刚点的那张图」：省掉整页遍历，图片多的页面也不会卡 */
   function pickClicked(mask) {
     if (!lastClickSrc) return null;
@@ -424,7 +434,7 @@
     var best = null, bestArea = 0;
     for (var i = 0; i < imgs.length; i++) {
       var im = imgs[i];
-      var src = im.currentSrc || im.src || "";
+      var src = imgFullSrc(im);
       if (src !== lastClickSrc) continue;
       var r = im.getBoundingClientRect();
       if (!okBox(r)) continue;
@@ -445,7 +455,7 @@
     mask = null;
     for (var i = 0; i < imgs.length; i++) {
       var im = imgs[i];
-      var src = im.currentSrc || im.src || "";
+      var src = imgFullSrc(im);
       if (!src) continue;
       var r = im.getBoundingClientRect();
       if (r.width < MIN_SIDE || r.height < MIN_SIDE) continue;
@@ -641,7 +651,7 @@
     if (t.tagName === "IMG") im = t;
     else if (t.closest) { try { im = t.closest("img"); } catch (e) { im = null; } }
     if (!im) return null;
-    var src = im.currentSrc || im.src || "";
+    var src = imgFullSrc(im);
     if (!src) return null;
     if (quickSkip(im)) return null;
     var r = im.getBoundingClientRect();
@@ -760,7 +770,7 @@
       try {
         var t = ev.target;
         var im = (t && t.tagName === "IMG") ? t : (t && t.closest ? t.closest("img") : null);
-        if (im) lastClickSrc = im.currentSrc || im.src || "";
+        if (im) lastClickSrc = imgFullSrc(im);
       } catch (e) { /* 忽略 */ }
       scanSoon(90);
       scanSoon(420);

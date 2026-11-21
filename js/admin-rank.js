@@ -52,6 +52,41 @@
     if (!uoOk() || !b || b.id == null) return "";
     return window.UO.hint("b", b.id);
   }
+
+  /* 20261116A：被更正过的上传日期（没有就空串，列表照旧不显示） */
+  function batchDayText(b) {
+    try {
+      if (!uoOk() || !window.UO.dateOf || !b || b.id == null) return "";
+      var v = window.UO.dateOf("b", b.id);
+      return v ? " · 上传日 " + v : "";
+    } catch (e) { return ""; }
+  }
+
+  /* 20261116A：更正上传日期（单批 / 多批走同一套）
+     只影响后台「数据统计」里的日期 / 周次 / 月份：上传人、榜单条目、打标都不动。
+     权限与其它改动一致：本人或超管；历史数据只有超管能改。 */
+  async function backdateBatches(ids, tipText) {
+    const list = (ids || []).map((x) => String(x)).filter(Boolean);
+    if (!list.length) { sbToast("先勾选要改的批次", false); return false; }
+    if (!uoOk() || !window.UO.setDate) { sbToast("上传归属模块没加载，请强刷后重试", false); return false; }
+    const gate = window.UO.canManageList("b", list);
+    if (!gate.ok.length) { sbToast(denyTip(list.length), false); return false; }
+    if (gate.denied.length && !(await uiConfirm("选中 " + list.length + " 个批次，其中 " + gate.denied.length
+      + " 个不是你上传的（或属于历史数据），会被跳过，只改你能改的 " + gate.ok.length + " 个。\n继续？"))) return false;
+    const cur = window.UO.dateOf("b", gate.ok[0]) || "";
+    const d0 = await window.UO.askDate((tipText || "把选中的 " + gate.ok.length + " 个批次的上传日期改为："), cur);
+    if (d0 == null) return false;
+    const d = String(d0).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { sbToast("日期格式不对，应为 年-月-日", false); return false; }
+    const res = await window.UO.setDate("b", gate.ok, d);
+    if (!res.ok.length) { sbToast("日期没写进去，请刷新后重试", false); return false; }
+    try { if (window.UploadDash && window.UploadDash._reset) window.UploadDash._reset(); } catch (e) { /* 忽略 */ }
+    await loadRankBatches();
+    rankPreviewRefresh();
+    sbToast("已把 " + res.ok.length + " 个批次的上传日期改为 " + d
+      + (res.denied.length ? "，跳过 " + res.denied.length + " 个非本人批次" : ""), true);
+    return true;
+  }
   /* 被拦下的操作统一这样提示，说清「为什么不能动、该怎么办」 */
   function denyTip(n) {
     if (window.UO && window.UO.isSuper()) return "";
@@ -1514,6 +1549,11 @@
     const delSel = document.createElement("button");
     delSel.type = "button"; delSel.className = "btn-ghost small"; delSel.textContent = "删除选中（0）";
     delSel.disabled = true;
+    /* 20261116A：勾选后批量更正上传日期（只影响后台数据统计的日期/周次/月份） */
+    const dateSel = document.createElement("button");
+    dateSel.type = "button"; dateSel.className = "btn-ghost small"; dateSel.textContent = "改上传日期（0）";
+    dateSel.title = "给勾选的批次更正上传日期；只影响数据统计，不动榜单数据";
+    dateSel.disabled = true;
     const catBtn = document.createElement("button");
     catBtn.type = "button"; catBtn.className = "btn-ghost small"; catBtn.textContent = "类目清理…";
     const perBtn = document.createElement("button");
@@ -1526,7 +1566,7 @@
     const adoptBtn = document.createElement("button");
     adoptBtn.type = "button"; adoptBtn.className = "btn-ghost small"; adoptBtn.textContent = "认领历史数据";
     adoptBtn.title = "把没有上传人记录的历史批次记到你的名下，之后由你管理";
-    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(catBtn); bar.appendChild(perBtn); bar.appendChild(chkBtn);
+    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(dateSel); bar.appendChild(catBtn); bar.appendChild(perBtn); bar.appendChild(chkBtn);
     if (uoOk() && window.UO.isSuper()) bar.appendChild(adoptBtn);
     host.insertBefore(bar, box);
 
@@ -1541,6 +1581,8 @@
       const n = ids.length;
       delSel.textContent = "删除选中（" + n + "）";
       delSel.disabled = n === 0;
+      dateSel.textContent = "改上传日期" + (n ? "（" + n + "）" : "（0）");
+      dateSel.disabled = n === 0;
       const can = pickable();
       selAll.disabled = !can.length;
       if (!can.length) { selAll.textContent = "全选"; return; }
@@ -1593,6 +1635,13 @@
       if (typeof bar._redraw === "function") bar._redraw();
       else Array.from(box.querySelectorAll(".rank-batch-pick")).forEach((el) => { if (!el.disabled) el.checked = !allOn; });
       refresh();
+    };
+    dateSel.onclick = async () => {
+      const ids = picked();
+      if (!ids.length) return;
+      dateSel.disabled = true;
+      try { await backdateBatches(ids); }
+      finally { refresh(); }
     };
     delSel.onclick = async () => {
       const ids = picked();
@@ -2025,7 +2074,7 @@
       if (!can) main.classList.add("is-readonly");
       /* 20261113B：标出这批属于哪个专区，避免三个域的数据看到一起以为是串了 */
       const srcName = b.source === "rhythm" ? "上新节奏" : (b.source === "title" ? "标题组词台" : "趋势上升榜");
-      main.textContent = "【" + srcName + "】" + (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "");
+      main.textContent = "【" + srcName + "】" + (b.period_type === "month" ? "月度 " : "周度 ") + b.period_label + " · " + (b.category || "未填类目") + (b.site ? " · 站点 " + b.site : "") + " · " + (cntApprox(b) ? "≈" : "") + cntOf(b) + " 条" + (b.skipped ? "（跳过 " + b.skipped + "）" : "") + batchDayText(b);
       /* 20261113L：这一批是谁传的，一眼能看到；不是自己传的会写明「只有上传人可改」 */
       const own = document.createElement("span");
       own.className = "rank-batch-owner" + (can ? "" : " is-other");
@@ -2035,6 +2084,12 @@
 
       const act = document.createElement("span");
       act.className = "rkadm-row-act";
+
+      /* 20261116A：这一批的上传日期（只影响数据统计） */
+      const dtBtn = document.createElement("button");
+      dtBtn.type = "button"; dtBtn.className = "btn-ghost small"; dtBtn.textContent = "改上传日期";
+      dtBtn.disabled = !can; dtBtn.title = can ? "只改后台数据统计里的日期，不动榜单数据" : denyTip(1);
+      dtBtn.onclick = () => { if (!can) { sbToast(denyTip(1), false); return; } backdateBatches([b.id]); };
 
       const ren = document.createElement("button");
       ren.type = "button"; ren.className = "btn-ghost small"; ren.textContent = "改期次名";
@@ -2062,7 +2117,7 @@
         catch (e) { sbToast("删除失败", false); }
       };
 
-      act.appendChild(ren); act.appendChild(del);
+      act.appendChild(dtBtn); act.appendChild(ren); act.appendChild(del);
       row.appendChild(pick); row.appendChild(main); row.appendChild(act);
       box.appendChild(row);
     });

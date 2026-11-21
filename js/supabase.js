@@ -259,6 +259,42 @@ const SB = (() => {
     }
   }
 
+  /* ---------- 20261116B · 卡片缩略图 ----------
+     上传时顺手生成一张 340px 宽的 WebP（约 20KB），和原图一起存。
+     前台卡片只有 70~220px，读缩略图就够；看大图 / 导出 / 搜同款仍用原图。
+     生成失败返回 null —— 不影响上传，前台取不到缩略图会自动回退原图。 */
+  async function makeThumb(file, width = 400) {
+    try {
+      if (!file || !/^image\//i.test(file.type || "")) return null;
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = reject;
+        im.src = dataUrl;
+      });
+      const w0 = img.naturalWidth || 0, h0 = img.naturalHeight || 0;
+      if (!w0 || !h0) return null;
+      const w = Math.min(width, w0);                 /* 小图不放大 */
+      const h = Math.max(1, Math.round(h0 * (w / w0)));
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.76));
+      if (!blob || blob.size <= 0) return null;
+      if (blob.size >= file.size) return null;        /* 原图本来就小，没必要多存一份 */
+      return blob;
+    } catch (e) { return null; }
+  }
+
   /* ============================================================
    * 并发执行池（20261114V）
    * ------------------------------------------------------------
@@ -401,7 +437,11 @@ const SB = (() => {
     },
     // 暴露当前登录令牌（过期时自动续期，避免把过期令牌发给接口被判未登录）
     async currentToken() {
-      return await freshAccessToken();
+      const t = await freshAccessToken();
+      /* 20261116B：令牌可能刚被续期，图片地址里的令牌记忆要跟着作废，
+         否则接下来一屏图会带着旧令牌去请求（表现为刚还好的图突然变灰）。 */
+      try { if (window.imgTokenSync) window.imgTokenSync(t); } catch (e) { /* 忽略 */ }
+      return t;
     },
     onAuth(cb) {
       client.auth.onAuthStateChange((_event, session) => cb(session));
@@ -450,6 +490,12 @@ const SB = (() => {
       fd.append("file", f);
       fd.append("category", category);
       if (zone) fd.append("zone", String(zone));
+      /* 20261116B：顺手生成卡片缩略图，前台只下小图（大幅提速）。
+         生成/上传失败都不影响图片本身。 */
+      try {
+        const th = await makeThumb(f, 400);
+        if (th) fd.append("thumb", th, "thumb.webp");
+      } catch (e) { /* 忽略 */ }
       const res = await workerFetch("/upload", { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -461,7 +507,7 @@ const SB = (() => {
       return j.path;
     },
 
-    /* 20261115H · 把一条图片记录的存储地址改成「桶里实际的 key」
+    /* 20261116A · 把一条图片记录的存储地址改成「桶里实际的 key」
        场景：文件还在，但记录里的 path 和实际文件名差一点点（扩展名、目录、大小写），
        界面表现为 404 灰底。体检发现这类后调用本方法改正，图片立刻恢复，不必重传。 */
     async repairImagePath(id, key) {
@@ -485,6 +531,23 @@ const SB = (() => {
     // 对外暴露压缩引擎（供压缩池把任意图转成 ≤200KB WebP）
     async compress(file, maxKB = 200) {
       return compressImage(file, maxKB);
+    },
+    // 20261116B：对外暴露缩略图生成（后台「图片池」回填老图用）
+    async makeThumb(file, width = 400) {
+      return makeThumb(file, width);
+    },
+    /* 20261116B：把一张生成好的缩略图存到图片服务（thumbs/<原路径>.webp）。
+       用于存量老图回填 —— 老图上传时还没有缩略图。 */
+    async saveThumb(path, blob) {
+      const fd = new FormData();
+      fd.append("file", blob, "thumb.webp");
+      const res = await workerFetch("/admin/thumb?path=" + encodeURIComponent(path), {
+        method: "POST",
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(workerErrText(res, j, "缩略图保存失败"));
+      return true;
     },
     // 列出存储里全部图片（key + 字节数），供左右池子区分「已压缩 / 待压缩」
     async listStorageImgs() {
@@ -978,7 +1041,8 @@ const SB = (() => {
        这里按 20 条并发推送，单条失败不中断整批，返回 { ok, fail, errors }。
        patch 形如 { style_tags:[...], craft_tags:[...], ... }，只带要写的字段。 */
     async batchUpdateImageTags(updates, concurrency) {
-      var list = (updates || []).filter(function (u) { return u && u.id != null && u.patch && Object.keys(u.patch).length; });
+      var list = (updates || []).filter/* 20261121A：收藏写入口径未变；本轮修复在 js/favstar.js（点击时重确认 + 失败不静默） */
+(function (u) { return u && u.id != null && u.patch && Object.keys(u.patch).length; });
       if (!list.length) return { ok: 0, fail: 0, errors: [] };
       /* 20261030A：改写到 rank_image_tags（按图片地址）。
          先把 id 批量换成 url，再按 url 分片 upsert。
@@ -4624,6 +4688,23 @@ async removeTrendRecord(id) {
         .update({ season_year: y, season: s }).eq("id", id);
       if (error) throw new Error(error.message || "保存发布会信息失败");
     },
+    /* 20261116A · 更正品牌动向图片的上传日期（只影响后台数据统计）
+       日期按「当天中午」换算成时间戳，避免时区把日期推到前一天。 */
+    async setMovementDate(urls, day) {
+      const list = Array.from(new Set((Array.isArray(urls) ? urls : [urls]).map((v) => String(v || "").trim()).filter(Boolean)));
+      const d = String(day || "").slice(0, 10).split("-").map((v) => parseInt(v, 10));
+      if (!list.length || d.length !== 3 || !d[0]) return 0;
+      const iso = new Date(d[0], d[1] - 1, d[2], 12, 0, 0).toISOString();
+      let n = 0;
+      for (let i = 0; i < list.length; i += 80) {
+        const part = list.slice(i, i + 80);
+        const { error, count } = await client.from("movement_items")
+          .update({ created_at: iso }, { count: "exact" }).in("image_url", part);
+        if (error) throw new Error(error.message || "修改上传日期失败");
+        n += (typeof count === "number" ? count : part.length);
+      }
+      return n;
+    },
     /* 前台标签可见性：{ 维度键: false } 表示前台不展示该维度。
        配置表尚未建（补丁没跑）时返回空对象，前台按"全部展示"处理，不报错。 */
     async getMovementTagVisibility() {
@@ -6086,7 +6167,7 @@ async removeTrendRecord(id) {
       } catch (e) { return 0; }
     }
 
-    /* 20261115H · 问图片服务「这条地址对应的文件到底在哪」
+    /* 20261116A · 问图片服务「这条地址对应的文件到底在哪」
        返回 null（问不到）或 { exists, resolved, nearby, sameStem, dir }。
        记录里的地址与桶里的实际文件名差一点点（扩展名被压成 webp、类目名里的「/」被规范化、
        大小写不同）时，这里能把正确地址拿回来，界面立刻恢复，不必等下次修数据。 */
@@ -6141,7 +6222,7 @@ async removeTrendRecord(id) {
         if (tok) { el.setAttribute("src", withAuth(raw, tok)); return; }   /* 续期后重试一次 */
       }
       const code = raw ? await probe(raw) : 0;
-      /* 20261115H · 404 不等于「文件真的不在」：记录地址和桶里的实际文件名常差一点点。
+      /* 20261116A · 404 不等于「文件真的不在」：记录地址和桶里的实际文件名常差一点点。
          先问图片服务要正确地址，拿到就换上去（用户无感，图直接出来）。 */
       if (code === 404 && el.getAttribute("data-imgfixd") !== "1") {
         const d = await diag(raw);
@@ -6232,7 +6313,7 @@ async removeTrendRecord(id) {
               }
             }
           }
-          /* 20261115H：404 先问图片服务「同名文件在哪」，能找回的就是「记录地址写错了」，
+          /* 20261116A：404 先问图片服务「同名文件在哪」，能找回的就是「记录地址写错了」，
              这类可以一键改正数据库里的 path，改完图片立刻恢复（不用重传）。 */
           if (code === 404) {
             const d = await diag(u);

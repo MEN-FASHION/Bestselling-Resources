@@ -1363,6 +1363,20 @@
     else renderCount();
   }
 
+  /* 20261121A：刚收藏完，一定要让它看得见。
+     以前只 refresh 一次，如果侧边栏当前正筛着某个分类 / 只看上装，
+     新收藏落在别的分类（或未分类）里就不会出现 —— 用户看到的就是
+     「收藏了但侧边栏里没有」。这里只调筛选范围，不动收藏数据。 */
+  async function reveal(cid) {
+    var hide = false;
+    if (ST.filter === "none") hide = cid != null;
+    else if (ST.filter !== "all") hide = Number(ST.filter) !== Number(cid);
+    if (ST.sub === "top" || ST.sub === "bottom" || ST.sub === "none") hide = true;
+    if (hide) { ST.filter = "all"; ST.sub = "all"; }
+    await refresh();
+    return !hide;
+  }
+
   function boot() {
     ensureDom();
     if (SBX() && SBX().listFavItems) load().then(function () { renderCount(); });
@@ -1372,7 +1386,7 @@
   else boot();
 
   window.FavDrawer = {
-    open: open, close: close, toggle: toggle, refresh: refresh, render: render,
+    open: open, close: close, toggle: toggle, refresh: refresh, reveal: reveal, render: render,
     setView: setView, setFlat: setFlat,
     openForDrop: openForDrop, endDropMode: endDropMode, unfav: unfav,
     DEFAULT_CATS: DEFAULT_CATS,

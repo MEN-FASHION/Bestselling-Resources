@@ -31,6 +31,11 @@
      ② 上游表里「叶子类目ID」列排在名称列前面，被误当成名称存进来的一串数字；
      ③ 空。
      只有 ① 才值得展示 —— ②③ 一律当空处理，避免页面和导出表里出现裸 ID。 */
+  /* 20261116B：卡片图走缩略图（340px，约 20KB），点开大图 / 导出 / 搜同款仍用原图 */
+  function thumbOf(u) {
+    try { return window.imgThumb ? window.imgThumb(u) : u; } catch (e) { return u; }
+  }
+
   function leafOf(it) {
     var v = String((it && it.leaf_category) || "").trim();
     if (!v) return "";
@@ -57,7 +62,7 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
-  var BUILD = "20261115H";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261121A";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
@@ -1412,7 +1417,7 @@
       + ' data-ratio="' + esc(it.ratio == null ? "" : it.ratio) + '" data-rank="' + esc(it.rank_abs == null ? "" : it.rank_abs) + '"'
       + (opt.eye ? ' data-eye-meta="' + esc(eyeMeta) + '" data-eye-tags="' + esc(eyeTags.join("|")) + '"' : '') + '>';
     /* 天眼要求「一次全加载、不用下滑」：这些图都在首屏内，直接加载；其余场景保持懒加载省流量 */
-    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' decoding="async" src="' + esc(it.image_url) + '" alt="' + esc(leafOf(it) || "榜单图片") + '"'
+    h += '<img' + (opt.eager ? '' : ' loading="lazy"') + ' decoding="async" src="' + esc(thumbOf(it.image_url)) + '" data-full="' + esc(it.image_url) + '" alt="' + esc(leafOf(it) || "榜单图片") + '"'
       + (opt.eager ? ' fetchpriority="high"' : '') + '>';
     if (!opt.eye) {
       if (b) h += '<span class="rk-badge ' + b.cls + '">' + esc(b.txt) + '</span>';

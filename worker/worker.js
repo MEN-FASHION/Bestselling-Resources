@@ -277,7 +277,7 @@ async function adminDeleteAuthUser(env, uid) {
 }
 
 // 图片服务版本号（前端 /ver 会读它，用于确认这次有没有把本文件重新部署）
-const WORKER_BUILD = "20261115H";
+const WORKER_BUILD = "20261116B";
 
 // CORS 头
 const CORS = {
@@ -559,6 +559,19 @@ function genReadKey() {
   /* 20261115G：老记录里 path 可能缺 "images/" 前缀（早期上传只存了「类目/文件.jpg」）。
      缺前缀时不会命中 images/ 路由，会落到最后的「未知请求」，表现同样是「图不显示」。
      这里按「扩展名像图片」一并纳入读图路由，并在取对象时补一次前缀。 */
+  /* 20261116B · 缩略图的存储键：thumbs/<原路径去扩展名>.webp
+     放在 thumbs/ 前缀下，不会被「图片池清单」（只列 images/）当成原图统计。 */
+  function thumbKeyOf(p) {
+    const s = String(p || "").replace(/^\/+/, "");
+    if (!s || s.indexOf("thumbs/") === 0) return "";
+    const i = s.lastIndexOf("/");
+    const dir = i < 0 ? "" : s.slice(0, i + 1);
+    let name = i < 0 ? s : s.slice(i + 1);
+    name = name.replace(/\.[a-z0-9]+$/i, "");
+    if (!name) return "";
+    return "thumbs/" + dir + name + ".webp";
+  }
+
   function isImgReadPath(p) {
     if (!p) return false;
     if (p.indexOf("images/") === 0) return true;
@@ -677,12 +690,25 @@ function genReadKey() {
       }
     }
     const rawPath = url.pathname.replace(/^\//, "");
-    const object = await getObject(path, rawPath);
+    let object = null;
+    let isThumb = false;
+    /* 20261116B · 缩略图：卡片带 ?w=340 时优先取 thumbs/ 下的缩略图（约 20KB）。
+       取不到就照旧返回原图 —— 不额外多一次请求，也不会因为没缩略图而变成灰底。 */
+    if (url.searchParams.get("w")) {
+      const tk = thumbKeyOf(path);
+      if (tk) {
+        try { object = await env.IMAGES.get(tk); } catch (e) { object = null; }
+        if (object) isThumb = true;
+      }
+    }
+    if (!object) object = await getObject(path, rawPath);
     if (!object) return json({ error: "文件不存在" }, 404, CORS);
     const headers = new Headers(CORS);
-    headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+    headers.set("Content-Type", isThumb ? "image/webp" : (object.httpMetadata?.contentType || "application/octet-stream"));
     // 防下载：禁止嗅探、禁止作为附件下载、禁止被外站引用，且不暴露令牌页面
-    headers.set("Cache-Control", "public, max-age=3600");
+    // 20261116B：缓存从 1 小时提到 1 天（缩略图永久）。文件名带时间戳、内容不会变，
+    //          第二次打开这些页面直接读本地缓存，不再每张都回源 —— 这是「又慢又要重下」的主因之一。
+    headers.set("Cache-Control", isThumb ? "public, max-age=31536000, immutable" : "public, max-age=86400");
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("Cross-Origin-Resource-Policy", "cross-origin");
@@ -782,6 +808,16 @@ function genReadKey() {
     await env.IMAGES.put(key, file.stream(), {
       httpMetadata: { contentType: file.type || "application/octet-stream" },
     });
+    /* 20261116B · 同一次上传顺带存一张卡片用的缩略图（前端生成，约 20KB）。
+       存不进去不影响上传本身 —— 前台取不到缩略图会自动回退原图。 */
+    try {
+      const thumb = form.get("thumb");
+      if (thumb && typeof thumb !== "string" && thumb.size > 0) {
+        await env.IMAGES.put(thumbKeyOf(key), thumb.stream(), {
+          httpMetadata: { contentType: "image/webp" },
+        });
+      }
+    } catch (e) { /* 缩略图失败不阻断 */ }
     return json({ ok: true, path: key }, 200, CORS);
   }
 
@@ -1138,6 +1174,24 @@ function genReadKey() {
       httpMetadata: { contentType: file.type || "image/webp" },
     });
     return json({ ok: true }, 200, CORS);
+  }
+
+  /* 20261116B · 存量图片补缩略图：POST /admin/thumb?path=images/xxx.jpg
+     老图上传时没有缩略图，卡片只能下整张（约 200KB）。后台「图片池」提供一键回填：
+     浏览器把原图拉下来缩成 340px 再传回这里，存进 thumbs/，之后前台就取小图。 */
+  if (method === "POST" && path === "admin/thumb") {
+    if (!userId) return json({ error: "未登录" }, 401, CORS);
+    const role0 = await getRole(userId, token, env);
+    if (!isAdminRole(role0)) return json({ error: "无管理员权限" }, 403, CORS);
+    const p0 = String(url.searchParams.get("path") || "").replace(/^\/+/, "");
+    if (!p0 || !p0.startsWith("images/")) return json({ error: "参数错误" }, 400, CORS);
+    const form0 = await request.formData().catch(() => null);
+    const file0 = form0 ? form0.get("file") : null;
+    if (!file0 || typeof file0 === "string") return json({ error: "缺少文件" }, 400, CORS);
+    const tk0 = thumbKeyOf(p0);
+    if (!tk0) return json({ error: "参数错误" }, 400, CORS);
+    await env.IMAGES.put(tk0, file0.stream(), { httpMetadata: { contentType: "image/webp" } });
+    return json({ ok: true, thumb: tk0 }, 200, CORS);
   }
 
   // 9. 超管用户管理——创建 Auth 用户（邮箱 + 密码），仅超级管理员
