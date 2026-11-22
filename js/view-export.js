@@ -45,7 +45,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261122Z";
+  var BUILD = "20261121D";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -54,7 +54,6 @@
     shein: "S 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
-    merge: "渠道合并对比",
     movement: "品牌动向"
   };
 
@@ -65,7 +64,7 @@
   /* 20261114T：只有这两个专区的导出要带文字（列头、期次、位次角标、类目/月度），
      其余专区导出的网页与海报一律「只出图、不出字」—— 拿去做图集/对外素材时，
      屏幕上的类目名、张数、筛选摘要都是噪音。 */
-  var TEXT_KEEP_ZONES = { rank: 1, rhythm: 1, merge: 1 };   /* 合并对比要保留列头月份（去年同期 / 目标月），否则同期对照看不懂 */
+  var TEXT_KEEP_ZONES = { rank: 1, rhythm: 1 };
 
   var state = {
     zone: "",
@@ -709,9 +708,7 @@
 
   /* 各前台页面「图片所在的那块主体」 */
   function viewRoot() {
-    /* 20261123B：#mrg-body 是「渠道合并对比」的主体（两列并排的对比池）。
-       之前没列进来，那一页的单页网页 / 海报只能走重画兜底，导出的摆法和页面不一样。 */
-    var ids = ["#rk-body", "#cmp-body", "#mrg-body", "#cz-body", "#mv-body"];
+    var ids = ["#rk-body", "#cmp-body", "#cz-body", "#mv-body"];
     for (var i = 0; i < ids.length; i++) {
       var el = document.querySelector(ids[i]);
       if (el && el.querySelector && el.querySelector("img")) return el;

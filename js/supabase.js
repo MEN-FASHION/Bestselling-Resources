@@ -5,21 +5,12 @@
  * ============================================================ */
 const SB = (() => {
   if (!window.supabase) throw new Error("supabase-js 未加载，请检查 CDN 脚本顺序");
-  /* 20261122Z：榜单必需维度列不再被静默剔除；新增缺站点体检 / 补站点接口。 */
-  /* 20261123B：本轮不改数据层契约，版本戳随站点统一升级 */
   /* 20261104G：榜单页的列白名单被服务端拒绝过就置 true，之后退回 select(*) */
   let COLS_REJECTED = false;
   /* 把「缺列」这类数据库报错翻译成能直接照做的提示，
      避免只显示一句 400 让人无从下手 */
   function errHint(err, prefix) {
     const msg = String((err && err.message) || "");
-    /* 20261122Z：榜单的「站点 / 期次 / 类目 / 首图」是必需维度，绝不能被「缺列自愈」静默剔掉。
-       真的缺列时给一句能照做的话，而不是让数据"看起来导入成功、实际少了站点"。 */
-    if (/schema cache|does not exist/i.test(msg) && /['"](site|period_label|period_type|category|image_url)['"]/i.test(msg)) {
-      return (prefix || "操作失败") + "：数据库缺少榜单必需列（站点 / 期次 / 类目 / 首图），"
-        + "这条数据不能在不带该列的情况下写入（否则前台会选不到站点、看不到图）。"
-        + "请先执行 sql/patch_20261122Z_rank_required_columns.sql，刷新后再导一次";
-    }
     if (/channel/i.test(msg) && /column|does not exist|schema cache/i.test(msg)) {
       return (prefix || "操作失败") + "：数据库缺少「渠道」列，请先执行 sql/patch_20261110C_channel_and_tagdefs.sql，刷新后重试";
     }
@@ -30,8 +21,8 @@ const SB = (() => {
   }
 
 
-  /* 20261122B：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
-     与渠道图两个既有接口）。这里只随站点统一升级版本戳，便于核对缓存。 */
+  /* 20261121D：本轮在数据层加了「保存对比列配置时兜底补上榜单列」（setCompareSources）。
+     这里只随站点统一升级版本戳，便于核对缓存。 */
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -1491,32 +1482,6 @@ async removeTrendRecord(id) {
         .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw new Error(errHint(error, "保存渠道清单失败"));
       return out;
-    },
-
-    // ============ 渠道合并对比 · 其他渠道展示方式（20261124A） ============
-    // 存在 site_settings.frontend_dims.merge_view，不改表结构：
-    //   { split: false, allowFront: true }
-    //   split      : false = 合并（P · T · S 合成一列，默认） | true = 拆分（渠道各占一列）
-    //   allowFront : 是否允许前台「合并 / 拆分」按钮手动切换（默认允许）
-    // 以前这个开关只在前台、只存在浏览器本地，超管没法统一口径；现在以后台配置为准。
-    async getMergeView() {
-      try {
-        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
-        const d = (data && data.frontend_dims) || {};
-        const raw = d.merge_view;
-        if (!raw || typeof raw !== "object") return null;
-        return { split: raw.split === true, allowFront: raw.allowFront !== false };
-      } catch (e) { return null; }
-    },
-    async setMergeView(cfg) {
-      const c = cfg || {};
-      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
-      const dims = Object.assign({}, (data && data.frontend_dims) || {});
-      dims.merge_view = { split: c.split === true, allowFront: c.allowFront !== false };
-      const { error } = await client.from("site_settings")
-        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
-      if (error) throw new Error(errHint(error, "保存渠道合并对比展示方式失败"));
-      return dims.merge_view;
     },
 
     // ============ 实用工具 · 思维导图（20261112C） ============
@@ -3115,141 +3080,11 @@ async removeTrendRecord(id) {
       return out;
     },
 
-    /* ============================================================
-     * 20261122Z · 「缺站点」体检与修复
-     * ------------------------------------------------------------
-     * 症状：库里有图、前台期次也在，但「国家站点」一个都没有，页面空白。
-     * 原因：早先写库时若某次报错被当成「缺列」，site 会被静默剔掉（现已禁止），
-     *       已经写进去的行 site 就是空值 —— 数据在，但站点维度丢了。
-     * 这里提供「查有多少条空站点」+「批量补成一个站点」，只补空值，不动已有站点。
-     * ============================================================ */
-    async rankNoSiteCount(src) {
-      const want = src ? String(src) : "";
-      const srcOk = want ? await this.rankSourceColumn() : false;
-      let total = 0, samples = [];
-      const passes = [{ isNull: true }, { eq: "" }];
-      for (const p of passes) {
-        for (let page = 0; page < 200; page++) {
-          let q = client.from("rank_items").select("id, period_label, category" + (srcOk ? ", source" : ""));
-          q = p.isNull ? q.is("site", null) : q.eq("site", p.eq);
-          if (srcOk) q = this._srcCond(q, want);
-          const { data, error } = await q.order("id", { ascending: true }).range(page * 1000, page * 1000 + 999);
-          if (error) throw new Error(errHint(error, "检查缺站点数据失败"));
-          const rows = data || [];
-          rows.forEach((r) => {
-            total++;
-            if (samples.length < 12) samples.push({ period: r.period_label || "", category: r.category || "" });
-          });
-          if (rows.length < 1000) break;
-        }
-      }
-      /* 批次的站点也一并体检（前台筛选清单主要来自批次） */
-      let batches = 0;
-      try {
-        const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
-        for (const p of passes) {
-          let q = client.from("rank_batches").select("id" + (bSrcOk ? ", source" : ""));
-          q = p.isNull ? q.is("site", null) : q.eq("site", p.eq);
-          if (bSrcOk) q = this._srcCond(q, want);
-          const { data } = await q;
-          batches += (data || []).length;
-        }
-      } catch (e) { /* 批次仅展示用途 */ }
-      return { items: total, batches, samples };
-    },
-    /* 把「站点为空」的条目 / 批次统一补成指定站点。只补空值，已在的站点一个都不改。 */
-    async assignRankSiteToNoSite(src, site) {
-      const want = src ? String(src) : "";
-      const val = String(site || "").trim();
-      if (!val) throw new Error("请先填写要补的站点名称");
-      const srcOk = want ? await this.rankSourceColumn() : false;
-      let done = 0;
-      const passes = [{ isNull: true }, { eq: "" }];
-      for (const p of passes) {
-        for (let round = 0; round < 300; round++) {
-          let q = client.from("rank_items").select("id" + (srcOk ? ", source" : ""));
-          q = p.isNull ? q.is("site", null) : q.eq("site", p.eq);
-          if (srcOk) q = this._srcCond(q, want);
-          const { data, error } = await q.order("id", { ascending: true }).limit(300);
-          if (error) throw new Error(errHint(error, "读取待修数据失败"));
-          const ids = (data || []).map((r) => r.id);
-          if (!ids.length) break;
-          const up = await client.from("rank_items").update({ site: val }).in("id", ids);
-          if (up.error) throw new Error(errHint(up.error, "补站点失败"));
-          done += ids.length;
-          if (ids.length < 300) break;
-        }
-      }
-      let batches = 0;
-      try {
-        const bSrcOk = want ? await this.rankBatchSourceColumn() : false;
-        for (const p of passes) {
-          let q = client.from("rank_batches").select("id" + (bSrcOk ? ", source" : ""));
-          q = p.isNull ? q.is("site", null) : q.eq("site", p.eq);
-          if (bSrcOk) q = this._srcCond(q, want);
-          const { data } = await q;
-          const ids = (data || []).map((r) => r.id);
-          if (ids.length) {
-            const up = await client.from("rank_batches").update({ site: val }).in("id", ids);
-            if (!up.error) batches = ids.length;
-          }
-        }
-      } catch (e) { /* 批次仅展示用途 */ }
-      return { items: done, batches };
-    },
     // 国家站点清单（后台自定义维护）
-    /* 20261122Z：读取容错。以前写死「select id, name, sort_order + order by」，
-       只要库里这张表少一列（sort_order 是后加的）或策略拦了，整条查询就失败，
-       而前台把失败当成"后台没维护站点" → 站点菜单全空 → 选不到站点 → 连图都不显示。
-       现在先取全字段、本地排序；失败再退一步只取 name。 */
     async listRankSites() {
-      const sort = (rows) => (rows || []).slice().sort((a, b) => {
-        const ao = a && a.sort_order != null ? Number(a.sort_order) : 0;
-        const bo = b && b.sort_order != null ? Number(b.sort_order) : 0;
-        if (ao !== bo) return ao - bo;
-        return String((a && a.name) || "").localeCompare(String((b && b.name) || ""), "zh-CN");
-      });
-      try {
-        const { data, error } = await client.from("rank_sites").select("*");
-        if (!error) return sort(data);
-      } catch (e) { /* 落到下面的兜底 */ }
-      const { data, error } = await client.from("rank_sites").select("name");
+      const { data, error } = await client.from("rank_sites").select("id, name, sort_order").order("sort_order").order("name");
       if (error) throw new Error(error.message || "读取站点失败");
-      return sort(data);
-    },
-    /* 20261122Z：从榜单条目里反推「实际存在过的站点」。
-       用途：上传批次表若因为历史写入问题没存下站点，前台仍能给出可选的站点，
-       不至于出现「库里有图、前台一个站点都点不到」。 */
-    async rankItemSites(src) {
-      const want = src ? String(src) : "";
-      let srcOk = true;
-      const out = {};
-      try {
-        const probe = await client.from("rank_items").select("site, source").limit(1);
-        if (probe.error) srcOk = false;
-      } catch (e) { srcOk = false; }
-      const useSrc = !!(want && srcOk);
-      for (let page = 0; page < 60; page++) {
-        let q = useSrc
-          ? client.from("rank_items").select(this._colList("rank_items", "site, source"))
-          : client.from("rank_items").select(this._colList("rank_items", "site"));
-        const { data, error } = await q.order("id", { ascending: true }).range(page * 1000, page * 1000 + 999);
-        if (error) break;
-        const rows = data || [];
-        rows.forEach((r) => {
-          if (useSrc) {
-            const s = r && r.source ? String(r.source) : "";
-            const ok = want === "rank" ? (s === "" || s === "rank") : s === want;
-            if (!ok) return;
-          }
-          String((r && r.site) || "").split(",").forEach((x) => {
-            const v = x.trim();
-            if (v) out[v] = 1;
-          });
-        });
-        if (rows.length < 1000) break;
-      }
-      return Object.keys(out);
+      return data || [];
     },
     async addRankSite(name) {
       const n = (name || "").trim();
@@ -3979,18 +3814,6 @@ async removeTrendRecord(id) {
     _missMap() { if (!this._missCols) this._missCols = {}; return this._missCols; },
     _missKnow(table, col) { const m = this._missMap(); return !!(m[table] && m[table][col]); },
     _missMark(table, col) { const m = this._missMap(); (m[table] = m[table] || {})[col] = 1; },
-    /* 20261122Z：必需维度列不允许被「缺列自愈」静默剔掉。
-       事故形态：写库时若报了一次「找不到 site 列」（schema 缓存抖动 / 列真的没建），
-       旧实现会把 site 从后续所有写入里剔掉 —— 每批都"导入成功"，但站点全是空，
-       于是前台「国家站点」列表空、选不到站点、连图都不显示，且没有任何报错。
-       现在这些列只报错、不剔除，宁可失败也不悄悄丢维度。 */
-    _mustKeep(table, col) {
-      const MUST = {
-        rank_items: { site: 1, period_type: 1, period_label: 1, category: 1, image_url: 1 },
-        rank_batches: { site: 1, period_type: 1, period_label: 1, category: 1 },
-      };
-      return !!(MUST[table] && MUST[table][col]);
-    },
     _missName(err) {
       const s = String((err && (err.message || err.details || err.hint)) || "");
       const m = s.match(/Could not find the '([^']+)' column/i)
@@ -4000,16 +3823,12 @@ async removeTrendRecord(id) {
       return m ? m[1] : "";
     },
     _dropMiss(table, obj) {
-      Object.keys(obj || {}).forEach((k) => {
-        /* 必需列即使被记成"缺列"也不剔除（见 _mustKeep 说明） */
-        if (this._mustKeep(table, k)) return;
-        if (this._missKnow(table, k)) delete obj[k];
-      });
+      Object.keys(obj || {}).forEach((k) => { if (this._missKnow(table, k)) delete obj[k]; });
       return obj;
     },
     _colList(table, cols) {
       const list = String(cols || "*").split(",").map((c) => c.trim()).filter(Boolean)
-        .filter((c) => c === "*" || this._mustKeep(table, c) || !this._missKnow(table, c));
+        .filter((c) => c === "*" || !this._missKnow(table, c));
       return list.join(",") || "id";
     },
     /* 插入：缺列自动剔掉再重试（title 之类后加列没补时也能写进去） */
@@ -4024,11 +3843,7 @@ async removeTrendRecord(id) {
         const { data, error } = await q;
         if (!error) return { data, error: null };
         const col = this._missName(error);
-        if (col && this._mustKeep(table, col)) {
-          /* 必需列缺失：不要重试（重试也是同样的错），直接把错误交给上层说明原因 */
-          return { data: null, error };
-        }
-        if (col && !this._mustKeep(table, col)) {
+        if (col) {
           const has = one ? (data0[col] !== undefined) : data0.some((r) => r[col] !== undefined);
           if (has) { this._missMark(table, col); continue; }
         }
@@ -4667,10 +4482,7 @@ async removeTrendRecord(id) {
         if (!c) return c;
         const list = String(c).split(",").map((x) => x.trim())
           .filter((x) => x)
-          /* 20261122Z：必需维度列（站点 / 期次 / 类目 / 首图）不许被剔掉。
-             以前只要会话里把它们记成"缺列"，select 里就没了 site，读回来的条目
-             全都没有站点 → 前台站点菜单空、按站点过滤后一张图都不剩。 */
-          .filter((x) => this._mustKeep("rank_items", x) || !this._missKnow("rank_items", x));
+          .filter((x) => !this._missKnow("rank_items", x));
         return list.join(",") || "id";
       };
 
@@ -6259,7 +6071,6 @@ async removeTrendRecord(id) {
     pinterest: "P 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
-    merge: "渠道合并对比",
     movement: "品牌动向",
     marketing: "营销日历",
   };

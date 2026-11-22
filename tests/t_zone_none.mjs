@@ -35,11 +35,7 @@ ok(/const frontConfigured = rawFront\.length > 0/.test(P), "批量文案也应�
 ok(/const front = rawFront\.filter\(z => z !== ZONE_NONE\)/.test(P), "批量文案应过滤哨兵");
 
 console.log("四、弹窗回显");
-ok(/permZonesWithMerge\(\(frontZones \|\| \[\]\)\.filter\(z => z !== ZONE_NONE\)\)/.test(P) &&
-   /renderPermEditZones\(fz\.list, "#perm-edit-zones"/.test(P),
-  "弹窗重新打开时不应把哨兵勾成一个假专区（先过滤哨兵，再补合并对比的兼容勾选）");
-ok(/if \(list\.indexOf\("merge"\) >= 0 \|\| list\.indexOf\(ZONE_NONE\) >= 0\) return \{ list, auto: false \}/.test(P),
-  "兼容补勾不得把哨兵当成专区，也不得在「明确全部关闭」时自动放开");
+ok(/filter\(z => z !== ZONE_NONE\), "#perm-edit-zones"/.test(P), "弹窗重新打开时不应把哨兵勾成一个假专区");
 
 console.log("五、存库层不丢哨兵");
 ok(/const clean = \[\.\.\.new Set\(\(zones \|\| \[\]\)\.filter\(Boolean\)\)\]/.test(S),

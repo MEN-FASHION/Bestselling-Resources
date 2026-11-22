@@ -413,30 +413,7 @@ window.Common = (function () {
       if (i > 0) out.unshift(out.splice(i, 1)[0]);
       return out;
     }
-    function list() { return rankFirst(alive(pinMerge((defs && defs.length) ? defs : fallback()))); }
-
-    /* 20261122B：渠道合并对比是「内置专区」，与榜单列同思路 ------------------
-       数据库里存着一份早年的专区配置 __defs，里面没有 merge；如果完全听配置，
-       新加的专区在菜单上永远不会出现（还要手工去后台再加一次）。
-       口径：配置里没有它，就补在「渠道对比」后面；已经有就保持原位（名称/顺序可改）。
-       另加一个键 MERGE_ZONE 供前台判断——它的数据都来自别的专区，不需要自己的授权。 */
-    var MERGE_ZONE = "merge";
-    var MERGE_DEF = { key: "merge", label: "渠道合并对比", href: "merge.html" };
-    function pinMerge(arr) {
-      var out = (arr || []).slice();
-      var at = -1;
-      for (var i = 0; i < out.length; i++) { if (out[i] && out[i].key === MERGE_ZONE) { at = i; break; } }
-      if (at >= 0) return out;
-      var pos = out.length;
-      for (var j = 0; j < out.length; j++) { if (out[j] && out[j].key === "compare") { pos = j + 1; break; } }
-      out.splice(pos, 0, { key: MERGE_DEF.key, label: MERGE_DEF.label, href: MERGE_DEF.href });
-      return out;
-    }
-    /* 20261124A：渠道合并对比改为「独立授权」。
-       以前它不单独配授权，跟随来源专区（榜单 / P / S / T）—— 结果是超管想关掉某个人的
-       「其他渠道」这一页，只能连带把渠道对比、某几个渠道专区一起关掉。
-       现在它就是一个普通专区：单独勾选、单独关闭，关掉它不影响「渠道对比」与各渠道专区。 */
-    var MERGE_DEPS = ["rank", "rhythm", "pinterest", "shein", "tiktok"];  // 仅用于说明它取数于这些专区
+    function list() { return rankFirst(alive((defs && defs.length) ? defs : fallback())); }
 
     /* 个人专区：只对"自己"有意义，不允许被账号的专区白名单挡住，
        否则收藏成功了却找不到入口（用户级白名单是用来管公共业务专区的）。 */
@@ -447,12 +424,6 @@ window.Common = (function () {
       var personal = !!PERSONAL_ZONES[zone];
       if (vis && vis[zone] === false) return false;   /* 全站开关对个人专区仍有效 */
       if (personal) return true;
-      /* 20261124A：渠道合并对比现在是独立专区，按普通专区的口径判断 */
-      if (zone === MERGE_ZONE) {
-        if (vis && vis[zone] === false) return false;
-        if (Array.isArray(mine) && mine.length) return mine.indexOf(zone) !== -1;
-        return true;
-      }
       if (Array.isArray(mine) && mine.length) return mine.indexOf(zone) !== -1;
       return true;
     }

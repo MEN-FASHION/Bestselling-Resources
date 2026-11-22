@@ -5,7 +5,6 @@
  * 依赖：admin.js（sbToast / escHtml / escAttr）、SB（supabase.js）、XLSX（vendor）
  * 说明：本文件不产生全局重名（顶层只声明一个块级作用域内的变量与函数）。
  * ==========================================================================*/
-/* 20261122Z：后台新增「站点修复…」——把站点为空的历史数据补成指定站点。 */
 {
   const RANK_HOT_TOP = 20;      // 趋势爆款：环比绝对值上升的前 20 名
   const RANK_SURGE_PCT = 0.2;   // 周度激增：双重提升的前 20%
@@ -1561,18 +1560,13 @@
     perBtn.type = "button"; perBtn.className = "btn-ghost small"; perBtn.textContent = "期次归并…";
     const chkBtn = document.createElement("button");
     chkBtn.type = "button"; chkBtn.className = "btn-ghost small"; chkBtn.textContent = "数据自检…";
-    /* 20261122Z：站点修复。库里有图、前台却没有「国家站点」可点（页面空白）时，
-       用这里把「站点为空」的历史数据批量补成一个站点。只补空值，不动已有站点。 */
-    const siteFixBtn = document.createElement("button");
-    siteFixBtn.type = "button"; siteFixBtn.className = "btn-ghost small"; siteFixBtn.textContent = "站点修复…";
-    siteFixBtn.title = "把站点为空的历史榜单数据补成指定站点（只补空值，不改已有站点）";
     /* 20261113L：本功能上线前导入的批次没有上传人，默认只有超管能改。
        超管可以一键把这些「历史数据」认领到自己名下，之后就能像自己传的一样管理。
        非超管看不到这个按钮（看了也用不了，认领走的是超管权限）。 */
     const adoptBtn = document.createElement("button");
     adoptBtn.type = "button"; adoptBtn.className = "btn-ghost small"; adoptBtn.textContent = "认领历史数据";
     adoptBtn.title = "把没有上传人记录的历史批次记到你的名下，之后由你管理";
-    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(dateSel); bar.appendChild(catBtn); bar.appendChild(perBtn); bar.appendChild(chkBtn); bar.appendChild(siteFixBtn);
+    bar.appendChild(selAll); bar.appendChild(delSel); bar.appendChild(dateSel); bar.appendChild(catBtn); bar.appendChild(perBtn); bar.appendChild(chkBtn);
     if (uoOk() && window.UO.isSuper()) bar.appendChild(adoptBtn);
     host.insertBefore(bar, box);
 
@@ -1627,41 +1621,6 @@
       } finally {
         chkBtn.disabled = false;
         chkBtn.textContent = "数据自检…";
-      }
-    };
-    siteFixBtn.onclick = async () => {
-      if (siteFixBtn.disabled) return;
-      siteFixBtn.disabled = true;
-      siteFixBtn.textContent = "体检中…";
-      try {
-        const r = await SB.rankNoSiteCount(SOURCE);
-        if (!r.items && !r.batches) {
-          sbToast("没有缺站点的数据，站点清单为空是别的原因（可先点「数据自检…」）", true);
-          return;
-        }
-        /* 默认站点：优先用后台站点清单的第一个，其次让用户自己填 */
-        let def = "";
-        try { const ss = await SB.listRankSites(); def = (ss && ss[0] && ss[0].name) || ""; } catch (e) { def = ""; }
-        const sample = (r.samples || []).slice(0, 6).map((x) => (x.period || "?") + " · " + (x.category || "?")).join("\n");
-        const tip = "发现 " + r.items + " 条榜单数据、 " + r.batches + " 个上传批次的「站点」是空的（所以前台选不到国家站点、整页没有图）。\n"
-          + (sample ? ("例如：\n" + sample + "\n\n") : "")
-          + "这些数据实际属于哪个国家站点？填一个名字（如 美国，多个用逗号分隔会不生效，一次只能补一个）：";
-        const site = String((await uiPrompt(tip, def)) || "").trim();
-        if (!site) { sbToast("已取消，什么都没改", true); return; }
-        if (!(await uiConfirm("把上面 " + r.items + " 条数据与 " + r.batches + " 个批次的空站点补成「" + site + "」？\n只补空值，已有站点的数据一条都不动。"))) {
-          sbToast("已取消，什么都没改", true); return;
-        }
-        siteFixBtn.textContent = "修复中…";
-        const res = await SB.assignRankSiteToNoSite(SOURCE, site);
-        await loadRankBatches();
-        if (window.DataSync) { try { window.DataSync.bump(SOURCE || "rank"); } catch (e) { /* 忽略 */ } }
-        await uiAlert("已补站点 " + res.items + " 条（批次 " + res.batches + " 个）。\n前台强刷后应能看到「" + site + "」这个国家站点与对应图片。",
-          { title: "站点修复完成" });
-      } catch (e) {
-        sbToast("站点修复失败：" + ((e && e.message) || "请重试"), false);
-      } finally {
-        siteFixBtn.disabled = false;
-        siteFixBtn.textContent = "站点修复…";
       }
     };
     selAll.onclick = () => {

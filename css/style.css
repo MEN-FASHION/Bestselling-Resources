@@ -7918,36 +7918,3 @@ body.front[data-img-size="l"] .mv-card-meta { font-size: 13px; padding: 9px 12px
 /* ===== 20261115A · 上传失败原因 ===== */
 .smart-fail-box { margin: 8px 0 0; padding: 9px 11px; border: 1px solid rgba(255,120,80,.45); border-radius: 8px; background: rgba(255,120,80,.08); font-size: 12px; line-height: 1.75; color: #ffc9b0; max-height: 190px; overflow: auto; }
 .smart-fail-box.hidden { display: none; }
-
-/* ===== 20261122B · 渠道合并对比：同期对比摘要条 ===== */
-.mrg-sync-bar {
-  margin: 0 0 10px; padding: 10px 12px; background: var(--bg2);
-  border: 1px solid var(--line); border-radius: 12px; font-size: 12.5px; line-height: 1.9;
-}
-.mrg-sync-bar.hidden { display: none; }
-.mrg-sync-row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-.mrg-sync-k {
-  flex: 0 0 auto; min-width: 104px; color: var(--sub); font-size: 11.5px; letter-spacing: .02em;
-}
-.mrg-sync-v { color: var(--txt); }
-.mrg-sync-v b { font-size: 14px; }
-.mrg-sync-hint { margin-top: 4px; color: var(--sub); font-size: 11.5px; line-height: 1.75; }
-.mrg-sync-tip { padding: 2px 2px 6px; color: var(--sub); font-size: 11.5px; line-height: 1.7; }
-
-/* ============================================================================
-   渠道合并对比 · 右上角「其他渠道：合并 / 拆分」切换（20261123B）
-   —— 只影响「其他渠道」这一侧的列结构，趋势榜单列不动、永远在最左。
-   ========================================================================== */
-.mrg-seg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; max-width: 100%; }
-.mrg-seg.hidden { display: none; }
-.mrg-seg-name { font-size: 12px; color: var(--sub); white-space: nowrap; }
-.mrg-seg-btn {
-  appearance: none; -webkit-appearance: none;
-  border: 1px solid var(--line); background: #fff; color: var(--sub);
-  font: inherit; font-size: 12px; line-height: 1.5;
-  padding: 3px 13px; border-radius: 999px; cursor: pointer;
-  transition: background .15s, color .15s, border-color .15s;
-}
-.mrg-seg-btn:hover { color: var(--txt); border-color: #cfc7b8; }
-.mrg-seg-btn.active { background: var(--txt); color: #fff; border-color: var(--txt); }
-.mrg-sync-tip { margin-top: 8px; line-height: 1.75; letter-spacing: 0; text-transform: none; color: var(--sub); }
