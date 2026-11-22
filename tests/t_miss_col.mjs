@@ -22,7 +22,7 @@ ok(/_dropMiss\("rank_items", Object\.assign\(\{\}, r\)\)/.test(SB), "upsert 兜�
 console.log("三、读取路径都走自愈");
 ok(/const \{ data, error \} = await this\._safeSelect\("rank_items", cols, run\);\n      if \(error\) throw new Error\(errHint\(error, "读取渠道图片失败"\)\)/.test(SB), "渠道图列表");
 ok(/await this\._safeSelect\("rank_items", cols, run\);\n      if \(error\) throw new Error\(error\.message \|\| "读取榜单图失败"\)/.test(SB), "打标队列");
-ok(/filter\(\(x\) => !this\._missKnow\("rank_items", x\)\)/.test(SB), "前台取数剔除已知缺列");
+ok(/filter\(\(x\) => this\._mustKeep\("rank_items", x\) \|\| !this\._missKnow\("rank_items", x\)\)/.test(SB), "前台取数剔除已知缺列（必需列除外）");
 ok(!/if \(res\.error && useSlim\(\)\) \{\s*\n\s*COLS_REJECTED = true;/.test(SB), "单列缺失不再整包退回全量");
 
 console.log("四、必填列兜底");
