@@ -622,6 +622,10 @@ select.input {
 }
 .tag-chip.zero { opacity: .45; }
 .tag-chip.zero:hover { opacity: .75; }
+/* 20261121C：渠道对比里「本月无图」的列（目前只有榜单列会这样）
+   保留在筛选里、但明显区别于可用项，点了会说明原因，不再静默消失 */
+.tag-chip.is-empty { opacity: .55; border-style: dashed; }
+.tag-chip.is-empty:hover { opacity: .8; }
 
 /* 20261114Q · 渠道对比「自定义增删渠道」：
    一个 chip = 开关按钮 + 右侧小 ✕；✕ 只删本机这一列，不影响别人、不动数据。 */

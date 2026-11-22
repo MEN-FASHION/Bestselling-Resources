@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视觉与趋势管理系统</title>
-<link rel="stylesheet" href="css/style.css?v=20261121B">
-<link rel="stylesheet" href="vendor/quill.snow.css?v=20261121B">
+<link rel="stylesheet" href="css/style.css?v=20261122A">
+<link rel="stylesheet" href="vendor/quill.snow.css?v=20261122A">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <style>
     /* ==== 后台营销时间轴 自包含兜底样式 ==== */
@@ -1367,6 +1367,12 @@
           删渠道<b>不会删任何图片</b>，只是它不再出现在配置与前台对比的候选里；以后要加回来，重新填一次名字即可。
           勾上（✓）表示这一列会真的摆到前台对比页。
         </p>
+        <p class="hint">
+          <b>榜单列</b>（「上新节奏」那一项，数据是月度榜单，趋势上升榜的月度数据也在里面）：它同时属于<b>趋势上升榜</b>与<b>上新节奏</b>两个专区，
+          两个里<b>任意一个对当前账号开放</b>它就出现在前台对比里；两个都关掉 / 都没授权才会隐藏。
+          这个月没有榜单图时，前台筛选里仍保留这一项并标「本月无图」，不会静默消失。
+          <br><b>它是内置列，不能移出</b>（列名和顺序可以改）：保存时若它不在列表里，会自动补回第一位。
+        </p>
         <div id="cmpa-pool" class="cmpa-pool"></div>
         <div class="cmpa-addrow">
           <input id="cmpa-add-input" class="input" placeholder="输入渠道名，例如 Amazon、AliExpress、独立站、Temu" maxlength="24">
@@ -1732,54 +1738,54 @@
     </div>
   </div>
 
-  <script src="vendor/supabase.js?v=20261121B"></script>
-  <script src="vendor/quill.js?v=20261121B"></script>
-  <script src="vendor/xlsx.full.min.js?v=20261121B"></script>
-  <script src="vendor/jszip.min.js?v=20261121B"></script>
-  <script src="vendor/qrcode.min.js?v=20261121B"></script>
-  <script src="js/site-norm.js?v=20261121B"></script>
-  <script src="js/config.js?v=20261121B"></script>
-  <script src="js/supabase.js?v=20261121B"></script>
-  <script src="js/data-sync.js?v=20261121B"></script>
-  <script src="js/imgfast.js?v=20261121B"></script>
+  <script src="vendor/supabase.js?v=20261122A"></script>
+  <script src="vendor/quill.js?v=20261122A"></script>
+  <script src="vendor/xlsx.full.min.js?v=20261122A"></script>
+  <script src="vendor/jszip.min.js?v=20261122A"></script>
+  <script src="vendor/qrcode.min.js?v=20261122A"></script>
+  <script src="js/site-norm.js?v=20261122A"></script>
+  <script src="js/config.js?v=20261122A"></script>
+  <script src="js/supabase.js?v=20261122A"></script>
+  <script src="js/data-sync.js?v=20261122A"></script>
+  <script src="js/imgfast.js?v=20261122A"></script>
   <!-- 后台脚本：按模块拆分（顺序不可调整，共享状态按加载顺序初始化） -->
-  <script src="js/admin-dialog.js?v=20261121B"></script>
+  <script src="js/admin-dialog.js?v=20261122A"></script>
   <!-- 图墙上「悬停一键搜同款」：后台图墙与打标大图同样可用 -->
-  <script src="js/find-similar.js?v=20261121B"></script>
-  <script src="js/admin.js?v=20261121B"></script>
-  <script src="js/admin-images.js?v=20261121B"></script>
-  <script src="js/rank-enums.js?v=20261121B"></script>
-  <script src="js/imageexport.js?v=20261121B"></script>
-  <script src="js/admin-imageimport.js?v=20261121B"></script>
-  <script src="js/admin-movement.js?v=20261121B"></script>
-  <script src="js/admin-smart.js?v=20261121B"></script>
-  <script src="js/admin-trend.js?v=20261121B"></script>
-  <script src="js/admin-notice.js?v=20261121B"></script>
-  <script src="js/marketing-data.js?v=20261121B"></script>
-  <script src="js/admin-festival.js?v=20261121B"></script>
-  <script src="js/admin-tasks.js?v=20261121B"></script>
-  <script src="js/admin-bestseller.js?v=20261121B"></script>
-  <script src="js/ipgeo.js?v=20261121B"></script>
-  <script src="js/upload-owner.js?v=20261121B"></script>
-  <script src="js/admin-perm.js?v=20261121B"></script>
-  <script src="js/admin-pool.js?v=20261121B"></script>
-  <script src="js/rankexport.js?v=20261121B"></script>
-  <script src="js/admin-rankimport.js?v=20261121B"></script>
-<script src="js/mindmap.js?v=20261121B"></script>
-  <script src="js/flowchart.js?v=20261121B"></script>
-  <script src="js/gantt.js?v=20261121B"></script>
-<script src="js/admin-tools.js?v=20261121B"></script>
-<script src="js/admin-channelzone.js?v=20261121B"></script>
-<script src="js/admin-compare.js?v=20261121B"></script>
-  <script src="js/rank-cat-norm.js?v=20261121B"></script>
-<script src="js/rank-period-norm.js?v=20261121B"></script>
-  <script src="js/rhythm-calc.js?v=20261121B"></script>
+  <script src="js/find-similar.js?v=20261122A"></script>
+  <script src="js/admin.js?v=20261122A"></script>
+  <script src="js/admin-images.js?v=20261122A"></script>
+  <script src="js/rank-enums.js?v=20261122A"></script>
+  <script src="js/imageexport.js?v=20261122A"></script>
+  <script src="js/admin-imageimport.js?v=20261122A"></script>
+  <script src="js/admin-movement.js?v=20261122A"></script>
+  <script src="js/admin-smart.js?v=20261122A"></script>
+  <script src="js/admin-trend.js?v=20261122A"></script>
+  <script src="js/admin-notice.js?v=20261122A"></script>
+  <script src="js/marketing-data.js?v=20261122A"></script>
+  <script src="js/admin-festival.js?v=20261122A"></script>
+  <script src="js/admin-tasks.js?v=20261122A"></script>
+  <script src="js/admin-bestseller.js?v=20261122A"></script>
+  <script src="js/ipgeo.js?v=20261122A"></script>
+  <script src="js/upload-owner.js?v=20261122A"></script>
+  <script src="js/admin-perm.js?v=20261122A"></script>
+  <script src="js/admin-pool.js?v=20261122A"></script>
+  <script src="js/rankexport.js?v=20261122A"></script>
+  <script src="js/admin-rankimport.js?v=20261122A"></script>
+<script src="js/mindmap.js?v=20261122A"></script>
+  <script src="js/flowchart.js?v=20261122A"></script>
+  <script src="js/gantt.js?v=20261122A"></script>
+<script src="js/admin-tools.js?v=20261122A"></script>
+<script src="js/admin-channelzone.js?v=20261122A"></script>
+<script src="js/admin-compare.js?v=20261122A"></script>
+  <script src="js/rank-cat-norm.js?v=20261122A"></script>
+<script src="js/rank-period-norm.js?v=20261122A"></script>
+  <script src="js/rhythm-calc.js?v=20261122A"></script>
   <!-- 长列表分页（20261115B）：已上传记录 / 期次清单按页画，页面不再被撑得很长 -->
-  <script src="js/pager.js?v=20261121B"></script>
-  <script src="js/admin-rank.js?v=20261121B"></script>
-  <script src="js/admin-rhythm.js?v=20261121B"></script>
-  <script src="js/admin-backup.js?v=20261121B"></script>
-  <script src="js/upload-dash.js?v=20261121B"></script>
+  <script src="js/pager.js?v=20261122A"></script>
+  <script src="js/admin-rank.js?v=20261122A"></script>
+  <script src="js/admin-rhythm.js?v=20261122A"></script>
+  <script src="js/admin-backup.js?v=20261122A"></script>
+  <script src="js/upload-dash.js?v=20261122A"></script>
 
   <!-- 营销日历 · 微信分享二维码弹窗 -->
   <div class="mk-share-mask hidden" id="mk-share-mask">
@@ -1841,6 +1847,6 @@
       </div>
     </div>
   </div>
-  <script src="js/ui-dialog.js?v=20261121B"></script>
+  <script src="js/ui-dialog.js?v=20261122A"></script>
 </body>
 </html>

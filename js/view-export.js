@@ -45,7 +45,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261121B";
+  var BUILD = "20261122A";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -54,6 +54,7 @@
     shein: "S 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
+    merge: "渠道合并对比",
     movement: "品牌动向"
   };
 

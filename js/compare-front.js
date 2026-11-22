@@ -55,6 +55,7 @@
     zoneVis: null,      // 全站「前台可见专区」开关（后台关掉的专区，它的渠道列不应出现）
     myZones: null,      // 当前账号的专区白名单（未配置 = 跟随全站）
     zoneHidden: 0,      // 因为对应专区被关闭而没摆出来的渠道列数（用于提示，不摆空列）
+    zoneDropped: [],    // 因为专区关闭被剔掉的列（用于具名说明，让用户知道少了哪一列）
   };
 
   function baseSources() { return state.base || []; }
@@ -111,8 +112,31 @@
   }
 
   /* 默认列：上新节奏 + 数据里出现过的每个渠道（按渠道名排序，保证每次打开顺序一致） */
+  /* 20261121D：榜单列的判定 ------------------------------------------------
+     用户反馈：「上新节奏怎么没了，渠道对比前台不显示这个筛选项了，也没有对比池子」。
+     查下来有两种来源，都会让这一列整列消失：
+       ① 后台对比列配置里没有它（早期保存时被移出过，或者保存时 type 丢了变成空渠道列）；
+       ② 这个月没有上新节奏的图，旧逻辑「没图就不摆列」，池子跟着一起没了。
+     口径（本轮定死）：
+       · 榜单列是**内置列**，不以后台配置为准 —— 配置里没有就自动补在最前面；
+       · 名字写成「上新节奏 / 榜单 / 月度榜单」的配置项，一律认回榜单列；
+       · 选了月份而这个月没有榜单图时，列**仍然摆**，池子里说明「本月无图」并给出有图的月份，
+         绝不拿别的月份的图顶替（沿用 20261114Y 的口径）。
+     数据一条都不动，列自己会回来。 */
+  var RANK_KEY = "rank:month";
+  function isRankName(v) {
+    var k = String(v == null ? "" : v).replace(/[\s_\-:：]/g, "");
+    if (!k) return false;
+    return k === "rankmonth" || k === "上新节奏" || k === "榜单" || k === "月度榜单" ||
+           k === "上新节奏榜单";
+  }
+  function rankSource() {
+    return { key: RANK_KEY, label: "上新节奏", type: "rank", channel: "", builtin: true };
+  }
+
+  /* 默认列：上新节奏 + 数据里出现过的每个渠道（按渠道名排序，保证每次打开顺序一致） */
   function defaultSources(channelRows) {
-    var out = [{ key: "rank:month", label: "上新节奏", type: "rank" }];
+    var out = [rankSource()];
     var seen = {};
     (channelRows || []).forEach(function (r) {
       var raw = String(r.channel || "").trim();
@@ -164,7 +188,12 @@
     var forceAll = !!(state.cfg && state.cfg.showEmpty === true);
     return state.sources.filter(function (s) {
       if (state.srcOff[s.key]) return false;
-      if (state.month) return colHasData(s);
+      if (state.month) {
+        if (colHasData(s)) return true;
+        /* 20261121D：榜单列即使这个月没图也留位（池子里说明「本月无图」），
+           否则「列没了 + 池子没了」看起来就是功能坏了。其它渠道列维持原口径：没图不摆。 */
+        return s.type === "rank";
+      }
       if (state.srcOn[s.key]) return true;
       return forceAll ? true : colHasData(s);
     });
@@ -175,6 +204,8 @@
     var forceAll = !!(state.cfg && state.cfg.showEmpty === true);
     if (forceAll) return [];
     return state.sources.filter(function (s) {
+      /* 20261121C：榜单列在筛选里始终可见，不算「看不见的渠道」，由摘要单独说明「本月无榜单图」 */
+      if (s.type === "rank") return false;
       return !state.srcOff[s.key] && !state.srcOn[s.key] && !colHasData(s);
     });
   }
@@ -221,7 +252,26 @@
     if (s.type === "rank") return "rhythm";
     return chZone(s.channel || s.key || "");
   }
-  function srcZoneOpen(s) { return zoneOpen(srcZoneOf(s)); }
+  /* 20261121C · 榜单列不再只认「上新节奏」一个专区
+     ------------------------------------------------------------------
+     现象：账号被授权了「趋势上升榜」，但没被授权（或后台关掉了）「上新节奏」时，
+           渠道对比的榜单列整列消失 —— 筛选里只剩 S / P / T 三个，看着就像
+           「趋势上升榜不在对比栏里了」。
+     原因：榜单列的数据是 rank_items 里的月度榜单行，它同时来自「趋势上升榜」与
+           「上新节奏」两个专区；但判定只写了 rhythm，于是 rank 被授权也不管用。
+     口径：榜单列属于「趋势上升榜 + 上新节奏」两个专区，**任意一个开放就摆**；
+           两个都关掉 / 都没授权才不摆。渠道列仍严格跟随各自专区。
+     不删任何数据，重新开启专区后列自动回来。 */
+  var RANK_ZONES = ["rank", "rhythm"];
+  function srcZoneOpen(s) {
+    if (s && s.type === "rank") {
+      for (var i = 0; i < RANK_ZONES.length; i++) {
+        if (zoneOpen(RANK_ZONES[i])) return true;
+      }
+      return false;
+    }
+    return zoneOpen(srcZoneOf(s));
+  }
 
   function normCat(v) {
     return String(v == null ? "" : v).replace(/\s+/g, " ").trim();
@@ -335,7 +385,12 @@
       if (conf && conf.length) {
         var seenSrc = {};
         base = conf.map(function (x) {
-          var t = x.type === "rank" ? "rank" : "channel";
+          /* 20261121D：配置里可能把「上新节奏」这一列存成了普通渠道
+             （早期版本保存时丢过 type，或者名字被写成「榜单」）。
+             这里按名字认回来，否则它会变成一条没有数据的空渠道列，
+             前台看起来就是「上新节奏没了」。 */
+          var t = (x.type === "rank" || isRankName(x.channel) || isRankName(x.label) || isRankName(x.key))
+            ? "rank" : "channel";
           /* 配置里存的是渠道原文；这里按归一键对齐，写法差异不会把一列变成空列 */
           var k = t === "rank" ? "rank:month" : "ch:" + chKey(x.channel || x.label || x.key);
           return {
@@ -367,16 +422,28 @@
         });
       }
 
+      /* ①.1 榜单列是内置列：配置里没有就补在最前面（20261121D）
+         以前这里完全听配置的，配置里一旦没有 rank 项（保存时被移出 / type 丢了），
+         这一列就永久消失，前端没有任何入口能加回来 —— 这就是「上新节奏不见了」。 */
+      (function ensureRank() {
+        var has = false;
+        base.forEach(function (s) { if (s && s.type === "rank") has = true; });
+        if (!has) base.unshift(rankSource());
+      })();
+
       /* ①.5 后台关掉的专区：它的渠道列不摆（20261114T）
          以前这里只看「库里有没有这个渠道的图」，后台关掉 S / T 专区后，
          历史图仍在库里，于是照样多出一列 —— 现在按专区开关先剔一遍。 */
       var zoneOff = 0;
+      var zoneDropped = [];
       base = base.filter(function (s) {
         if (srcZoneOpen(s)) return true;
         zoneOff++;
+        zoneDropped.push(s);
         return false;
       });
       state.zoneHidden = zoneOff;
+      state.zoneDropped = zoneDropped;
 
       state.base = base;
       /* 列 = 后台配置 / 自动发现，再按「专区开关」过一遍（20261114T）：
@@ -580,19 +647,41 @@
 
     /* 20261114Y：筛选里只列「这个月真的有图」的渠道。
        这个月没图的渠道不再出现在这里，也不写"无图（另有 N 张在别的月份）"这种容易被误读的文案 ——
-       没图就是没有，不用别的月份顶替。渠道本身的增删在后台「渠道对比」里配置。 */
-    state.sources.filter(function (s) { return !state.month || colHasData(s); }).forEach(function (s) {
+       没图就是没有，不用别的月份顶替。渠道本身的增删在后台「渠道对比」里配置。
+       20261121C：榜单列例外 —— 它始终列在这里，哪怕这个月没有榜单图。
+       原因：榜单列一消失，看起来就像「趋势上升榜不在对比栏里了」，
+             而且用户无从判断是没图、还是被专区开关挡了、还是被删了。
+             保留它 + 标「本月无图」，点一下会说明原因，比静默消失清楚得多。 */
+    state.sources.filter(function (s) {
+      if (s.type === "rank") return true;
+      return !state.month || colHasData(s);
+    }).forEach(function (s) {
       var n = sourceItems(s).filter(function (r) {
         return !state.month || r.month === state.month;
       }).length;
       var on = !!shownKey[s.key];
+      var empty = !n;
       var b = document.createElement("button");
       b.type = "button";
-      b.className = "tag-chip" + (on ? " active" : "");
+      b.className = "tag-chip" + (on ? " active" : "") + (empty ? " is-empty" : "");
       b.setAttribute("data-src", s.key);
-      b.title = on ? "点一下隐藏这一列" : "点一下显示这一列";
-      b.textContent = s.label + (n ? " " + n : "");
+      if (empty) {
+        b.title = s.type === "rank"
+          ? "这个月还没有" + s.label + "的图（换一个有图的月份，或先在后台导入月度榜单）"
+          : "这个月还没有这个渠道的图";
+      } else {
+        b.title = on ? "点一下隐藏这一列" : "点一下显示这一列";
+      }
+      b.textContent = s.label + (n ? " " + n : " 本月无图");
       b.onclick = function () {
+        /* 20261121D：本月无图的项，点一下只解释原因，不切换显示（空列没有可看的图，
+           更不该「点了没反应」）。榜单列的空列本身仍然摆在池子里，并写明本月无图。 */
+        if (empty) {
+          toast(s.type === "rank"
+            ? "「" + s.label + "」这个月没有图：换一个有图的月份（上方月份筛选），或先在后台导入月度榜单"
+            : "「" + s.label + "」这个月没有图", false);
+          return;
+        }
         var willHide = !!shownKey[s.key];
         if (willHide) {
           /* 至少留一列，否则整页空白 */
@@ -608,6 +697,23 @@
       chips.appendChild(b);
     });
 
+    /* 20261121D：被「专区开关 / 账号白名单」挡掉的列，具名列在这里（灰态、点一下说明原因）。
+       以前只在摘要里写一个数字，用户看到「上新节奏没了」根本不知道是被关了还是没数据。 */
+    (state.zoneDropped || []).forEach(function (s) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tag-chip is-empty";
+      b.setAttribute("data-src-hidden", s.key);
+      b.textContent = (s.label || s.key) + " 未显示";
+      b.title = "这一列被专区开关挡住了";
+      b.onclick = function () {
+        toast(s.type === "rank"
+          ? "「" + (s.label || "上新节奏") + "」列没有摆出来：它属于「趋势上升榜 / 上新节奏」两个专区，两个都被后台关闭或你的账号都未授权。请让超管在后台「前台访问设置」里开启其一。"
+          : "「" + (s.label || s.key) + "」列没有摆出来：它所属的专区已在后台关闭，或你的账号未获授权。", false);
+      };
+      chips.appendChild(b);
+    });
+
     g.appendChild(name);
     g.appendChild(chips);
     return g;
@@ -618,11 +724,27 @@
     if (!sum) return;
     var n = activeSources().length;
     var hid = hiddenByEmpty();
+    /* 20261121C：榜单列本月没有图时，摘要里点明一句。
+       否则筛选里虽然看得见「本月无图」，用户仍会怀疑是数据丢了 / 专区被关了。 */
+    var rankEmpty = state.sources.some(function (s) {
+      return s.type === "rank" && !colHasData(s);
+    });
     /* 20261114Y：这个月没有图的渠道，直接不摆、也不再用别的月份的图顶替，
        所以这里只说「有几个渠道这个月没有图」，不再引导去点别的月份。 */
     sum.textContent = (state.month || "全部月份") + " · " + n + " 列对比" +
+      (rankEmpty ? "（本月无榜单图）" : "") +
       (hid.length ? "（另有 " + hid.length + " 个渠道这个月没有图，未显示）" : "") +
-      (state.zoneHidden ? "（" + state.zoneHidden + " 个渠道因其专区已在后台关闭而未显示）" : "");
+      (state.zoneHidden ? "（" + zoneDroppedText() + " 因其专区已在后台关闭而未显示）" : "");
+  }
+
+  /* 20261121D：把「被专区开关挡掉」的列具名写出来，不再只说一个数字 */
+  function zoneDroppedText() {
+    var arr = state.zoneDropped || [];
+    if (!arr.length) return state.zoneHidden + " 列";
+    var names = arr.map(function (s) { return "「" + (s.label || s.key) + "」"; });
+    var head = names.slice(0, 3).join("、");
+    if (names.length > 3) head += " 等 " + names.length + " 列";
+    return head;
   }
 
   /* ---------- 左侧：服装类目 ---------- */
@@ -806,26 +928,47 @@
     }
 
     if (!srcs.length) {
-      body.innerHTML = '<div class="rk-empty">这个月份 / 类目下还没有可对比的来源。<br>先在「S 专区 / P 专区 / T 专区 / 上新节奏」里传图；<br>想增加对比渠道，请超管在后台「渠道对比 · 对比列配置」里添加。' +
+      body.innerHTML = '<div class="rk-empty">这个月份 / 类目下还没有可对比的来源。<br>先在「趋势上升榜 / 上新节奏 / S 专区 / P 专区 / T 专区」里传图；<br>想增加对比渠道，请超管在后台「渠道对比 · 对比列配置」里添加。' +
         (state.zoneHidden ? '<br><br>' + state.zoneHidden + ' 个渠道没有摆出来：它们对应的专区已在后台关闭。' +
           '<br>想看到它们，请让超管在后台「前台访问设置」里重新开启该专区。' : "") +
         "</div>";
       return;
     }
-    if (!total) {
-      /* 分清两种情况：真的没图 vs 被渠道筛选筛空了 */
+    /* 20261121D：以前「一张图都没有」时整块池子不画，用户看到的就是「没有渠道对比池子」。
+       现在照常把列画出来，每一列自己说明「本月无图 / 该列暂无数据」，
+       顶部再给一句能直接操作的提示（尤其是有图的月份可以一键切过去）。 */
+    var notice = "";
+    var rankS0 = srcs.filter(function (s) { return s.type === "rank"; })[0];
+    var rankEmptyCol = !!(rankS0 && !colItems(rankS0).list.length);
+    if (rankEmptyCol) {
+      /* 榜单列这个月没图：即使别的渠道有图，也要在顶部说清楚（否则用户以为这一列坏了） */
+      var ms0 = {};
+      sourceItems(rankS0).forEach(function (r) { if (r.month) ms0[r.month] = 1; });
+      var otherMonths = Object.keys(ms0).sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
+      notice = '<div class="rk-empty">' + esc(state.month || "全部月份") + " 这个月份没有「" +
+        esc(rankS0.label) + "」的图" +
+        (cat !== ALL ? "（类目：" + esc(cat) + "）" : "") + "。" +
+        (otherMonths.length
+          ? '<br>库里其它月份有：' + otherMonths.slice(0, 6).map(function (m) {
+              return '<button type="button" class="cmi-btn" data-jump-month="' + esc(m) + '">' + esc(m) + "</button>";
+            }).join(" ")
+          : "") +
+        '<br><span class="hint">想先看别的渠道，点上方「筛选 → 渠道」换成有图的月份；本列不会用别的月份的图顶替。</span></div>';
+    } else if (!total) {
       var hasAny = state.sources.some(function (s) { return colItems(s).list.length > 0; });
-      body.innerHTML = hasAny
-        ? '<div class="rk-empty">当前显示的 ' + srcs.length + ' 列在这个月份 / 类目下都没有图片。<br>点上方「筛选 → 渠道」打开其它渠道再看看。</div>'
+      notice = hasAny
+        ? '<div class="rk-empty">当前显示的 ' + srcs.length + " 列在这个月份 / 类目下都没有图片。<br>点上方「筛选 → 渠道」打开其它渠道再看看。</div>"
         : '<div class="rk-empty">这个月份 / 类目下还没有图片，换个月份或类目试试。</div>';
-      return;
     }
 
     var pr = perRowOf(srcs.length, body.clientWidth || 0);
-    var html = '<div class="rk-pools">';
+    var html = notice + '<div class="rk-pools">';
     srcs.forEach(function (s) {
       var got = colItems(s);
       var list = got.list;
+      var emptyNote = (s.type === "rank" && state.month)
+        ? "本月没有「" + esc(s.label) + "」的图（不会用其它月份顶替）"
+        : "该列暂无数据";
       html += '<section class="rk-pool" data-src="' + esc(s.key) + '">';
       html += '<div class="rk-pool-head"><div class="rk-pool-name"><span>' + esc(s.label) +
         '</span><span class="rk-n">' + list.length + " 张</span></div>" +
@@ -836,7 +979,7 @@
         "</div></div>";
       html += '<div class="rk-pool-grid" style="--rk-r:' + pr + '">';
       if (!list.length) {
-        html += '<div class="rk-empty">该列暂无数据</div>';
+        html += '<div class="rk-empty">' + emptyNote + "</div>";
       } else {
         list.forEach(function (it) {
           html += '<figure class="rk-card cmp-card" data-url="' + esc(it.image_url) + '" title="' +
@@ -862,6 +1005,14 @@
     });
     var allBtn = $("#cmp-insight-all");
     if (allBtn) allBtn.onclick = function () { openInsight(""); };
+    /* 20261121D：没图的月份旁边直接给出「有图的月份」，点一下切过去 */
+    Array.prototype.forEach.call(body.querySelectorAll("[data-jump-month]"), function (btn) {
+      btn.onclick = function () {
+        state.month = btn.getAttribute("data-jump-month") || "";
+        state.srcOff = {};
+        renderFilter(); renderCats(); renderPools(); loadTags();
+      };
+    });
     /* 首屏按实测列宽再校正一次（渲染前只能估算） */
     fitPools();
     fitPoolsSoon();

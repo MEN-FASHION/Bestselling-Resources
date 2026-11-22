@@ -413,7 +413,28 @@ window.Common = (function () {
       if (i > 0) out.unshift(out.splice(i, 1)[0]);
       return out;
     }
-    function list() { return rankFirst(alive((defs && defs.length) ? defs : fallback())); }
+    function list() { return rankFirst(alive(pinMerge((defs && defs.length) ? defs : fallback()))); }
+
+    /* 20261122A：渠道合并对比是「内置专区」，与榜单列同思路 ------------------
+       数据库里存着一份早年的专区配置 __defs，里面没有 merge；如果完全听配置，
+       新加的专区在菜单上永远不会出现（还要手工去后台再加一次）。
+       口径：配置里没有它，就补在「渠道对比」后面；已经有就保持原位（名称/顺序可改）。
+       另加一个键 MERGE_ZONE 供前台判断——它的数据都来自别的专区，不需要自己的授权。 */
+    var MERGE_ZONE = "merge";
+    var MERGE_DEF = { key: "merge", label: "渠道合并对比", href: "merge.html" };
+    function pinMerge(arr) {
+      var out = (arr || []).slice();
+      var at = -1;
+      for (var i = 0; i < out.length; i++) { if (out[i] && out[i].key === MERGE_ZONE) { at = i; break; } }
+      if (at >= 0) return out;
+      var pos = out.length;
+      for (var j = 0; j < out.length; j++) { if (out[j] && out[j].key === "compare") { pos = j + 1; break; } }
+      out.splice(pos, 0, { key: MERGE_DEF.key, label: MERGE_DEF.label, href: MERGE_DEF.href });
+      return out;
+    }
+    /* 渠道合并对比本身的上下限由「它所依赖的专区」决定，不再单独配一次授权：
+       能看到榜单或任一渠道专区，就能看合并对比。 */
+    var MERGE_DEPS = ["rank", "rhythm", "pinterest", "shein", "tiktok"];
 
     /* 个人专区：只对"自己"有意义，不允许被账号的专区白名单挡住，
        否则收藏成功了却找不到入口（用户级白名单是用来管公共业务专区的）。 */
@@ -424,6 +445,16 @@ window.Common = (function () {
       var personal = !!PERSONAL_ZONES[zone];
       if (vis && vis[zone] === false) return false;   /* 全站开关对个人专区仍有效 */
       if (personal) return true;
+      /* 20261122A：渠道合并对比不单独配授权，跟随它所依赖的专区 */
+      if (zone === MERGE_ZONE) {
+        for (var i = 0; i < MERGE_DEPS.length; i++) {
+          var d = MERGE_DEPS[i];
+          if (vis && vis[d] === false) continue;
+          if (Array.isArray(mine) && mine.length && mine.indexOf(d) === -1) continue;
+          return true;
+        }
+        return false;
+      }
       if (Array.isArray(mine) && mine.length) return mine.indexOf(zone) !== -1;
       return true;
     }

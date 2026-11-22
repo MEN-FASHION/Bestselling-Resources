@@ -61,6 +61,21 @@
   }
   function mkRank() { return { key: RANK_KEY, label: "上新节奏", type: "rank", channel: "" }; }
 
+  /* 20261121D：榜单列（key = rank:month）是内置列 -------------------------------
+     用户反馈「上新节奏在渠道对比里没了」。根因之一是：后台把这一列移出（或保存时
+     从来没带上它）之后，配置里就再没有它，前台完全听配置 → 这一列永久消失，
+     而且没有任何入口能加回来。现在前后台都把它当内置列：少了自动补最前，且不允许移出。 */
+  function isRankName(v) {
+    var k = String(v == null ? "" : v).replace(/[\s_\-:：]/g, "");
+    if (!k) return false;
+    return k === "rankmonth" || k === "上新节奏" || k === "榜单" || k === "月度榜单" ||
+           k === "上新节奏榜单";
+  }
+  function ensureRankInList() {
+    var has = state.list.some(function (s) { return s && s.type === "rank"; });
+    if (!has) state.list.unshift(mkRank());
+  }
+
   async function load() {
     var SB = SBx();
     if (!SB) { say("数据层未就绪，请强刷页面重试"); return; }
@@ -103,9 +118,20 @@
     var pool = [mkRank()].concat(channels.map(mkChannel).filter(Boolean));
     state.list = (conf && conf.list && conf.list.length)
       ? conf.list.map(function (x) {
-        return { key: x.key, label: x.label, type: x.type, channel: x.channel };
+        /* 20261121D：早期保存丢过 type，或者名字被写成「榜单」，这里认回榜单列，
+           否则它会变成一条没有数据的空渠道列（前台看起来就是「上新节奏没了」）。 */
+        var t = (x.type === "rank" || isRankName(x.channel) || isRankName(x.label) || isRankName(x.key))
+          ? "rank" : "channel";
+        return {
+          key: t === "rank" ? RANK_KEY : x.key,
+          label: t === "rank" ? (String(x.label || "").trim() || "上新节奏") : x.label,
+          type: t,
+          channel: t === "rank" ? "" : x.channel,
+        };
       })
       : pool.slice();
+    /* 榜单列是内置列：配置里没有就补在最前面（否则保存一次就永久少一列） */
+    ensureRankInList();
     state.showEmpty = conf ? conf.showEmpty !== false : true;
     state.perRow = conf ? Number(conf.perRow) || 0 : 0;
     state.ready = true;
@@ -152,6 +178,10 @@
           render();
         };
         row.querySelector(".cmpa-del").onclick = function () {
+          if (state.list[i].type === "rank") {
+            toast("「上新节奏 / 榜单」是内置对比列，不能移出（列名和顺序可以改）", false);
+            return;
+          }
           state.list.splice(i, 1);
           state.dirty = true;
           render();
@@ -178,6 +208,18 @@
         b.innerHTML = (on ? "✓ " : "＋ ") + esc(p.label) +
           '<i>' + (p.type === "rank" ? "月度榜单" : "渠道") + "</i>";
         b.onclick = function () {
+          /* 20261121D：内置榜单列不允许取消，否则配置里一旦没有它，前台就永久少一列 */
+          if (p.type === "rank") {
+            if (!on) {
+              state.list.unshift(mkRank());
+              state.dirty = true;
+              render();
+              toast("已把内置的「上新节奏」列补回第一位，记得保存");
+            } else {
+              toast("「上新节奏 / 榜单」是内置对比列，不能移出（列名和顺序可以改）", false);
+            }
+            return;
+          }
           if (on) {
             state.list = state.list.filter(function (x) { return x.key !== p.key; });
           } else {
@@ -239,6 +281,8 @@
   async function save() {
     var SB = SBx();
     if (!SB || typeof SB.setCompareSources !== "function") { toast("数据层版本偏旧，请强刷页面重试", false); return; }
+    /* 20261121D：保存时始终带上内置榜单列 —— 配置里一旦漏了它，前台就会少一列 */
+    ensureRankInList();
     if (!state.list.length) { toast("至少要留一列", false); return; }
     try {
       await SB.setCompareSources({

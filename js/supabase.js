@@ -21,6 +21,8 @@ const SB = (() => {
   }
 
 
+  /* 20261122A：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
+     与渠道图两个既有接口）。这里只随站点统一升级版本戳，便于核对缓存。 */
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -1418,11 +1420,17 @@ async removeTrendRecord(id) {
       const c = cfg || {};
       const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
       const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      /* 20261121D：榜单列是内置列。这里做最后一道兜底：
+         不管调用方传了什么，配置里一定带上 rank:month，否则前台会整列消失。 */
+      const list = (Array.isArray(c.list) ? c.list : []).map((x) => ({
+        key: String(x.key || ""), label: String(x.label || ""),
+        type: x.type === "rank" ? "rank" : "channel", channel: String(x.channel || ""),
+      })).filter((x) => x.key);
+      if (!list.some((x) => x.type === "rank")) {
+        list.unshift({ key: "rank:month", label: "上新节奏", type: "rank", channel: "" });
+      }
       dims.compare_sources = {
-        list: (Array.isArray(c.list) ? c.list : []).map((x) => ({
-          key: String(x.key || ""), label: String(x.label || ""),
-          type: x.type === "rank" ? "rank" : "channel", channel: String(x.channel || ""),
-        })).filter((x) => x.key),
+        list,
         showEmpty: c.showEmpty !== false,
         perRow: Number(c.perRow) || 0,
       };
@@ -6063,6 +6071,7 @@ async removeTrendRecord(id) {
     pinterest: "P 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
+    merge: "渠道合并对比",
     movement: "品牌动向",
     marketing: "营销日历",
   };
