@@ -45,7 +45,7 @@
 (function () {
   "use strict";
 
-  var BUILD = "20261123A";
+  var BUILD = "20261121D";
 
   var LABELS = {
     rank: "趋势上升榜",
@@ -54,7 +54,6 @@
     shein: "S 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
-    merge: "渠道合并对比",
     movement: "品牌动向"
   };
 
@@ -709,9 +708,7 @@
 
   /* 各前台页面「图片所在的那块主体」 */
   function viewRoot() {
-    /* 20261123A：#mrg-body 是「渠道合并对比」的主体（两列并排的对比池）。
-       之前没列进来，那一页的单页网页 / 海报只能走重画兜底，导出的摆法和页面不一样。 */
-    var ids = ["#rk-body", "#cmp-body", "#mrg-body", "#cz-body", "#mv-body"];
+    var ids = ["#rk-body", "#cmp-body", "#cz-body", "#mv-body"];
     for (var i = 0; i < ids.length; i++) {
       var el = document.querySelector(ids[i]);
       if (el && el.querySelector && el.querySelector("img")) return el;

@@ -5,7 +5,6 @@
  * ============================================================ */
 const SB = (() => {
   if (!window.supabase) throw new Error("supabase-js 未加载，请检查 CDN 脚本顺序");
-  /* 20261123A：本轮不改数据层契约，版本戳随站点统一升级 */
   /* 20261104G：榜单页的列白名单被服务端拒绝过就置 true，之后退回 select(*) */
   let COLS_REJECTED = false;
   /* 把「缺列」这类数据库报错翻译成能直接照做的提示，
@@ -22,8 +21,8 @@ const SB = (() => {
   }
 
 
-  /* 20261122B：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
-     与渠道图两个既有接口）。这里只随站点统一升级版本戳，便于核对缓存。 */
+  /* 20261121D：本轮在数据层加了「保存对比列配置时兜底补上榜单列」（setCompareSources）。
+     这里只随站点统一升级版本戳，便于核对缓存。 */
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -6072,7 +6071,6 @@ async removeTrendRecord(id) {
     pinterest: "P 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
-    merge: "渠道合并对比",
     movement: "品牌动向",
     marketing: "营销日历",
   };

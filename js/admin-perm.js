@@ -32,16 +32,9 @@ let PERM_ZONES = [
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
-// 20261122B：渠道合并对比（merge）是「派生视图」——它没有自己的数据，只展示
-// 榜单与 P / S / T 渠道的图，能不能看由这些来源专区决定，因此不列进可授权清单，
-// 避免「勾了也看不到 / 取消勾选也还看得见」这种配了不生效的困惑。
-const PERM_DERIVED_ZONES = { merge: 1 };
 function syncPermZones() {
   const defs = window.ZONE_DEFS;
-  if (Array.isArray(defs) && defs.length) {
-    PERM_ZONES = defs.filter(z => z && !PERM_DERIVED_ZONES[z.key])
-      .map(z => ({ key: z.key, label: z.label || z.key }));
-  }
+  if (Array.isArray(defs) && defs.length) PERM_ZONES = defs.map(z => ({ key: z.key, label: z.label || z.key }));
 }
 
 // 前台可导出的专区（与 js/view-export.js 里的 LABELS 一一对应）
@@ -54,7 +47,6 @@ const PERM_EXPORT_ZONES = [
   { key: "shein", label: "S 专区" },
   { key: "tiktok", label: "T 专区" },
   { key: "compare", label: "渠道对比" },
-  { key: "merge", label: "渠道合并对比" },
   { key: "movement", label: "品牌动向" },
   { key: "visual", label: "视觉专区" },
 ];
@@ -780,7 +772,6 @@ const ZDEF_HREF_PRESETS = [
   { label: "S 专区 (shein.html)", href: "shein.html" },
   { label: "T 专区 (tiktok.html)", href: "tiktok.html" },
   { label: "渠道对比 (compare.html)", href: "compare.html" },
-  { label: "渠道合并对比 (merge.html)", href: "merge.html" },
 ];
 
 function zdefKey(label) {

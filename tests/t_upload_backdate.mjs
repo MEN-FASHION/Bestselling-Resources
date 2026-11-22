@@ -209,8 +209,8 @@ ok(/forgetDates/.test(owner), "删除记录时可清理日期更正");
 ok(/askDate/.test(owner) && /sbAskDate/.test(read("js/admin-dialog.js")), "日期输入走站点自己的弹窗");
 
 /* 版本戳：前台页面与脚本一致（避免旧缓存） */
-ok(/20261123A/.test(html), "后台页面版本戳为 20261123A");
-ok(/var BUILD = "20261123A"/.test(dash), "统计脚本版本戳为 20261123A");
+ok(/20261121D/.test(html), "后台页面版本戳为 20261121D");
+ok(/var BUILD = "20261121D"/.test(dash), "统计脚本版本戳为 20261121D");
 
 console.log(pass + " 项通过" + (fail ? "，" + fail + " 项失败" : ""));
 process.exit(fail ? 1 : 0);

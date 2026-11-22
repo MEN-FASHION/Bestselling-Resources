@@ -121,7 +121,7 @@
 
   /* 专区列的固定顺序：先榜单/节奏这两个主专区，再渠道三兄弟，再其余；
      没用到的专区不出现，顺序只决定"谁在左边"。 */
-  var SRC_ORDER = ["rank", "rhythm", "shein", "pinterest", "tiktok", "compare", "merge", "movement", "vision", "trends", "marketing", ""];
+  var SRC_ORDER = ["rank", "rhythm", "shein", "pinterest", "tiktok", "compare", "movement", "vision", "trends", "marketing", ""];
 
   function sourceOrderKeys(keys) {
     return (keys || []).slice().sort(function (a, b) {
