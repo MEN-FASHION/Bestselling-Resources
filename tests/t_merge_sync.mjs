@@ -25,7 +25,7 @@ ok(/function prevYearMonth\(m\)/.test(SRC), "存在「往前推一年」的月�
 ok(/return \(parseInt\(mt\[1\], 10\) - 1\) \+ "-" \+ mt\[2\];/.test(SRC), "换算方式是年份减 1、月份不变");
 ok(/if \(!state\.sync\) return state\.month;/.test(SRC) && /c\.type === "rank" \? prevYearMonth\(state\.month\) : state\.month/.test(SRC),
   "同期对比只把「上新节奏」列前移一年，渠道列仍是目标月");
-ok(/var uk = u \+ "@" \+ mo;/.test(SRC), "去重的桶里带月份（否则跨月同图会被吃掉）");
+ok(/function dedupKey\(u, mo\) \{ return u \+ "@" \+ mo; \}/.test(SRC), "去重的桶里带月份（否则跨月同图会被吃掉）");
 ok(/mrg-sync-bar/.test(HTML), "页面有同期摘要条的挂点");
 ok(/同期对比（去年同月）/.test(SRC), "筛选栏有口径开关");
 
@@ -190,7 +190,7 @@ function view(env) {
   ok(!(vp.urls("mrg:rank").indexOf("http://x/r2.jpg") >= 0 && vp.urls("mrg:rank").indexOf("http://x/r3.jpg") < 0),
     "不做「减一年」时，本用例必须报错");
 
-  const noMonthKey = SRC.split('var uk = u + "@" + mo;').join("var uk = u;");
+  const noMonthKey = SRC.replace('function dedupKey(u, mo) { return u + "@" + mo; }', "function dedupKey(u, mo) { return u; }");
   ok(noMonthKey !== SRC, "去重桶被改动（用例本身有效）");
   const badDedup = await run({ src: noMonthKey });
   badDedup.click("同期对比（去年同月）");

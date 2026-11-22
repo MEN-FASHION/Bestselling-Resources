@@ -25,7 +25,7 @@ const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("  ✗ " + 
 console.log("一、实现约定");
 ok(/var MERGE_CHANNELS = \{ pinterest: 1, shein: 1, tiktok: 1/.test(SRC), "合并列只收 P / S / T 三个渠道");
 ok(/if \(!MERGE_CHANNELS\[ck\]\) return;/.test(SRC), "其它渠道必须被挡在合并列之外");
-ok(/var uk = u \+ "@" \+ mo/.test(SRC) && /if \(seenU\[uk\]\) return;/.test(SRC),
+ok(/function dedupKey\(u, mo\) \{ return u \+ "@" \+ mo; \}/.test(SRC) && /if \(seenU\[uk\]\) return;/.test(SRC),
   "合并列按「图片地址 + 月份」去重（三个渠道传同一张只留一张；20261122B 起跨月份不算重复）");
 ok(!/getCompareSources/.test(SRC), "合并页不读后台「对比列配置」（否则改那边会连带影响这一页）");
 ok(/var mo = colMonth\(c\);/.test(SRC) && /return list\.filter\(function \(r\) \{ return r\.month === mo; \}\);/.test(SRC),
