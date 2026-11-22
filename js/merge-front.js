@@ -1,5 +1,5 @@
 /* ============================================================================
- * merge-front.js —— 渠道合并对比（20261122A）
+ * merge-front.js —— 渠道合并对比（20261122B）
  * ----------------------------------------------------------------------------
  * 需求：新增一个前台专区，摆法与原「渠道对比」不同，但数据完全复用它。
  *   · 左列：P / T / S 三个渠道的图**合并成一列**（不再一个渠道一列）
@@ -37,6 +37,9 @@
   function SBx() { return window.SB || null; }
   function pad2(n) { return String(n).length < 2 ? "0" + n : String(n); }
 
+  /* 20261122B · 同期对比的开关记在本浏览器，刷新后保持上次选的口径 */
+  var SYNC_KEY = "tb.merge.sync";
+
   var state = {
     merged: [],        // 左列：P / T / S 合并后的图
     rank: [],          // 右列：上新节奏（月度榜单）
@@ -45,12 +48,15 @@
     tagTried: {},
     months: [],
     month: null,       // null = 还没选（落到最新月）；"" = 全部月份
+    /* 20261122B · 同期对比：关（默认）= 两列都取所选月；开 = 榜单取「去年同月」，渠道取「所选月」 */
+    sync: false,
     cat: ALL,
     zoneVis: null,
     myZones: null,
     gate: "",
     loading: false,
   };
+  try { if (window.localStorage && localStorage.getItem(SYNC_KEY) === "1") state.sync = true; } catch (e) {}
 
   function normMonth(v) {
     var SB = SBx();
@@ -150,14 +156,47 @@
   function colOpen(c) { return anysOpen(c.zones); }
   function activeCols() { return COLS.filter(colOpen); }
 
+  /* ---------- 同期对比：月份错位一年 ----------
+     目标月 = 渠道列用的月份（如 2027-01），
+     参考月 = 上新节奏列用的月份（目标月往前推一年，如 2026-01）。
+     这样一屏里就是「去年同月实际好卖的款」对「今年同月渠道在铺的款」。 */
+  function prevYearMonth(m) {
+    var s = String(m || "");
+    var mt = s.match(/^(20\d{2})-(\d{2})$/);
+    if (!mt) return "";
+    return (parseInt(mt[1], 10) - 1) + "-" + mt[2];
+  }
+  /* 这一列在当前口径下实际取哪个月 */
+  function colMonth(c) {
+    if (!state.month) return "";
+    if (!state.sync) return state.month;
+    return c.type === "rank" ? prevYearMonth(state.month) : state.month;
+  }
+  function colMetaText(c) {
+    var m = colMonth(c);
+    if (state.sync) {
+      return (c.type === "rank" ? "去年同期" : "目标月") + (m ? " · " + m : "");
+    }
+    return (c.type === "rank" ? "月度榜单" : "P / T / S 合并") + (m ? " · " + m : "");
+  }
+  function emptyNote(c) {
+    var m = colMonth(c);
+    if (c.type === "rank") {
+      return (m ? m + (state.sync ? "（去年同期）" : "") + " " : "") +
+        "没有「上新节奏」的图（不会用其它月份顶替）";
+    }
+    return (m ? m + " " : "") + "没有 P / T / S 的图（不会用其它月份顶替）";
+  }
+
   function colList(c) {
     var all = c.type === "rank" ? state.rank : state.merged;
     var list = all.filter(function (r) {
       if (state.cat === ALL) return true;
       return catSame(r.category, state.cat);
     });
-    if (!state.month) return list;
-    return list.filter(function (r) { return r.month === state.month; });
+    var mo = colMonth(c);
+    if (!mo) return list;
+    return list.filter(function (r) { return r.month === mo; });
   }
 
   /* ---------- 取数 ---------- */
@@ -189,14 +228,16 @@
       var pRk = (typeof SB.listRankItems === "function")
         ? Promise.resolve(SB.listRankItems({
           periodType: "month",
-          cols: "id,image_url,category,period_label,period_type,site,channel,title",
+          cols: "id,image_url,category,period_label,period_type,site,channel,title,rank_abs",
         })).catch(function () { return []; })
         : Promise.resolve([]);
       var got = await Promise.all([pCh, pRk]);
       var chRows = got[0] || [];
       var rankRows = got[1] || [];
 
-      /* 左列：只收 P / T / S 三个渠道的图，并按图片地址去重（三个渠道可能传了同一张） */
+      /* 左列：只收 P / T / S 三个渠道的图，并按「图片地址 + 月份」去重
+         （20261122B：去重的桶里带上月份 —— 同期对比下同一张图出现在去年同月与目标月是两条信息，
+          不能被当成重复吃掉；同月内多个渠道传了同一张，仍然只摆一次） */
       var merged = [], seenU = {};
       chRows.slice().sort(function (a, b) {
         var ka = CH_ORDER[chKey(a.channel)] || 9, kb = CH_ORDER[chKey(b.channel)] || 9;
@@ -205,31 +246,44 @@
         var ck = chKey(r.channel);
         if (!MERGE_CHANNELS[ck]) return;                 /* 其它渠道（Amazon、独立站等）不进合并列 */
         var u = imgUrl(r.image_url);
-        if (!u || seenU[u]) return;
+        if (!u) return;
         var cat = normCat(r.category);
         if (!cat) return;
-        seenU[u] = 1;
+        var mo = normMonth(r.period_label || r.m || "");
+        var uk = u + "@" + mo;
+        if (seenU[uk]) return;
+        seenU[uk] = 1;
         merged.push({
           image_url: u, category: cat,
-          month: normMonth(r.period_label || r.m || ""),
+          month: mo,
           site: "", channel: chShort(r.channel), title: String(r.title || ""),
         });
       });
 
-      /* 右列：月度榜单行（有渠道归属的行属于渠道，不进榜单列，与渠道对比同一口径） */
+      /* 右列：月度榜单行（有渠道归属的行属于渠道，不进榜单列，与渠道对比同一口径）。
+         20261122B：同期对比时这一列取「去年同月」，与渠道列不是同一个月，
+         所以去重也按月份分桶，不能因为「渠道里也有这张图」就把它从榜单里摘掉。 */
       var rank = [], seenR = {};
       rankRows.forEach(function (r) {
         if (String(r.channel || "").trim()) return;
         var u = imgUrl(r.image_url);
-        if (!u || seenU[u] || seenR[u]) return;          /* 榜单里与渠道图重复的地址不再重复摆 */
+        var mo = normMonth(r.period_label || "");
+        var uk = u + "@" + mo;
+        if (!u || seenU[uk] || seenR[uk]) return;
         var cat = normCat(r.category);
         if (!cat) return;
-        seenR[u] = 1;
+        seenR[uk] = 1;
         rank.push({
           image_url: u, category: cat,
-          month: normMonth(r.period_label || ""),
+          month: mo,
           site: String(r.site || ""), title: String(r.title || ""),
+          rank: Number(r.rank_abs) || 0,
         });
+      });
+      /* 榜单项按平台名次升序（没有名次的排在后面，保持原始顺序） */
+      rank.sort(function (a, b) {
+        var x = a.rank || 1e9, y = b.rank || 1e9;
+        return x === y ? 0 : (x < y ? -1 : 1);
       });
 
       state.merged = merged;
@@ -243,6 +297,8 @@
       state.months = Object.keys(ms).sort(function (a, b) { return a < b ? 1 : a > b ? -1 : 0; });
       if (state.month === null || state.month === undefined) state.month = state.months[0] || "";
       else if (state.month && state.months.indexOf(state.month) < 0) state.month = state.months[0] || "";
+      /* 同期对比必须有一个具体目标月，否则配不出「去年同月」 */
+      if (state.sync && !state.month) state.month = state.months[0] || "";
 
       renderFilter();
       renderCats();
@@ -287,11 +343,48 @@
       t.textContent = "暂无月份";
       chips.appendChild(t);
     }
-    chips.appendChild(chip("", "全部月份"));
+    /* 同期对比必须落到一个具体月份（要和「去年同月」配对），所以这种情况下不提供「全部月份」 */
+    if (!state.sync) chips.appendChild(chip("", "全部月份"));
     state.months.forEach(function (m) { chips.appendChild(chip(m, m)); });
     g.appendChild(name);
     g.appendChild(chips);
     box.appendChild(g);
+
+    /* 对比口径：同月对照（默认） / 同期对比（榜单取去年同月） */
+    var g2 = document.createElement("div");
+    g2.className = "tag-group";
+    var n2 = document.createElement("div");
+    n2.className = "tag-group-name";
+    n2.textContent = "对比口径";
+    var c2 = document.createElement("div");
+    c2.className = "tag-chips";
+    [["same", "同月对照"], ["sync", "同期对比（去年同月）"]].forEach(function (p) {
+      var b = document.createElement("button");
+      b.type = "button";
+      var on = p[0] === "sync";
+      b.className = "tag-chip" + ((on === !!state.sync) ? " active" : "");
+      b.textContent = p[1];
+      b.onclick = function () {
+        if (on === !!state.sync) return;
+        state.sync = on;
+        try { if (window.localStorage) localStorage.setItem(SYNC_KEY, on ? "1" : "0"); } catch (e) {}
+        if (state.sync && !state.month) state.month = state.months[0] || "";
+        state.cat = ALL;
+        renderFilter(); renderCats(); renderPools();
+      };
+      c2.appendChild(b);
+    });
+    g2.appendChild(n2);
+    g2.appendChild(c2);
+    box.appendChild(g2);
+
+    if (state.sync) {
+      var tip = document.createElement("div");
+      tip.className = "tag-group-name mrg-sync-tip";
+      tip.textContent = "目标月 " + (state.month || "—") + " 看渠道在铺什么；参考月 " +
+        (prevYearMonth(state.month) || "—") + " 看去年同月实际好卖什么。";
+      box.appendChild(tip);
+    }
     syncSummary();
   }
 
@@ -300,13 +393,22 @@
     if (!sum) return;
     var cols = activeCols();
     var closed = COLS.length - cols.length;
-    sum.textContent = (state.month || "全部月份") + " · " + cols.length + " 列" +
-      (closed ? "（另有 " + closed + " 列因其专区已在后台关闭而未显示）" : "");
+    if (state.sync) {
+      sum.textContent = "同期对比 · 目标月 " + (state.month || "未选") +
+        " / 去年同月 " + (prevYearMonth(state.month) || "未选") + " · " + cols.length + " 列" +
+        (closed ? "（另有 " + closed + " 列因其专区已在后台关闭而未显示）" : "");
+    } else {
+      sum.textContent = (state.month || "全部月份") + " · " + cols.length + " 列" +
+        (closed ? "（另有 " + closed + " 列因其专区已在后台关闭而未显示）" : "");
+    }
   }
 
   /* ---------- 左侧类目菜单 ---------- */
   function monthItems() {
-    return state.items.filter(function (r) { return !state.month || r.month === state.month; });
+    if (!state.month) return state.items;
+    if (!state.sync) return state.items.filter(function (r) { return r.month === state.month; });
+    var ref = prevYearMonth(state.month);
+    return state.items.filter(function (r) { return r.month === state.month || r.month === ref; });
   }
   function renderCats() {
     var nav = $("#mrg-cats");
@@ -401,9 +503,14 @@
     lists.forEach(function (x) { total += x.list.length; });
 
     if (bar) {
-      bar.innerHTML = '<span class="rk-bar-info">共 <b>' + total + "</b> 张 · " + cols.length + " 列" +
-        (state.month ? " · " + esc(state.month) : " · 全部月份") +
-        (state.cat !== ALL ? " · " + esc(state.cat) : "") + "</span>";
+      var barTxt = "共 <b>" + total + "</b> 张 · " + cols.length + " 列";
+      if (state.sync) {
+        barTxt += " · 目标月 " + esc(state.month || "—") + " / 去年同月 " + esc(prevYearMonth(state.month) || "—");
+      } else {
+        barTxt += state.month ? " · " + esc(state.month) : " · 全部月份";
+      }
+      if (state.cat !== ALL) barTxt += " · " + esc(state.cat);
+      bar.innerHTML = '<span class="rk-bar-info">' + barTxt + "</span>";
     }
 
     if (!cols.length) {
@@ -416,17 +523,13 @@
     var html = '<div class="rk-pools">';
     lists.forEach(function (x) {
       var s = x.col, list = x.list;
-      var emptyNote = s.type === "rank"
-        ? "本月没有「上新节奏」的图（不会用其它月份顶替）"
-        : "本月没有 P / T / S 的图（不会用其它月份顶替）";
       html += '<section class="rk-pool" data-src="' + esc(s.key) + '">';
       html += '<div class="rk-pool-head"><div class="rk-pool-name"><span>' + esc(s.label) +
         '</span><span class="rk-n">' + list.length + " 张</span></div>" +
-        '<div class="rk-pool-meta">' + esc(s.type === "rank" ? "月度榜单" : "P / T / S 合并") +
-        (state.month ? " · " + esc(state.month) : "") + "</div></div>";
+        '<div class="rk-pool-meta">' + esc(colMetaText(s)) + "</div></div>";
       html += '<div class="rk-pool-grid" style="--rk-r:' + pr + '">';
       if (!list.length) {
-        html += '<div class="rk-empty">' + esc(emptyNote) + "</div>";
+        html += '<div class="rk-empty">' + esc(emptyNote(s)) + "</div>";
       } else {
         list.forEach(function (it) {
           html += '<figure class="rk-card cmp-card" data-url="' + esc(it.image_url) + '" title="' +
@@ -446,6 +549,42 @@
     });
     fitPools();
     fitPoolsSoon();
+    renderSyncBar();
+  }
+
+  /* ---------- 同期对比的摘要条：两列各多少张、去年同月好卖的是哪几个类目 ---------- */
+  function topCats(list, n) {
+    var cnt = {}, order = [];
+    list.forEach(function (r) {
+      var c = r.category || "未分类";
+      if (!cnt[c]) { cnt[c] = 0; order.push(c); }
+      cnt[c]++;
+    });
+    order.sort(function (a, b) { return cnt[b] - cnt[a]; });
+    return order.slice(0, n || 3).map(function (c) { return c + " " + cnt[c]; });
+  }
+  function renderSyncBar() {
+    var el = $("#mrg-sync-bar");
+    if (!el) return;
+    if (!state.sync || !state.month) { el.innerHTML = ""; el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    var target = state.month, ref = prevYearMonth(target);
+    var chList = state.merged.filter(function (r) { return r.month === target; });
+    var rkList = state.rank.filter(function (r) { return r.month === ref; });
+    var tCats = topCats(chList, 3), rCats = topCats(rkList, 3);
+    var html = '<div class="mrg-sync-row">' +
+      '<span class="mrg-sync-k">去年同月 ' + esc(ref || "—") + "</span>" +
+      '<span class="mrg-sync-v">上新节奏 <b>' + rkList.length + "</b> 张" +
+      (rCats.length ? " · TOP：" + esc(rCats.join("、")) : "") + "</span>" +
+      "</div>" +
+      '<div class="mrg-sync-row">' +
+      '<span class="mrg-sync-k">目标月 ' + esc(target) + "</span>" +
+      '<span class="mrg-sync-v">站外（P · T · S）<b>' + chList.length + "</b> 张" +
+      (tCats.length ? " · TOP：" + esc(tCats.join("、")) : "") + "</span>" +
+      "</div>" +
+      '<div class="mrg-sync-row mrg-sync-hint">先看去年同月这一类目卖什么，再看渠道这个月有没有同款／同风格，' +
+      "按 2 个月备货周期反推现在该上什么。</div>";
+    el.innerHTML = html;
   }
 
   /* ---------- 大图 + 打标（点哪张只查哪张，不挡首屏） ---------- */

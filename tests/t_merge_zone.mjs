@@ -25,10 +25,11 @@ const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("  ✗ " + 
 console.log("一、实现约定");
 ok(/var MERGE_CHANNELS = \{ pinterest: 1, shein: 1, tiktok: 1/.test(SRC), "合并列只收 P / S / T 三个渠道");
 ok(/if \(!MERGE_CHANNELS\[ck\]\) return;/.test(SRC), "其它渠道必须被挡在合并列之外");
-ok(/seenU\[u\]/.test(SRC), "合并列按图片地址去重（三个渠道传同一张只留一张）");
+ok(/var uk = u \+ "@" \+ mo/.test(SRC) && /if \(seenU\[uk\]\) return;/.test(SRC),
+  "合并列按「图片地址 + 月份」去重（三个渠道传同一张只留一张；20261122B 起跨月份不算重复）");
 ok(!/getCompareSources/.test(SRC), "合并页不读后台「对比列配置」（否则改那边会连带影响这一页）");
-ok(/state\.month\) return list\.filter/.test(SRC) || /return list\.filter\(function \(r\) \{ return r\.month === state\.month; \}\)/.test(SRC),
-  "选了月份时必须只摆当月的图");
+ok(/var mo = colMonth\(c\);/.test(SRC) && /return list\.filter\(function \(r\) \{ return r\.month === mo; \}\);/.test(SRC),
+  "选了月份时必须只摆当月的图（同期对比时每列按自己的月份取）");
 ok(/不会用其它月份顶替/.test(SRC), "空列要写明「不会用其它月份顶替」");
 ok(/var CH_ZONES = \["pinterest", "shein", "tiktok"\]/.test(SRC) && /var RANK_ZONES = \["rank", "rhythm"\]/.test(SRC),
   "两列各自跟随来源专区的开关");
@@ -201,11 +202,11 @@ async function run(opts) {
 
   /* ---------- 反向验证 ---------- */
   console.log("六、反向验证：把实现拿掉必须失败");
-  const noDedup = SRC.replace(/if \(!u \|\| seenU\[u\]\) return;/, "if (!u) return;");
+  const noDedup = SRC.replace(/if \(seenU\[uk\]\) return;/, "if (false) return;");
   ok(noDedup !== SRC, "去重判断位置已被改动（用例本身有效）");
   ok(!(await runSrc(noDedup)).dedupOk, "去掉「按地址去重」后，用例必须报错");
 
-  const noMonth = SRC.replace(/return list\.filter\(function \(r\) \{ return r\.month === state\.month; \}\);/, "return list;");
+  const noMonth = SRC.replace(/return list\.filter\(function \(r\) \{ return r\.month === mo; \}\);/, "return list;");
   ok(noMonth !== SRC, "月份过滤位置已被改动（用例本身有效）");
   ok(!(await runSrc(noMonth, { rankMonth: "2026-10" })).monthOk, "去掉「只摆本月」后，用例必须报错（对照：正常实现应为 0 张）");
 

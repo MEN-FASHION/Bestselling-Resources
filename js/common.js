@@ -415,7 +415,7 @@ window.Common = (function () {
     }
     function list() { return rankFirst(alive(pinMerge((defs && defs.length) ? defs : fallback()))); }
 
-    /* 20261122A：渠道合并对比是「内置专区」，与榜单列同思路 ------------------
+    /* 20261122B：渠道合并对比是「内置专区」，与榜单列同思路 ------------------
        数据库里存着一份早年的专区配置 __defs，里面没有 merge；如果完全听配置，
        新加的专区在菜单上永远不会出现（还要手工去后台再加一次）。
        口径：配置里没有它，就补在「渠道对比」后面；已经有就保持原位（名称/顺序可改）。
@@ -445,7 +445,7 @@ window.Common = (function () {
       var personal = !!PERSONAL_ZONES[zone];
       if (vis && vis[zone] === false) return false;   /* 全站开关对个人专区仍有效 */
       if (personal) return true;
-      /* 20261122A：渠道合并对比不单独配授权，跟随它所依赖的专区 */
+      /* 20261122B：渠道合并对比不单独配授权，跟随它所依赖的专区 */
       if (zone === MERGE_ZONE) {
         for (var i = 0; i < MERGE_DEPS.length; i++) {
           var d = MERGE_DEPS[i];

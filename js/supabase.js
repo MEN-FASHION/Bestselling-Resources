@@ -21,7 +21,7 @@ const SB = (() => {
   }
 
 
-  /* 20261122A：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
+  /* 20261122B：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
      与渠道图两个既有接口）。这里只随站点统一升级版本戳，便于核对缓存。 */
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
