@@ -133,6 +133,10 @@ window.ZONE_DEFS_DEFAULT = [
   { key: "shein",         label: "S 专区",    href: "shein.html" },
   { key: "tiktok",        label: "T 专区",   href: "tiktok.html" },
   { key: "compare",       label: "渠道对比",      href: "compare.html" },
+  /* 20261122B：渠道合并对比 —— 只是前台的另一种摆法：
+     左列把 P / T / S 三个渠道的图合并成一列，右列是上新节奏（月度榜单）。
+     不新增任何图库、不改任何渠道的数据；原「渠道对比」一行都没动。 */
+  { key: "merge",         label: "渠道合并对比",  href: "merge.html" },
   { key: "marketing",     label: "营销日历",      href: "marketing.html" },
   { key: "visual",        label: "视觉专区",      href: "index.html" },
   { key: "trend",         label: "趋势专区",      href: "trends.html" },

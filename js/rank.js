@@ -15,6 +15,7 @@
  *
  * 硬性约束：前台不出现任何环比具体数值，只用标签与位次变化表达。
  * ==========================================================================*/
+/* 20261122Z：本轮站点维度加固 —— 站点清单三层兜底 + 无站点时降级为「全部站点」展示。 */
 (function () {
   "use strict";
 
@@ -62,7 +63,7 @@
   var CAP_MAX = 288;         // 每列上限
 
   var FACETS = { sites: [], periods: [], categories: [] };
-  var BUILD = "20261121D";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
+  var BUILD = "20261125A";   /* 前台脚本版本：空态/诊断里会显示，用于核对是不是旧缓存 */
   var MODE = "v";            // 默认「纵向 · 时间对比」；h=横向·国家对比 / v=纵向·时间对比 / c=横向·类目对比
   var CAT = ALL;
   var SEL_CATS = [];         // 横向·类目对比：并排显示的类目（1–4 个，列数 = 勾选数，可拖动换序）
@@ -159,6 +160,10 @@
      想看全部就点「全部站点」（同一款在多国上榜只算一次）。 */
   var SITE_ALL = false;
   var SITE_ALL_KEY = "__all_sites__";
+  /* 20261122Z：数据里完全没有「站点」维度时的降级开关（见 init 里的站点清单拼装）。
+     打开后页面照常取数、按「全部站点」展示，不再出现"选不到国家站点 → 整页没图"。 */
+  var NO_SITE = false;
+  var SITE_DIAG = { defined: 0, batch: 0, item: 0, err: "" };  /* 站点清单来源诊断，用于空态提示 */
   var LAST_OFFSITE = 0;      // 当前期次里「属于其它站点、本次未显示」的张数
   var TAGS = ["all"];        // all | surge | hot | opportunity
   var SORT = "ratio_desc";   // ratio_desc / ratio_asc / abs_desc / abs_asc
@@ -572,6 +577,10 @@
   function fetchSites() {
     var g = activeGroup();
     if (g) return g.members.slice();
+    /* 20261122Z-2：站点维度为空（或选了「全部站点」）时，取数不加站点条件。
+       以前这里只判 MODE，站点菜单空着走进来时会被当成「没有站点可取」，
+       上层 load() 直接不取数 —— 页面一句「暂无榜单数据」，看着就像图全没了。 */
+    if (SITE_ALL || NO_SITE) return null;
     if (MODE === "h") return SEL_SITES.slice();
     return null;
   }
@@ -783,6 +792,17 @@
        这里记下失败，渲染时明确提示"加载失败 + 可刷新重试"。 */
     try { items = await SBX.listRankItems(filter); LOAD_ERR = null; }
     catch (e) { items = []; LOAD_ERR = String((e && e.message) || e || "load failed"); }
+    /* 20261122Z-2：横向·国家对比是按站点名精确查库的，库里写成「美国站 / US」时
+       会一条都查不到 → 整页空白。查空但其它条件不变时，去掉站点条件再取一次，
+       页面至少能把数据摆出来（列内仍按归一后的站点名过滤）。 */
+    if (!items.length && filter.sites && filter.sites.length) {
+      try {
+        var _noSite = Object.assign({}, filter);
+        delete _noSite.sites;
+        var _all = await SBX.listRankItems(_noSite);
+        if ((_all || []).length) items = _all;
+      } catch (e) { /* 忽略：保持原有空态 */ }
+    }
     items = normItems(items);
     var _g = activeGroup();
     if (_g) items = mergeGroupItems(items, _g);   // 地区模式：多国合并成一列，同名商品只留最强的那个
@@ -840,7 +860,8 @@
   }
   /* 横向对比 = 单选一周（国家可比）；纵向对比 = 单选一国（周次可比）；另一维度才是多列对比 */
   function normalizeSingle() {
-    if (MODE !== "v" && MODE !== "c") SITE_ALL = false;   /* 横向·国家对比本来就是一列一个国家，不需要「全部站点」 */
+    /* 20261122Z：站点维度为空的降级态下，别把「全部站点」清掉，否则又会变成不取数 */
+    if (MODE !== "v" && MODE !== "c" && !NO_SITE) SITE_ALL = false;   /* 横向·国家对比本来就是一列一个国家，不需要「全部站点」 */
     if (MODE === "v") {
       if (SEL_SITES.length > 1) SEL_SITES = [SEL_SITES[0]];
     } else if (MODE === "c") {
@@ -963,7 +984,12 @@
     var sitesHtml = FACETS.sites.length
       ? ((MODE === "h" ? "" : chip(SITE_ALL_KEY, "全部站点", SITE_ALL && !SEL_GROUP, "data-site"))
         + FACETS.sites.map(function (s) { return chip(s, s, !SITE_ALL && SEL_SITES.indexOf(s) >= 0 && !SEL_GROUP, "data-site"); }).join(""))
-      : '<span class="rk-note">后台还没有维护国家站点</span>';
+      : (NO_SITE
+        ? (SITE_DIAG.hiddenAll
+          ? '<span class="rk-note">后台「前台显隐」把 ' + ((HIDDEN.sites || []).length) + ' 个国家站点全关掉了，本页已按「全部站点」展示（图照常显示）。到后台「趋势上升榜 → 前台显隐」勾回来，即可恢复按国家对比。</span>'
+          : '<span class="rk-note">这批榜单数据没有国家站点字段，已按「全部站点」展示（图照常显示；要按国家对比需补站点）'
+            + '：后台维护 ' + (SITE_DIAG.defined || 0) + ' 个 · 上传批次 ' + (SITE_DIAG.batch || 0) + ' 个 · 条目里出现 ' + (SITE_DIAG.item || 0) + ' 个</span>')
+        : '<span class="rk-note">后台还没有维护国家站点（批次 ' + (SITE_DIAG.batch || 0) + ' 个 · 条目里出现 ' + (SITE_DIAG.item || 0) + ' 个）</span>');
 
     /* 地区（后台把多个国家并成一个地区）：选中即整区合并成一列；也可以不选，直接挑单个国家 */
     var grpList = GROUPS.filter(function (g) { return g.name && (g.members || []).length; });
@@ -3809,8 +3835,15 @@
     if (MODE === "c" && !activeCats().length) { box.innerHTML = '<div class="rk-empty">请在上方「对比类目」里勾选要比的类目（最多四个）。</div>'; return; }
     var _gchk = activeGroup();
     if (_gchk && !_gchk.members.length) { box.innerHTML = '<div class="rk-empty">地区「' + esc(_gchk.name) + '」还没有勾选国家。到后台「趋势上升榜 → 地区分组」点 ☑ 把国家勾进去即可。</div>'; return; }
-    if (!sites.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」</div>'; return; }
+    if (!sites.length && !NO_SITE) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择「国家站点」或「地区」'
+      + '<br><span class="rk-note">站点清单来源：后台维护 ' + (SITE_DIAG.defined || 0) + ' 个 · 上传批次 ' + (SITE_DIAG.batch || 0) + ' 个 · 条目里出现 ' + (SITE_DIAG.item || 0) + ' 个'
+      + (SITE_DIAG.err ? ('（' + esc(SITE_DIAG.err) + '）') : '') + '</span></div>'; return; }
     if (!periods.length) { box.innerHTML = '<div class="rk-empty">请在上方筛选中选择周次 / 期次</div>'; return; }
+    if (MODE === "h" && NO_SITE) {
+      box.innerHTML = '<div class="rk-empty">这批榜单数据没有国家站点字段，做不了「国家对比」。'
+        + '<br>请切到「纵向 · 时间对比」，同样能按周次看趋势。</div>';
+      return;
+    }
     if (LOAD_ERR && (!CACHE || !CACHE.items.length)) {
       box.innerHTML = '<div class="rk-empty">数据加载失败，本次没有取到榜单数据（不是数据被删除）。'
         + '<br><a href="javascript:location.reload()">点这里刷新重试</a>；'
@@ -4875,7 +4908,10 @@
     var box = $("#rk-body");
     var sites = sitesForQuery();
     var periods = activePeriods();
-    if (!sites.length || !periods.length) { renderBody(); renderBar(); return; }
+    /* 20261122Z-2：「全部站点 / 数据里没有站点」时不把空站点当成"没得查"，
+       否则即使库里有图，页面也只会显示一句「暂无榜单数据」。 */
+    var noSiteCond = !!(SITE_ALL || NO_SITE);
+    if ((!noSiteCond && !sites.length) || !periods.length) { renderBody(); renderBar(); return; }
     /* 命中缓存就别闪「加载中」——闪一下反而更显得卡 */
     var _k = itemsKey();
     var _cached = (CACHE && CACHE.key === _k) || !!cacheGet(_k);
@@ -4991,6 +5027,19 @@
         ? await SBX.rankFacetsBySource("rank", "week")
         : (typeof SBX.rankFacetsByType === "function" ? await SBX.rankFacetsByType("week") : await SBX.rankFacets());
     } catch (e) { FACETS = { sites: [], periods: [], categories: [] }; }
+    /* 20261122Z-2：批次表读不到、或批次里没存下维度时，筛选项会缺（常见是期次全空）
+       → 整页空白。这时直接从条目表聚合一次（同一份数据，换个来源），缺什么补什么。 */
+    if (!(FACETS.periods || []).length) {
+      try {
+        var _fb = (typeof SBX.rankItemFacets === "function")
+          ? await SBX.rankItemFacets("rank", "week") : null;
+        if (_fb) {
+          if ((_fb.periods || []).length) FACETS.periods = _fb.periods;
+          if (!(FACETS.sites || []).length && (_fb.sites || []).length) FACETS.sites = _fb.sites;
+          if (!(FACETS.categories || []).length && (_fb.categories || []).length) FACETS.categories = _fb.categories;
+        }
+      } catch (e) { /* 兜底失败就照原样走空态 */ }
+    }
     /* 类目菜单只显示标准名：把平台全路径名合并到同一类，菜单不再出现一堆长名字 */
     RAW_CATS = (FACETS.categories || []).slice();
     CAT_MAP = {};
@@ -5022,27 +5071,44 @@
        若后台一个站点都没定义，才退回按数据里出现过的站点展示（避免筛选项为空）。 */
     var _dataSites = FACETS.sites.slice();
     var _defined = [];
+    var _siteSrc = { defined: 0, batch: _dataSites.length, item: 0, err: "" };
     try {
       var _raw = await SBX.listRankSites();
       _defined = (_raw || []).map(function (s) { return s && s.name; }).filter(function (v) { return v && String(v).trim(); });
-    } catch (e) { _defined = []; }
-    if (_defined.length) {
-      /* 20261113D：菜单 = 后台维护的站点 + 数据里出现但后台没维护的写法。
-         以前只列后台那批，于是站点写成「美国站 / US」的数据在页面上彻底看不见 ——
-         看上去就是"数据没传上去"。现在按归一后去重，同一个国家只留一个按钮
-         （优先用后台的正式名字），照顾不到的历史写法也照样能点。 */
-      var _use = _defined.slice();
-      var _seen = {};
-      _use.forEach(function (n) { _seen[siteKey(n)] = 1; });
-      _dataSites.forEach(function (s) {
-        var k = siteKey(s);
-        if (!k || _seen[k]) return;
-        _seen[k] = 1;
-        _use.push(String(s).trim());
-      });
-      FACETS.sites = _use;
+    } catch (e) { _defined = []; _siteSrc.err = "后台站点清单读取失败"; }
+    _siteSrc.defined = _defined.length;
+
+    /* 20261122Z：站点清单统一在这里拼（去重按归一后的国家）。
+       以前只有「后台维护的」+「批次里出现过的」，一旦这两处都空（批次没存下站点、
+       后台清单也没维护），菜单就是空的 —— 页面显示"后台还没有维护国家站点"，
+       选不到站点 → load() 直接不取数 → 整页没有图，看起来像图丢了。
+       现在再加一层「从条目表反推」，并对"完全没有站点维度"的数据降级为「全部站点」展示。 */
+    var _use = [];
+    var _seen = {};
+    function _pushSite(n) {
+      var v = String(n == null ? "" : n).trim();
+      if (!v) return;
+      var k = siteKey(v);
+      if (!k || _seen[k]) return;
+      _seen[k] = 1;
+      _use.push(v);
     }
+    _defined.forEach(_pushSite);
+    _dataSites.forEach(_pushSite);
+    if (!_use.length) {
+      try {
+        var _its = (typeof SBX.rankItemSites === "function") ? await SBX.rankItemSites("rank") : [];
+        _its = (Array.isArray(_its) ? _its : []).map(function (s) { return String(s || "").trim(); });
+        _siteSrc.item = _its.length;
+        _its.forEach(_pushSite);
+      } catch (e) { _siteSrc.item = 0; }
+    }
+    FACETS.sites = _use;
     applyHiddenFilter();                       /* 隐藏的站点 / 周次不参与前台筛选 */
+    /* 站点维度彻底为空（数据里也没有站点，或都被后台隐藏）：不阻断页面，按「全部站点」展示图片 */
+    SITE_DIAG = _siteSrc;
+    SITE_DIAG.hiddenAll = (_use.length > 0 && !FACETS.sites.length);
+    NO_SITE = !FACETS.sites.length && !!(FACETS.periods || []).length;
 
     // 站点顺序：有数据的优先，其余按后台定义顺序（横向按这个顺序取前 N 个）
     var _withData = FACETS.sites.filter(function (s) { return _dataSites.indexOf(s) >= 0; });
@@ -5053,6 +5119,13 @@
     CAT = pickDefault(FACETS.categories, DEFAULT_CAT, FACETS.categories.length ? FACETS.categories[0] : ALL);
     var _firstSite = pickDefault(SITE_ORDER, DEFAULT_SITE, SITE_ORDER[0] || "");
     SEL_SITES = _firstSite ? [_firstSite] : [];
+    /* 20261122Z：站点维度为空时（数据里也没有站点），直接按「全部站点」展示，
+       否则 load() 会因为「没选站点」直接不取数，整页空白 —— 看着就像图丢了。 */
+    if (NO_SITE) {
+      SITE_ALL = true; SEL_SITES = [];
+      /* 没有站点维度时「国家对比」做不出来，直接落到时间对比，别让首屏停在提示上 */
+      if (MODE === "h") MODE = "v";
+    }
     SEL_PERIODS = sortPeriods(FACETS.periods).slice(-COLS);
 
     try { GROUPS = await SBX.getRankGroups(); } catch (e) { GROUPS = []; }

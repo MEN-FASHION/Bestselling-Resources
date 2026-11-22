@@ -34,6 +34,8 @@
     channels: [],    // 渠道清单（有序，来自 compare_channels）
     showEmpty: true,
     perRow: 0,
+    /* 20261124A：渠道合并对比（merge.html）的「其他渠道」展示方式，存在 merge_view */
+    mergeView: { split: false, allowFront: true },
     ready: false,
     dirty: false,    // 清单/列有没有改过还没保存
   };
@@ -134,11 +136,59 @@
     ensureRankInList();
     state.showEmpty = conf ? conf.showEmpty !== false : true;
     state.perRow = conf ? Number(conf.perRow) || 0 : 0;
+
+    /* ④ 渠道合并对比 · 其他渠道展示方式（读不到就按默认：合并 + 允许前台切换） */
+    var mv = null;
+    try { mv = (typeof SB.getMergeView === "function") ? await SB.getMergeView() : null; }
+    catch (e) { mv = null; }
+    state.mergeView = {
+      split: !!(mv && mv.split),
+      allowFront: !(mv && mv.allowFront === false),
+    };
+    renderMergeView();
+
     state.ready = true;
     state.dirty = false;
 
     render();
     say("");
+  }
+
+  /* ---------- ④ 其他渠道：合并 / 拆分（全站统一口径） ---------- */
+  function renderMergeView() {
+    var mv = state.mergeView || { split: false, allowFront: true };
+    var rm = $("#mrgv-merge"), rs = $("#mrgv-split"), al = $("#mrgv-allow");
+    if (rm) rm.checked = !mv.split;
+    if (rs) rs.checked = !!mv.split;
+    if (al) al.checked = mv.allowFront !== false;
+  }
+
+  async function saveMergeView() {
+    var SB = SBx();
+    if (!SB || typeof SB.setMergeView !== "function") {
+      var m0 = $("#mrgv-msg"); if (m0) m0.textContent = "数据层版本偏旧，请强刷页面重试";
+      toast("数据层版本偏旧，请强刷页面重试", false);
+      return;
+    }
+    var rs = $("#mrgv-split");
+    var al = $("#mrgv-allow");
+    var cfg = {
+      split: !!(rs && rs.checked),
+      allowFront: !(al && al.checked === false),
+    };
+    try {
+      await SB.setMergeView(cfg);
+      state.mergeView = cfg;
+      renderMergeView();
+      var m = $("#mrgv-msg");
+      if (m) m.textContent = "已保存（" + (cfg.split ? "拆分" : "合并") +
+        "，" + (cfg.allowFront ? "前台可自行切换" : "前台只读") + "）· " + new Date().toLocaleTimeString();
+      toast("渠道合并对比的展示方式已保存，前台刷新即生效");
+    } catch (e) {
+      var m2 = $("#mrgv-msg");
+      if (m2) m2.textContent = "保存失败：" + ((e && e.message) || "未知错误");
+      toast("保存失败：" + ((e && e.message) || "未知错误"), false);
+    }
   }
 
   function render() {
@@ -361,6 +411,17 @@
     if (pr) pr.onchange = function () { state.perRow = Number(pr.value) || 0; state.dirty = true; };
     var open = $("#cmpa-open-front");
     if (open) open.onclick = function () { window.open("compare.html", "_blank"); };
+    /* ④ 其他渠道：合并 / 拆分 —— 独立保存按钮，不影响 ①②③ 的「保存配置」 */
+    var mvSave = $("#mrgv-save");
+    if (mvSave) mvSave.onclick = saveMergeView;
+    ["#mrgv-merge", "#mrgv-split", "#mrgv-allow"].forEach(function (sel) {
+      var el = $(sel);
+      if (!el) return;
+      el.onchange = function () {
+        var m = $("#mrgv-msg");
+        if (m) m.textContent = "改动未保存";
+      };
+    });
     /* 自定义新增渠道：回车或点按钮都能加 */
     var addBtn = $("#cmpa-add-btn");
     var addInput = $("#cmpa-add-input");

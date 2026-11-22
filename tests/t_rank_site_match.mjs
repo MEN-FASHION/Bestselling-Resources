@@ -114,7 +114,7 @@ console.log("三、所选站点没数据时不再给空白页");
   ok("空态不再只有一句「暂无榜单数据」", !/rk-empty">该组合下暂无榜单数据<\/div>/.test(RANK));
   ok("条目载入时统一站点写法", /if \(it\.site != null\) it\.site = siteCanon\(it\.site\);/.test(RANK));
   ok("站点菜单合并「后台清单 + 数据里出现过的写法」", /FACETS\.sites = _use;/.test(RANK));
-  ok("菜单按归一键去重，同一国家不会两个按钮", /_seen\[siteKey\(n\)\] = 1/.test(RANK) || /_seen\[siteKey\(s\)\]/.test(RANK));
+  ok("菜单按归一键去重，同一国家不会两个按钮", /_seen\[k\] = 1/.test(RANK) || /_seen\[siteKey\(n\)\] = 1/.test(RANK) || /_seen\[siteKey\(s\)\]/.test(RANK));
   ok("类目对比也按归一键过滤", /_cSet\[siteKey\(it\.site\)\]/.test(RANK));
 }
 

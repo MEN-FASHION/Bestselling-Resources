@@ -160,9 +160,9 @@ console.log("\n【7】限流阈值不再误伤正常浏览");
 console.log("\n【8】版本戳一致");
 {
   /* 20261121D：本轮只改前台收藏脚本（点击重试 / 提示可见），图片服务未改动，
-     因此图片服务停在上一版 20261116B，前台资源统一升到 20261121D。 */
+     因此图片服务停在上一版 20261116B，前台资源统一升到 20261123B。 */
   const wver = "20261116B";
-  const ver = "20261121D";
+  const ver = "20261125A";
   ok(new RegExp('WORKER_BUILD = "' + wver + '"').test(workerSrc), "图片服务版本号 = " + wver);
   const idx = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   ok(idx.includes("?v=" + ver), "前台资源版本 = " + ver);
