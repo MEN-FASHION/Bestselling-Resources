@@ -29,12 +29,28 @@ let PERM_ZONES = [
   { key: "shein", label: "S 专区" },
   { key: "tiktok", label: "T 专区" },
   { key: "compare", label: "渠道对比" },
+  { key: "merge", label: "渠道合并对比" },
 ];
 
 // 与 admin.js 的 ZONE_DEFS（含后台新增专区）保持同步
+// 20261124A：渠道合并对比（merge）改为「独立授权」——单独勾选、单独关闭，
+// 关掉它不会影响「渠道对比」与 P / S / T 各渠道专区（以前它是派生视图，
+// 想关一个人的合并页只能连带把渠道对比一起关掉，反过来也做不到）。
+const PERM_DERIVED_ZONES = {};
 function syncPermZones() {
   const defs = window.ZONE_DEFS;
-  if (Array.isArray(defs) && defs.length) PERM_ZONES = defs.map(z => ({ key: z.key, label: z.label || z.key }));
+  if (Array.isArray(defs) && defs.length) {
+    PERM_ZONES = defs.filter(z => z && !PERM_DERIVED_ZONES[z.key])
+      .map(z => ({ key: z.key, label: z.label || z.key }));
+    /* 合并对比要独立授权，但它没有自己的后台面板，所以不在 ZONE_DEFS 里；
+       这里固定补一项（已有则不重复），位置紧跟「渠道对比」。 */
+    if (!PERM_ZONES.some(z => z.key === "merge")) {
+      const item = { key: "merge", label: "渠道合并对比" };
+      const at = PERM_ZONES.findIndex(z => z.key === "compare");
+      if (at >= 0) PERM_ZONES.splice(at + 1, 0, item);
+      else PERM_ZONES.push(item);
+    }
+  }
 }
 
 // 前台可导出的专区（与 js/view-export.js 里的 LABELS 一一对应）
@@ -47,6 +63,7 @@ const PERM_EXPORT_ZONES = [
   { key: "shein", label: "S 专区" },
   { key: "tiktok", label: "T 专区" },
   { key: "compare", label: "渠道对比" },
+  { key: "merge", label: "渠道合并对比" },
   { key: "movement", label: "品牌动向" },
   { key: "visual", label: "视觉专区" },
 ];
@@ -485,7 +502,8 @@ async function loadPermForUser(user) {
     ]).then(([allCats, perm, frontZones, manageZones, exportZones]) => {
       permEditAllCats = allCats;
       renderPermEditCats(allCats, perm);
-      renderPermEditZones((frontZones || []).filter(z => z !== ZONE_NONE), "#perm-edit-zones");
+      const fz = permZonesWithMerge((frontZones || []).filter(z => z !== ZONE_NONE));
+      renderPermEditZones(fz.list, "#perm-edit-zones", fz.auto);
       renderPermEditZones(manageZones, "#perm-edit-manage-zones");
       renderPermEditExport(exportZones, "#perm-edit-export-zones");
     });
@@ -532,7 +550,22 @@ function renderPermEditCats(cats, checked) {
     updatePermEditCatCount();
   }
 
-function renderPermEditZones(checked, containerId) {
+/* 20261124A：渠道合并对比从「跟随来源专区」改成「独立授权」 ---------------
+   改版前它不在勾选清单里，所以老账号的前台可见专区里必然没有 merge ——
+   这并不代表超管拒绝过它。打开编辑弹窗时默认补勾一次（并给出说明），保存即正式生效；
+   超管也可以直接取消勾选，把这一页单独关掉（不会影响「渠道对比」）。 */
+const MERGE_LEGACY_DEPS = ["rank", "rhythm", "pinterest", "shein", "tiktok"];
+function permZonesWithMerge(declared) {
+  const list = Array.isArray(declared) ? declared.slice() : [];
+  // 空数组 = 跟随全局；[ZONE_NONE] = 明确全部关闭。这两种都不自动补。
+  if (!list.length) return { list, auto: false };
+  if (list.indexOf("merge") >= 0 || list.indexOf(ZONE_NONE) >= 0) return { list, auto: false };
+  const hasDep = MERGE_LEGACY_DEPS.some(k => list.indexOf(k) >= 0);
+  if (hasDep) list.push("merge");
+  return { list, auto: hasDep };
+}
+
+function renderPermEditZones(checked, containerId, autoMerge) {
     const box = $(containerId || "#perm-edit-zones");
     if (!box) return;
     box.innerHTML = "";
@@ -545,6 +578,12 @@ function renderPermEditZones(checked, containerId) {
       lab.appendChild(cb); lab.appendChild(document.createTextNode(z.label));
       box.appendChild(lab);
     });
+    if (autoMerge) {
+      const tip = document.createElement("span");
+      tip.className = "hint";
+      tip.textContent = "「渠道合并对比」本次改为独立授权：已按它原来能看到的状态默认勾上，保存后正式生效；取消勾选即单独关闭这一页（不影响渠道对比）。";
+      box.appendChild(tip);
+    }
   }
 
 function updatePermEditCatCount() {
@@ -772,6 +811,7 @@ const ZDEF_HREF_PRESETS = [
   { label: "S 专区 (shein.html)", href: "shein.html" },
   { label: "T 专区 (tiktok.html)", href: "tiktok.html" },
   { label: "渠道对比 (compare.html)", href: "compare.html" },
+  { label: "渠道合并对比 (merge.html)", href: "merge.html" },
 ];
 
 function zdefKey(label) {

@@ -5,6 +5,7 @@
  * ============================================================ */
 const SB = (() => {
   if (!window.supabase) throw new Error("supabase-js 未加载，请检查 CDN 脚本顺序");
+  /* 20261123B：本轮不改数据层契约，版本戳随站点统一升级 */
   /* 20261104G：榜单页的列白名单被服务端拒绝过就置 true，之后退回 select(*) */
   let COLS_REJECTED = false;
   /* 把「缺列」这类数据库报错翻译成能直接照做的提示，
@@ -21,8 +22,8 @@ const SB = (() => {
   }
 
 
-  /* 20261121D：本轮在数据层加了「保存对比列配置时兜底补上榜单列」（setCompareSources）。
-     这里只随站点统一升级版本戳，便于核对缓存。 */
+  /* 20261122B：本轮未改任何取数 / 写库逻辑（渠道合并对比是纯只读页面，复用月度榜单
+     与渠道图两个既有接口）。这里只随站点统一升级版本戳，便于核对缓存。 */
   const client = window.supabase.createClient(
     window.CONFIG.SUPABASE.url,
     window.CONFIG.SUPABASE.anonKey
@@ -1482,6 +1483,32 @@ async removeTrendRecord(id) {
         .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw new Error(errHint(error, "保存渠道清单失败"));
       return out;
+    },
+
+    // ============ 渠道合并对比 · 其他渠道展示方式（20261124A） ============
+    // 存在 site_settings.frontend_dims.merge_view，不改表结构：
+    //   { split: false, allowFront: true }
+    //   split      : false = 合并（P · T · S 合成一列，默认） | true = 拆分（渠道各占一列）
+    //   allowFront : 是否允许前台「合并 / 拆分」按钮手动切换（默认允许）
+    // 以前这个开关只在前台、只存在浏览器本地，超管没法统一口径；现在以后台配置为准。
+    async getMergeView() {
+      try {
+        const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+        const d = (data && data.frontend_dims) || {};
+        const raw = d.merge_view;
+        if (!raw || typeof raw !== "object") return null;
+        return { split: raw.split === true, allowFront: raw.allowFront !== false };
+      } catch (e) { return null; }
+    },
+    async setMergeView(cfg) {
+      const c = cfg || {};
+      const { data } = await client.from("site_settings").select("frontend_dims").eq("id", 1).maybeSingle();
+      const dims = Object.assign({}, (data && data.frontend_dims) || {});
+      dims.merge_view = { split: c.split === true, allowFront: c.allowFront !== false };
+      const { error } = await client.from("site_settings")
+        .update({ frontend_dims: dims, updated_at: new Date().toISOString() }).eq("id", 1);
+      if (error) throw new Error(errHint(error, "保存渠道合并对比展示方式失败"));
+      return dims.merge_view;
     },
 
     // ============ 实用工具 · 思维导图（20261112C） ============
@@ -6071,6 +6098,7 @@ async removeTrendRecord(id) {
     pinterest: "P 专区",
     tiktok: "T 专区",
     compare: "渠道对比",
+    merge: "渠道合并对比",
     movement: "品牌动向",
     marketing: "营销日历",
   };
